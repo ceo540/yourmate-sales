@@ -31,27 +31,30 @@ export default function AdminClient({ users: initialUsers }: Props) {
     setError('')
     setSuccess('')
 
-    const res = await fetch('/api/admin/invite', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(form),
-    })
+    try {
+      const res = await fetch('/api/admin/invite', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(form),
+      })
 
-    const data = await res.json()
+      const data = await res.json()
 
-    if (!res.ok) {
-      setError(data.error ?? '초대 실패')
-    } else {
-      setSuccess(`${form.email}로 초대 메일을 발송했습니다.`)
-      setForm(EMPTY_FORM)
-      setShowForm(false)
-      // 목록 새로고침
-      const res2 = await fetch('/api/admin/users')
-      const data2 = await res2.json()
-      if (data2.users) setUsers(data2.users)
+      if (!res.ok) {
+        setError(data.error ?? '초대 실패')
+      } else {
+        setSuccess(`${form.email}로 초대 메일을 발송했습니다.`)
+        setForm(EMPTY_FORM)
+        setShowForm(false)
+        const res2 = await fetch('/api/admin/users')
+        const data2 = await res2.json()
+        if (data2.users) setUsers(data2.users)
+      }
+    } catch (err) {
+      setError('네트워크 오류가 발생했습니다. 다시 시도해주세요.')
+    } finally {
+      setLoading(false)
     }
-
-    setLoading(false)
   }
 
   const handleRoleChange = async (userId: string, currentRole: string) => {
