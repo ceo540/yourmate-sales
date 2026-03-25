@@ -25,8 +25,12 @@ export async function middleware(request: NextRequest) {
 
   const { data: { user } } = await supabase.auth.getUser()
 
-  const isAuthPage = request.nextUrl.pathname.startsWith('/login') ||
-    request.nextUrl.pathname.startsWith('/register')
+  // /register 는 완전 차단 → 로그인 페이지로
+  if (request.nextUrl.pathname.startsWith('/register')) {
+    return NextResponse.redirect(new URL('/login', request.url))
+  }
+
+  const isAuthPage = request.nextUrl.pathname.startsWith('/login')
 
   if (!user && !isAuthPage) {
     return NextResponse.redirect(new URL('/login', request.url))

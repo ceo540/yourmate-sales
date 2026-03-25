@@ -4,6 +4,7 @@ import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { useRouter } from 'next/navigation'
+import { useEffect, useState } from 'react'
 
 const nav = [
   { href: '/sales', label: '매출 현황', icon: '💰' },
@@ -14,6 +15,18 @@ const nav = [
 export default function Sidebar() {
   const pathname = usePathname()
   const router = useRouter()
+  const [isAdmin, setIsAdmin] = useState(false)
+
+  useEffect(() => {
+    const supabase = createClient()
+    supabase.auth.getUser().then(({ data: { user } }) => {
+      if (!user) return
+      supabase.from('profiles').select('role').eq('id', user.id).single()
+        .then(({ data }) => {
+          if (data?.role === 'admin') setIsAdmin(true)
+        })
+    })
+  }, [])
 
   const handleLogout = async () => {
     const supabase = createClient()
@@ -57,6 +70,24 @@ export default function Sidebar() {
             </Link>
           )
         })}
+
+        {isAdmin && (
+          <>
+            <div className="border-t border-gray-100 my-2" />
+            <Link
+              href="/admin"
+              className={`flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-colors ${
+                pathname.startsWith('/admin')
+                  ? 'font-semibold text-gray-900'
+                  : 'text-gray-500 hover:text-gray-900 hover:bg-gray-50'
+              }`}
+              style={pathname.startsWith('/admin') ? { backgroundColor: '#FFCE00' } : {}}
+            >
+              <span className="text-base">⚙️</span>
+              <span>팀원 관리</span>
+            </Link>
+          </>
+        )}
       </nav>
 
       {/* 로그아웃 */}
