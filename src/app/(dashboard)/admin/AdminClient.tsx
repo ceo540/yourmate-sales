@@ -38,7 +38,7 @@ export default function AdminClient({ users: initialUsers }: Props) {
         body: JSON.stringify(form),
       })
 
-      const data = await res.json()
+      const data = await res.json().catch(() => ({ error: `서버 오류 (${res.status})` }))
 
       if (!res.ok) {
         setError(data.error ?? '초대 실패')
