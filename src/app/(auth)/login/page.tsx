@@ -84,12 +84,6 @@ export default function LoginPage() {
             </button>
           </form>
 
-          <p className="text-center text-sm text-gray-500 mt-6">
-            계정이 없으신가요?{' '}
-            <Link href="/register" className="font-semibold hover:underline" style={{ color: '#121212' }}>
-              회원가입
-            </Link>
-          </p>
         </div>
       </div>
     </div>
