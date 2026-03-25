@@ -54,6 +54,21 @@ export default function AdminClient({ users: initialUsers }: Props) {
     setLoading(false)
   }
 
+  const handleRoleChange = async (userId: string, currentRole: string) => {
+    const newRole = currentRole === 'admin' ? 'member' : 'admin'
+    const res = await fetch('/api/admin/users', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ userId, role: newRole }),
+    })
+    const data = await res.json()
+    if (!res.ok) {
+      alert(data.error ?? '변경 실패')
+    } else {
+      setUsers(prev => prev.map(u => u.id === userId ? { ...u, role: newRole } : u))
+    }
+  }
+
   const handleDelete = async (userId: string, userName: string) => {
     if (!confirm(`${userName} 님을 삭제하시겠습니까? 이 작업은 되돌릴 수 없습니다.`)) return
 
@@ -98,11 +113,14 @@ export default function AdminClient({ users: initialUsers }: Props) {
                 </p>
               </div>
               <div className="flex items-center gap-3">
-                <span className={`text-xs px-2.5 py-1 rounded-full font-medium ${
-                  user.role === 'admin' ? 'bg-yellow-100 text-yellow-800' : 'bg-gray-100 text-gray-600'
-                }`}>
+                <button
+                  onClick={() => handleRoleChange(user.id, user.role)}
+                  className={`text-xs px-2.5 py-1 rounded-full font-medium transition-colors hover:opacity-70 ${
+                    user.role === 'admin' ? 'bg-yellow-100 text-yellow-800' : 'bg-gray-100 text-gray-600'
+                  }`}
+                >
                   {user.role === 'admin' ? '관리자' : '멤버'}
-                </span>
+                </button>
                 <button
                   onClick={() => handleDelete(user.id, user.name)}
                   className="text-xs text-gray-300 hover:text-red-400 transition-colors"

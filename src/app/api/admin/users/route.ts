@@ -55,3 +55,35 @@ export async function DELETE(request: NextRequest) {
 
   return NextResponse.json({ success: true })
 }
+
+export async function PATCH(request: NextRequest) {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+
+  if (!user) return NextResponse.json({ error: '인증 필요' }, { status: 401 })
+
+  const { data: profile } = await supabase
+    .from('profiles')
+    .select('role')
+    .eq('id', user.id)
+    .single()
+
+  if (profile?.role !== 'admin') {
+    return NextResponse.json({ error: '관리자 권한 필요' }, { status: 403 })
+  }
+
+  const { userId, role } = await request.json()
+
+  if (userId === user.id) {
+    return NextResponse.json({ error: '자신의 권한은 변경할 수 없습니다' }, { status: 400 })
+  }
+
+  const { error } = await supabase
+    .from('profiles')
+    .update({ role })
+    .eq('id', userId)
+
+  if (error) return NextResponse.json({ error: error.message }, { status: 400 })
+
+  return NextResponse.json({ success: true })
+}

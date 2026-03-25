@@ -38,6 +38,7 @@ interface Vendor {
 interface Props {
   sales: Sale[]
   vendors: Vendor[]
+  isAdmin: boolean
 }
 
 function formatMoney(n: number) {
@@ -81,7 +82,7 @@ function matchesFilter(sale: Sale, year: number | null, period: string) {
   return (d.getMonth() + 1) === Number(period)
 }
 
-export default function SalesClient({ sales, vendors }: Props) {
+export default function SalesClient({ sales, vendors, isAdmin }: Props) {
   const [tab, setTab] = useState<'stats' | 'report'>('stats')
   const [costModal, setCostModal] = useState<Sale | null>(null)
   const [filterYear, setFilterYear] = useState<number | null>(CURRENT_YEAR)

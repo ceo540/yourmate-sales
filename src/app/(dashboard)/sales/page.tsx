@@ -5,8 +5,26 @@ import SalesClient from './SalesClient'
 export default async function SalesPage() {
   const supabase = await createClient()
 
+  const { data: { user } } = await supabase.auth.getUser()
+  const { data: profile } = await supabase
+    .from('profiles')
+    .select('id, role')
+    .eq('id', user!.id)
+    .single()
+
+  const isAdmin = profile?.role === 'admin'
+
+  const salesQuery = supabase
+    .from('sales')
+    .select('*, assignee:profiles(id, name), sale_costs(*)')
+    .order('created_at', { ascending: false })
+
+  if (!isAdmin) {
+    salesQuery.eq('assignee_id', profile!.id)
+  }
+
   const [{ data: sales }, { data: vendors }] = await Promise.all([
-    supabase.from('sales').select('*, assignee:profiles(id, name), sale_costs(*)').order('created_at', { ascending: false }),
+    salesQuery,
     supabase.from('vendors').select('id, name, type').order('name'),
   ])
 
@@ -25,7 +43,7 @@ export default async function SalesPage() {
           + 새 매출 건
         </Link>
       </div>
-      <SalesClient sales={sales ?? []} vendors={vendors ?? []} />
+      <SalesClient sales={sales ?? []} vendors={vendors ?? []} isAdmin={isAdmin} />
     </div>
   )
 }
