@@ -1,0 +1,49 @@
+import { type ClassValue, clsx } from 'clsx'
+import { twMerge } from 'tailwind-merge'
+
+export function cn(...inputs: ClassValue[]) {
+  return twMerge(clsx(inputs))
+}
+
+export function formatDate(date: string | Date) {
+  return new Intl.DateTimeFormat('ko-KR', {
+    year: 'numeric',
+    month: 'long',
+    day: 'numeric',
+  }).format(new Date(date))
+}
+
+export function formatDateShort(date: string | Date) {
+  return new Intl.DateTimeFormat('ko-KR', {
+    month: 'short',
+    day: 'numeric',
+  }).format(new Date(date))
+}
+
+export function getProgressColor(progress: number) {
+  if (progress >= 80) return 'bg-green-500'
+  if (progress >= 50) return 'bg-yellow-500'
+  if (progress >= 30) return 'bg-orange-500'
+  return 'bg-red-500'
+}
+
+export function getPriorityColor(priority: string) {
+  switch (priority) {
+    case 'High': return 'text-red-500 bg-red-50'
+    case 'Medium': return 'text-yellow-600 bg-yellow-50'
+    case 'Low': return 'text-green-600 bg-green-50'
+    default: return 'text-gray-600 bg-gray-50'
+  }
+}
+
+export function getStatusColor(status: string) {
+  switch (status) {
+    case '진행중': return 'text-blue-600 bg-blue-50'
+    case '완료': return 'text-green-600 bg-green-50'
+    case '기획중': return 'text-purple-600 bg-purple-50'
+    case '취소': return 'text-gray-500 bg-gray-100'
+    case '보류': return 'text-orange-600 bg-orange-50'
+    case '시작 전': return 'text-gray-600 bg-gray-50'
+    default: return 'text-gray-600 bg-gray-50'
+  }
+}
