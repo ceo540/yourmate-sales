@@ -6,9 +6,12 @@ import { DEPARTMENT_LABELS, type Department } from '@/types'
 interface UserProfile {
   id: string
   name: string
+  email: string | null
   departments: string[] | null
   role: string
   created_at: string
+  last_sign_in_at: string | null
+  confirmed_at: string | null
 }
 
 interface Props {
@@ -135,7 +138,14 @@ export default function AdminClient({ users: initialUsers }: Props) {
             <div key={user.id} className="px-6 py-3">
               <div className="flex items-start justify-between">
                 <div className="flex-1 min-w-0">
-                  <p className="text-sm font-medium text-gray-900">{user.name || '이름 없음'}</p>
+                  <div className="flex items-center gap-2">
+                    <p className="text-sm font-medium text-gray-900">{user.name || '이름 없음'}</p>
+                    {user.confirmed_at
+                      ? <span className="text-xs px-2 py-0.5 rounded-full bg-green-50 text-green-600">가입완료</span>
+                      : <span className="text-xs px-2 py-0.5 rounded-full bg-orange-50 text-orange-500">초대됨</span>
+                    }
+                  </div>
+                  {user.email && <p className="text-xs text-gray-400">{user.email}</p>}
                   {editingId === user.id ? (
                     <div className="mt-2 space-y-2">
                       <DeptCheckboxes selected={editDepts} onChange={setEditDepts} />

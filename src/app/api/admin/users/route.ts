@@ -18,12 +18,28 @@ export async function GET() {
     return NextResponse.json({ error: '관리자 권한 필요' }, { status: 403 })
   }
 
+  const admin = createAdminClient()
   const { data: profiles } = await supabase
     .from('profiles')
     .select('id, name, departments, role, created_at')
     .order('created_at', { ascending: false })
 
-  return NextResponse.json({ users: profiles ?? [] })
+  // auth.users에서 마지막 로그인 시간 가져오기
+  const { data: authUsers } = await admin.auth.admin.listUsers()
+  const authMap = new Map(authUsers?.users?.map(u => [u.id, {
+    email: u.email,
+    last_sign_in_at: u.last_sign_in_at,
+    confirmed_at: u.confirmed_at,
+  }]))
+
+  const users = (profiles ?? []).map(p => ({
+    ...p,
+    email: authMap.get(p.id)?.email ?? null,
+    last_sign_in_at: authMap.get(p.id)?.last_sign_in_at ?? null,
+    confirmed_at: authMap.get(p.id)?.confirmed_at ?? null,
+  }))
+
+  return NextResponse.json({ users })
 }
 
 export async function DELETE(request: NextRequest) {

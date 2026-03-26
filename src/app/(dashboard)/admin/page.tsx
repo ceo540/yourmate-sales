@@ -16,10 +16,26 @@ export default async function AdminPage() {
 
   if (profile?.role !== 'admin') redirect('/sales')
 
-  const { data: users } = await supabase
+  const { data: profilesRaw } = await supabase
     .from('profiles')
     .select('id, name, departments, role, created_at')
     .order('created_at', { ascending: false })
+
+  const { createAdminClient } = await import('@/lib/supabase/admin')
+  const adminClient = createAdminClient()
+  const { data: authUsers } = await adminClient.auth.admin.listUsers()
+  const authMap = new Map(authUsers?.users?.map(u => [u.id, {
+    email: u.email,
+    last_sign_in_at: u.last_sign_in_at ?? null,
+    confirmed_at: u.confirmed_at ?? null,
+  }]))
+
+  const users = (profilesRaw ?? []).map(p => ({
+    ...p,
+    email: authMap.get(p.id)?.email ?? null,
+    last_sign_in_at: authMap.get(p.id)?.last_sign_in_at ?? null,
+    confirmed_at: authMap.get(p.id)?.confirmed_at ?? null,
+  }))
 
   return (
     <div className="max-w-3xl mx-auto">

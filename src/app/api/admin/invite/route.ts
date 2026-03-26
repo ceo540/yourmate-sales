@@ -36,6 +36,7 @@ export async function POST(request: NextRequest) {
 
     const { data, error } = await admin.auth.admin.inviteUserByEmail(email, {
       data: { name },
+      redirectTo: 'https://yourmate-system.vercel.app/sales',
     })
 
     if (error) {
