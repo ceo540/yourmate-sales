@@ -29,7 +29,10 @@ export async function middleware(request: NextRequest) {
     return NextResponse.redirect(new URL('/login', request.url))
   }
 
-  const isAuthPage = request.nextUrl.pathname.startsWith('/login')
+  const isAuthPage =
+    request.nextUrl.pathname.startsWith('/login') ||
+    request.nextUrl.pathname.startsWith('/set-password') ||
+    request.nextUrl.pathname.startsWith('/auth/callback')
 
   if (!user && !isAuthPage) {
     return NextResponse.redirect(new URL('/login', request.url))
