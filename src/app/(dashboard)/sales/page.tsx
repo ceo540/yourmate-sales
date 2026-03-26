@@ -6,11 +6,10 @@ export default async function SalesPage() {
   const supabase = await createClient()
 
   const { data: { user } } = await supabase.auth.getUser()
-  const { data: profile } = await supabase
-    .from('profiles')
-    .select('id, role, departments')
-    .eq('id', user!.id)
-    .single()
+  const [{ data: profile }, { data: vendors }] = await Promise.all([
+    supabase.from('profiles').select('id, role, departments').eq('id', user!.id).single(),
+    supabase.from('vendors').select('id, name, type').order('name'),
+  ])
 
   const isAdmin = profile?.role === 'admin'
   const myDepts: string[] = profile?.departments ?? []
@@ -22,18 +21,13 @@ export default async function SalesPage() {
 
   if (!isAdmin) {
     if (myDepts.length > 0) {
-      // 담당 사업부 매출 전체 OR 본인 담당 매출
       salesQuery = salesQuery.or(`department.in.(${myDepts.join(',')}),assignee_id.eq.${profile!.id}`)
     } else {
-      // 사업부 미지정: 본인 담당만
       salesQuery = salesQuery.eq('assignee_id', profile!.id)
     }
   }
 
-  const [{ data: sales }, { data: vendors }] = await Promise.all([
-    salesQuery,
-    supabase.from('vendors').select('id, name, type').order('name'),
-  ])
+  const { data: sales } = await salesQuery
 
   return (
     <div className="max-w-7xl mx-auto">

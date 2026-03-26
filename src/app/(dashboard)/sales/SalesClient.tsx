@@ -117,7 +117,7 @@ export default function SalesClient({ sales, vendors, isAdmin }: Props) {
   return (
     <>
       {/* 필터 */}
-      <div className="flex items-center gap-2 mb-4 flex-wrap">
+      <div className="flex items-center gap-2 mb-4 flex-wrap overflow-x-auto pb-1">
         {/* 연도 */}
         <button
           onClick={() => { setFilterYear(null); setFilterPeriod('all') }}
@@ -209,7 +209,7 @@ export default function SalesClient({ sales, vendors, isAdmin }: Props) {
       {/* ── 매출 통계 탭 ── */}
       {tab === 'stats' && (
         <div>
-          <div className="grid grid-cols-4 gap-4 mb-6">
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3 md:gap-4 mb-6">
             {[
               { label: '총 매출', value: totalRevenue, sub: `${totalRevenue.toLocaleString()}원`, color: '#FFCE00' },
               { label: '총 원가', value: totalCost, sub: `${totalCost.toLocaleString()}원`, color: '#EF4444' },
