@@ -21,7 +21,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: '관리자 권한 필요' }, { status: 403 })
   }
 
-  const { email, name, department, role } = await request.json()
+  const { email, name, departments, role } = await request.json()
 
   if (!email || !name) {
     return NextResponse.json({ error: '이메일과 이름은 필수입니다' }, { status: 400 })
@@ -35,7 +35,7 @@ export async function POST(request: NextRequest) {
     const admin = createAdminClient()
 
     const { data, error } = await admin.auth.admin.inviteUserByEmail(email, {
-      data: { name, department: department || null },
+      data: { name },
     })
 
     if (error) {
@@ -46,7 +46,7 @@ export async function POST(request: NextRequest) {
     if (data.user) {
       await admin
         .from('profiles')
-        .upsert({ id: data.user.id, name, department: department || null, role: role || 'member' })
+        .upsert({ id: data.user.id, name, departments: departments ?? [], role: role || 'member' })
         .eq('id', data.user.id)
     }
 

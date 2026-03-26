@@ -8,19 +8,26 @@ export default async function SalesPage() {
   const { data: { user } } = await supabase.auth.getUser()
   const { data: profile } = await supabase
     .from('profiles')
-    .select('id, role')
+    .select('id, role, departments')
     .eq('id', user!.id)
     .single()
 
   const isAdmin = profile?.role === 'admin'
+  const myDepts: string[] = profile?.departments ?? []
 
-  const salesQuery = supabase
+  let salesQuery = supabase
     .from('sales')
     .select('*, assignee:profiles(id, name), sale_costs(*)')
     .order('created_at', { ascending: false })
 
   if (!isAdmin) {
-    salesQuery.eq('assignee_id', profile!.id)
+    if (myDepts.length > 0) {
+      // 담당 사업부 매출 전체 OR 본인 담당 매출
+      salesQuery = salesQuery.or(`department.in.(${myDepts.join(',')}),assignee_id.eq.${profile!.id}`)
+    } else {
+      // 사업부 미지정: 본인 담당만
+      salesQuery = salesQuery.eq('assignee_id', profile!.id)
+    }
   }
 
   const [{ data: sales }, { data: vendors }] = await Promise.all([

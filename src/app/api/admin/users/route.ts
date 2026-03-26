@@ -20,7 +20,7 @@ export async function GET() {
 
   const { data: profiles } = await supabase
     .from('profiles')
-    .select('id, name, department, role, created_at')
+    .select('id, name, departments, role, created_at')
     .order('created_at', { ascending: false })
 
   return NextResponse.json({ users: profiles ?? [] })
@@ -72,15 +72,19 @@ export async function PATCH(request: NextRequest) {
     return NextResponse.json({ error: '관리자 권한 필요' }, { status: 403 })
   }
 
-  const { userId, role } = await request.json()
+  const { userId, role, departments } = await request.json()
 
-  if (userId === user.id) {
+  if (userId === user.id && role) {
     return NextResponse.json({ error: '자신의 권한은 변경할 수 없습니다' }, { status: 400 })
   }
 
+  const updateData: Record<string, unknown> = {}
+  if (role !== undefined) updateData.role = role
+  if (departments !== undefined) updateData.departments = departments
+
   const { error } = await supabase
     .from('profiles')
-    .update({ role })
+    .update(updateData)
     .eq('id', userId)
 
   if (error) return NextResponse.json({ error: error.message }, { status: 400 })

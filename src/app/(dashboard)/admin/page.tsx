@@ -18,7 +18,7 @@ export default async function AdminPage() {
 
   const { data: users } = await supabase
     .from('profiles')
-    .select('id, name, department, role, created_at')
+    .select('id, name, departments, role, created_at')
     .order('created_at', { ascending: false })
 
   return (
