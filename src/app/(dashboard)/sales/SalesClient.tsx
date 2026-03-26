@@ -117,78 +117,42 @@ export default function SalesClient({ sales, vendors, isAdmin }: Props) {
   return (
     <>
       {/* 필터 */}
-      <div className="flex items-center gap-2 mb-4 flex-wrap overflow-x-auto pb-1">
-        {/* 연도 */}
-        <button
-          onClick={() => { setFilterYear(null); setFilterPeriod('all') }}
-          className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${!filterYear ? 'bg-gray-900 text-white' : 'bg-white border border-gray-200 text-gray-500 hover:border-gray-400'}`}
-        >
-          전체
-        </button>
-        {YEARS.map(y => (
-          <button
-            key={y}
-            onClick={() => { setFilterYear(y); setFilterPeriod('all') }}
-            className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${filterYear === y ? 'bg-gray-900 text-white' : 'bg-white border border-gray-200 text-gray-500 hover:border-gray-400'}`}
-          >
-            {y}년
-          </button>
-        ))}
-
-        {/* 분기/월 (연도 선택 시만) */}
-        {filterYear && (
-          <>
-            <span className="text-gray-300 text-xs">|</span>
-            {[
-              { label: '전체', value: 'all' },
-              { label: '1분기', value: 'Q1' },
-              { label: '2분기', value: 'Q2' },
-              { label: '3분기', value: 'Q3' },
-              { label: '4분기', value: 'Q4' },
-            ].map(p => (
-              <button
-                key={p.value}
-                onClick={() => setFilterPeriod(p.value)}
-                className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${filterPeriod === p.value ? 'text-yellow-800 font-semibold' : 'bg-white border border-gray-200 text-gray-500 hover:border-yellow-300'}`}
-                style={filterPeriod === p.value ? { backgroundColor: '#FFCE00' } : {}}
-              >
-                {p.label}
-              </button>
-            ))}
-            <span className="text-gray-300 text-xs">|</span>
-            {Array.from({ length: 12 }, (_, i) => i + 1).map(m => (
-              <button
-                key={m}
-                onClick={() => setFilterPeriod(String(m))}
-                className={`px-2.5 py-1.5 rounded-lg text-xs font-medium transition-colors ${filterPeriod === String(m) ? 'text-yellow-800 font-semibold' : 'bg-white border border-gray-200 text-gray-500 hover:border-yellow-300'}`}
-                style={filterPeriod === String(m) ? { backgroundColor: '#FFCE00' } : {}}
-              >
-                {m}월
-              </button>
-            ))}
-          </>
-        )}
-      </div>
-
-      {/* 사업부 필터 */}
       <div className="flex items-center gap-2 mb-6 flex-wrap">
-        <button
-          onClick={() => setFilterDept('all')}
-          className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${filterDept === 'all' ? 'text-yellow-800 font-semibold' : 'bg-white border border-gray-200 text-gray-500 hover:border-yellow-300'}`}
-          style={filterDept === 'all' ? { backgroundColor: '#FFCE00' } : {}}
+        <select
+          value={filterYear ?? 'all'}
+          onChange={e => { setFilterYear(e.target.value === 'all' ? null : Number(e.target.value)); setFilterPeriod('all') }}
+          className="px-3 py-2 rounded-lg border border-gray-200 text-sm bg-white focus:outline-none focus:border-yellow-400 text-gray-700"
         >
-          전체 사업부
-        </button>
-        {Object.entries(DEPARTMENT_LABELS).map(([key, label]) => (
-          <button
-            key={key}
-            onClick={() => setFilterDept(key)}
-            className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${filterDept === key ? 'text-yellow-800 font-semibold' : 'bg-white border border-gray-200 text-gray-500 hover:border-yellow-300'}`}
-            style={filterDept === key ? { backgroundColor: '#FFCE00' } : {}}
-          >
-            {label}
-          </button>
-        ))}
+          <option value="all">전체 연도</option>
+          {YEARS.map(y => <option key={y} value={y}>{y}년</option>)}
+        </select>
+
+        <select
+          value={filterPeriod}
+          onChange={e => setFilterPeriod(e.target.value)}
+          disabled={!filterYear}
+          className="px-3 py-2 rounded-lg border border-gray-200 text-sm bg-white focus:outline-none focus:border-yellow-400 text-gray-700 disabled:opacity-40"
+        >
+          <option value="all">전체 기간</option>
+          <option value="Q1">1분기</option>
+          <option value="Q2">2분기</option>
+          <option value="Q3">3분기</option>
+          <option value="Q4">4분기</option>
+          {Array.from({ length: 12 }, (_, i) => i + 1).map(m => (
+            <option key={m} value={String(m)}>{m}월</option>
+          ))}
+        </select>
+
+        <select
+          value={filterDept}
+          onChange={e => setFilterDept(e.target.value)}
+          className="px-3 py-2 rounded-lg border border-gray-200 text-sm bg-white focus:outline-none focus:border-yellow-400 text-gray-700"
+        >
+          <option value="all">전체 사업부</option>
+          {Object.entries(DEPARTMENT_LABELS).map(([key, label]) => (
+            <option key={key} value={key}>{label}</option>
+          ))}
+        </select>
       </div>
 
       {/* 탭 */}
