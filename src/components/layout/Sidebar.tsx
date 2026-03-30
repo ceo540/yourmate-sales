@@ -93,6 +93,7 @@ export default function Sidebar() {
           <>
             <div className="border-t border-gray-100 my-2" />
             {[
+              { href: '/finance', label: '재무 현황', icon: '📈' },
               { href: '/payroll', label: '인건비 관리', icon: '💼' },
               { href: '/fixed-costs', label: '고정비 관리', icon: '🔒' },
               { href: '/cashflow', label: '자금일보', icon: '📊' },
@@ -226,6 +227,7 @@ export default function Sidebar() {
                 <>
                   <div className="border-t border-gray-100 my-2" />
                   {[
+                    { href: '/finance', label: '재무 현황', icon: '📈' },
                     { href: '/payroll', label: '인건비 관리', icon: '💼' },
                     { href: '/cashflow', label: '자금일보', icon: '📊' },
                     { href: '/admin', label: '팀원 관리', icon: '⚙️' },
