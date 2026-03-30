@@ -1,6 +1,6 @@
 'use client'
-import { useState, useMemo } from 'react'
-import { upsertAccount, deleteAccount, upsertTransaction, deleteTransaction } from './actions'
+import { useState, useMemo, useRef } from 'react'
+import { upsertAccount, deleteAccount, upsertTransaction, deleteTransaction, importGranterTransactions } from './actions'
 
 interface Account {
   id: string
@@ -85,6 +85,30 @@ const EMPTY_ACCOUNT = {
   type: 'checking' as Account['type'], initial_balance: 0,
 }
 
+function parseGranterCSV(text: string) {
+  const lines = text.trim().split('\n')
+  const rows = []
+  for (let i = 1; i < lines.length; i++) {
+    const cols = lines[i].match(/"([^"]*)"/g)?.map(v => v.slice(1, -1)) ?? []
+    if (cols.length < 17) continue
+    rows.push({
+      date: cols[0],
+      accountNo: cols[13],
+      accountNick: cols[14],
+      bank: cols[15],
+      company: cols[16],
+      description: cols[4],
+      expense: Number(cols[5]) || 0,
+      income: Number(cols[6]) || 0,
+      status: cols[7],
+      category: cols[8],
+      include: cols[12],
+      memo: cols[21] || '',
+    })
+  }
+  return rows
+}
+
 export default function CashflowClient({ accounts, transactions }: Props) {
   const [selectedDate, setSelectedDate] = useState(today())
   const [filterBiz, setFilterBiz] = useState('all')
@@ -95,6 +119,11 @@ export default function CashflowClient({ accounts, transactions }: Props) {
   const [savingTx, setSavingTx] = useState(false)
   const [savingAcct, setSavingAcct] = useState(false)
   const [showAcctModal, setShowAcctModal] = useState(false)
+  const [showUploadModal, setShowUploadModal] = useState(false)
+  const [uploadRows, setUploadRows] = useState<ReturnType<typeof parseGranterCSV>>([])
+  const [importing, setImporting] = useState(false)
+  const [importResult, setImportResult] = useState<string | null>(null)
+  const fileInputRef = useRef<HTMLInputElement>(null)
 
   // 잔액 (전체 거래 기준)
   const balances = useMemo(() => calcAllBalances(accounts, transactions), [accounts, transactions])
@@ -181,6 +210,29 @@ export default function CashflowClient({ accounts, transactions }: Props) {
     await deleteAccount(id)
   }
 
+  function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0]
+    if (!file) return
+    const reader = new FileReader()
+    reader.onload = ev => {
+      const text = ev.target?.result as string
+      const rows = parseGranterCSV(text)
+      setUploadRows(rows)
+      setImportResult(null)
+    }
+    reader.readAsText(file, 'utf-8')
+  }
+
+  async function handleImport() {
+    if (!uploadRows.length) return
+    setImporting(true)
+    const result = await importGranterTransactions(uploadRows)
+    setImportResult(`${result.count}건 가져오기 완료!`)
+    setImporting(false)
+    setUploadRows([])
+    if (fileInputRef.current) fileInputRef.current.value = ''
+  }
+
   const numF = (val: number, onChange: (v: number) => void) => ({
     value: val === 0 ? '' : val.toLocaleString(),
     onChange: (e: React.ChangeEvent<HTMLInputElement>) => onChange(Number(e.target.value.replace(/[^0-9]/g, '')) || 0),
@@ -206,6 +258,10 @@ export default function CashflowClient({ accounts, transactions }: Props) {
         <button onClick={() => setShowAccountPanel(v => !v)}
           className="px-3 py-2 rounded-lg border border-gray-200 text-sm text-gray-600 hover:bg-gray-50 transition-colors">
           🏦 계좌 관리
+        </button>
+        <button onClick={() => { setShowUploadModal(true); setImportResult(null) }}
+          className="px-3 py-2 rounded-lg border border-gray-200 text-sm text-gray-600 hover:bg-gray-50 transition-colors">
+          📂 Granter 가져오기
         </button>
         <button onClick={openNewTx}
           className="px-4 py-2 rounded-lg text-sm font-semibold hover:opacity-80 transition-all"
@@ -576,6 +632,64 @@ export default function CashflowClient({ accounts, transactions }: Props) {
                 className="px-5 py-2 rounded-lg text-sm font-semibold disabled:opacity-50 hover:opacity-80 transition-all"
                 style={{ backgroundColor: '#FFCE00', color: '#121212' }}>
                 {savingAcct ? '저장 중...' : '저장'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Granter 업로드 모달 ── */}
+      {showUploadModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-black/40" onClick={() => setShowUploadModal(false)} />
+          <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-md">
+            <div className="px-6 py-5 border-b border-gray-100 flex items-center justify-between">
+              <div>
+                <h2 className="text-base font-bold text-gray-900">Granter 거래내역 가져오기</h2>
+                <p className="text-xs text-gray-400 mt-0.5">Granter → 계좌 → 다운로드(CSV)</p>
+              </div>
+              <button onClick={() => setShowUploadModal(false)} className="text-gray-400 hover:text-gray-600 text-2xl leading-none">×</button>
+            </div>
+            <div className="px-6 py-5 space-y-4">
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept=".csv"
+                onChange={handleFileChange}
+                className="w-full text-sm text-gray-600 file:mr-3 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-semibold file:bg-yellow-50 file:text-yellow-800 hover:file:bg-yellow-100"
+              />
+
+              {uploadRows.length > 0 && (
+                <div className="bg-gray-50 rounded-xl p-4 space-y-2">
+                  <p className="text-sm font-semibold text-gray-700">파싱 결과 미리보기</p>
+                  <div className="text-xs text-gray-500 space-y-1">
+                    <p>전체 행: <strong className="text-gray-800">{uploadRows.length}건</strong></p>
+                    <p>가져올 거래 (금액포함): <strong className="text-green-700">{uploadRows.filter(r => r.include === '포함').length}건</strong></p>
+                    <p>내부이체 제외: <strong className="text-gray-400">{uploadRows.filter(r => r.include === '미포함').length}건</strong></p>
+                    <p>계좌 수: <strong className="text-gray-800">{new Set(uploadRows.map(r => r.accountNo)).size}개</strong></p>
+                    <p>사업자: <strong className="text-gray-800">{[...new Set(uploadRows.map(r => r.company))].join(', ')}</strong></p>
+                  </div>
+                </div>
+              )}
+
+              {importResult && (
+                <div className="bg-green-50 border border-green-100 rounded-xl px-4 py-3 text-sm text-green-700 font-medium">
+                  ✓ {importResult}
+                </div>
+              )}
+            </div>
+            <div className="flex gap-2 px-6 py-4 border-t border-gray-100">
+              <button
+                onClick={handleImport}
+                disabled={importing || uploadRows.length === 0}
+                className="flex-1 py-2.5 rounded-xl text-sm font-semibold disabled:opacity-40 hover:opacity-80 transition-all"
+                style={{ backgroundColor: '#FFCE00', color: '#121212' }}
+              >
+                {importing ? '가져오는 중...' : `${uploadRows.filter(r => r.include === '포함').length}건 가져오기`}
+              </button>
+              <button onClick={() => setShowUploadModal(false)}
+                className="px-5 py-2.5 rounded-xl text-sm border border-gray-200 text-gray-500 hover:bg-gray-50">
+                닫기
               </button>
             </div>
           </div>

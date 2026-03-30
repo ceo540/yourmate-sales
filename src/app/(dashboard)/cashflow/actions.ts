@@ -54,3 +54,83 @@ export async function deleteTransaction(id: string) {
   await supabase.from('cashflow').delete().eq('id', id)
   revalidatePath('/cashflow')
 }
+
+// ── Granter CSV 일괄 import ──────────────────────────────
+interface GranterRow {
+  date: string        // '2026.03.30'
+  accountNo: string   // '05230104268066'
+  accountNick: string // '주사용계좌'
+  bank: string        // '국민은행'
+  company: string     // '유어메이트'
+  description: string // '사용처'
+  expense: number
+  income: number
+  status: string      // '출금' | '입금'
+  category: string    // '계정과목'
+  include: string     // '포함' | '미포함'
+  memo: string        // '적요'
+}
+
+export async function importGranterTransactions(rows: GranterRow[]) {
+  const supabase = await createClient()
+
+  // 기존 계좌 조회
+  const { data: existingAccounts } = await supabase.from('financial_accounts').select('*')
+
+  // CSV에서 유니크 계좌 추출
+  const uniqueAccounts = Array.from(
+    new Map(rows.map(r => [r.accountNo, r])).values()
+  )
+
+  // 계좌번호 → UUID 매핑
+  const accountMap: Record<string, string> = {}
+  for (const row of uniqueAccounts) {
+    const last4 = row.accountNo.slice(-4)
+    const accName = `${row.bank} ${last4}${row.accountNick ? ` (${row.accountNick})` : ''}`
+    const existing = existingAccounts?.find(a =>
+      a.name.includes(last4) && a.business_entity === row.company
+    )
+    if (existing) {
+      accountMap[row.accountNo] = existing.id
+    } else {
+      const { data } = await supabase.from('financial_accounts').insert({
+        business_entity: row.company,
+        name: accName,
+        type: 'checking',
+        initial_balance: 0,
+        is_active: true,
+      }).select('id').single()
+      if (data) accountMap[row.accountNo] = data.id
+    }
+  }
+
+  // 거래 insert (금액포함=포함 만)
+  const transactions = rows
+    .filter(r => r.include === '포함' && (r.expense > 0 || r.income > 0))
+    .map(r => {
+      const isIncome = r.status === '입금'
+      const amount = isIncome ? r.income : r.expense
+      const cat = r.category || null
+      const type = isIncome ? 'income'
+        : cat?.includes('이자') ? 'interest'
+        : cat?.includes('대출') ? 'loan_repayment'
+        : 'expense'
+      return {
+        date: r.date.replace(/\./g, '-'),
+        account_id: accountMap[r.accountNo],
+        type,
+        amount,
+        category: cat,
+        description: r.description || null,
+        memo: r.memo || null,
+      }
+    })
+    .filter(t => t.account_id && t.amount > 0)
+
+  if (transactions.length > 0) {
+    await supabase.from('cashflow').insert(transactions)
+  }
+
+  revalidatePath('/cashflow')
+  return { count: transactions.length }
+}

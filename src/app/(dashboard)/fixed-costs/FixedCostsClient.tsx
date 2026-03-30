@@ -17,9 +17,24 @@ interface FixedCost {
 
 interface Entity { id: string; name: string }
 
+interface PayrollRow {
+  employee_name: string
+  base_salary: number
+  meal_allowance: number
+  mileage_allowance: number
+  allowances: number
+  fixed_bonus: number
+  bonus: number
+  unpaid_leave: number
+  business_entity: string | null
+  payment_confirmed: boolean
+}
+
 interface Props {
   fixedCosts: FixedCost[]
   entities: Entity[]
+  payroll: PayrollRow[]
+  currentMonth: { year: number; month: number }
 }
 
 const CATEGORIES = ['임대료', '통신비', '구독료', '보험료', '유지보수', '기타']
@@ -47,7 +62,7 @@ const CATEGORY_COLORS: Record<string, string> = {
   '기타': 'bg-gray-100 text-gray-500',
 }
 
-export default function FixedCostsClient({ fixedCosts: initial, entities }: Props) {
+export default function FixedCostsClient({ fixedCosts: initial, entities, payroll, currentMonth }: Props) {
   const router = useRouter()
   const [, startTransition] = useTransition()
   const [items, setItems] = useState(initial)
@@ -66,7 +81,12 @@ export default function FixedCostsClient({ fixedCosts: initial, entities }: Prop
   })
 
   const activeItems = filtered.filter(c => c.is_active)
-  const totalMonthly = activeItems.reduce((s, c) => s + c.amount, 0)
+
+  // 인건비 자동 계산 (이번 달 payroll 합산)
+  const payrollTotal = payroll.reduce((s, p) =>
+    s + p.base_salary + p.meal_allowance + p.mileage_allowance + p.allowances + p.fixed_bonus + p.bonus - p.unpaid_leave, 0)
+
+  const totalMonthly = activeItems.reduce((s, c) => s + c.amount, 0) + payrollTotal
   const totalAnnual = totalMonthly * 12
 
   // 결제수단별 그룹
@@ -190,6 +210,38 @@ export default function FixedCostsClient({ fixedCosts: initial, entities }: Prop
         </button>
       </div>
 
+      {/* 인건비 자동 항목 */}
+      {payroll.length > 0 && (
+        <div className="bg-white rounded-xl border border-yellow-200 overflow-hidden mb-3">
+          <div className="flex items-center justify-between px-5 py-3 border-b border-yellow-100 bg-yellow-50">
+            <div>
+              <span className="text-xs font-semibold text-yellow-800">인건비 자동 합산</span>
+              <span className="text-xs text-yellow-600 ml-2">{currentMonth.year}년 {currentMonth.month}월 · {payroll.length}명</span>
+            </div>
+            <span className="text-base font-bold text-yellow-900">{fmt(payrollTotal)}원</span>
+          </div>
+          <div className="divide-y divide-gray-50">
+            {payroll.map((p, i) => {
+              const gross = p.base_salary + p.meal_allowance + p.mileage_allowance + p.allowances + p.fixed_bonus + p.bonus - p.unpaid_leave
+              return (
+                <div key={i} className="flex items-center gap-4 px-5 py-2.5">
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm font-medium text-gray-800">{p.employee_name}</span>
+                      {p.business_entity && <span className="text-xs text-gray-400">{p.business_entity}</span>}
+                      <span className={`text-xs px-1.5 py-0.5 rounded-full ${p.payment_confirmed ? 'bg-green-50 text-green-600' : 'bg-orange-50 text-orange-500'}`}>
+                        {p.payment_confirmed ? '지급완료' : '미지급'}
+                      </span>
+                    </div>
+                  </div>
+                  <span className="text-sm font-semibold text-gray-700">{fmt(gross)}원</span>
+                </div>
+              )
+            })}
+          </div>
+        </div>
+      )}
+
       {/* 목록 */}
       <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
         {filtered.length === 0 ? (
@@ -255,7 +307,7 @@ export default function FixedCostsClient({ fixedCosts: initial, entities }: Prop
               {/* 카테고리 */}
               <div>
                 <label className="text-xs font-medium text-gray-600 mb-1 block">카테고리</label>
-                <div className="flex gap-1.5 flex-wrap">
+                <div className="flex gap-1.5 flex-wrap mb-2">
                   {CATEGORIES.map(cat => (
                     <button key={cat} type="button"
                       onClick={() => setForm(f => ({ ...f, category: f.category === cat ? '' : cat }))}
@@ -264,6 +316,12 @@ export default function FixedCostsClient({ fixedCosts: initial, entities }: Prop
                     </button>
                   ))}
                 </div>
+                <input
+                  value={CATEGORIES.includes(form.category) ? '' : form.category}
+                  onChange={e => setForm(f => ({ ...f, category: e.target.value }))}
+                  placeholder="직접 입력 (위 버튼 외 카테고리)"
+                  className="w-full px-3 py-1.5 border border-gray-200 rounded-lg text-xs focus:outline-none focus:border-yellow-400"
+                />
               </div>
 
               {/* 금액 */}
