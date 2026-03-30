@@ -6,6 +6,7 @@ interface Account {
   id: string
   business_entity: string
   name: string
+  account_number: string | null
   type: 'checking' | 'savings' | 'loan' | 'cash'
   initial_balance: number
   is_active: boolean
@@ -56,19 +57,16 @@ function fmtDateKo(date: string) {
   return d.toLocaleDateString('ko-KR', { month: 'long', day: 'numeric', weekday: 'short' })
 }
 
-// ── 잔액 계산 ──────────────────────────────────────────
 function calcAllBalances(accounts: Account[], transactions: Transaction[]) {
   const balances: Record<string, number> = {}
-  for (const a of accounts) {
-    balances[a.id] = a.initial_balance
-  }
+  for (const a of accounts) balances[a.id] = a.initial_balance
   for (const t of transactions) {
     if (t.account_id in balances) {
       if (t.type === 'income') balances[t.account_id] += t.amount
-      else balances[t.account_id] -= t.amount // expense, transfer, loan_repayment, interest
+      else balances[t.account_id] -= t.amount
     }
     if (t.transfer_account_id && t.transfer_account_id in balances) {
-      balances[t.transfer_account_id] += t.amount // 이체 수신 계좌
+      balances[t.transfer_account_id] += t.amount
     }
   }
   return balances
@@ -81,7 +79,7 @@ const EMPTY_TX = {
   amount: 0, category: '', description: '', memo: '',
 }
 const EMPTY_ACCOUNT = {
-  id: '', business_entity: '', name: '',
+  id: '', business_entity: '', name: '', account_number: '',
   type: 'checking' as Account['type'], initial_balance: 0,
 }
 
@@ -113,7 +111,6 @@ export default function CashflowClient({ accounts, transactions }: Props) {
   const [selectedDate, setSelectedDate] = useState(today())
   const [filterBiz, setFilterBiz] = useState('all')
   const [showTxModal, setShowTxModal] = useState(false)
-  const [showAccountPanel, setShowAccountPanel] = useState(false)
   const [txForm, setTxForm] = useState({ ...EMPTY_TX })
   const [acctForm, setAcctForm] = useState({ ...EMPTY_ACCOUNT })
   const [savingTx, setSavingTx] = useState(false)
@@ -125,27 +122,16 @@ export default function CashflowClient({ accounts, transactions }: Props) {
   const [importResult, setImportResult] = useState<string | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
-  // 잔액 (전체 거래 기준)
   const balances = useMemo(() => calcAllBalances(accounts, transactions), [accounts, transactions])
-
-  // 사업자 목록
   const bizList = useMemo(() => [...new Set(accounts.map(a => a.business_entity))].sort(), [accounts])
-
-  // 사업자별 자산 요약
-  const bizSummary = useMemo(() => bizList.map(biz => {
-    const bizAccounts = accounts.filter(a => a.business_entity === biz)
-    const assets = bizAccounts.filter(a => a.type !== 'loan').reduce((s, a) => s + (balances[a.id] ?? 0), 0)
-    const liabilities = bizAccounts.filter(a => a.type === 'loan').reduce((s, a) => s + Math.abs(balances[a.id] ?? 0), 0)
-    return { biz, assets, liabilities, net: assets - liabilities }
-  }), [bizList, accounts, balances])
-
-  // 필터된 계좌
   const filteredAccounts = filterBiz === 'all' ? accounts : accounts.filter(a => a.business_entity === filterBiz)
 
-  // 선택 날짜 거래
   const dayTransactions = transactions.filter(t => t.date === selectedDate &&
     (filterBiz === 'all' || accounts.find(a => a.id === t.account_id)?.business_entity === filterBiz)
   )
+
+  const totalAssets = filteredAccounts.filter(a => a.type !== 'loan').reduce((s, a) => s + (balances[a.id] ?? 0), 0)
+  const totalLiabilities = filteredAccounts.filter(a => a.type === 'loan').reduce((s, a) => s + Math.abs(balances[a.id] ?? 0), 0)
 
   function openNewTx() {
     setTxForm({ ...EMPTY_TX, date: selectedDate, account_id: filteredAccounts[0]?.id ?? '' })
@@ -164,7 +150,7 @@ export default function CashflowClient({ accounts, transactions }: Props) {
     setShowAcctModal(true)
   }
   function openEditAcct(a: Account) {
-    setAcctForm({ id: a.id, business_entity: a.business_entity, name: a.name, type: a.type, initial_balance: a.initial_balance })
+    setAcctForm({ id: a.id, business_entity: a.business_entity, name: a.name, account_number: a.account_number ?? '', type: a.type, initial_balance: a.initial_balance })
     setShowAcctModal(true)
   }
 
@@ -194,7 +180,9 @@ export default function CashflowClient({ accounts, transactions }: Props) {
     await upsertAccount({
       ...(acctForm.id ? { id: acctForm.id } : {}),
       business_entity: acctForm.business_entity,
-      name: acctForm.name, type: acctForm.type,
+      name: acctForm.name,
+      account_number: acctForm.account_number || null,
+      type: acctForm.type,
       initial_balance: acctForm.initial_balance,
     })
     setSavingAcct(false)
@@ -216,8 +204,7 @@ export default function CashflowClient({ accounts, transactions }: Props) {
     const reader = new FileReader()
     reader.onload = ev => {
       const text = ev.target?.result as string
-      const rows = parseGranterCSV(text)
-      setUploadRows(rows)
+      setUploadRows(parseGranterCSV(text))
       setImportResult(null)
     }
     reader.readAsText(file, 'utf-8')
@@ -241,13 +228,12 @@ export default function CashflowClient({ accounts, transactions }: Props) {
   const txCategories = txForm.type === 'income' ? INCOME_CATEGORIES
     : txForm.type === 'expense' ? EXPENSE_CATEGORIES : []
 
-  // 전체 순자산
-  const totalAssets = accounts.filter(a => a.type !== 'loan').reduce((s, a) => s + (balances[a.id] ?? 0), 0)
-  const totalLiabilities = accounts.filter(a => a.type === 'loan').reduce((s, a) => s + Math.abs(balances[a.id] ?? 0), 0)
+  // 표시할 사업자 목록 (필터 적용)
+  const visibleBizList = filterBiz === 'all' ? bizList : [filterBiz]
 
   return (
     <>
-      {/* 상단 필터 */}
+      {/* 상단 액션 바 */}
       <div className="flex items-center gap-2 mb-5 flex-wrap">
         <select value={filterBiz} onChange={e => setFilterBiz(e.target.value)}
           className="px-3 py-2 rounded-lg border border-gray-200 text-sm bg-white focus:outline-none focus:border-yellow-400 text-gray-700">
@@ -255,10 +241,6 @@ export default function CashflowClient({ accounts, transactions }: Props) {
           {bizList.map(b => <option key={b} value={b}>{b}</option>)}
         </select>
         <div className="flex-1" />
-        <button onClick={() => setShowAccountPanel(v => !v)}
-          className="px-3 py-2 rounded-lg border border-gray-200 text-sm text-gray-600 hover:bg-gray-50 transition-colors">
-          🏦 계좌 관리
-        </button>
         <button onClick={() => { setShowUploadModal(true); setImportResult(null) }}
           className="px-3 py-2 rounded-lg border border-gray-200 text-sm text-gray-600 hover:bg-gray-50 transition-colors">
           📂 Granter 가져오기
@@ -270,192 +252,160 @@ export default function CashflowClient({ accounts, transactions }: Props) {
         </button>
       </div>
 
-      {/* 계좌 관리 패널 */}
-      {showAccountPanel && (
-        <div className="bg-white rounded-xl border border-gray-200 p-5 mb-5">
-          <div className="flex items-center justify-between mb-4">
-            <p className="text-sm font-semibold text-gray-800">계좌 / 자산 목록</p>
+      {/* 2컬럼 메인 레이아웃 */}
+      <div className="flex flex-col lg:flex-row gap-4 items-start">
+
+        {/* ── 왼쪽: 계좌 현황 패널 ── */}
+        <div className="w-full lg:w-72 flex-shrink-0 bg-white rounded-xl border border-gray-200 overflow-hidden">
+          <div className="flex items-center justify-between px-4 py-3.5 border-b border-gray-100">
+            <p className="text-sm font-semibold text-gray-800">계좌 현황</p>
             <button onClick={openNewAcct}
-              className="text-xs px-3 py-1.5 rounded-lg font-semibold hover:opacity-80 transition-all"
+              className="text-xs px-2.5 py-1.5 rounded-lg font-semibold hover:opacity-80 transition-all"
               style={{ backgroundColor: '#FFCE00', color: '#121212' }}>
               + 계좌 추가
             </button>
           </div>
-          {accounts.length === 0 && (
-            <p className="text-sm text-gray-400 text-center py-4">등록된 계좌가 없어요.</p>
-          )}
-          <div className="space-y-1">
-            {bizList.map(biz => (
-              <div key={biz}>
-                <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide pt-3 pb-1.5">{biz}</p>
-                {accounts.filter(a => a.business_entity === biz).map(a => {
-                  const bal = balances[a.id] ?? 0
-                  const isLoan = a.type === 'loan'
-                  return (
-                    <div key={a.id} className="flex items-center gap-3 py-2 px-3 rounded-lg hover:bg-gray-50 group">
-                      <div className="flex-1 min-w-0">
-                        <span className="text-sm text-gray-800">{a.name}</span>
-                        <span className="ml-2 text-xs text-gray-400">{ACCOUNT_TYPE_LABELS[a.type]}</span>
-                      </div>
-                      <span className={`text-sm font-semibold ${isLoan ? 'text-red-500' : bal < 0 ? 'text-red-500' : 'text-gray-900'}`}>
-                        {isLoan ? `-${fmt(bal)}` : `${fmt(bal)}`}원
-                      </span>
-                      <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                        <button onClick={() => openEditAcct(a)} className="text-xs px-2 py-1 rounded bg-gray-100 text-gray-500 hover:bg-yellow-100 hover:text-yellow-800 transition-colors">수정</button>
-                        <button onClick={() => handleDeleteAcct(a.id)} className="text-xs px-2 py-1 rounded bg-gray-100 text-gray-400 hover:bg-red-50 hover:text-red-500 transition-colors">삭제</button>
-                      </div>
-                    </div>
-                  )
-                })}
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
 
-      {/* 자산 요약 카드 */}
-      <div className="grid grid-cols-3 gap-3 md:gap-4 mb-5">
-        <div className="bg-white rounded-xl border border-gray-200 p-4 md:p-5">
-          <p className="text-xs text-gray-500 mb-1.5">총 자산</p>
-          <p className="text-xl font-bold text-blue-600">{fmt(totalAssets)}원</p>
-        </div>
-        <div className="bg-white rounded-xl border border-gray-200 p-4 md:p-5">
-          <p className="text-xs text-gray-500 mb-1.5">총 부채</p>
-          <p className="text-xl font-bold text-red-500">{fmt(totalLiabilities)}원</p>
-        </div>
-        <div className="bg-white rounded-xl border border-gray-200 p-4 md:p-5">
-          <p className="text-xs text-gray-500 mb-1.5">순자산</p>
-          <p className={`text-xl font-bold ${totalAssets - totalLiabilities >= 0 ? 'text-green-600' : 'text-red-500'}`}>
-            {fmt(totalAssets - totalLiabilities)}원
-          </p>
-        </div>
-      </div>
-
-      {/* 사업자별 요약 */}
-      {bizList.length > 0 && (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3 mb-5">
-          {bizSummary.filter(b => filterBiz === 'all' || b.biz === filterBiz).map(b => (
-            <div key={b.biz} className="bg-white rounded-xl border border-gray-200 p-4">
-              <p className="text-xs font-semibold text-gray-500 mb-3">{b.biz}</p>
-              <div className="space-y-1.5 text-sm">
-                <div className="flex justify-between">
-                  <span className="text-gray-500">자산</span>
-                  <span className="font-semibold text-blue-600">{fmt(b.assets)}원</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-gray-500">부채</span>
-                  <span className="font-semibold text-red-500">{fmt(b.liabilities)}원</span>
-                </div>
-                <div className="flex justify-between border-t border-gray-100 pt-1.5">
-                  <span className="font-semibold text-gray-700">순자산</span>
-                  <span className={`font-bold ${b.net >= 0 ? 'text-green-600' : 'text-red-500'}`}>{fmt(b.net)}원</span>
-                </div>
-              </div>
-            </div>
-          ))}
-        </div>
-      )}
-
-      {/* 일별 거래 내역 */}
-      <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
-        {/* 날짜 네비게이션 */}
-        <div className="flex items-center gap-3 px-5 py-4 border-b border-gray-100">
-          <button onClick={() => setSelectedDate(d => addDays(d, -1))}
-            className="p-1.5 rounded-lg hover:bg-gray-100 text-gray-500 transition-colors">
-            ←
-          </button>
-          <input type="date" value={selectedDate}
-            onChange={e => setSelectedDate(e.target.value)}
-            className="flex-1 text-center text-sm font-semibold text-gray-900 border-none outline-none cursor-pointer" />
-          <button onClick={() => setSelectedDate(d => addDays(d, 1))}
-            className="p-1.5 rounded-lg hover:bg-gray-100 text-gray-500 transition-colors">
-            →
-          </button>
-          <button onClick={() => setSelectedDate(today())}
-            className="text-xs px-2.5 py-1.5 rounded-lg bg-gray-100 text-gray-600 hover:bg-yellow-50 hover:text-yellow-800 transition-colors">
-            오늘
-          </button>
-        </div>
-
-        {/* 계좌별 잔액 미니 요약 */}
-        {filteredAccounts.length > 0 && (
-          <div className="px-5 py-3 border-b border-gray-50 overflow-x-auto">
-            <div className="flex gap-3 min-w-max">
-              {filteredAccounts.map(a => {
-                const bal = balances[a.id] ?? 0
-                const isLoan = a.type === 'loan'
+          {accounts.length === 0 ? (
+            <p className="text-sm text-gray-400 text-center py-8">등록된 계좌가 없어요.</p>
+          ) : (
+            <div className="divide-y divide-gray-50">
+              {visibleBizList.map(biz => {
+                const bizAccounts = accounts.filter(a => a.business_entity === biz)
                 return (
-                  <div key={a.id} className="flex-shrink-0 bg-gray-50 rounded-lg px-3 py-2 min-w-[120px]">
-                    <p className="text-xs text-gray-400 truncate">{a.name}</p>
-                    <p className={`text-sm font-bold mt-0.5 ${isLoan ? 'text-red-500' : bal < 0 ? 'text-red-500' : 'text-gray-900'}`}>
-                      {isLoan ? '-' : ''}{fmt(bal)}
-                    </p>
+                  <div key={biz} className="px-4 py-3">
+                    <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-2">{biz}</p>
+                    <div className="space-y-1.5">
+                      {bizAccounts.map(a => {
+                        const bal = balances[a.id] ?? 0
+                        const isLoan = a.type === 'loan'
+                        return (
+                          <div key={a.id} className="group rounded-lg hover:bg-gray-50 px-2 py-1.5 -mx-2 transition-colors">
+                            <div className="flex items-start justify-between gap-2">
+                              <div className="flex-1 min-w-0">
+                                <div className="flex items-center gap-1.5 flex-wrap">
+                                  <span className="text-sm text-gray-800 font-medium">{a.name}</span>
+                                  <span className="text-xs text-gray-400 bg-gray-100 px-1.5 py-0.5 rounded">{ACCOUNT_TYPE_LABELS[a.type]}</span>
+                                </div>
+                                {a.account_number && (
+                                  <p className="text-xs text-gray-400 mt-0.5 font-mono">{a.account_number}</p>
+                                )}
+                              </div>
+                              <span className={`text-sm font-bold flex-shrink-0 ${isLoan ? 'text-red-500' : bal < 0 ? 'text-red-500' : 'text-gray-900'}`}>
+                                {isLoan ? '-' : ''}{fmt(bal)}
+                              </span>
+                            </div>
+                            <div className="flex gap-1 mt-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                              <button onClick={() => openEditAcct(a)} className="text-xs px-2 py-0.5 rounded bg-gray-100 text-gray-500 hover:bg-yellow-100 hover:text-yellow-800 transition-colors">수정</button>
+                              <button onClick={() => handleDeleteAcct(a.id)} className="text-xs px-2 py-0.5 rounded bg-gray-100 text-gray-400 hover:bg-red-50 hover:text-red-500 transition-colors">삭제</button>
+                            </div>
+                          </div>
+                        )
+                      })}
+                    </div>
                   </div>
                 )
               })}
             </div>
-          </div>
-        )}
+          )}
 
-        {/* 거래 목록 */}
-        <div className="divide-y divide-gray-50">
-          {dayTransactions.length === 0 && (
-            <div className="py-14 text-center">
-              <p className="text-sm text-gray-400">{fmtDateKo(selectedDate)} 거래 내역이 없어요.</p>
-              <button onClick={openNewTx}
-                className="mt-3 text-sm text-yellow-700 font-medium hover:underline">
-                + 거래 추가하기
-              </button>
+          {/* 하단 합계 */}
+          {accounts.length > 0 && (
+            <div className="border-t border-gray-100 px-4 py-3 space-y-1.5 bg-gray-50">
+              <div className="flex justify-between text-sm">
+                <span className="text-gray-500">총 자산</span>
+                <span className="font-semibold text-blue-600">{fmt(totalAssets)}원</span>
+              </div>
+              {totalLiabilities > 0 && (
+                <div className="flex justify-between text-sm">
+                  <span className="text-gray-500">총 부채</span>
+                  <span className="font-semibold text-red-500">-{fmt(totalLiabilities)}원</span>
+                </div>
+              )}
+              <div className="flex justify-between text-sm border-t border-gray-200 pt-1.5">
+                <span className="font-semibold text-gray-700">순자산</span>
+                <span className={`font-bold ${totalAssets - totalLiabilities >= 0 ? 'text-green-600' : 'text-red-500'}`}>
+                  {fmt(totalAssets - totalLiabilities)}원
+                </span>
+              </div>
             </div>
           )}
-          {dayTransactions.map(t => {
-            const account = accounts.find(a => a.id === t.account_id)
-            const transferAccount = t.transfer_account_id ? accounts.find(a => a.id === t.transfer_account_id) : null
-            const isIncoming = t.type === 'income'
-            const isOutgoing = ['expense', 'interest'].includes(t.type)
-            const isMove = ['transfer', 'loan_repayment'].includes(t.type)
-
-            return (
-              <div key={t.id} className="flex items-center gap-3 px-5 py-4 hover:bg-gray-50 transition-colors group">
-                <span className={`text-xs px-2.5 py-1 rounded-full font-medium flex-shrink-0 ${TX_TYPE_COLORS[t.type]}`}>
-                  {TX_TYPE_LABELS[t.type]}
-                </span>
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-1.5 flex-wrap">
-                    <span className="text-sm font-medium text-gray-800">
-                      {account?.name ?? '-'}
-                    </span>
-                    {isMove && transferAccount && (
-                      <>
-                        <span className="text-xs text-gray-400">→</span>
-                        <span className="text-sm font-medium text-gray-800">{transferAccount.name}</span>
-                      </>
-                    )}
-                    {t.category && (
-                      <span className="text-xs text-gray-400 bg-gray-100 px-1.5 py-0.5 rounded">{t.category}</span>
-                    )}
-                  </div>
-                  {t.description && <p className="text-xs text-gray-400 mt-0.5 truncate">{t.description}</p>}
-                </div>
-                <span className={`text-base font-bold flex-shrink-0 ${isIncoming ? 'text-blue-600' : isOutgoing ? 'text-red-500' : 'text-purple-600'}`}>
-                  {isIncoming ? '+' : isOutgoing ? '-' : ''}{fmt(t.amount)}원
-                </span>
-                <div className="flex gap-1.5 opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0">
-                  <button onClick={() => openEditTx(t)} className="text-xs px-2.5 py-1 rounded bg-gray-100 text-gray-600 hover:bg-yellow-100 hover:text-yellow-800">수정</button>
-                  <button onClick={() => handleDeleteTx(t.id)} className="text-xs px-2.5 py-1 rounded bg-gray-100 text-gray-400 hover:bg-red-50 hover:text-red-500">삭제</button>
-                </div>
-              </div>
-            )
-          })}
         </div>
 
-        {/* 하단 일계 */}
-        {dayTransactions.length > 0 && (
-          <div className="px-5 py-3 border-t border-gray-100 bg-gray-50 flex gap-6 text-sm">
-            <span className="text-gray-500">수입 <span className="font-semibold text-blue-600">+{fmt(dayTransactions.filter(t => t.type === 'income').reduce((s, t) => s + t.amount, 0))}원</span></span>
-            <span className="text-gray-500">지출 <span className="font-semibold text-red-500">-{fmt(dayTransactions.filter(t => ['expense', 'interest'].includes(t.type)).reduce((s, t) => s + t.amount, 0))}원</span></span>
+        {/* ── 오른쪽: 거래 내역 ── */}
+        <div className="flex-1 min-w-0 bg-white rounded-xl border border-gray-200 overflow-hidden">
+          {/* 날짜 네비게이션 */}
+          <div className="flex items-center gap-3 px-5 py-4 border-b border-gray-100">
+            <button onClick={() => setSelectedDate(d => addDays(d, -1))}
+              className="p-1.5 rounded-lg hover:bg-gray-100 text-gray-500 transition-colors">←</button>
+            <input type="date" value={selectedDate}
+              onChange={e => setSelectedDate(e.target.value)}
+              className="flex-1 text-center text-sm font-semibold text-gray-900 border-none outline-none cursor-pointer" />
+            <button onClick={() => setSelectedDate(d => addDays(d, 1))}
+              className="p-1.5 rounded-lg hover:bg-gray-100 text-gray-500 transition-colors">→</button>
+            <button onClick={() => setSelectedDate(today())}
+              className="text-xs px-2.5 py-1.5 rounded-lg bg-gray-100 text-gray-600 hover:bg-yellow-50 hover:text-yellow-800 transition-colors">
+              오늘
+            </button>
           </div>
-        )}
+
+          {/* 거래 목록 */}
+          <div className="divide-y divide-gray-50">
+            {dayTransactions.length === 0 && (
+              <div className="py-14 text-center">
+                <p className="text-sm text-gray-400">{fmtDateKo(selectedDate)} 거래 내역이 없어요.</p>
+                <button onClick={openNewTx} className="mt-3 text-sm text-yellow-700 font-medium hover:underline">
+                  + 거래 추가하기
+                </button>
+              </div>
+            )}
+            {dayTransactions.map(t => {
+              const account = accounts.find(a => a.id === t.account_id)
+              const transferAccount = t.transfer_account_id ? accounts.find(a => a.id === t.transfer_account_id) : null
+              const isIncoming = t.type === 'income'
+              const isOutgoing = ['expense', 'interest'].includes(t.type)
+              const isMove = ['transfer', 'loan_repayment'].includes(t.type)
+
+              return (
+                <div key={t.id} className="flex items-center gap-3 px-5 py-4 hover:bg-gray-50 transition-colors group">
+                  <span className={`text-xs px-2.5 py-1 rounded-full font-medium flex-shrink-0 ${TX_TYPE_COLORS[t.type]}`}>
+                    {TX_TYPE_LABELS[t.type]}
+                  </span>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      <span className="text-sm font-medium text-gray-800">{account?.name ?? '-'}</span>
+                      {isMove && transferAccount && (
+                        <>
+                          <span className="text-xs text-gray-400">→</span>
+                          <span className="text-sm font-medium text-gray-800">{transferAccount.name}</span>
+                        </>
+                      )}
+                      {t.category && (
+                        <span className="text-xs text-gray-400 bg-gray-100 px-1.5 py-0.5 rounded">{t.category}</span>
+                      )}
+                    </div>
+                    {t.description && <p className="text-xs text-gray-400 mt-0.5 truncate">{t.description}</p>}
+                  </div>
+                  <span className={`text-base font-bold flex-shrink-0 ${isIncoming ? 'text-blue-600' : isOutgoing ? 'text-red-500' : 'text-purple-600'}`}>
+                    {isIncoming ? '+' : isOutgoing ? '-' : ''}{fmt(t.amount)}원
+                  </span>
+                  <div className="flex gap-1.5 opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0">
+                    <button onClick={() => openEditTx(t)} className="text-xs px-2.5 py-1 rounded bg-gray-100 text-gray-600 hover:bg-yellow-100 hover:text-yellow-800">수정</button>
+                    <button onClick={() => handleDeleteTx(t.id)} className="text-xs px-2.5 py-1 rounded bg-gray-100 text-gray-400 hover:bg-red-50 hover:text-red-500">삭제</button>
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+
+          {/* 하단 일계 */}
+          {dayTransactions.length > 0 && (
+            <div className="px-5 py-3 border-t border-gray-100 bg-gray-50 flex gap-6 text-sm">
+              <span className="text-gray-500">수입 <span className="font-semibold text-blue-600">+{fmt(dayTransactions.filter(t => t.type === 'income').reduce((s, t) => s + t.amount, 0))}원</span></span>
+              <span className="text-gray-500">지출 <span className="font-semibold text-red-500">-{fmt(dayTransactions.filter(t => ['expense', 'interest'].includes(t.type)).reduce((s, t) => s + t.amount, 0))}원</span></span>
+            </div>
+          )}
+        </div>
       </div>
 
       {/* ── 거래 입력 모달 ── */}
@@ -468,7 +418,6 @@ export default function CashflowClient({ accounts, transactions }: Props) {
               <button onClick={() => setShowTxModal(false)} className="text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded transition-colors text-2xl leading-none">×</button>
             </div>
             <div className="px-6 py-5 space-y-4">
-              {/* 거래 유형 */}
               <div>
                 <label className="text-xs font-medium text-gray-600 mb-1.5 block">거래 유형</label>
                 <div className="grid grid-cols-3 gap-1.5">
@@ -480,15 +429,11 @@ export default function CashflowClient({ accounts, transactions }: Props) {
                   ))}
                 </div>
               </div>
-
-              {/* 날짜 */}
               <div>
                 <label className="text-xs font-medium text-gray-600 mb-1 block">날짜</label>
                 <input type="date" value={txForm.date} onChange={e => setTxForm(f => ({ ...f, date: e.target.value }))}
                   className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-yellow-400" />
               </div>
-
-              {/* 계좌 선택 */}
               <div>
                 <label className="text-xs font-medium text-gray-600 mb-1 block">
                   {['transfer', 'loan_repayment'].includes(txForm.type) ? '출금 계좌' : '계좌'}
@@ -505,8 +450,6 @@ export default function CashflowClient({ accounts, transactions }: Props) {
                   ))}
                 </select>
               </div>
-
-              {/* 이체 대상 계좌 */}
               {['transfer', 'loan_repayment'].includes(txForm.type) && (
                 <div>
                   <label className="text-xs font-medium text-gray-600 mb-1 block">
@@ -525,8 +468,6 @@ export default function CashflowClient({ accounts, transactions }: Props) {
                   </select>
                 </div>
               )}
-
-              {/* 카테고리 */}
               {txCategories.length > 0 && (
                 <div>
                   <label className="text-xs font-medium text-gray-600 mb-1 block">카테고리</label>
@@ -537,8 +478,6 @@ export default function CashflowClient({ accounts, transactions }: Props) {
                   </select>
                 </div>
               )}
-
-              {/* 금액 */}
               <div>
                 <label className="text-xs font-medium text-gray-600 mb-1 block">금액 *</label>
                 <div className="relative">
@@ -549,16 +488,12 @@ export default function CashflowClient({ accounts, transactions }: Props) {
                   <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-gray-400">원</span>
                 </div>
               </div>
-
-              {/* 내용 */}
               <div>
                 <label className="text-xs font-medium text-gray-600 mb-1 block">내용</label>
                 <input value={txForm.description} onChange={e => setTxForm(f => ({ ...f, description: e.target.value }))}
                   placeholder="거래 내용 입력 (선택)"
                   className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-yellow-400" />
               </div>
-
-              {/* 메모 */}
               <div>
                 <label className="text-xs font-medium text-gray-600 mb-1 block">메모</label>
                 <textarea value={txForm.memo} onChange={e => setTxForm(f => ({ ...f, memo: e.target.value }))}
@@ -604,6 +539,12 @@ export default function CashflowClient({ accounts, transactions }: Props) {
                   className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-yellow-400" />
               </div>
               <div>
+                <label className="text-xs font-medium text-gray-600 mb-1 block">계좌번호</label>
+                <input value={acctForm.account_number} onChange={e => setAcctForm(f => ({ ...f, account_number: e.target.value }))}
+                  placeholder="예: 123-456-789012 (선택)"
+                  className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-yellow-400 font-mono" />
+              </div>
+              <div>
                 <label className="text-xs font-medium text-gray-600 mb-1 block">유형</label>
                 <select value={acctForm.type} onChange={e => setAcctForm(f => ({ ...f, type: e.target.value as Account['type'] }))}
                   className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-yellow-400 text-gray-700">
@@ -612,7 +553,7 @@ export default function CashflowClient({ accounts, transactions }: Props) {
               </div>
               <div>
                 <label className="text-xs font-medium text-gray-600 mb-1 block">
-                  {acctForm.type === 'loan' ? '대출 잔액 (음수로 입력)' : '초기 잔액'}
+                  {acctForm.type === 'loan' ? '대출 잔액' : '초기 잔액'}
                 </label>
                 <div className="relative">
                   <input type="text" inputMode="numeric"
@@ -658,10 +599,9 @@ export default function CashflowClient({ accounts, transactions }: Props) {
                 onChange={handleFileChange}
                 className="w-full text-sm text-gray-600 file:mr-3 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-semibold file:bg-yellow-50 file:text-yellow-800 hover:file:bg-yellow-100"
               />
-
               {uploadRows.length > 0 && (
-                <div className="bg-gray-50 rounded-xl p-4 space-y-2">
-                  <p className="text-sm font-semibold text-gray-700">파싱 결과 미리보기</p>
+                <div className="bg-gray-50 rounded-xl p-4 space-y-1.5">
+                  <p className="text-sm font-semibold text-gray-700 mb-2">파싱 결과 미리보기</p>
                   <div className="text-xs text-gray-500 space-y-1">
                     <p>전체 행: <strong className="text-gray-800">{uploadRows.length}건</strong></p>
                     <p>가져올 거래 (금액포함): <strong className="text-green-700">{uploadRows.filter(r => r.include === '포함').length}건</strong></p>
@@ -671,7 +611,6 @@ export default function CashflowClient({ accounts, transactions }: Props) {
                   </div>
                 </div>
               )}
-
               {importResult && (
                 <div className="bg-green-50 border border-green-100 rounded-xl px-4 py-3 text-sm text-green-700 font-medium">
                   ✓ {importResult}
@@ -679,12 +618,9 @@ export default function CashflowClient({ accounts, transactions }: Props) {
               )}
             </div>
             <div className="flex gap-2 px-6 py-4 border-t border-gray-100">
-              <button
-                onClick={handleImport}
-                disabled={importing || uploadRows.length === 0}
+              <button onClick={handleImport} disabled={importing || uploadRows.length === 0}
                 className="flex-1 py-2.5 rounded-xl text-sm font-semibold disabled:opacity-40 hover:opacity-80 transition-all"
-                style={{ backgroundColor: '#FFCE00', color: '#121212' }}
-              >
+                style={{ backgroundColor: '#FFCE00', color: '#121212' }}>
                 {importing ? '가져오는 중...' : `${uploadRows.filter(r => r.include === '포함').length}건 가져오기`}
               </button>
               <button onClick={() => setShowUploadModal(false)}

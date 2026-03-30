@@ -11,7 +11,7 @@ export default async function CashflowPage() {
   if (profile?.role !== 'admin') redirect('/sales')
 
   const [{ data: accounts }, { data: transactions }] = await Promise.all([
-    supabase.from('financial_accounts').select('*').eq('is_active', true).order('business_entity').order('created_at'),
+    supabase.from('financial_accounts').select('id, business_entity, name, account_number, type, initial_balance, is_active').eq('is_active', true).order('business_entity').order('created_at'),
     supabase.from('cashflow').select('*').order('date', { ascending: false }).order('created_at', { ascending: false }),
   ])
 

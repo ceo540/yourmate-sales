@@ -8,6 +8,7 @@ export async function upsertAccount(data: {
   id?: string
   business_entity: string
   name: string
+  account_number?: string | null
   type: 'checking' | 'savings' | 'loan' | 'cash'
   initial_balance: number
 }) {
