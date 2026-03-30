@@ -79,7 +79,7 @@ function ItemRow({ item, revenue, isRateItem, onEdit, onDelete, onTogglePaid }: 
       )}
 
       <button onClick={onDelete}
-        className="text-gray-200 hover:text-red-400 text-xs opacity-0 group-hover:opacity-100 transition-all flex-shrink-0"
+        className="text-gray-300 hover:text-red-400 hover:bg-red-50 rounded w-6 h-6 flex items-center justify-center text-base flex-shrink-0 transition-all opacity-0 group-hover:opacity-100"
       >×</button>
     </div>
   )
@@ -90,10 +90,11 @@ function EditRow({ item, revenue, isRateItem, onSave, onCancel }: {
   item: CostItem
   revenue: number
   isRateItem: boolean
-  onSave: (vals: { amount: number; unit_price: number|null; quantity: number|null; unit: string|null }) => void
+  onSave: (vals: { item: string; amount: number; unit_price: number|null; quantity: number|null; unit: string|null }) => void
   onCancel: () => void
 }) {
   const hasBreakdown = !!(item.unit_price && item.quantity)
+  const [itemName, setItemName] = useState(item.item)
   const [mode, setMode] = useState<'breakdown' | 'amount' | 'rate'>(
     hasBreakdown ? 'breakdown' : isRateItem && revenue > 0 ? 'rate' : 'amount'
   )
@@ -111,8 +112,9 @@ function EditRow({ item, revenue, isRateItem, onSave, onCancel }: {
     const finalAmount = mode === 'breakdown' ? (calcAmount(unitPrice, quantity) ?? 0)
       : mode === 'rate' ? (previewAmount ?? 0)
       : Number(amount)
-    if (!finalAmount) return
+    if (!finalAmount || !itemName.trim()) return
     onSave({
+      item: itemName.trim(),
       amount: finalAmount,
       unit_price: mode === 'breakdown' ? Number(unitPrice) || null : null,
       quantity: mode === 'breakdown' ? Number(quantity) || null : null,
@@ -123,7 +125,12 @@ function EditRow({ item, revenue, isRateItem, onSave, onCancel }: {
   return (
     <div className="bg-white border border-yellow-300 rounded-xl px-3 py-2.5 space-y-2 my-1">
       <div className="flex items-center gap-1.5">
-        <span className="text-sm font-medium text-gray-700 flex-1">{item.item}</span>
+        <input
+          value={itemName}
+          onChange={e => setItemName(e.target.value)}
+          className="text-sm font-medium text-gray-700 flex-1 border-b border-gray-200 focus:outline-none focus:border-yellow-400 bg-transparent pb-0.5"
+          placeholder="항목명"
+        />
         {/* 모드 선택 */}
         <div className="flex rounded overflow-hidden border border-gray-200 text-xs">
           <button type="button" onClick={() => setMode('breakdown')}
@@ -311,7 +318,7 @@ export default function CostInlineEditor({ saleId, revenue, initialItems, vendor
   }
 
   // 항목 수정 저장
-  const handleEditSave = async (id: string, vals: { amount: number; unit_price: number|null; quantity: number|null; unit: string|null }) => {
+  const handleEditSave = async (id: string, vals: { item: string; amount: number; unit_price: number|null; quantity: number|null; unit: string|null }) => {
     const supabase = createClient()
     await supabase.from('sale_costs').update(vals).eq('id', id)
     update(items.map(i => i.id === id ? { ...i, ...vals } : i))
