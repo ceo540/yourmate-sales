@@ -1,4 +1,5 @@
 import { createClient } from '@/lib/supabase/server'
+import { createAdminClient } from '@/lib/supabase/admin'
 import { redirect } from 'next/navigation'
 import CashflowClient from './CashflowClient'
 
@@ -10,9 +11,10 @@ export default async function CashflowPage() {
   const { data: profile } = await supabase.from('profiles').select('role').eq('id', user.id).single()
   if (profile?.role !== 'admin') redirect('/sales')
 
+  const admin = createAdminClient()
   const [{ data: accounts }, { data: transactions }] = await Promise.all([
-    supabase.from('financial_accounts').select('id, business_entity, name, account_number, type, initial_balance, is_active').eq('is_active', true).order('business_entity').order('created_at'),
-    supabase.from('cashflow').select('*').order('date', { ascending: false }).order('created_at', { ascending: false }),
+    admin.from('financial_accounts').select('id, business_entity, name, account_number, type, initial_balance, is_active').eq('is_active', true).order('business_entity').order('created_at'),
+    admin.from('cashflow').select('*').order('date', { ascending: false }).order('created_at', { ascending: false }),
   ])
 
   return (

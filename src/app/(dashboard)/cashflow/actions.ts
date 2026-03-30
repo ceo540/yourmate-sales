@@ -1,6 +1,6 @@
 'use server'
 
-import { createClient } from '@/lib/supabase/server'
+import { createAdminClient } from '@/lib/supabase/admin'
 import { revalidatePath } from 'next/cache'
 
 // ── 계좌 관리 ──────────────────────────────
@@ -12,7 +12,7 @@ export async function upsertAccount(data: {
   type: 'checking' | 'savings' | 'loan' | 'cash'
   initial_balance: number
 }) {
-  const supabase = await createClient()
+  const supabase = createAdminClient()
   if (data.id) {
     const { id, ...rest } = data
     await supabase.from('financial_accounts').update(rest).eq('id', id)
@@ -23,7 +23,7 @@ export async function upsertAccount(data: {
 }
 
 export async function deleteAccount(id: string) {
-  const supabase = await createClient()
+  const supabase = createAdminClient()
   await supabase.from('financial_accounts').delete().eq('id', id)
   revalidatePath('/cashflow')
 }
@@ -40,7 +40,7 @@ export async function upsertTransaction(data: {
   description?: string | null
   memo?: string | null
 }) {
-  const supabase = await createClient()
+  const supabase = createAdminClient()
   if (data.id) {
     const { id, ...rest } = data
     await supabase.from('cashflow').update(rest).eq('id', id)
@@ -51,7 +51,7 @@ export async function upsertTransaction(data: {
 }
 
 export async function deleteTransaction(id: string) {
-  const supabase = await createClient()
+  const supabase = createAdminClient()
   await supabase.from('cashflow').delete().eq('id', id)
   revalidatePath('/cashflow')
 }
@@ -73,7 +73,7 @@ interface GranterRow {
 }
 
 export async function importGranterTransactions(rows: GranterRow[]) {
-  const supabase = await createClient()
+  const supabase = createAdminClient()
 
   // 기존 계좌 조회
   const { data: existingAccounts } = await supabase.from('financial_accounts').select('*')
