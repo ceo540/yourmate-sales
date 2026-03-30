@@ -285,10 +285,15 @@ export default function PayrollClient({ payroll, profiles, businessEntities, bon
         { label: '총 실수령액', value: total - tax, color: 'text-green-600' },
       ]
     }
+    // 직원 카드 탭
+    const activeCards = cards.filter(c => c.is_active)
+    const totalBaseSalary = activeCards.reduce((s, c) => s + c.base_salary, 0)
+    const totalMonthly = activeCards.reduce((s, c) =>
+      s + c.base_salary + c.meal_allowance + c.mileage_allowance + c.allowances + c.fixed_bonus, 0)
     return [
-      { label: '', value: 0, color: '' },
-      { label: '', value: 0, color: '' },
-      { label: '', value: 0, color: '' },
+      { label: '재직 인원', value: activeCards.length, color: 'text-gray-900' },
+      { label: '월 기본급 합계', value: totalBaseSalary, color: 'text-gray-900' },
+      { label: '월 총 고정 인건비', value: totalMonthly, color: 'text-yellow-700' },
     ]
   })()
 
