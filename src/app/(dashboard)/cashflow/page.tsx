@@ -13,7 +13,7 @@ export default async function CashflowPage() {
 
   const admin = createAdminClient()
   const [{ data: accounts }, { data: transactions }] = await Promise.all([
-    admin.from('financial_accounts').select('id, business_entity, name, account_number, type, initial_balance, is_active').eq('is_active', true).order('business_entity').order('created_at'),
+    admin.from('financial_accounts').select('id, business_entity, name, account_number, type, initial_balance, is_active').order('business_entity').order('created_at'),
     admin.from('cashflow').select('*').order('date', { ascending: false }).order('created_at', { ascending: false }),
   ])
 
