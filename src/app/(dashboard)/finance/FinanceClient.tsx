@@ -8,7 +8,7 @@ interface Sale {
   revenue: number | null
   payment_status: string | null
   inflow_date: string | null
-  entity: { id: string; name: string } | null
+  entity: { id: string; name: string }[] | null
   sale_costs: SaleCost[]
 }
 interface FixedCost {
@@ -55,7 +55,7 @@ export default function FinanceClient({ sales, fixedCosts, payroll, year }: Prop
 
   const entities = useMemo(() => {
     const set = new Set<string>()
-    sales.forEach(s => { if (s.entity?.name) set.add(s.entity.name) })
+    sales.forEach(s => { if (s.entity?.[0]?.name) set.add(s.entity[0].name) })
     return Array.from(set).sort()
   }, [sales])
 
@@ -65,7 +65,7 @@ export default function FinanceClient({ sales, fixedCosts, payroll, year }: Prop
       const mStr = `${year}-${String(m).padStart(2, '0')}`
       const mSales = sales.filter(s =>
         s.inflow_date?.startsWith(mStr) &&
-        (filterEntity === 'all' || s.entity?.name === filterEntity)
+        (filterEntity === 'all' || s.entity?.[0]?.name === filterEntity)
       )
       const revenue = mSales.reduce((s, r) => s + (r.revenue ?? 0), 0)
       const costItems = mSales.reduce((s, r) => s + r.sale_costs.reduce((cs, c) => cs + c.amount, 0), 0)
@@ -94,7 +94,7 @@ export default function FinanceClient({ sales, fixedCosts, payroll, year }: Prop
     const mStr = `${year}-${String(selectedMonth).padStart(2, '0')}`
     return sales.filter(s =>
       s.inflow_date?.startsWith(mStr) &&
-      (filterEntity === 'all' || s.entity?.name === filterEntity)
+      (filterEntity === 'all' || s.entity?.[0]?.name === filterEntity)
     )
   }, [sales, selectedMonth, year, filterEntity])
 
@@ -106,13 +106,13 @@ export default function FinanceClient({ sales, fixedCosts, payroll, year }: Prop
   // 미수금 (완납 아닌 것, 매출 있는 것)
   const receivables = sales.filter(s =>
     s.payment_status && s.payment_status !== '완납' && s.payment_status !== '계약전' && (s.revenue ?? 0) > 0 &&
-    (filterEntity === 'all' || s.entity?.name === filterEntity)
+    (filterEntity === 'all' || s.entity?.[0]?.name === filterEntity)
   )
   const totalReceivables = receivables.reduce((s, r) => s + (r.revenue ?? 0), 0)
 
   // 미지급 원가
   const unpaidCosts = sales
-    .filter(s => filterEntity === 'all' || s.entity?.name === filterEntity)
+    .filter(s => filterEntity === 'all' || s.entity?.[0]?.name === filterEntity)
     .flatMap(s => s.sale_costs.filter(c => !c.is_paid && c.category === '외부원가'))
   const totalUnpaid = unpaidCosts.reduce((s, c) => s + c.amount, 0)
 
@@ -280,7 +280,7 @@ export default function FinanceClient({ sales, fixedCosts, payroll, year }: Prop
                   <div key={s.id} className="flex items-center gap-3 px-5 py-2.5">
                     <div className="flex-1 min-w-0">
                       <p className="text-sm text-gray-800 truncate">{s.name}</p>
-                      <p className="text-xs text-gray-400">{s.entity?.name ?? '-'}</p>
+                      <p className="text-xs text-gray-400">{s.entity?.[0]?.name ?? '-'}</p>
                     </div>
                     <div className="text-right text-xs flex-shrink-0 space-y-0.5">
                       <p className="font-semibold text-gray-700">{fmt(s.revenue ?? 0)}원</p>
