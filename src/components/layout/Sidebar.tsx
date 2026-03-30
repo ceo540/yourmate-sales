@@ -131,7 +131,7 @@ export default function Sidebar() {
       {/* 유저 정보 + 로그아웃 */}
       <div className="px-3 py-4 border-t border-gray-100 space-y-1">
         {userName && (
-          <Link href="/profile" className="flex items-center gap-2 px-3 py-2 rounded-lg hover:bg-gray-50 transition-colors">
+          <div className="flex items-center gap-2 px-3 py-2">
             <div className="w-7 h-7 rounded-full bg-gray-100 flex items-center justify-center flex-shrink-0">
               <span className="text-xs font-semibold text-gray-600">{userName[0]}</span>
             </div>
@@ -141,8 +141,14 @@ export default function Sidebar() {
                 {ROLE_LABELS[userRole] ?? '팀원'}
               </span>
             </div>
-          </Link>
+          </div>
         )}
+        <Link href="/profile"
+          className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm text-gray-500 hover:text-gray-900 hover:bg-gray-50 w-full transition-colors"
+        >
+          <span className="text-base">🔑</span>
+          <span>비밀번호 변경</span>
+        </Link>
         <button
           onClick={handleLogout}
           className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm text-gray-500 hover:text-gray-900 hover:bg-gray-50 w-full transition-colors"
@@ -241,7 +247,7 @@ export default function Sidebar() {
             </nav>
             <div className="px-3 py-4 border-t border-gray-100 space-y-1">
               {userName && (
-                <Link href="/profile" className="flex items-center gap-2 px-3 py-2 rounded-lg hover:bg-gray-50 transition-colors">
+                <div className="flex items-center gap-2 px-3 py-2">
                   <div className="w-7 h-7 rounded-full bg-gray-100 flex items-center justify-center flex-shrink-0">
                     <span className="text-xs font-semibold text-gray-600">{userName[0]}</span>
                   </div>
@@ -251,8 +257,14 @@ export default function Sidebar() {
                       {ROLE_LABELS[userRole] ?? '팀원'}
                     </span>
                   </div>
-                </Link>
+                </div>
               )}
+              <Link href="/profile"
+                className="flex items-center gap-3 px-3 py-3 rounded-lg text-sm text-gray-500 hover:text-gray-900 hover:bg-gray-50 w-full transition-colors"
+              >
+                <span className="text-base">🔑</span>
+                <span>비밀번호 변경</span>
+              </Link>
               <button
                 onClick={handleLogout}
                 className="flex items-center gap-3 px-3 py-3 rounded-lg text-sm text-gray-500 hover:text-gray-900 hover:bg-gray-50 w-full transition-colors"

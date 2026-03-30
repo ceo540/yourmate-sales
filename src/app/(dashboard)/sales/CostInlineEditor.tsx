@@ -128,7 +128,7 @@ function EditRow({ item, revenue, isRateItem, onSave, onCancel }: {
         <input
           value={itemName}
           onChange={e => setItemName(e.target.value)}
-          className="text-sm font-medium text-gray-700 flex-1 border-b border-gray-200 focus:outline-none focus:border-yellow-400 bg-transparent pb-0.5"
+          className="text-sm font-medium text-gray-700 flex-1 px-2 py-1 border border-gray-200 rounded-lg focus:outline-none focus:border-yellow-400 bg-white"
           placeholder="항목명"
         />
         {/* 모드 선택 */}
