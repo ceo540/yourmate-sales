@@ -1,5 +1,6 @@
 import Link from 'next/link'
 import { createVendor } from '../actions'
+import SubmitButton from '@/components/ui/SubmitButton'
 
 export default function NewVendorPage() {
   return (
@@ -34,6 +35,14 @@ export default function NewVendorPage() {
             <input name="phone" placeholder="010-0000-0000" className="w-full px-4 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-yellow-400" />
           </div>
           <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1.5">이메일</label>
+            <input name="email" type="email" placeholder="example@email.com" className="w-full px-4 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-yellow-400" />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1.5">주민등록번호 / 사업자번호</label>
+            <input name="id_number" placeholder="000000-0000000 또는 000-00-00000" className="w-full px-4 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-yellow-400 font-mono" />
+          </div>
+          <div>
             <label className="block text-sm font-medium text-gray-700 mb-1.5">계좌정보</label>
             <input name="bank_info" placeholder="국민은행 123456-78-901234 홍길동" className="w-full px-4 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-yellow-400" />
           </div>
@@ -42,7 +51,7 @@ export default function NewVendorPage() {
             <textarea name="memo" rows={2} placeholder="특이사항, 단가 등" className="w-full px-4 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-yellow-400 resize-none" />
           </div>
           <div className="flex gap-3 pt-2">
-            <button type="submit" className="flex-1 py-2.5 rounded-lg text-sm font-semibold" style={{ backgroundColor: '#FFCE00', color: '#121212' }}>등록</button>
+            <SubmitButton label="등록" loadingLabel="등록 중..." fullWidth />
             <Link href="/vendors" className="px-6 py-2.5 rounded-lg text-sm font-medium bg-gray-100 text-gray-600 hover:bg-gray-200 transition-colors">취소</Link>
           </div>
         </form>

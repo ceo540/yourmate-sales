@@ -65,6 +65,12 @@ export default function VendorList({ vendors }: { vendors: Vendor[] }) {
                     <td className="px-4 py-3.5">
                       <div className="flex gap-1.5">
                         <Link
+                          href={`/vendors/${v.id}/ledger`}
+                          className="text-xs px-2.5 py-1 rounded bg-yellow-50 text-yellow-700 hover:bg-yellow-100 transition-colors font-medium"
+                        >
+                          정산
+                        </Link>
+                        <Link
                           href={`/vendors/${v.id}`}
                           className="text-xs px-2.5 py-1 rounded bg-gray-100 text-gray-600 hover:bg-yellow-100 hover:text-yellow-800 transition-colors"
                         >

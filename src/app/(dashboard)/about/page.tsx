@@ -1,0 +1,140 @@
+import Link from 'next/link'
+
+const features = [
+  {
+    icon: '🏠',
+    title: '대시보드',
+    href: '/dashboard',
+    description: '이번 달 매출·원가·이익 요약, 미수금 현황, 최근 계약 건을 한눈에 확인합니다.',
+  },
+  {
+    icon: '💰',
+    title: '매출 현황',
+    href: '/sales',
+    description: '연도·분기·사업부별 매출 통계와 사업부별 이익률을 확인합니다.',
+  },
+  {
+    icon: '📄',
+    title: '매출 보고서',
+    href: '/sales/report',
+    description: '전체 계약 건 목록, 원가 입력, 수금상태 관리, 일괄 변경을 처리합니다.',
+  },
+  {
+    icon: '🔔',
+    title: '미수금 현황',
+    href: '/receivables',
+    description: '아직 완납되지 않은 계약 건을 수금상태별로 필터링하고 추적합니다.',
+  },
+  {
+    icon: '🏢',
+    title: '거래처 DB',
+    href: '/vendors',
+    description: '협력사·광고주 등 거래처 정보를 관리하고 거래 원장을 확인합니다.',
+  },
+  {
+    icon: '📋',
+    title: '지급 관리',
+    href: '/payments',
+    description: '외주비·협력사 비용 등 지급 내역을 기록하고 처리 상태를 관리합니다.',
+  },
+  {
+    icon: '💼',
+    title: '인건비 관리',
+    href: '/payroll',
+    description: '직원 카드 기반 월 급여 생성, 4대보험 자동 계산, 프리랜서 원천징수, 상여 세부내역을 관리합니다. (관리자 전용)',
+    adminOnly: true,
+  },
+  {
+    icon: '🔒',
+    title: '고정비 관리',
+    href: '/fixed-costs',
+    description: '임대료·통신비·구독료 등 매달 발생하는 고정 지출을 등록하고 연간 총액을 파악합니다. (관리자 전용)',
+    adminOnly: true,
+  },
+  {
+    icon: '📊',
+    title: '자금일보',
+    href: '/cashflow',
+    description: '일별 자금 흐름을 기록하고 잔액을 모니터링합니다. (관리자 전용)',
+    adminOnly: true,
+  },
+  {
+    icon: '⚙️',
+    title: '팀원 관리',
+    href: '/admin',
+    description: '팀원 계정 초대, 권한(관리자·팀장·팀원) 설정, 사업부 배정을 처리합니다. (관리자 전용)',
+    adminOnly: true,
+  },
+]
+
+export default function AboutPage() {
+  return (
+    <div className="max-w-4xl mx-auto">
+      <div className="mb-8">
+        <h1 className="text-2xl font-bold text-gray-900">시스템 소개</h1>
+        <p className="text-gray-500 text-sm mt-1">유어메이트 운영 시스템 기능 안내</p>
+      </div>
+
+      {/* 소개 카드 */}
+      <div className="bg-white rounded-2xl border border-gray-200 p-6 md:p-8 mb-8">
+        <div className="flex items-center gap-3 mb-4">
+          <div className="w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0" style={{ backgroundColor: '#FFCE00' }}>
+            <span className="text-lg font-black" style={{ color: '#121212' }}>Y</span>
+          </div>
+          <div>
+            <p className="font-bold text-gray-900">유어메이트 운영 시스템</p>
+            <p className="text-xs text-gray-400">Yourmate Operations System</p>
+          </div>
+        </div>
+        <p className="text-sm text-gray-600 leading-relaxed">
+          매출 현황, 미수금, 인건비, 고정비, 자금흐름을 하나의 플랫폼에서 관리하는 유어메이트 전용 사내 운영 도구입니다.
+          구글 시트에서 관리하던 급여·매출 데이터를 통합하고, 팀원별 권한에 따라 필요한 정보만 접근할 수 있습니다.
+        </p>
+        <div className="mt-4 flex flex-wrap gap-2">
+          <span className="text-xs px-2.5 py-1 bg-yellow-50 text-yellow-700 rounded-full border border-yellow-100">Next.js 16</span>
+          <span className="text-xs px-2.5 py-1 bg-blue-50 text-blue-600 rounded-full border border-blue-100">Supabase</span>
+          <span className="text-xs px-2.5 py-1 bg-gray-100 text-gray-600 rounded-full">Vercel 배포</span>
+          <span className="text-xs px-2.5 py-1 bg-green-50 text-green-600 rounded-full border border-green-100">역할별 접근제어</span>
+        </div>
+      </div>
+
+      {/* 기능 목록 */}
+      <h2 className="text-sm font-semibold text-gray-700 mb-3">주요 기능</h2>
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+        {features.map(f => (
+          <Link
+            key={f.href}
+            href={f.href}
+            className="bg-white rounded-xl border border-gray-200 p-5 hover:border-yellow-300 hover:shadow-sm transition-all group"
+          >
+            <div className="flex items-center gap-2.5 mb-2">
+              <span className="text-xl">{f.icon}</span>
+              <span className="font-semibold text-gray-900 group-hover:text-yellow-700 transition-colors">{f.title}</span>
+              {f.adminOnly && (
+                <span className="text-xs px-1.5 py-0.5 bg-yellow-50 text-yellow-700 rounded font-medium ml-auto">관리자</span>
+              )}
+            </div>
+            <p className="text-xs text-gray-500 leading-relaxed">{f.description}</p>
+          </Link>
+        ))}
+      </div>
+
+      {/* 권한 안내 */}
+      <div className="mt-8 bg-gray-50 rounded-xl border border-gray-200 p-5">
+        <p className="text-sm font-semibold text-gray-700 mb-3">권한 체계</p>
+        <div className="space-y-2">
+          {[
+            { role: '관리자', color: 'bg-yellow-100 text-yellow-800', desc: '모든 기능 접근 가능. 인건비·고정비·자금일보·팀원 관리 포함.' },
+            { role: '팀장', color: 'bg-blue-100 text-blue-700', desc: '매출 통계, 보고서, 미수금, 거래처, 지급 관리 접근 가능.' },
+            { role: '팀원', color: 'bg-gray-100 text-gray-500', desc: '자신이 담당하거나 소속 사업부의 매출 건만 조회 가능.' },
+          ].map(r => (
+            <div key={r.role} className="flex items-start gap-3">
+              <span className={`text-xs px-2 py-0.5 rounded font-medium flex-shrink-0 mt-0.5 ${r.color}`}>{r.role}</span>
+              <p className="text-xs text-gray-500">{r.desc}</p>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  )
+}

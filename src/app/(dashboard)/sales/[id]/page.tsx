@@ -3,27 +3,36 @@ import { notFound } from 'next/navigation'
 import Link from 'next/link'
 import { DEPARTMENT_LABELS } from '@/types'
 import { updateSale } from '../actions'
+import SubmitButton from '@/components/ui/SubmitButton'
+
+interface BusinessEntity { id: string; name: string }
 
 const PAYMENT_STATUSES = ['계약전', '계약완료', '선금수령', '중도금수령', '완납'] as const
 
-export default async function EditSalePage({ params }: { params: Promise<{ id: string }> }) {
+export default async function EditSalePage({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<{ from?: string }> }) {
   const { id } = await params
+  const { from } = await searchParams
   const supabase = await createClient()
 
   const { data: sale } = await supabase
     .from('sales')
-    .select('*, assignee:profiles(id, name)')
+    .select('*, assignee:profiles(id, name), entity:business_entities(id, name)')
     .eq('id', id)
     .single()
 
   if (!sale) notFound()
 
-  const { data: profiles } = await supabase.from('profiles').select('id, name').order('name')
+  const [{ data: profiles }, { data: entities }] = await Promise.all([
+    supabase.from('profiles').select('id, name').order('name'),
+    supabase.from('business_entities').select('id, name').order('name'),
+  ])
 
   return (
     <div className="max-w-2xl mx-auto">
       <div className="flex items-center gap-3 mb-8">
-        <Link href="/sales" className="text-gray-400 hover:text-gray-600 text-sm">← 매출 관리</Link>
+        <Link href={from ?? '/sales/report'} className="text-gray-400 hover:text-gray-600 text-sm">
+          ← {from === '/sales' ? '매출 현황' : '매출 보고서'}
+        </Link>
         <span className="text-gray-300">/</span>
         <span className="text-sm text-gray-600 font-medium">{sale.name}</span>
       </div>
@@ -33,6 +42,7 @@ export default async function EditSalePage({ params }: { params: Promise<{ id: s
 
         <form action={updateSale} className="space-y-5">
           <input type="hidden" name="id" value={sale.id} />
+          <input type="hidden" name="from" value={from ?? '/sales/report'} />
 
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1.5">건명 *</label>
@@ -71,6 +81,36 @@ export default async function EditSalePage({ params }: { params: Promise<{ id: s
                 ))}
               </select>
             </div>
+          </div>
+
+          {(entities ?? []).length > 0 && (
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1.5">계약 사업자</label>
+              <select
+                name="entity_id"
+                defaultValue={(sale.entity as any)?.id ?? ''}
+                className="w-full px-4 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-yellow-400 bg-white"
+              >
+                <option value="">선택 안함</option>
+                {(entities as BusinessEntity[]).map(e => (
+                  <option key={e.id} value={e.id}>{e.name}</option>
+                ))}
+              </select>
+            </div>
+          )}
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1.5">계약 방법</label>
+            <select
+              name="contract_type"
+              defaultValue={sale.contract_type ?? ''}
+              className="w-full px-4 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-yellow-400 bg-white"
+            >
+              <option value="">선택 안함</option>
+              {['나라장터', '세금계산서', '카드결제', '기타'].map(t => (
+                <option key={t} value={t}>{t}</option>
+              ))}
+            </select>
           </div>
 
           <div>
@@ -152,13 +192,7 @@ export default async function EditSalePage({ params }: { params: Promise<{ id: s
           </div>
 
           <div className="flex gap-3 pt-2">
-            <button
-              type="submit"
-              className="flex-1 py-2.5 rounded-lg text-sm font-semibold"
-              style={{ backgroundColor: '#FFCE00', color: '#121212' }}
-            >
-              저장
-            </button>
+            <SubmitButton label="저장" loadingLabel="저장 중..." fullWidth />
             <Link
               href="/sales"
               className="px-6 py-2.5 rounded-lg text-sm font-medium bg-gray-100 text-gray-600 hover:bg-gray-200 transition-colors"

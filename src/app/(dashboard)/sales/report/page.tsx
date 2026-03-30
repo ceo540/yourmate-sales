@@ -1,15 +1,16 @@
 import { createClient } from '@/lib/supabase/server'
 import Link from 'next/link'
-import SalesClient from './SalesClient'
+import SalesReportClient from './SalesReportClient'
 
-export default async function SalesPage() {
+export default async function SalesReportPage() {
   const supabase = await createClient()
 
   const { data: { user } } = await supabase.auth.getUser()
-  const [{ data: profile }, { data: vendors }, { data: entities }] = await Promise.all([
+  const [{ data: profile }, { data: vendors }, { data: entities }, { data: profiles }] = await Promise.all([
     supabase.from('profiles').select('id, role, departments').eq('id', user!.id).single(),
     supabase.from('vendors').select('id, name, type').order('name'),
-    supabase.from('business_entities').select('id, name, business_number').order('name'),
+    supabase.from('business_entities').select('id, name').order('name'),
+    supabase.from('profiles').select('id, name').order('name'),
   ])
 
   const isAdmin = profile?.role === 'admin' || profile?.role === 'manager'
@@ -34,8 +35,8 @@ export default async function SalesPage() {
     <div className="max-w-7xl mx-auto">
       <div className="flex items-center justify-between mb-6">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">매출 관리</h1>
-          <p className="text-gray-500 text-sm mt-1">전사 매출 · 원가 · 수익 현황</p>
+          <h1 className="text-2xl font-bold text-gray-900">매출 보고서</h1>
+          <p className="text-gray-500 text-sm mt-1">전체 계약 건 목록 및 원가 관리</p>
         </div>
         <Link
           href="/sales/new"
@@ -45,7 +46,7 @@ export default async function SalesPage() {
           + 새 매출 건
         </Link>
       </div>
-      <SalesClient sales={sales ?? []} vendors={vendors ?? []} entities={entities ?? []} isAdmin={isAdmin} />
+      <SalesReportClient sales={sales ?? []} vendors={vendors ?? []} entities={entities ?? []} profiles={profiles ?? []} isAdmin={isAdmin} />
     </div>
   )
 }

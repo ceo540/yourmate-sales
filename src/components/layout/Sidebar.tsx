@@ -7,23 +7,41 @@ import { useRouter } from 'next/navigation'
 import { useEffect, useState } from 'react'
 
 const nav = [
+  { href: '/dashboard', label: '대시보드', icon: '🏠' },
   { href: '/sales', label: '매출 현황', icon: '💰' },
+  { href: '/sales/report', label: '매출 보고서', icon: '📄' },
+  { href: '/receivables', label: '미수금 현황', icon: '🔔' },
   { href: '/vendors', label: '거래처 DB', icon: '🏢' },
   { href: '/payments', label: '지급 관리', icon: '📋' },
 ]
+
+const ROLE_LABELS: Record<string, string> = {
+  admin: '관리자', manager: '팀장', member: '팀원',
+}
+const ROLE_COLORS: Record<string, string> = {
+  admin: 'bg-yellow-100 text-yellow-800',
+  manager: 'bg-blue-100 text-blue-700',
+  member: 'bg-gray-100 text-gray-500',
+}
 
 export default function Sidebar() {
   const pathname = usePathname()
   const router = useRouter()
   const [isAdmin, setIsAdmin] = useState(false)
+  const [userName, setUserName] = useState('')
+  const [userRole, setUserRole] = useState('')
   const [mobileOpen, setMobileOpen] = useState(false)
 
   useEffect(() => {
     const supabase = createClient()
     supabase.auth.getUser().then(({ data: { user } }) => {
       if (!user) return
-      supabase.from('profiles').select('role').eq('id', user.id).single()
-        .then(({ data }) => { if (data?.role === 'admin') setIsAdmin(true) })
+      supabase.from('profiles').select('role, name').eq('id', user.id).single()
+        .then(({ data }) => {
+          if (data?.role === 'admin') setIsAdmin(true)
+          setUserName(data?.name ?? '')
+          setUserRole(data?.role ?? 'member')
+        })
     })
   }, [])
 
@@ -55,7 +73,8 @@ export default function Sidebar() {
       {/* 네비게이션 */}
       <nav className="flex-1 px-3 py-4 space-y-0.5 overflow-y-auto">
         {nav.map((item) => {
-          const isActive = pathname === item.href || pathname.startsWith(item.href + '/')
+          const isActive = pathname === item.href ||
+            (pathname.startsWith(item.href + '/') && !nav.some(o => o.href !== item.href && pathname.startsWith(o.href)))
           return (
             <Link
               key={item.href}
@@ -73,22 +92,57 @@ export default function Sidebar() {
         {isAdmin && (
           <>
             <div className="border-t border-gray-100 my-2" />
-            <Link
-              href="/admin"
-              className={`flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-colors ${
-                pathname.startsWith('/admin') ? 'font-semibold text-gray-900' : 'text-gray-500 hover:text-gray-900 hover:bg-gray-50'
-              }`}
-              style={pathname.startsWith('/admin') ? { backgroundColor: '#FFCE00' } : {}}
-            >
-              <span className="text-base">⚙️</span>
-              <span>팀원 관리</span>
-            </Link>
+            {[
+              { href: '/payroll', label: '인건비 관리', icon: '💼' },
+              { href: '/fixed-costs', label: '고정비 관리', icon: '🔒' },
+              { href: '/cashflow', label: '자금일보', icon: '📊' },
+              { href: '/admin', label: '팀원 관리', icon: '⚙️' },
+            ].map(item => (
+              <Link
+                key={item.href}
+                href={item.href}
+                className={`flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-colors ${
+                  pathname.startsWith(item.href) ? 'font-semibold text-gray-900' : 'text-gray-500 hover:text-gray-900 hover:bg-gray-50'
+                }`}
+                style={pathname.startsWith(item.href) ? { backgroundColor: '#FFCE00' } : {}}
+              >
+                <span className="text-base">{item.icon}</span>
+                <span>{item.label}</span>
+              </Link>
+            ))}
           </>
         )}
       </nav>
 
-      {/* 로그아웃 */}
-      <div className="px-3 py-4 border-t border-gray-100">
+      {/* 소개 */}
+      <div className="px-3 pb-2">
+        <Link
+          href="/about"
+          className={`flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-colors ${
+            pathname === '/about' ? 'font-semibold text-gray-900' : 'text-gray-400 hover:text-gray-700 hover:bg-gray-50'
+          }`}
+          style={pathname === '/about' ? { backgroundColor: '#FFCE00' } : {}}
+        >
+          <span className="text-base">❓</span>
+          <span>시스템 소개</span>
+        </Link>
+      </div>
+
+      {/* 유저 정보 + 로그아웃 */}
+      <div className="px-3 py-4 border-t border-gray-100 space-y-1">
+        {userName && (
+          <Link href="/profile" className="flex items-center gap-2 px-3 py-2 rounded-lg hover:bg-gray-50 transition-colors">
+            <div className="w-7 h-7 rounded-full bg-gray-100 flex items-center justify-center flex-shrink-0">
+              <span className="text-xs font-semibold text-gray-600">{userName[0]}</span>
+            </div>
+            <div className="flex-1 min-w-0">
+              <p className="text-sm font-medium text-gray-800 truncate">{userName}</p>
+              <span className={`text-xs px-1.5 py-0.5 rounded font-medium ${ROLE_COLORS[userRole] ?? ROLE_COLORS.member}`}>
+                {ROLE_LABELS[userRole] ?? '팀원'}
+              </span>
+            </div>
+          </Link>
+        )}
         <button
           onClick={handleLogout}
           className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm text-gray-500 hover:text-gray-900 hover:bg-gray-50 w-full transition-colors"
@@ -142,17 +196,18 @@ export default function Sidebar() {
                 </div>
                 <span className="text-sm font-bold text-gray-900">유어메이트</span>
               </div>
-              <button onClick={() => setMobileOpen(false)} className="text-gray-400 hover:text-gray-600 text-xl">×</button>
+              <button onClick={() => setMobileOpen(false)} className="text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded transition-colors text-xl">×</button>
             </div>
             <nav className="flex-1 px-3 py-4 space-y-0.5">
               {nav.map((item) => {
-                const isActive = pathname === item.href || pathname.startsWith(item.href + '/')
+                const isActive = pathname === item.href ||
+                  (pathname.startsWith(item.href + '/') && !nav.some(o => o.href !== item.href && pathname.startsWith(o.href)))
                 return (
                   <Link
                     key={item.href}
                     href={item.href}
                     className={`flex items-center gap-3 px-3 py-3 rounded-lg text-sm transition-colors ${
-                      isActive ? 'font-semibold text-gray-900' : 'text-gray-500'
+                      isActive ? 'font-semibold text-gray-900' : 'text-gray-500 hover:text-gray-900 hover:bg-gray-50'
                     }`}
                     style={isActive ? { backgroundColor: '#FFCE00' } : {}}
                   >
@@ -164,23 +219,43 @@ export default function Sidebar() {
               {isAdmin && (
                 <>
                   <div className="border-t border-gray-100 my-2" />
-                  <Link
-                    href="/admin"
-                    className={`flex items-center gap-3 px-3 py-3 rounded-lg text-sm transition-colors ${
-                      pathname.startsWith('/admin') ? 'font-semibold text-gray-900' : 'text-gray-500'
-                    }`}
-                    style={pathname.startsWith('/admin') ? { backgroundColor: '#FFCE00' } : {}}
-                  >
-                    <span className="text-base">⚙️</span>
-                    <span>팀원 관리</span>
-                  </Link>
+                  {[
+                    { href: '/payroll', label: '인건비 관리', icon: '💼' },
+                    { href: '/cashflow', label: '자금일보', icon: '📊' },
+                    { href: '/admin', label: '팀원 관리', icon: '⚙️' },
+                  ].map(item => (
+                    <Link
+                      key={item.href}
+                      href={item.href}
+                      className={`flex items-center gap-3 px-3 py-3 rounded-lg text-sm transition-colors ${
+                        pathname.startsWith(item.href) ? 'font-semibold text-gray-900' : 'text-gray-500 hover:text-gray-900 hover:bg-gray-50'
+                      }`}
+                      style={pathname.startsWith(item.href) ? { backgroundColor: '#FFCE00' } : {}}
+                    >
+                      <span className="text-base">{item.icon}</span>
+                      <span>{item.label}</span>
+                    </Link>
+                  ))}
                 </>
               )}
             </nav>
-            <div className="px-3 py-4 border-t border-gray-100">
+            <div className="px-3 py-4 border-t border-gray-100 space-y-1">
+              {userName && (
+                <Link href="/profile" className="flex items-center gap-2 px-3 py-2 rounded-lg hover:bg-gray-50 transition-colors">
+                  <div className="w-7 h-7 rounded-full bg-gray-100 flex items-center justify-center flex-shrink-0">
+                    <span className="text-xs font-semibold text-gray-600">{userName[0]}</span>
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-medium text-gray-800 truncate">{userName}</p>
+                    <span className={`text-xs px-1.5 py-0.5 rounded font-medium ${ROLE_COLORS[userRole] ?? ROLE_COLORS.member}`}>
+                      {ROLE_LABELS[userRole] ?? '팀원'}
+                    </span>
+                  </div>
+                </Link>
+              )}
               <button
                 onClick={handleLogout}
-                className="flex items-center gap-3 px-3 py-3 rounded-lg text-sm text-gray-500 w-full"
+                className="flex items-center gap-3 px-3 py-3 rounded-lg text-sm text-gray-500 hover:text-gray-900 hover:bg-gray-50 w-full transition-colors"
               >
                 <span className="text-base">🚪</span>
                 <span>로그아웃</span>

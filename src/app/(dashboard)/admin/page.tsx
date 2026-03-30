@@ -16,10 +16,10 @@ export default async function AdminPage() {
 
   if (profile?.role !== 'admin') redirect('/sales')
 
-  const { data: profilesRaw } = await supabase
-    .from('profiles')
-    .select('id, name, departments, role, created_at')
-    .order('created_at', { ascending: false })
+  const [{ data: profilesRaw }, { data: entities }] = await Promise.all([
+    supabase.from('profiles').select('id, name, departments, role, created_at').order('created_at', { ascending: false }),
+    supabase.from('business_entities').select('id, name, business_number').order('name'),
+  ])
 
   const { createAdminClient } = await import('@/lib/supabase/admin')
   const adminClient = createAdminClient()
@@ -43,7 +43,7 @@ export default async function AdminPage() {
         <h1 className="text-2xl font-bold text-gray-900">팀원 관리</h1>
         <p className="text-gray-500 text-sm mt-1">팀원 초대 및 권한 설정</p>
       </div>
-      <AdminClient users={users ?? []} />
+      <AdminClient users={users ?? []} entities={entities ?? []} />
     </div>
   )
 }

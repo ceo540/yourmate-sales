@@ -2,12 +2,18 @@ import { createClient } from '@/lib/supabase/server'
 import Link from 'next/link'
 import { DEPARTMENT_LABELS } from '@/types'
 import { createSale } from '../actions'
+import SubmitButton from '@/components/ui/SubmitButton'
+
+interface BusinessEntity { id: string; name: string }
 
 const PAYMENT_STATUSES = ['계약전', '계약완료', '선금수령', '중도금수령', '완납'] as const
 
 export default async function NewSalePage() {
   const supabase = await createClient()
-  const { data: profiles } = await supabase.from('profiles').select('id, name').order('name')
+  const [{ data: profiles }, { data: entities }] = await Promise.all([
+    supabase.from('profiles').select('id, name').order('name'),
+    supabase.from('business_entities').select('id, name').order('name'),
+  ])
 
   return (
     <div className="max-w-2xl mx-auto">
@@ -60,6 +66,36 @@ export default async function NewSalePage() {
                 ))}
               </select>
             </div>
+          </div>
+
+          {/* 사업자 */}
+          {(entities ?? []).length > 0 && (
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1.5">계약 사업자</label>
+              <select
+                name="entity_id"
+                className="w-full px-4 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-yellow-400 bg-white"
+              >
+                <option value="">선택 안함</option>
+                {(entities as BusinessEntity[]).map(e => (
+                  <option key={e.id} value={e.id}>{e.name}</option>
+                ))}
+              </select>
+            </div>
+          )}
+
+          {/* 계약방법 */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1.5">계약 방법</label>
+            <select
+              name="contract_type"
+              className="w-full px-4 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-yellow-400 bg-white"
+            >
+              <option value="">선택 안함</option>
+              {['나라장터', '세금계산서', '카드결제', '기타'].map(t => (
+                <option key={t} value={t}>{t}</option>
+              ))}
+            </select>
           </div>
 
           {/* 매출액 */}
@@ -150,13 +186,7 @@ export default async function NewSalePage() {
           </div>
 
           <div className="flex gap-3 pt-2">
-            <button
-              type="submit"
-              className="flex-1 py-2.5 rounded-lg text-sm font-semibold"
-              style={{ backgroundColor: '#FFCE00', color: '#121212' }}
-            >
-              등록
-            </button>
+            <SubmitButton label="등록" loadingLabel="등록 중..." fullWidth />
             <Link
               href="/sales"
               className="px-6 py-2.5 rounded-lg text-sm font-medium bg-gray-100 text-gray-600 hover:bg-gray-200 transition-colors"

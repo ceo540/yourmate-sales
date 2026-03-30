@@ -1,7 +1,9 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useRef, useEffect, useTransition } from 'react'
+import { useRouter } from 'next/navigation'
 import { DEPARTMENT_LABELS, type Department } from '@/types'
+import { createEntity, updateEntity, deleteEntity } from './actions'
 
 interface UserProfile {
   id: string
@@ -14,8 +16,15 @@ interface UserProfile {
   confirmed_at: string | null
 }
 
+interface BusinessEntity {
+  id: string
+  name: string
+  business_number: string | null
+}
+
 interface Props {
   users: UserProfile[]
+  entities: BusinessEntity[]
 }
 
 const DEPT_KEYS = Object.keys(DEPARTMENT_LABELS) as Department[]
@@ -44,7 +53,9 @@ function DeptCheckboxes({ selected, onChange }: { selected: string[], onChange: 
   )
 }
 
-export default function AdminClient({ users: initialUsers }: Props) {
+export default function AdminClient({ users: initialUsers, entities: initialEntities }: Props) {
+  const router = useRouter()
+  const [, startTransition] = useTransition()
   const [users, setUsers] = useState(initialUsers)
   const [form, setForm] = useState(EMPTY_FORM)
   const [loading, setLoading] = useState(false)
@@ -53,6 +64,26 @@ export default function AdminClient({ users: initialUsers }: Props) {
   const [showForm, setShowForm] = useState(false)
   const [editingId, setEditingId] = useState<string | null>(null)
   const [editDepts, setEditDepts] = useState<string[]>([])
+  const [roleDropdownId, setRoleDropdownId] = useState<string | null>(null)
+  const dropdownRef = useRef<HTMLDivElement>(null)
+
+  // 사업자 관리 상태
+  const [entities, setEntities] = useState(initialEntities)
+  useEffect(() => { setEntities(initialEntities) }, [initialEntities])
+  const [showEntityForm, setShowEntityForm] = useState(false)
+  const [entityForm, setEntityForm] = useState({ name: '', business_number: '' })
+  const [editingEntityId, setEditingEntityId] = useState<string | null>(null)
+  const [editEntityForm, setEditEntityForm] = useState({ name: '', business_number: '' })
+
+  useEffect(() => {
+    const handleClick = (e: MouseEvent) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
+        setRoleDropdownId(null)
+      }
+    }
+    document.addEventListener('mousedown', handleClick)
+    return () => document.removeEventListener('mousedown', handleClick)
+  }, [])
 
   const handleInvite = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -83,8 +114,7 @@ export default function AdminClient({ users: initialUsers }: Props) {
     }
   }
 
-  const handleRoleChange = async (userId: string, currentRole: string) => {
-    const newRole = currentRole === 'admin' ? 'member' : 'admin'
+  const handleRoleChange = async (userId: string, newRole: string) => {
     const res = await fetch('/api/admin/users', {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
@@ -93,6 +123,7 @@ export default function AdminClient({ users: initialUsers }: Props) {
     const data = await res.json()
     if (!res.ok) { alert(data.error ?? '변경 실패'); return }
     setUsers(prev => prev.map(u => u.id === userId ? { ...u, role: newRole } : u))
+    setRoleDropdownId(null)
   }
 
   const handleDeptSave = async (userId: string) => {
@@ -119,6 +150,33 @@ export default function AdminClient({ users: initialUsers }: Props) {
     setUsers(prev => prev.filter(u => u.id !== userId))
   }
 
+  const handleEntityCreate = async (e: React.FormEvent) => {
+    e.preventDefault()
+    const fd = new FormData()
+    fd.set('name', entityForm.name)
+    fd.set('business_number', entityForm.business_number)
+    await createEntity(fd)
+    setEntityForm({ name: '', business_number: '' })
+    setShowEntityForm(false)
+    startTransition(() => router.refresh())
+  }
+
+  const handleEntityUpdate = async (id: string) => {
+    const fd = new FormData()
+    fd.set('id', id)
+    fd.set('name', editEntityForm.name)
+    fd.set('business_number', editEntityForm.business_number)
+    await updateEntity(fd)
+    setEntities(prev => prev.map(e => e.id === id ? { ...e, name: editEntityForm.name, business_number: editEntityForm.business_number || null } : e))
+    setEditingEntityId(null)
+  }
+
+  const handleEntityDelete = async (id: string, name: string) => {
+    if (!confirm(`"${name}" 사업자를 삭제하시겠어요?\n이미 연결된 매출 건에서는 사업자 정보가 사라집니다.`)) return
+    await deleteEntity(id)
+    setEntities(prev => prev.filter(e => e.id !== id))
+  }
+
   return (
     <div className="space-y-6">
       <div className="bg-white rounded-xl border border-gray-200">
@@ -126,7 +184,7 @@ export default function AdminClient({ users: initialUsers }: Props) {
           <h2 className="text-sm font-semibold text-gray-900">현재 팀원 ({users.length}명)</h2>
           <button
             onClick={() => setShowForm(true)}
-            className="px-4 py-2 rounded-lg text-xs font-semibold"
+            className="px-4 py-2 rounded-lg text-xs font-semibold hover:opacity-80 transition-all"
             style={{ backgroundColor: '#FFCE00', color: '#121212' }}
           >
             + 팀원 초대
@@ -152,12 +210,12 @@ export default function AdminClient({ users: initialUsers }: Props) {
                       <div className="flex gap-2">
                         <button
                           onClick={() => handleDeptSave(user.id)}
-                          className="text-xs px-3 py-1 rounded-lg font-semibold"
+                          className="text-xs px-3 py-1 rounded-lg font-semibold hover:opacity-80 transition-all"
                           style={{ backgroundColor: '#FFCE00', color: '#121212' }}
                         >저장</button>
                         <button
                           onClick={() => setEditingId(null)}
-                          className="text-xs px-3 py-1 rounded-lg border border-gray-200 text-gray-500"
+                          className="text-xs px-3 py-1 rounded-lg border border-gray-200 text-gray-500 hover:bg-gray-50 transition-colors"
                         >취소</button>
                       </div>
                     </div>
@@ -179,14 +237,35 @@ export default function AdminClient({ users: initialUsers }: Props) {
                   )}
                 </div>
                 <div className="flex items-center gap-3 ml-4 flex-shrink-0">
-                  <button
-                    onClick={() => handleRoleChange(user.id, user.role)}
-                    className={`text-xs px-2.5 py-1 rounded-full font-medium transition-colors hover:opacity-70 ${
-                      user.role === 'admin' ? 'bg-yellow-100 text-yellow-800' : 'bg-gray-100 text-gray-600'
-                    }`}
-                  >
-                    {user.role === 'admin' ? '관리자' : '멤버'}
-                  </button>
+                  <div className="relative" ref={roleDropdownId === user.id ? dropdownRef : undefined}>
+                    <button
+                      onClick={() => setRoleDropdownId(roleDropdownId === user.id ? null : user.id)}
+                      className={`text-xs px-2.5 py-1 rounded-full font-medium transition-colors hover:opacity-80 ${
+                        user.role === 'admin' ? 'bg-yellow-100 text-yellow-800'
+                        : user.role === 'manager' ? 'bg-blue-100 text-blue-700'
+                        : 'bg-gray-100 text-gray-600'
+                      }`}
+                    >
+                      {user.role === 'admin' ? '관리자' : user.role === 'manager' ? '팀장' : '멤버'} ▾
+                    </button>
+                    {roleDropdownId === user.id && (
+                      <div className="absolute right-0 top-full mt-1 z-20 bg-white border border-gray-200 rounded-lg shadow-lg overflow-hidden min-w-[90px]">
+                        {[
+                          { value: 'member', label: '멤버', cls: 'text-gray-600' },
+                          { value: 'manager', label: '팀장', cls: 'text-blue-700' },
+                          { value: 'admin', label: '관리자', cls: 'text-yellow-800' },
+                        ].map(opt => (
+                          <button
+                            key={opt.value}
+                            onClick={() => handleRoleChange(user.id, opt.value)}
+                            className={`w-full text-left text-xs px-3 py-2 hover:bg-gray-50 transition-colors ${opt.cls} ${user.role === opt.value ? 'font-semibold bg-gray-50' : ''}`}
+                          >
+                            {user.role === opt.value ? '✓ ' : ''}{opt.label}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
                   <button
                     onClick={() => handleDelete(user.id, user.name)}
                     className="text-xs text-gray-300 hover:text-red-400 transition-colors"
@@ -203,6 +282,100 @@ export default function AdminClient({ users: initialUsers }: Props) {
           {success}
         </div>
       )}
+
+      {/* 사업자 관리 */}
+      <div className="bg-white rounded-xl border border-gray-200">
+        <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100">
+          <h2 className="text-sm font-semibold text-gray-900">사업자 관리 ({entities.length}개)</h2>
+          <button
+            onClick={() => setShowEntityForm(true)}
+            className="px-4 py-2 rounded-lg text-xs font-semibold hover:opacity-80 transition-all"
+            style={{ backgroundColor: '#FFCE00', color: '#121212' }}
+          >
+            + 사업자 추가
+          </button>
+        </div>
+        <div className="divide-y divide-gray-50">
+          {entities.length === 0 && (
+            <p className="px-6 py-4 text-sm text-gray-400">등록된 사업자가 없습니다.</p>
+          )}
+          {entities.map(entity => (
+            <div key={entity.id} className="px-6 py-3">
+              {editingEntityId === entity.id ? (
+                <div className="flex items-center gap-2">
+                  <input
+                    value={editEntityForm.name}
+                    onChange={e => setEditEntityForm(f => ({ ...f, name: e.target.value }))}
+                    placeholder="상호명"
+                    className="flex-1 px-3 py-1.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-yellow-400"
+                  />
+                  <input
+                    value={editEntityForm.business_number}
+                    onChange={e => setEditEntityForm(f => ({ ...f, business_number: e.target.value }))}
+                    placeholder="사업자번호"
+                    className="w-40 px-3 py-1.5 border border-gray-200 rounded-lg text-sm font-mono focus:outline-none focus:border-yellow-400"
+                  />
+                  <button
+                    onClick={() => handleEntityUpdate(entity.id)}
+                    className="text-xs px-3 py-1.5 rounded-lg font-semibold hover:opacity-80 transition-all"
+                    style={{ backgroundColor: '#FFCE00', color: '#121212' }}
+                  >저장</button>
+                  <button
+                    onClick={() => setEditingEntityId(null)}
+                    className="text-xs px-3 py-1.5 rounded-lg border border-gray-200 text-gray-500 hover:bg-gray-50 transition-colors"
+                  >취소</button>
+                </div>
+              ) : (
+                <div className="flex items-center justify-between">
+                  <div>
+                    <span className="text-sm font-medium text-gray-900">{entity.name}</span>
+                    {entity.business_number && (
+                      <span className="ml-2 text-xs text-gray-400 font-mono">{entity.business_number}</span>
+                    )}
+                  </div>
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => { setEditingEntityId(entity.id); setEditEntityForm({ name: entity.name, business_number: entity.business_number ?? '' }) }}
+                      className="text-xs text-gray-400 hover:text-yellow-600 transition-colors"
+                    >수정</button>
+                    <button
+                      onClick={() => handleEntityDelete(entity.id, entity.name)}
+                      className="text-xs text-gray-300 hover:text-red-400 transition-colors"
+                    >삭제</button>
+                  </div>
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+        {showEntityForm && (
+          <form onSubmit={handleEntityCreate} className="px-6 py-4 border-t border-gray-100 flex items-center gap-2">
+            <input
+              value={entityForm.name}
+              onChange={e => setEntityForm(f => ({ ...f, name: e.target.value }))}
+              placeholder="상호명 *"
+              required
+              className="flex-1 px-3 py-1.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-yellow-400"
+            />
+            <input
+              value={entityForm.business_number}
+              onChange={e => setEntityForm(f => ({ ...f, business_number: e.target.value }))}
+              placeholder="사업자번호 (선택)"
+              className="w-44 px-3 py-1.5 border border-gray-200 rounded-lg text-sm font-mono focus:outline-none focus:border-yellow-400"
+            />
+            <button
+              type="submit"
+              className="text-xs px-4 py-1.5 rounded-lg font-semibold hover:opacity-80 transition-all"
+              style={{ backgroundColor: '#FFCE00', color: '#121212' }}
+            >추가</button>
+            <button
+              type="button"
+              onClick={() => { setShowEntityForm(false); setEntityForm({ name: '', business_number: '' }) }}
+              className="text-xs px-3 py-1.5 rounded-lg border border-gray-200 text-gray-500 hover:bg-gray-50 transition-colors"
+            >취소</button>
+          </form>
+        )}
+      </div>
 
       {showForm && (
         <div className="bg-white rounded-xl border border-gray-200 p-6">
@@ -245,6 +418,7 @@ export default function AdminClient({ users: initialUsers }: Props) {
                 className="px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-yellow-400 bg-white"
               >
                 <option value="member">멤버</option>
+                <option value="manager">팀장</option>
                 <option value="admin">관리자</option>
               </select>
             </div>
@@ -253,7 +427,7 @@ export default function AdminClient({ users: initialUsers }: Props) {
               <button
                 type="submit"
                 disabled={loading}
-                className="px-5 py-2 rounded-lg text-sm font-semibold disabled:opacity-60"
+                className="px-5 py-2 rounded-lg text-sm font-semibold disabled:opacity-60 hover:opacity-80 transition-all"
                 style={{ backgroundColor: '#FFCE00', color: '#121212' }}
               >
                 {loading ? '발송 중...' : '초대 메일 발송'}
@@ -261,7 +435,7 @@ export default function AdminClient({ users: initialUsers }: Props) {
               <button
                 type="button"
                 onClick={() => { setShowForm(false); setError('') }}
-                className="px-4 py-2 rounded-lg text-sm text-gray-500 hover:text-gray-700 border border-gray-200"
+                className="px-4 py-2 rounded-lg text-sm text-gray-500 hover:text-gray-700 border border-gray-200 transition-colors"
               >취소</button>
             </div>
           </form>

@@ -20,7 +20,7 @@ export default async function VendorsPage() {
         </div>
         <Link
           href="/vendors/new"
-          className="px-4 py-2 rounded-lg text-sm font-semibold"
+          className="px-4 py-2 rounded-lg text-sm font-semibold hover:opacity-80 transition-all"
           style={{ backgroundColor: '#FFCE00', color: '#121212' }}
         >
           + 거래처 추가
