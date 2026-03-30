@@ -105,8 +105,8 @@ export async function importGranterTransactions(rows: GranterRow[]) {
     }
   }
 
-  // 거래 insert (금액포함=포함 만)
-  const transactions = rows
+  // 거래 후보 생성 (금액포함=포함 만)
+  const candidates = rows
     .filter(r => r.include === '포함' && (r.expense > 0 || r.income > 0))
     .map(r => {
       const isIncome = r.status === '입금'
@@ -128,10 +128,33 @@ export async function importGranterTransactions(rows: GranterRow[]) {
     })
     .filter(t => t.account_id && t.amount > 0)
 
-  if (transactions.length > 0) {
-    await supabase.from('cashflow').insert(transactions)
+  if (candidates.length === 0) {
+    revalidatePath('/cashflow')
+    return { count: 0 }
+  }
+
+  // CSV 날짜 범위의 기존 거래 조회 (중복 방지)
+  const dates = candidates.map(t => t.date)
+  const minDate = dates.reduce((a, b) => a < b ? a : b)
+  const maxDate = dates.reduce((a, b) => a > b ? a : b)
+  const { data: existing } = await supabase
+    .from('cashflow')
+    .select('date, account_id, type, amount, description')
+    .gte('date', minDate)
+    .lte('date', maxDate)
+
+  // 중복 제거: 날짜+계좌+유형+금액+내용이 모두 같으면 스킵
+  const existingSet = new Set(
+    (existing ?? []).map(t => `${t.date}|${t.account_id}|${t.type}|${t.amount}|${t.description ?? ''}`)
+  )
+  const newTransactions = candidates.filter(t =>
+    !existingSet.has(`${t.date}|${t.account_id}|${t.type}|${t.amount}|${t.description ?? ''}`)
+  )
+
+  if (newTransactions.length > 0) {
+    await supabase.from('cashflow').insert(newTransactions)
   }
 
   revalidatePath('/cashflow')
-  return { count: transactions.length }
+  return { count: newTransactions.length, skipped: candidates.length - newTransactions.length }
 }

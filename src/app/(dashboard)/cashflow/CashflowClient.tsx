@@ -213,7 +213,11 @@ export default function CashflowClient({ accounts, transactions }: Props) {
     if (!uploadRows.length) return
     setImporting(true)
     const result = await importGranterTransactions(uploadRows)
-    setImportResult(`${result.count}건 가져오기 완료!`)
+    const skipped = result.skipped ?? 0
+    setImportResult(skipped > 0
+      ? `${result.count}건 추가 완료 (중복 ${skipped}건 스킵)`
+      : `${result.count}건 가져오기 완료!`
+    )
     setImporting(false)
     setUploadRows([])
     if (fileInputRef.current) fileInputRef.current.value = ''
