@@ -29,6 +29,38 @@ export const DEPARTMENT_LABELS: Record<Department, string> = {
   '002_entertainment': '002 Entertainment',
 }
 
+// 서비스 → 사업부 자동 매핑
+export const SERVICE_TO_DEPT: Record<string, string> = {
+  'SOS':       '002_entertainment',
+  '002ENT':    '002_entertainment',
+  '교육프로그램':  'artkiwoom',
+  '납품설치':    'school_store',
+  '유지보수':    'school_store',
+  '교구대여':    'school_store',
+  '기념제작':    'school_store',
+  '사진영상':    '002_creative',
+  '행사운영':    '002_creative',
+  '디자인 인쇄':  '002_creative',
+}
+
+// 매출 현황 계층 구조 (사업부 → 서비스)
+export const DEPT_SERVICE_GROUPS = [
+  { depts: ['002_entertainment', 'sound_of_school'], label: '002 Entertainment', services: ['002ENT', 'SOS'] },
+  { depts: ['artkiwoom'],    label: '아트키움',    services: ['교육프로그램'] },
+  { depts: ['school_store'], label: '학교상점',    services: ['납품설치', '유지보수', '교구대여', '기념제작'] },
+  { depts: ['002_creative'], label: '002 Creative', services: ['사진영상', '행사운영', '디자인 인쇄'] },
+  { depts: ['yourmate'],     label: '유어메이트',   services: [] },
+]
+
+// 서비스 선택용 flat list (optgroup 렌더링에 사용)
+export const SERVICE_TYPES: Partial<Record<string, string[]>> = {
+  sound_of_school: ['SOS'],
+  artkiwoom: ['교육프로그램'],
+  school_store: ['납품설치', '유지보수', '교구대여', '기념제작'],
+  '002_entertainment': ['002ENT', 'SOS'],
+  '002_creative': ['사진영상', '행사운영', '디자인 인쇄'],
+}
+
 // 프로젝트
 export type ProjectStatus = '기획중' | '진행중' | '완료' | '취소' | '보류'
 export type Priority = 'Low' | 'Medium' | 'High'

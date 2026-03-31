@@ -1,4 +1,5 @@
 import { createClient } from '@/lib/supabase/server'
+import { redirect } from 'next/navigation'
 import Link from 'next/link'
 import SalesClient from './SalesClient'
 
@@ -6,21 +7,28 @@ export default async function SalesPage() {
   const supabase = await createClient()
 
   const { data: { user } } = await supabase.auth.getUser()
-  const [{ data: profile }, { data: vendors }, { data: entities }] = await Promise.all([
-    supabase.from('profiles').select('id, role, departments').eq('id', user!.id).single(),
+  if (!user) redirect('/login')
+
+  const { data: profile } = await supabase.from('profiles').select('id, role, departments').eq('id', user.id).single()
+  const { getAccessLevel } = await import('@/lib/permissions')
+  const accessLevel = await getAccessLevel(profile?.role, 'sales')
+  if (accessLevel === 'off') redirect('/dashboard')
+
+  const isAdmin = profile?.role === 'admin'
+  const showAll = isAdmin || accessLevel === 'full' || accessLevel === 'read'
+  const myDepts: string[] = profile?.departments ?? []
+
+  const [{ data: vendors }, { data: entities }] = await Promise.all([
     supabase.from('vendors').select('id, name, type').order('name'),
     supabase.from('business_entities').select('id, name, business_number').order('name'),
   ])
-
-  const isAdmin = profile?.role === 'admin' || profile?.role === 'manager'
-  const myDepts: string[] = profile?.departments ?? []
 
   let salesQuery = supabase
     .from('sales')
     .select('*, assignee:profiles!assignee_id(id, name), entity:business_entities!entity_id(id, name), sale_costs(*)')
     .order('created_at', { ascending: false })
 
-  if (!isAdmin) {
+  if (!showAll) {
     if (myDepts.length > 0) {
       salesQuery = salesQuery.or(`department.in.(${myDepts.join(',')}),assignee_id.eq.${profile!.id}`)
     } else {

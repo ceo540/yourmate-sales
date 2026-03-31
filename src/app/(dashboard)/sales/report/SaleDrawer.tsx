@@ -1,7 +1,7 @@
 'use client'
 import { useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
-import { DEPARTMENT_LABELS } from '@/types'
+import { DEPT_SERVICE_GROUPS } from '@/types'
 import CostInlineEditor from '../CostInlineEditor'
 import { updateSaleInline, deleteSale } from '../actions'
 
@@ -17,6 +17,8 @@ interface Sale {
   id: string
   name: string
   department: string | null
+  client_org: string | null
+  service_type: string | null
   revenue: number | null
   payment_status: string | null
   contract_type: string | null
@@ -53,7 +55,8 @@ export default function SaleDrawer({ sale, entities, vendors, profiles, isAdmin,
   const [, startTransition] = useTransition()
   const [saving, setSaving] = useState(false)
   const [name, setName] = useState(sale.name)
-  const [department, setDepartment] = useState(sale.department ?? '')
+  const [serviceType, setServiceType] = useState(sale.service_type ?? '')
+  const [clientOrg, setClientOrg] = useState(sale.client_org ?? '')
   const [entityId, setEntityId] = useState(sale.entity?.id ?? '')
   const [contractType, setContractType] = useState(sale.contract_type ?? '')
   const [assigneeId, setAssigneeId] = useState(sale.assignee?.id ?? '')
@@ -74,7 +77,9 @@ export default function SaleDrawer({ sale, entities, vendors, profiles, isAdmin,
     setSaving(true)
     await updateSaleInline(sale.id, {
       name: name.trim(),
-      department: department || null,
+      department: null,
+      client_org: clientOrg || null,
+      service_type: serviceType || null,
       assignee_id: assigneeId || null,
       entity_id: entityId || null,
       revenue: rev,
@@ -89,7 +94,9 @@ export default function SaleDrawer({ sale, entities, vendors, profiles, isAdmin,
     onSaved({
       ...sale,
       name: name.trim(),
-      department: department || null,
+      department: null,
+      client_org: clientOrg || null,
+      service_type: serviceType || null,
       assignee: profiles.find(p => p.id === assigneeId) ?? null,
       entity: entities.find(e => e.id === entityId) ?? null,
       revenue: rev,
@@ -138,15 +145,20 @@ export default function SaleDrawer({ sale, entities, vendors, profiles, isAdmin,
             />
           </div>
 
+          <div>
+            <label className="block text-xs font-semibold text-gray-400 uppercase tracking-wide mb-1.5">서비스</label>
+            <select value={serviceType} onChange={e => setServiceType(e.target.value)}
+              className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-yellow-400 bg-white">
+              <option value="">선택 안함</option>
+              {DEPT_SERVICE_GROUPS.filter(g => g.services.length > 0).map(g => (
+                <optgroup key={g.label} label={g.label}>
+                  {g.services.map(s => <option key={s} value={s}>{s}</option>)}
+                </optgroup>
+              ))}
+            </select>
+          </div>
+
           <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="block text-xs font-semibold text-gray-400 uppercase tracking-wide mb-1.5">사업부</label>
-              <select value={department} onChange={e => setDepartment(e.target.value)}
-                className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-yellow-400 bg-white">
-                <option value="">선택 안함</option>
-                {Object.entries(DEPARTMENT_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
-              </select>
-            </div>
             <div>
               <label className="block text-xs font-semibold text-gray-400 uppercase tracking-wide mb-1.5">담당자</label>
               <select value={assigneeId} onChange={e => setAssigneeId(e.target.value)}
@@ -155,6 +167,17 @@ export default function SaleDrawer({ sale, entities, vendors, profiles, isAdmin,
                 {profiles.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
               </select>
             </div>
+          </div>
+
+          {/* 발주처 */}
+          <div>
+            <label className="block text-xs font-semibold text-gray-400 uppercase tracking-wide mb-1.5">발주처</label>
+            <input
+              value={clientOrg}
+              onChange={e => setClientOrg(e.target.value)}
+              placeholder="예: 용인교육지원청 지역교육과"
+              className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-yellow-400 focus:ring-1 focus:ring-yellow-400"
+            />
           </div>
 
           <div className="grid grid-cols-2 gap-3">

@@ -1,5 +1,5 @@
 import { createClient } from '@/lib/supabase/server'
-import { notFound } from 'next/navigation'
+import { notFound, redirect } from 'next/navigation'
 import Link from 'next/link'
 import { DEPARTMENT_LABELS } from '@/types'
 import { updateSale } from '../actions'
@@ -14,6 +14,10 @@ export default async function EditSalePage({ params, searchParams }: { params: P
   const { from } = await searchParams
   const supabase = await createClient()
 
+  const { data: { user } } = await supabase.auth.getUser()
+  const { data: profile } = await supabase.from('profiles').select('id, role').eq('id', user!.id).single()
+  const isAdmin = profile?.role === 'admin' || profile?.role === 'manager'
+
   const { data: sale } = await supabase
     .from('sales')
     .select('*, assignee:profiles(id, name), entity:business_entities(id, name)')
@@ -21,6 +25,9 @@ export default async function EditSalePage({ params, searchParams }: { params: P
     .single()
 
   if (!sale) notFound()
+
+  // member는 본인 담당 건만 접근 가능
+  if (!isAdmin && sale.assignee_id !== profile?.id) redirect('/sales')
 
   const [{ data: profiles }, { data: entities }] = await Promise.all([
     supabase.from('profiles').select('id, name').order('name'),

@@ -1,6 +1,6 @@
 import { createClient } from '@/lib/supabase/server'
 import Link from 'next/link'
-import { DEPARTMENT_LABELS } from '@/types'
+import { DEPARTMENT_LABELS, SERVICE_TYPES } from '@/types'
 import { createSale } from '../actions'
 import SubmitButton from '@/components/ui/SubmitButton'
 
@@ -10,10 +10,13 @@ const PAYMENT_STATUSES = ['계약전', '계약완료', '선금수령', '중도�
 
 export default async function NewSalePage() {
   const supabase = await createClient()
-  const [{ data: profiles }, { data: entities }] = await Promise.all([
+  const { data: { user } } = await supabase.auth.getUser()
+  const [{ data: currentProfile }, { data: profiles }, { data: entities }] = await Promise.all([
+    supabase.from('profiles').select('id, role, name').eq('id', user!.id).single(),
     supabase.from('profiles').select('id, name').order('name'),
     supabase.from('business_entities').select('id, name').order('name'),
   ])
+  const isAdmin = currentProfile?.role === 'admin' || currentProfile?.role === 'manager'
 
   return (
     <div className="max-w-2xl mx-auto">
@@ -43,6 +46,7 @@ export default async function NewSalePage() {
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1.5">사업부</label>
               <select
+                id="dept-select"
                 name="department"
                 className="w-full px-4 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-yellow-400 bg-white"
               >
@@ -53,19 +57,82 @@ export default async function NewSalePage() {
               </select>
             </div>
 
+            {/* 서비스 */}
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1.5">서비스</label>
+              <select
+                id="service-select"
+                name="service_type"
+                className="w-full px-4 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-yellow-400 bg-white disabled:opacity-40"
+              >
+                <option value="">선택 안함</option>
+                {Object.entries(SERVICE_TYPES).map(([dept, services]) =>
+                  services?.map(s => (
+                    <option key={`${dept}-${s}`} value={s} data-dept={dept}>{s}</option>
+                  ))
+                )}
+              </select>
+            </div>
+          </div>
+
+          <script dangerouslySetInnerHTML={{ __html: `
+            (function() {
+              var deptMap = ${JSON.stringify(SERVICE_TYPES)};
+              var deptSel = document.getElementById('dept-select');
+              var svcSel = document.getElementById('service-select');
+              function updateService() {
+                var dept = deptSel.value;
+                var services = deptMap[dept] || [];
+                svcSel.innerHTML = '<option value="">선택 안함</option>';
+                services.forEach(function(s) {
+                  var opt = document.createElement('option');
+                  opt.value = s; opt.textContent = s;
+                  svcSel.appendChild(opt);
+                });
+                svcSel.disabled = services.length === 0;
+              }
+              deptSel.addEventListener('change', updateService);
+              updateService();
+            })();
+          `}} />
+
+          <div className="grid grid-cols-2 gap-4">
+
             {/* 담당자 */}
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1.5">담당자</label>
-              <select
-                name="assignee_id"
-                className="w-full px-4 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-yellow-400 bg-white"
-              >
-                <option value="">선택 안함</option>
-                {profiles?.map(p => (
-                  <option key={p.id} value={p.id}>{p.name}</option>
-                ))}
-              </select>
+              {isAdmin ? (
+                <select
+                  name="assignee_id"
+                  className="w-full px-4 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-yellow-400 bg-white"
+                >
+                  <option value="">선택 안함</option>
+                  {profiles?.map(p => (
+                    <option key={p.id} value={p.id}>{p.name}</option>
+                  ))}
+                </select>
+              ) : (
+                <>
+                  <input type="hidden" name="assignee_id" value={currentProfile?.id ?? ''} />
+                  <div className="w-full px-4 py-2.5 border border-gray-100 rounded-lg text-sm bg-gray-50 text-gray-500">
+                    {currentProfile?.name ?? '나'} (본인)
+                  </div>
+                </>
+              )}
             </div>
+          </div>
+
+          {/* 발주처 */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1.5">
+              발주처 <span className="text-gray-400 font-normal text-xs">(예: 용인교육지원청 지역교육과)</span>
+            </label>
+            <input
+              name="client_org"
+              placeholder="기관명 + 부서명까지 입력"
+              className="w-full px-4 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-yellow-400 focus:ring-1 focus:ring-yellow-400"
+            />
+            <p className="text-xs text-gray-400 mt-1">공공기관 수의계약 한도 집계에 사용돼요. 민간 거래는 비워도 됩니다.</p>
           </div>
 
           {/* 사업자 */}

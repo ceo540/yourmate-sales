@@ -1,6 +1,6 @@
 'use client'
 import { useState } from 'react'
-import { DEPARTMENT_LABELS } from '@/types'
+import { DEPT_SERVICE_GROUPS } from '@/types'
 
 interface CostItem {
   id: string
@@ -14,6 +14,7 @@ interface Sale {
   id: string
   name: string
   department: string | null
+  service_type: string | null
   revenue: number | null
   payment_status: string | null
   memo: string | null
@@ -126,27 +127,41 @@ function matchesFilter(sale: Sale, year: number | null, period: string) {
 export default function SalesClient({ sales, entities, isAdmin }: Props) {
   const [filterYear, setFilterYear] = useState<number | null>(CURRENT_YEAR)
   const [filterPeriod, setFilterPeriod] = useState('all')
-  const [filterDept, setFilterDept] = useState<string>('all')
+  const [filterService, setFilterService] = useState<string>('all')
   const [filterEntity, setFilterEntity] = useState<string>('all')
 
   const filtered = sales
     .filter(s => filterYear ? matchesFilter(s, filterYear, filterPeriod) : true)
-    .filter(s => filterDept === 'all' ? true : s.department === filterDept)
+    .filter(s => {
+      if (filterService === 'all') return true
+      // group filter: matches if sale's dept is in the group
+      const group = DEPT_SERVICE_GROUPS.find(g => g.label === filterService)
+      if (group) return group.depts.some(d => s.department === d) || group.services.some(sv => s.service_type === sv)
+      return s.service_type === filterService
+    })
     .filter(s => filterEntity === 'all' ? true : (s.entity?.id ?? '') === filterEntity)
 
   // 전사 통계
   const totalRevenue = filtered.reduce((s, p) => s + (p.revenue ?? 0), 0)
-  const totalCost = sales.reduce((s, p) => s + p.sale_costs.reduce((sc, c) => sc + c.amount, 0), 0)
+  const totalCost = filtered.reduce((s, p) => s + p.sale_costs.reduce((sc, c) => sc + c.amount, 0), 0)
   const totalProfit = totalRevenue - totalCost
   const profitRate = totalRevenue > 0 ? Math.round((totalProfit / totalRevenue) * 100) : 0
 
-  // 사업부별 통계
-  const deptStats = Object.entries(DEPARTMENT_LABELS).map(([key, label]) => {
-    const deptSales = filtered.filter(s => s.department === key)
-    const revenue = deptSales.reduce((s, p) => s + (p.revenue ?? 0), 0)
-    const cost = deptSales.reduce((s, p) => s + p.sale_costs.reduce((sc, c) => sc + c.amount, 0), 0)
-    return { key, label, revenue, cost, profit: revenue - cost, count: deptSales.length }
-  }).filter(d => d.revenue > 0 || d.count > 0)
+  // 사업부+서비스 계층 통계
+  const groupStats = DEPT_SERVICE_GROUPS.map(g => {
+    const groupSales = filtered.filter(s =>
+      g.depts.some(d => s.department === d) || g.services.some(sv => s.service_type === sv)
+    )
+    const revenue = groupSales.reduce((s, p) => s + (p.revenue ?? 0), 0)
+    const cost = groupSales.reduce((s, p) => s + p.sale_costs.reduce((sc, c) => sc + c.amount, 0), 0)
+    const serviceStats = g.services.map(svc => {
+      const svcSales = filtered.filter(s => s.service_type === svc)
+      const svcRev = svcSales.reduce((s, p) => s + (p.revenue ?? 0), 0)
+      const svcCost = svcSales.reduce((s, p) => s + p.sale_costs.reduce((sc, c) => sc + c.amount, 0), 0)
+      return { name: svc, revenue: svcRev, cost: svcCost, profit: svcRev - svcCost, count: svcSales.length }
+    }).filter(sv => sv.count > 0 || sv.revenue > 0)
+    return { label: g.label, revenue, cost, profit: revenue - cost, count: groupSales.length, serviceStats }
+  }).filter(g => g.count > 0 || g.revenue > 0)
 
 
   return (
@@ -180,13 +195,15 @@ export default function SalesClient({ sales, entities, isAdmin }: Props) {
         </select>
 
         <select
-          value={filterDept}
-          onChange={e => setFilterDept(e.target.value)}
+          value={filterService}
+          onChange={e => setFilterService(e.target.value)}
           className="px-3 py-2 rounded-lg border border-gray-200 text-sm bg-white focus:outline-none focus:border-yellow-400 text-gray-700"
         >
           <option value="all">전체 사업부</option>
-          {Object.entries(DEPARTMENT_LABELS).map(([key, label]) => (
-            <option key={key} value={key}>{label}</option>
+          {DEPT_SERVICE_GROUPS.map(g => (
+            <optgroup key={g.label} label={g.label}>
+              {g.services.map(s => <option key={s} value={s}>{s}</option>)}
+            </optgroup>
           ))}
         </select>
 
@@ -230,36 +247,55 @@ export default function SalesClient({ sales, entities, isAdmin }: Props) {
             <table className="w-full">
               <thead>
                 <tr className="border-b border-gray-100">
-                  <th className="text-left text-xs font-semibold text-gray-500 py-2.5 pr-4">사업부</th>
+                  <th className="text-left text-xs font-semibold text-gray-500 py-2.5 pr-4">사업부 / 서비스</th>
                   <th className="text-right text-xs font-semibold text-gray-500 py-2.5 px-4">건수</th>
                   <th className="text-right text-xs font-semibold text-gray-500 py-2.5 px-4">매출</th>
                   <th className="text-right text-xs font-semibold text-gray-500 py-2.5 px-4">원가</th>
                   <th className="text-right text-xs font-semibold text-gray-500 py-2.5 pl-4">이익 (이익률)</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-gray-50">
-                {deptStats.length === 0 && (
+              <tbody>
+                {groupStats.length === 0 && (
                   <tr>
                     <td colSpan={5} className="py-10 text-center text-sm text-gray-400">
                       매출 데이터가 없어요. 매출 보고서에서 추가해주세요.
                     </td>
                   </tr>
                 )}
-                {deptStats.map(d => {
-                  const rate = d.revenue > 0 ? Math.round((d.profit / d.revenue) * 100) : 0
+                {groupStats.map(g => {
+                  const rate = g.revenue > 0 ? Math.round((g.profit / g.revenue) * 100) : 0
                   return (
-                    <tr key={d.key}>
-                      <td className="py-3 pr-4 text-sm font-medium text-gray-900">{d.label}</td>
-                      <td className="py-3 px-4 text-right text-sm text-gray-400">{d.count}건</td>
-                      <td className="py-3 px-4 text-right text-sm text-gray-700">{formatMoney(d.revenue)}</td>
-                      <td className="py-3 px-4 text-right text-sm text-gray-500">{formatMoney(d.cost)}</td>
-                      <td className="py-3 pl-4 text-right">
-                        <span className={`text-sm font-medium ${d.profit >= 0 ? 'text-green-600' : 'text-red-500'}`}>
-                          {formatMoney(d.profit)}
-                        </span>
-                        <span className="text-xs text-gray-400 ml-1.5">({rate}%)</span>
-                      </td>
-                    </tr>
+                    <>
+                      <tr key={g.label} className="border-t border-gray-100 bg-gray-50/50">
+                        <td className="py-2.5 pr-4 text-sm font-semibold text-gray-900">{g.label}</td>
+                        <td className="py-2.5 px-4 text-right text-sm text-gray-500">{g.count}건</td>
+                        <td className="py-2.5 px-4 text-right text-sm font-medium text-gray-800">{formatMoney(g.revenue)}</td>
+                        <td className="py-2.5 px-4 text-right text-sm text-gray-500">{formatMoney(g.cost)}</td>
+                        <td className="py-2.5 pl-4 text-right">
+                          <span className={`text-sm font-semibold ${g.profit >= 0 ? 'text-green-600' : 'text-red-500'}`}>
+                            {formatMoney(g.profit)}
+                          </span>
+                          <span className="text-xs text-gray-400 ml-1.5">({rate}%)</span>
+                        </td>
+                      </tr>
+                      {g.serviceStats.map(sv => {
+                        const svRate = sv.revenue > 0 ? Math.round((sv.profit / sv.revenue) * 100) : 0
+                        return (
+                          <tr key={sv.name} className="border-t border-gray-50">
+                            <td className="py-2 pr-4 text-xs text-gray-500 pl-4">└ {sv.name}</td>
+                            <td className="py-2 px-4 text-right text-xs text-gray-400">{sv.count}건</td>
+                            <td className="py-2 px-4 text-right text-xs text-gray-600">{formatMoney(sv.revenue)}</td>
+                            <td className="py-2 px-4 text-right text-xs text-gray-400">{formatMoney(sv.cost)}</td>
+                            <td className="py-2 pl-4 text-right">
+                              <span className={`text-xs ${sv.profit >= 0 ? 'text-green-500' : 'text-red-400'}`}>
+                                {formatMoney(sv.profit)}
+                              </span>
+                              <span className="text-xs text-gray-300 ml-1">({svRate}%)</span>
+                            </td>
+                          </tr>
+                        )
+                      })}
+                    </>
                   )
                 })}
               </tbody>

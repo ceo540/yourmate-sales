@@ -2,14 +2,19 @@
 import { createClient } from '@/lib/supabase/server'
 import { revalidatePath } from 'next/cache'
 import { redirect } from 'next/navigation'
+import { SERVICE_TO_DEPT } from '@/types'
 
 export async function createSale(formData: FormData) {
   const supabase = await createClient()
+  const service_type = (formData.get('service_type') as string) || null
+  const department = (service_type && SERVICE_TO_DEPT[service_type]) || (formData.get('department') as string) || null
   await supabase.from('sales').insert({
     name: formData.get('name') as string,
-    department: (formData.get('department') as string) || null,
+    department,
     assignee_id: (formData.get('assignee_id') as string) || null,
     entity_id: (formData.get('entity_id') as string) || null,
+    client_org: (formData.get('client_org') as string) || null,
+    service_type,
     revenue: formData.get('revenue') ? Number(formData.get('revenue')) : 0,
     payment_status: (formData.get('payment_status') as string) || '계약전',
     contract_type: (formData.get('contract_type') as string) || null,
@@ -25,11 +30,15 @@ export async function updateSale(formData: FormData) {
   const supabase = await createClient()
   const id = formData.get('id') as string
   const from = (formData.get('from') as string) || '/sales/report'
+  const service_type = (formData.get('service_type') as string) || null
+  const department = (service_type && SERVICE_TO_DEPT[service_type]) || (formData.get('department') as string) || null
   await supabase.from('sales').update({
     name: formData.get('name') as string,
-    department: (formData.get('department') as string) || null,
+    department,
     assignee_id: (formData.get('assignee_id') as string) || null,
     entity_id: (formData.get('entity_id') as string) || null,
+    client_org: (formData.get('client_org') as string) || null,
+    service_type,
     revenue: formData.get('revenue') ? Number(formData.get('revenue')) : 0,
     payment_status: (formData.get('payment_status') as string) || '계약전',
     contract_type: (formData.get('contract_type') as string) || null,
@@ -74,11 +83,19 @@ export async function updateSaleContractType(id: string, contract_type: string |
   revalidatePath('/sales')
 }
 
+export async function updateEntityType(entityId: string, entityType: string) {
+  const supabase = await createClient()
+  await supabase.from('business_entities').update({ entity_type: entityType }).eq('id', entityId)
+  revalidatePath('/sales/report')
+}
+
 export async function updateSaleInline(id: string, data: {
   name: string
   department: string | null
   assignee_id: string | null
   entity_id: string | null
+  client_org: string | null
+  service_type: string | null
   revenue: number
   payment_status: string
   contract_type: string | null
@@ -88,7 +105,8 @@ export async function updateSaleInline(id: string, data: {
   dropbox_url: string | null
 }) {
   const supabase = await createClient()
-  await supabase.from('sales').update({ ...data, updated_at: new Date().toISOString() }).eq('id', id)
+  const department = (data.service_type && SERVICE_TO_DEPT[data.service_type]) || data.department
+  await supabase.from('sales').update({ ...data, department, updated_at: new Date().toISOString() }).eq('id', id)
   revalidatePath('/sales/report')
   revalidatePath('/sales')
 }

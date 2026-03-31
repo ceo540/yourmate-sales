@@ -1,7 +1,7 @@
 'use client'
 import { useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
-import { DEPARTMENT_LABELS } from '@/types'
+import { DEPT_SERVICE_GROUPS } from '@/types'
 import CostInlineEditor from '../CostInlineEditor'
 import { updateSaleInline, deleteSale } from '../actions'
 
@@ -17,6 +17,8 @@ interface Sale {
   id: string
   name: string
   department: string | null
+  client_org: string | null
+  service_type: string | null
   revenue: number | null
   payment_status: string | null
   contract_type: string | null
@@ -54,7 +56,8 @@ export default function SaleExpandEditor({ sale, colSpan, entities, vendors, pro
   const [, startTransition] = useTransition()
   const [saving, setSaving] = useState(false)
   const [name, setName] = useState(sale.name)
-  const [department, setDepartment] = useState(sale.department ?? '')
+  const [serviceType, setServiceType] = useState(sale.service_type ?? '')
+  const [clientOrg, setClientOrg] = useState(sale.client_org ?? '')
   const [entityId, setEntityId] = useState(sale.entity?.id ?? '')
   const [contractType, setContractType] = useState(sale.contract_type ?? '')
   const [assigneeId, setAssigneeId] = useState(sale.assignee?.id ?? '')
@@ -75,7 +78,9 @@ export default function SaleExpandEditor({ sale, colSpan, entities, vendors, pro
     setSaving(true)
     await updateSaleInline(sale.id, {
       name: name.trim(),
-      department: department || null,
+      department: null,
+      client_org: clientOrg || null,
+      service_type: serviceType || null,
       assignee_id: assigneeId || null,
       entity_id: entityId || null,
       revenue: rev,
@@ -90,7 +95,9 @@ export default function SaleExpandEditor({ sale, colSpan, entities, vendors, pro
     onSaved({
       ...sale,
       name: name.trim(),
-      department: department || null,
+      department: null,
+      client_org: clientOrg || null,
+      service_type: serviceType || null,
       assignee: profiles.find(p => p.id === assigneeId) ?? null,
       entity: entities.find(e => e.id === entityId) ?? null,
       revenue: rev,
@@ -128,12 +135,16 @@ export default function SaleExpandEditor({ sale, colSpan, entities, vendors, pro
               <input value={name} onChange={e => setName(e.target.value)} className={inputCls} />
             </div>
 
-            {/* 사업부 */}
+            {/* 서비스 */}
             <div>
-              <label className={labelCls}>사업부</label>
-              <select value={department} onChange={e => setDepartment(e.target.value)} className={inputCls}>
+              <label className={labelCls}>서비스</label>
+              <select value={serviceType} onChange={e => setServiceType(e.target.value)} className={inputCls}>
                 <option value="">선택 안함</option>
-                {Object.entries(DEPARTMENT_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+                {DEPT_SERVICE_GROUPS.filter(g => g.services.length > 0).map(g => (
+                  <optgroup key={g.label} label={g.label}>
+                    {g.services.map(s => <option key={s} value={s}>{s}</option>)}
+                  </optgroup>
+                ))}
               </select>
             </div>
 
@@ -144,6 +155,17 @@ export default function SaleExpandEditor({ sale, colSpan, entities, vendors, pro
                 <option value="">선택 안함</option>
                 {profiles.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
               </select>
+            </div>
+
+            {/* 발주처 */}
+            <div className="col-span-2">
+              <label className={labelCls}>발주처</label>
+              <input
+                value={clientOrg}
+                onChange={e => setClientOrg(e.target.value)}
+                placeholder="예: 용인교육지원청 지역교육과"
+                className={inputCls}
+              />
             </div>
 
             {/* 사업자 */}

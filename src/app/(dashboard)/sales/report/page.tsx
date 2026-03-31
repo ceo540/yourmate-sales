@@ -9,7 +9,7 @@ export default async function SalesReportPage() {
   const [{ data: profile }, { data: vendors }, { data: entities }, { data: profiles }] = await Promise.all([
     supabase.from('profiles').select('id, role, departments').eq('id', user!.id).single(),
     supabase.from('vendors').select('id, name, type').order('name'),
-    supabase.from('business_entities').select('id, name').order('name'),
+    supabase.from('business_entities').select('id, name, entity_type').order('name'),
     supabase.from('profiles').select('id, name').order('name'),
   ])
 
