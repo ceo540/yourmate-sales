@@ -76,21 +76,27 @@ export default function SaleDrawer({ sale, entities, vendors, profiles, isAdmin,
     if (!name.trim()) return
     setSaving(true)
     const derivedDept = (serviceType && SERVICE_TO_DEPT[serviceType]) || sale.department || null
-    await updateSaleInline(sale.id, {
-      name: name.trim(),
-      department: derivedDept,
-      client_org: clientOrg || null,
-      service_type: serviceType || null,
-      assignee_id: assigneeId || null,
-      entity_id: entityId || null,
-      revenue: rev,
-      payment_status: paymentStatus,
-      contract_type: contractType || null,
-      memo: memo || null,
-      inflow_date: inflowDate || null,
-      payment_date: paymentDate || null,
-      dropbox_url: dropboxUrl || null,
-    })
+    try {
+      await updateSaleInline(sale.id, {
+        name: name.trim(),
+        department: derivedDept,
+        client_org: clientOrg || null,
+        service_type: serviceType || null,
+        assignee_id: assigneeId || null,
+        entity_id: entityId || null,
+        revenue: rev,
+        payment_status: paymentStatus,
+        contract_type: contractType || null,
+        memo: memo || null,
+        inflow_date: inflowDate || null,
+        payment_date: paymentDate || null,
+        dropbox_url: dropboxUrl || null,
+      })
+    } catch (e) {
+      alert('저장 실패: ' + (e instanceof Error ? e.message : String(e)))
+      setSaving(false)
+      return
+    }
     setSaving(false)
     onSaved({
       ...sale,

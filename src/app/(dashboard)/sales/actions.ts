@@ -106,7 +106,8 @@ export async function updateSaleInline(id: string, data: {
 }) {
   const supabase = await createClient()
   const department = (data.service_type && SERVICE_TO_DEPT[data.service_type]) || data.department
-  await supabase.from('sales').update({ ...data, department, updated_at: new Date().toISOString() }).eq('id', id)
+  const { error } = await supabase.from('sales').update({ ...data, department, updated_at: new Date().toISOString() }).eq('id', id)
+  if (error) throw new Error(error.message)
   revalidatePath('/sales/report')
   revalidatePath('/sales')
 }
