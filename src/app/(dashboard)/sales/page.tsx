@@ -16,7 +16,7 @@ export default async function SalesPage() {
 
   const isAdmin = profile?.role === 'admin'
   const showAll = isAdmin || accessLevel === 'full' || accessLevel === 'read'
-  const myDepts: string[] = profile?.departments ?? []
+  const myDepts: string[] = (profile as any)?.departments ?? []
 
   const [{ data: vendors }, { data: entities }] = await Promise.all([
     supabase.from('vendors').select('id, name, type').order('name'),
@@ -29,10 +29,11 @@ export default async function SalesPage() {
     .order('created_at', { ascending: false })
 
   if (!showAll) {
+    const uid = profile?.id ?? user.id
     if (myDepts.length > 0) {
-      salesQuery = salesQuery.or(`department.in.(${myDepts.join(',')}),assignee_id.eq.${profile!.id}`)
+      salesQuery = salesQuery.or(`department.in.(${myDepts.join(',')}),assignee_id.eq.${uid}`)
     } else {
-      salesQuery = salesQuery.eq('assignee_id', profile!.id)
+      salesQuery = salesQuery.eq('assignee_id', uid)
     }
   }
 

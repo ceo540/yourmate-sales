@@ -1,20 +1,23 @@
 import { createClient } from '@/lib/supabase/server'
 import Link from 'next/link'
+import { redirect } from 'next/navigation'
 import SalesReportClient from './SalesReportClient'
 
 export default async function SalesReportPage() {
   const supabase = await createClient()
 
   const { data: { user } } = await supabase.auth.getUser()
+  if (!user) redirect('/login')
+
   const [{ data: profile }, { data: vendors }, { data: entities }, { data: profiles }] = await Promise.all([
-    supabase.from('profiles').select('id, role, departments').eq('id', user!.id).single(),
+    supabase.from('profiles').select('id, role, departments').eq('id', user.id).single(),
     supabase.from('vendors').select('id, name, type').order('name'),
     supabase.from('business_entities').select('id, name, entity_type').order('name'),
     supabase.from('profiles').select('id, name').order('name'),
   ])
 
   const isAdmin = profile?.role === 'admin' || profile?.role === 'manager'
-  const myDepts: string[] = profile?.departments ?? []
+  const myDepts: string[] = (profile as any)?.departments ?? []
 
   let salesQuery = supabase
     .from('sales')
@@ -22,10 +25,11 @@ export default async function SalesReportPage() {
     .order('created_at', { ascending: false })
 
   if (!isAdmin) {
+    const uid = profile?.id ?? user.id
     if (myDepts.length > 0) {
-      salesQuery = salesQuery.or(`department.in.(${myDepts.join(',')}),assignee_id.eq.${profile!.id}`)
+      salesQuery = salesQuery.or(`department.in.(${myDepts.join(',')}),assignee_id.eq.${uid}`)
     } else {
-      salesQuery = salesQuery.eq('assignee_id', profile!.id)
+      salesQuery = salesQuery.eq('assignee_id', uid)
     }
   }
 
