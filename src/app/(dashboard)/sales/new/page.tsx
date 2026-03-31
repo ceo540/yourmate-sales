@@ -1,6 +1,6 @@
 import { createClient } from '@/lib/supabase/server'
 import Link from 'next/link'
-import { DEPARTMENT_LABELS, SERVICE_TYPES } from '@/types'
+import { DEPT_SERVICE_GROUPS } from '@/types'
 import { createSale } from '../actions'
 import SubmitButton from '@/components/ui/SubmitButton'
 
@@ -41,60 +41,21 @@ export default async function NewSalePage() {
             />
           </div>
 
-          <div className="grid grid-cols-2 gap-4">
-            {/* 사업부 */}
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1.5">사업부</label>
-              <select
-                id="dept-select"
-                name="department"
-                className="w-full px-4 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-yellow-400 bg-white"
-              >
-                <option value="">선택 안함</option>
-                {Object.entries(DEPARTMENT_LABELS).map(([key, label]) => (
-                  <option key={key} value={key}>{label}</option>
-                ))}
-              </select>
-            </div>
-
-            {/* 서비스 */}
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1.5">서비스</label>
-              <select
-                id="service-select"
-                name="service_type"
-                className="w-full px-4 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-yellow-400 bg-white disabled:opacity-40"
-              >
-                <option value="">선택 안함</option>
-                {Object.entries(SERVICE_TYPES).map(([dept, services]) =>
-                  services?.map(s => (
-                    <option key={`${dept}-${s}`} value={s} data-dept={dept}>{s}</option>
-                  ))
-                )}
-              </select>
-            </div>
+          {/* 서비스 */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1.5">서비스</label>
+            <select
+              name="service_type"
+              className="w-full px-4 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-yellow-400 bg-white"
+            >
+              <option value="">선택 안함</option>
+              {DEPT_SERVICE_GROUPS.filter(g => g.services.length > 0).map(g => (
+                <optgroup key={g.label} label={g.label}>
+                  {g.services.map(s => <option key={s} value={s}>{s}</option>)}
+                </optgroup>
+              ))}
+            </select>
           </div>
-
-          <script dangerouslySetInnerHTML={{ __html: `
-            (function() {
-              var deptMap = ${JSON.stringify(SERVICE_TYPES)};
-              var deptSel = document.getElementById('dept-select');
-              var svcSel = document.getElementById('service-select');
-              function updateService() {
-                var dept = deptSel.value;
-                var services = deptMap[dept] || [];
-                svcSel.innerHTML = '<option value="">선택 안함</option>';
-                services.forEach(function(s) {
-                  var opt = document.createElement('option');
-                  opt.value = s; opt.textContent = s;
-                  svcSel.appendChild(opt);
-                });
-                svcSel.disabled = services.length === 0;
-              }
-              deptSel.addEventListener('change', updateService);
-              updateService();
-            })();
-          `}} />
 
           <div className="grid grid-cols-2 gap-4">
 

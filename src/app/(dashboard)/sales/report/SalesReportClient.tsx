@@ -2,7 +2,7 @@
 import React, { useState, useMemo, useTransition } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import { DEPARTMENT_LABELS, type Department } from '@/types'
+import { DEPARTMENT_LABELS, DEPT_SERVICE_GROUPS, type Department } from '@/types'
 import SaleExpandEditor from './SaleExpandEditor'
 import { bulkDeleteSales, bulkUpdateSalesStatus, updateEntityType } from '../actions'
 
@@ -139,7 +139,10 @@ export default function SalesReportClient({ sales: initialSales, vendors, entiti
 
   const filtered = sales
     .filter(s => filterYear ? matchesFilter(s, filterYear, filterPeriod) : true)
-    .filter(s => filterDept === 'all' ? true : s.department === filterDept)
+    .filter(s => {
+      if (filterDept === 'all') return true
+      return s.service_type === filterDept
+    })
     .filter(s => filterEntity === 'all' ? true : (s.entity?.id ?? '') === filterEntity)
     .filter(s => filterStatus === 'all' ? true : (s.payment_status ?? '계약전') === filterStatus)
 
@@ -226,9 +229,11 @@ export default function SalesReportClient({ sales: initialSales, vendors, entiti
           onChange={e => setFilterDept(e.target.value)}
           className="px-3 py-2 rounded-lg border border-gray-200 text-sm bg-white focus:outline-none focus:border-yellow-400 text-gray-700"
         >
-          <option value="all">전체 사업부</option>
-          {Object.entries(DEPARTMENT_LABELS).map(([key, label]) => (
-            <option key={key} value={key}>{label}</option>
+          <option value="all">전체 사업부/서비스</option>
+          {DEPT_SERVICE_GROUPS.map(g => (
+            <optgroup key={g.label} label={g.label}>
+              {g.services.map(s => <option key={s} value={s}>{s}</option>)}
+            </optgroup>
           ))}
         </select>
         {entities.length > 0 && (
