@@ -1,7 +1,7 @@
 'use client'
 import { useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
-import { DEPT_SERVICE_GROUPS } from '@/types'
+import { DEPT_SERVICE_GROUPS, SERVICE_TO_DEPT } from '@/types'
 import CostInlineEditor from '../CostInlineEditor'
 import { updateSaleInline, deleteSale } from '../actions'
 
@@ -75,9 +75,10 @@ export default function SaleDrawer({ sale, entities, vendors, profiles, isAdmin,
   const handleSave = async () => {
     if (!name.trim()) return
     setSaving(true)
+    const derivedDept = (serviceType && SERVICE_TO_DEPT[serviceType]) || sale.department || null
     await updateSaleInline(sale.id, {
       name: name.trim(),
-      department: null,
+      department: derivedDept,
       client_org: clientOrg || null,
       service_type: serviceType || null,
       assignee_id: assigneeId || null,
@@ -94,7 +95,7 @@ export default function SaleDrawer({ sale, entities, vendors, profiles, isAdmin,
     onSaved({
       ...sale,
       name: name.trim(),
-      department: null,
+      department: derivedDept,
       client_org: clientOrg || null,
       service_type: serviceType || null,
       assignee: profiles.find(p => p.id === assigneeId) ?? null,

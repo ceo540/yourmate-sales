@@ -78,6 +78,19 @@ const CONTRACT_BADGE_COLORS: Record<string, string> = {
   '기타': 'bg-gray-100 text-gray-500',
 }
 
+const SERVICE_COLORS: Record<string, string> = {
+  '002ENT':   'bg-blue-50 text-blue-700',
+  'SOS':      'bg-indigo-50 text-indigo-700',
+  '교육프로그램': 'bg-emerald-50 text-emerald-700',
+  '납품설치':   'bg-orange-50 text-orange-700',
+  '유지보수':   'bg-amber-50 text-amber-700',
+  '교구대여':   'bg-yellow-50 text-yellow-700',
+  '기념제작':   'bg-lime-50 text-lime-700',
+  '사진영상':   'bg-purple-50 text-purple-700',
+  '행사운영':   'bg-pink-50 text-pink-700',
+  '디자인 인쇄': 'bg-rose-50 text-rose-700',
+}
+
 const CURRENT_YEAR = new Date().getFullYear()
 const YEARS = [CURRENT_YEAR, CURRENT_YEAR - 1, CURRENT_YEAR - 2]
 const LIMIT_MAP: Record<string, number> = { '일반기업': 22_000_000, '여성기업': 55_000_000 }
@@ -363,7 +376,7 @@ export default function SalesReportClient({ sales: initialSales, vendors, entiti
             <thead>
               {filtered.length > 0 && (
                 <tr className="border-b-2 border-gray-200 bg-yellow-50">
-                  <td colSpan={10} className="px-4 py-3 text-xs font-semibold text-gray-600">합계 ({filtered.length}건)</td>
+                  <td colSpan={9} className="px-4 py-3 text-xs font-semibold text-gray-600">합계 ({filtered.length}건)</td>
                   <td className="px-4 py-3 text-right text-sm font-bold text-gray-900 whitespace-nowrap">{summary.revenue.toLocaleString()}원</td>
                   <td className="px-4 py-3 text-right text-sm font-semibold text-gray-600 whitespace-nowrap">{summary.cost.toLocaleString()}원</td>
                   <td className="px-4 py-3 text-right whitespace-nowrap">
@@ -377,7 +390,6 @@ export default function SalesReportClient({ sales: initialSales, vendors, entiti
                   <input type="checkbox" checked={allSelected} onChange={toggleAll} className="w-3.5 h-3.5 accent-yellow-400 cursor-pointer" />
                 </th>
                 <th className="text-left text-xs font-semibold text-gray-500 px-4 py-3.5">건명</th>
-                <th className="text-left text-xs font-semibold text-gray-500 px-4 py-3.5">사업부</th>
                 <th className="text-left text-xs font-semibold text-gray-500 px-4 py-3.5">서비스</th>
                 <th className="text-left text-xs font-semibold text-gray-500 px-4 py-3.5">사업자</th>
                 <th className="text-left text-xs font-semibold text-gray-500 px-4 py-3.5">발주처</th>
@@ -395,7 +407,7 @@ export default function SalesReportClient({ sales: initialSales, vendors, entiti
             <tbody className="divide-y divide-gray-50">
               {filtered.length === 0 && (
                 <tr>
-                  <td colSpan={15} className="py-16 text-center text-sm text-gray-400">
+                  <td colSpan={14} className="py-16 text-center text-sm text-gray-400">
                     해당 기간에 매출 건이 없어요.{' '}
                     <Link href="/sales/new" className="text-yellow-600 font-medium hover:underline">
                       새 매출 건 추가하기 →
@@ -431,12 +443,9 @@ export default function SalesReportClient({ sales: initialSales, vendors, entiti
                         <span className="text-sm font-medium text-gray-900 truncate block" title={sale.name}>{sale.name}</span>
                       )}
                     </td>
-                    <td className="px-4 py-3.5 text-xs text-gray-500 whitespace-nowrap">
-                      {sale.department ? DEPARTMENT_LABELS[sale.department as Department] ?? sale.department : '-'}
-                    </td>
                     <td className="px-4 py-3.5 whitespace-nowrap">
                       {sale.service_type
-                        ? <span className="text-xs px-2 py-1 rounded-full bg-purple-50 text-purple-700">{sale.service_type}</span>
+                        ? <span className={`text-xs px-2 py-1 rounded-full ${SERVICE_COLORS[sale.service_type] ?? 'bg-gray-100 text-gray-600'}`}>{sale.service_type}</span>
                         : <span className="text-xs text-gray-300">-</span>}
                     </td>
                     <td className="px-4 py-3.5 whitespace-nowrap">
@@ -482,7 +491,7 @@ export default function SalesReportClient({ sales: initialSales, vendors, entiti
                   {isExpanded && (
                     <SaleExpandEditor
                       sale={sale}
-                      colSpan={15}
+                      colSpan={14}
                       entities={entities}
                       vendors={vendors}
                       profiles={profiles}
