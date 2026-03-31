@@ -7,6 +7,11 @@ export default async function ReceivablesPage() {
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) redirect('/login')
 
+  const { data: profile } = await supabase.from('profiles').select('role').eq('id', user.id).single()
+  const { getAccessLevel } = await import('@/lib/permissions')
+  const accessLevel = await getAccessLevel(profile?.role, 'receivables')
+  if (accessLevel === 'off') redirect('/dashboard')
+
   const [{ data: sales }, { data: entities }] = await Promise.all([
     supabase
       .from('sales')

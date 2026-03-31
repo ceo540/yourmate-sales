@@ -14,7 +14,7 @@ export default async function AdminPage() {
     .eq('id', user.id)
     .single()
 
-  if (profile?.role !== 'admin') redirect('/sales')
+  if (profile?.role !== 'admin') redirect('/dashboard')
 
   const [{ data: profilesRaw }, { data: entities }] = await Promise.all([
     supabase.from('profiles').select('id, name, departments, role, created_at').order('created_at', { ascending: false }),
@@ -23,8 +23,11 @@ export default async function AdminPage() {
 
   const { createAdminClient } = await import('@/lib/supabase/admin')
   const adminClient = createAdminClient()
-  const { data: authUsers } = await adminClient.auth.admin.listUsers()
-  const authMap = new Map(authUsers?.users?.map(u => [u.id, {
+  const [{ data: authUsersData }, { data: allPerms }] = await Promise.all([
+    adminClient.auth.admin.listUsers(),
+    adminClient.from('role_permissions').select('role, page_key, access_level').neq('role', 'admin'),
+  ])
+  const authMap = new Map(authUsersData?.users?.map(u => [u.id, {
     email: u.email,
     last_sign_in_at: u.last_sign_in_at ?? null,
     confirmed_at: u.confirmed_at ?? null,
@@ -37,13 +40,19 @@ export default async function AdminPage() {
     confirmed_at: authMap.get(p.id)?.confirmed_at ?? null,
   }))
 
+  const permissionsByRole: Record<string, Record<string, string>> = {}
+  for (const p of (allPerms ?? [])) {
+    if (!permissionsByRole[p.role]) permissionsByRole[p.role] = {}
+    permissionsByRole[p.role][p.page_key] = p.access_level
+  }
+
   return (
     <div className="max-w-3xl mx-auto">
       <div className="mb-6">
         <h1 className="text-2xl font-bold text-gray-900">팀원 관리</h1>
         <p className="text-gray-500 text-sm mt-1">팀원 초대 및 권한 설정</p>
       </div>
-      <AdminClient users={users ?? []} entities={entities ?? []} />
+      <AdminClient users={users ?? []} entities={entities ?? []} permissionsByRole={permissionsByRole} />
     </div>
   )
 }

@@ -13,11 +13,13 @@ export default async function PaymentsPage() {
     .eq('id', user.id)
     .single()
 
-  const isAdminOrManager = profile?.role === 'admin' || profile?.role === 'manager'
+  const { getAccessLevel } = await import('@/lib/permissions')
+  const accessLevel = await getAccessLevel(profile?.role, 'payments')
+  if (accessLevel === 'off') redirect('/dashboard')
 
   let saleIds: string[] | null = null
 
-  if (!isAdminOrManager) {
+  if (accessLevel === 'own') {
     const myDepts: string[] = profile?.departments ?? []
     let salesQuery = supabase.from('sales').select('id')
     if (myDepts.length > 0) {

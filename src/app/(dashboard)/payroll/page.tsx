@@ -8,7 +8,7 @@ export default async function PayrollPage() {
   if (!user) redirect('/login')
 
   const { data: profile } = await supabase.from('profiles').select('role').eq('id', user.id).single()
-  if (profile?.role !== 'admin') redirect('/sales')
+  if (profile?.role !== 'admin') redirect('/dashboard')
 
   const [{ data: payroll }, { data: profiles }, { data: businessEntities }, { data: bonusItems }, { data: employeeCards }] = await Promise.all([
     supabase.from('payroll').select('*').order('year', { ascending: false }).order('month', { ascending: false }).order('employee_name'),

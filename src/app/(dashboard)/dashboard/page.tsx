@@ -1,4 +1,5 @@
 import { createClient } from '@/lib/supabase/server'
+import { createAdminClient } from '@/lib/supabase/admin'
 import { redirect } from 'next/navigation'
 import Link from 'next/link'
 
@@ -27,8 +28,15 @@ export default async function DashboardPage() {
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) redirect('/login')
 
-  const { data: profile } = await supabase.from('profiles').select('role').eq('id', user.id).single()
-  const isAdmin = profile?.role === 'admin' || profile?.role === 'manager'
+  const { data: profile } = await supabase.from('profiles').select('id, role').eq('id', user.id).single()
+  const isAdmin = profile?.role === 'admin'
+  const { getAccessLevel } = await import('@/lib/permissions')
+  const [salesAccessLevel, dashFinanceLevel] = await Promise.all([
+    getAccessLevel(profile?.role, 'sales'),
+    getAccessLevel(profile?.role, 'dashboard_finance'),
+  ])
+  const showAll = isAdmin || salesAccessLevel === 'full' || salesAccessLevel === 'read'
+  const showCashBalance = dashFinanceLevel !== 'off'
 
   const now = new Date()
   const thisYear = now.getFullYear()
@@ -38,14 +46,20 @@ export default async function DashboardPage() {
     ? `${thisYear + 1}-01-01`
     : `${thisYear}-${String(thisMonth + 1).padStart(2, '0')}-01`
 
-  const [{ data: allSales }, { data: payrollRows }] = await Promise.all([
-    supabase
-      .from('sales')
-      .select('id, name, revenue, payment_status, inflow_date, created_at, entity:business_entities(id, name), sale_costs(id, amount, is_paid, category)')
-      .order('created_at', { ascending: false }),
+  const admin = createAdminClient()
+  let salesQuery = supabase
+    .from('sales')
+    .select('id, name, revenue, payment_status, inflow_date, created_at, entity:business_entities(id, name), sale_costs(id, amount, is_paid, category)')
+    .order('created_at', { ascending: false })
+  if (!showAll) salesQuery = salesQuery.eq('assignee_id', profile!.id)
+
+  const [{ data: allSales }, { data: payrollRows }, { data: faAccounts }, { data: cashflowTxs }] = await Promise.all([
+    salesQuery,
     isAdmin
       ? supabase.from('payroll').select('base_salary, meal_allowance, mileage_allowance, allowances, fixed_bonus, bonus, unpaid_leave').eq('year', thisYear).eq('month', thisMonth)
       : Promise.resolve({ data: [] }),
+    showCashBalance ? admin.from('financial_accounts').select('id, initial_balance, type') : Promise.resolve({ data: [] }),
+    showCashBalance ? admin.from('cashflow').select('account_id, type, amount, transfer_account_id') : Promise.resolve({ data: [] }),
   ])
 
   const sales = allSales ?? []
@@ -70,6 +84,23 @@ export default async function DashboardPage() {
     return s + (r.base_salary ?? 0) + (r.meal_allowance ?? 0) + (r.mileage_allowance ?? 0) +
       (r.allowances ?? 0) + (r.fixed_bonus ?? 0) + (r.bonus ?? 0) - (r.unpaid_leave ?? 0)
   }, 0)
+
+  // 자금 잔고 계산
+  let totalCashBalance = 0
+  if (showCashBalance && faAccounts && cashflowTxs) {
+    const balMap: Record<string, number> = {}
+    for (const a of faAccounts) balMap[a.id] = a.initial_balance ?? 0
+    for (const t of cashflowTxs) {
+      if (t.account_id in balMap) {
+        if (t.type === 'income') balMap[t.account_id] += t.amount
+        else balMap[t.account_id] -= t.amount
+      }
+      if (t.transfer_account_id && t.transfer_account_id in balMap) balMap[t.transfer_account_id] += t.amount
+    }
+    totalCashBalance = (faAccounts as any[])
+      .filter(a => a.type !== 'loan')
+      .reduce((s, a) => s + (balMap[a.id] ?? 0), 0)
+  }
 
   // 사업자별 이번 달 매출
   const entityMap: Record<string, { name: string; revenue: number; count: number }> = {}
@@ -121,6 +152,13 @@ export default async function DashboardPage() {
           <div className="bg-white rounded-xl border border-gray-200 p-4">
             <p className="text-xs text-gray-400 mb-1">이번 달 인건비</p>
             <p className="text-xl font-bold text-gray-700">{formatMoney(thisMonthPayroll)}</p>
+          </div>
+        )}
+        {showCashBalance && (
+          <div className="bg-white rounded-xl border-2 p-4" style={{ borderColor: '#FFCE00' }}>
+            <p className="text-xs text-gray-400 mb-1">총 자금 잔고</p>
+            <p className="text-xl font-bold text-gray-900">{formatMoney(totalCashBalance)}</p>
+            {isAdmin && <Link href="/cashflow" className="text-xs text-gray-400 hover:text-gray-600 mt-1 inline-block">자금일보 →</Link>}
           </div>
         )}
       </div>

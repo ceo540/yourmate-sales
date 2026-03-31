@@ -9,13 +9,17 @@ export default async function CashflowPage() {
   if (!user) redirect('/login')
 
   const { data: profile } = await supabase.from('profiles').select('role').eq('id', user.id).single()
-  if (profile?.role !== 'admin') redirect('/sales')
+  if (profile?.role !== 'admin') redirect('/dashboard')
 
   const admin = createAdminClient()
-  const [{ data: accounts }, { data: transactions }] = await Promise.all([
-    admin.from('financial_accounts').select('id, business_entity, name, account_number, type, initial_balance, is_active').order('business_entity').order('created_at'),
+  const [accountsResult, txResult] = await Promise.all([
+    admin.from('financial_accounts').select('*').order('business_entity').order('created_at'),
     admin.from('cashflow').select('*').order('date', { ascending: false }).order('created_at', { ascending: false }),
   ])
+  if (accountsResult.error) console.error('[cashflow] accounts error:', accountsResult.error)
+  if (txResult.error) console.error('[cashflow] transactions error:', txResult.error)
+  const accounts = accountsResult.data
+  const transactions = txResult.data
 
   return (
     <div className="max-w-7xl mx-auto">

@@ -1,9 +1,18 @@
 import { createClient } from '@/lib/supabase/server'
+import { redirect } from 'next/navigation'
 import Link from 'next/link'
 import VendorList from './VendorList'
 
 export default async function VendorsPage() {
   const supabase = await createClient()
+
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) redirect('/login')
+
+  const { data: profile } = await supabase.from('profiles').select('role').eq('id', user.id).single()
+  const { getAccessLevel } = await import('@/lib/permissions')
+  const accessLevel = await getAccessLevel(profile?.role, 'vendors')
+  if (accessLevel === 'off') redirect('/dashboard')
 
   const { data: vendors } = await supabase
     .from('vendors')

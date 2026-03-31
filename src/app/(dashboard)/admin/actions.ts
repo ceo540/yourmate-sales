@@ -1,6 +1,14 @@
 'use server'
 import { createClient } from '@/lib/supabase/server'
+import { createAdminClient } from '@/lib/supabase/admin'
 import { revalidatePath } from 'next/cache'
+
+export async function updatePermission(role: string, pageKey: string, accessLevel: string) {
+  const admin = createAdminClient()
+  await admin.from('role_permissions')
+    .upsert({ role, page_key: pageKey, access_level: accessLevel }, { onConflict: 'role,page_key' })
+  revalidatePath('/admin')
+}
 
 export async function createEntity(formData: FormData) {
   const supabase = await createClient()

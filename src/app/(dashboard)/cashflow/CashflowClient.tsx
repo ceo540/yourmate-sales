@@ -49,6 +49,55 @@ const MONTHS = ['1월','2월','3월','4월','5월','6월','7월','8월','9월','
 
 function fmt(n: number) { return Math.abs(n).toLocaleString() }
 function today() { return new Date().toISOString().split('T')[0] }
+function shortName(name: string) {
+  // 괄호 안 내용이 6자 이상이면 제거 (회사명 제거, 단 짧은 별칭은 유지)
+  return name.replace(/\s*\([^)]{6,}\)\s*$/, '').trim()
+}
+
+const BANK_STYLES: { match: string; bg: string; text: string; label: string }[] = [
+  { match: '농협', bg: '#e8f5e9', text: '#2e7d32', label: '농협' },
+  { match: '국민', bg: '#fff8e1', text: '#f59e0b', label: 'KB' },
+  { match: '신한', bg: '#e3f2fd', text: '#1565c0', label: '신한' },
+  { match: '기업', bg: '#e8eaf6', text: '#3949ab', label: 'IBK' },
+  { match: '우리', bg: '#e0f2f1', text: '#00695c', label: '우리' },
+  { match: '하나', bg: '#e0f7fa', text: '#00838f', label: '하나' },
+  { match: '씨티', bg: '#e3f2fd', text: '#0277bd', label: 'Citi' },
+  { match: '카카오', bg: '#fffde7', text: '#795548', label: 'K' },
+  { match: '토스', bg: '#ede7f6', text: '#512da8', label: 'T' },
+  { match: '현대카드', bg: '#212121', text: '#ffffff', label: '현대' },
+  { match: '삼성카드', bg: '#1a237e', text: '#ffffff', label: '삼성' },
+  { match: '현대', bg: '#37474f', text: '#ffffff', label: '현대' },
+  { match: '카드', bg: '#fce4ec', text: '#c2185b', label: '카드' },
+]
+
+function BankIcon({ name }: { name: string }) {
+  const style = BANK_STYLES.find(s => name.includes(s.match))
+  const bg = style?.bg ?? '#f3f4f6'
+  const color = style?.text ?? '#6b7280'
+  const label = style?.label ?? name.slice(0, 2)
+  const isCard = name.includes('카드')
+
+  if (isCard) {
+    return (
+      <span
+        className="w-9 h-6 rounded-md flex flex-col items-center justify-end flex-shrink-0 overflow-hidden pb-1 text-[10px] font-bold leading-none"
+        style={{ backgroundColor: bg, color }}
+      >
+        <span className="w-full h-1.5 mb-1" style={{ backgroundColor: color, opacity: 0.25 }} />
+        {label}
+      </span>
+    )
+  }
+
+  return (
+    <span
+      className="w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0 text-xs font-bold"
+      style={{ backgroundColor: bg, color }}
+    >
+      {label}
+    </span>
+  )
+}
 
 function calcAllBalances(accounts: Account[], transactions: Transaction[]) {
   const b: Record<string, number> = {}
@@ -255,25 +304,44 @@ export default function CashflowClient({ accounts, transactions }: Props) {
                   <p className="text-xs text-gray-400 mt-0.5">자산 {fmt(assets)}원 · 부채 -{fmt(liabilities)}원</p>
                 )}
               </div>
-              <div className="px-5 py-3 space-y-2">
-                {bizAccounts.map(a => {
+              <div className="px-5 py-2 max-h-56 overflow-y-auto divide-y divide-gray-50">
+                {bizAccounts.filter(a => a.type !== 'loan').map(a => {
                   const bal = balances[a.id] ?? 0
-                  const isLoan = a.type === 'loan'
                   return (
-                    <div key={a.id} className="flex items-center gap-2 group">
+                    <div key={a.id} className="flex items-center gap-2.5 group py-2">
+                      <BankIcon name={a.name} />
                       <div className="flex-1 min-w-0">
-                        <span className="text-sm text-gray-700">{a.name}</span>
-                        {a.account_number && (
-                          <span className="ml-2 text-xs text-gray-400 font-mono">{a.account_number}</span>
-                        )}
+                        <span className="text-sm text-gray-700 truncate block">{shortName(a.name)}</span>
                       </div>
-                      <span className={`text-sm font-semibold flex-shrink-0 ${isLoan ? 'text-red-500' : bal < 0 ? 'text-red-500' : 'text-gray-800'}`}>
-                        {isLoan ? '-' : ''}{fmt(bal)}원
+                      <span className={`text-sm font-semibold flex-shrink-0 ${bal < 0 ? 'text-red-500' : 'text-gray-800'}`}>
+                        {fmt(bal)}원
                       </span>
                       <button onClick={() => openEditAcct(a)} className="text-xs text-gray-300 hover:text-gray-500 opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0">수정</button>
                     </div>
                   )
                 })}
+                {bizAccounts.filter(a => a.type === 'loan').length > 0 && (
+                  <>
+                    <div className="pt-2 pb-1">
+                      <span className="text-xs font-medium text-gray-400">대출</span>
+                    </div>
+                    {bizAccounts.filter(a => a.type === 'loan').map(a => {
+                      const bal = balances[a.id] ?? 0
+                      return (
+                        <div key={a.id} className="flex items-center gap-2.5 group py-2">
+                          <BankIcon name={a.name} />
+                          <div className="flex-1 min-w-0">
+                            <span className="text-sm text-gray-500 truncate block">{shortName(a.name)}</span>
+                          </div>
+                          <span className="text-sm font-semibold flex-shrink-0 text-red-500">
+                            -{fmt(Math.abs(bal))}원
+                          </span>
+                          <button onClick={() => openEditAcct(a)} className="text-xs text-gray-300 hover:text-gray-500 opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0">수정</button>
+                        </div>
+                      )
+                    })}
+                  </>
+                )}
               </div>
             </div>
           )
@@ -386,14 +454,15 @@ export default function CashflowClient({ accounts, transactions }: Props) {
                     const isOutgoing = ['expense', 'interest'].includes(t.type)
                     return (
                       <div key={t.id} className="flex items-center gap-3 px-5 py-3.5 border-b border-gray-50 last:border-0 hover:bg-gray-50 group transition-colors">
-                        <span className={`text-xs px-2.5 py-1 rounded-full font-medium flex-shrink-0 ${TX_TYPE_COLORS[t.type]}`}>
-                          {TX_TYPE_LABELS[t.type]}
-                        </span>
+                        {account && <BankIcon name={account.name} />}
                         <div className="flex-1 min-w-0">
                           <div className="flex items-center gap-1.5 flex-wrap">
-                            <span className="text-sm font-medium text-gray-800">{account?.name ?? '-'}</span>
+                            <span className="text-sm font-medium text-gray-800">{account ? shortName(account.name) : '-'}</span>
+                            <span className={`text-xs px-2 py-0.5 rounded-full font-medium flex-shrink-0 ${TX_TYPE_COLORS[t.type]}`}>
+                              {TX_TYPE_LABELS[t.type]}
+                            </span>
                             {transferAccount && (
-                              <><span className="text-xs text-gray-400">→</span><span className="text-sm text-gray-800">{transferAccount.name}</span></>
+                              <><span className="text-xs text-gray-400">→</span><span className="text-sm text-gray-800">{shortName(transferAccount.name)}</span></>
                             )}
                             {t.category && <span className="text-xs text-gray-400 bg-gray-100 px-1.5 py-0.5 rounded">{t.category}</span>}
                           </div>

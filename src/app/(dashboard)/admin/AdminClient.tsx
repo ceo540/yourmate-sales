@@ -3,7 +3,7 @@
 import { useState, useRef, useEffect, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
 import { DEPARTMENT_LABELS, type Department } from '@/types'
-import { createEntity, updateEntity, deleteEntity } from './actions'
+import { createEntity, updateEntity, deleteEntity, updatePermission } from './actions'
 
 interface UserProfile {
   id: string
@@ -25,6 +25,7 @@ interface BusinessEntity {
 interface Props {
   users: UserProfile[]
   entities: BusinessEntity[]
+  permissionsByRole: Record<string, Record<string, string>>
 }
 
 const DEPT_KEYS = Object.keys(DEPARTMENT_LABELS) as Department[]
@@ -53,7 +54,7 @@ function DeptCheckboxes({ selected, onChange }: { selected: string[], onChange: 
   )
 }
 
-export default function AdminClient({ users: initialUsers, entities: initialEntities }: Props) {
+export default function AdminClient({ users: initialUsers, entities: initialEntities, permissionsByRole: initialPerms }: Props) {
   const router = useRouter()
   const [, startTransition] = useTransition()
   const [users, setUsers] = useState(initialUsers)
@@ -68,6 +69,9 @@ export default function AdminClient({ users: initialUsers, entities: initialEnti
   const dropdownRef = useRef<HTMLDivElement>(null)
 
   // 사업자 관리 상태
+  const [activeTab, setActiveTab] = useState<'team' | 'entities' | 'permissions'>('team')
+  const [perms, setPerms] = useState(initialPerms)
+  const [togglingKey, setTogglingKey] = useState<string | null>(null)
   const [entities, setEntities] = useState(initialEntities)
   useEffect(() => { setEntities(initialEntities) }, [initialEntities])
   const [showEntityForm, setShowEntityForm] = useState(false)
@@ -177,9 +181,135 @@ export default function AdminClient({ users: initialUsers, entities: initialEnti
     setEntities(prev => prev.filter(e => e.id !== id))
   }
 
+  const ALL_PERM_ROWS: { label: string; pageKey?: string; fixed?: { admin: string; manager: string; member: string } }[] = [
+    { label: '대시보드',          pageKey: 'dashboard' },
+    { label: '대시보드 자금잔고',  pageKey: 'dashboard_finance' },
+    { label: '매출 현황',         pageKey: 'sales' },
+    { label: '매출 보고서',       pageKey: 'sales_report' },
+    { label: '매출 등록/수정',    fixed: { admin: '전체', manager: '전체', member: '본인 건만' } },
+    { label: '미수금 현황',       pageKey: 'receivables' },
+    { label: '거래처 DB',         pageKey: 'vendors' },
+    { label: '지급 관리',         pageKey: 'payments' },
+    { label: '재무 현황',         fixed: { admin: '✓', manager: '어드민만', member: '어드민만' } },
+    { label: '인건비 관리',       fixed: { admin: '✓', manager: '어드민만', member: '어드민만' } },
+    { label: '고정비 관리',       fixed: { admin: '✓', manager: '어드민만', member: '어드민만' } },
+    { label: '자금일보',          fixed: { admin: '✓', manager: '어드민만', member: '어드민만' } },
+    { label: '팀원 관리',         fixed: { admin: '✓', manager: '어드민만', member: '어드민만' } },
+  ]
+  const ROLES = [
+    { role: 'manager', label: '팀장', color: 'bg-blue-100 text-blue-700' },
+    { role: 'member',  label: '팀원/PM', color: 'bg-gray-100 text-gray-600' },
+  ]
+  const LEVELS = [
+    { value: 'off',  label: '끄기',  active: 'bg-gray-200 text-gray-600' },
+    { value: 'read', label: '읽기',  active: 'bg-blue-100 text-blue-700' },
+    { value: 'own',  label: '담당만', active: 'bg-yellow-100 text-yellow-800' },
+    { value: 'full', label: '전체',  active: 'bg-green-100 text-green-700' },
+  ]
+
+  async function handleLevelChange(role: string, pageKey: string, level: string) {
+    const key = `${role}:${pageKey}`
+    setTogglingKey(key)
+    setPerms(prev => ({ ...prev, [role]: { ...prev[role], [pageKey]: level } }))
+    await updatePermission(role, pageKey, level)
+    setTogglingKey(null)
+  }
+
+  function LevelSelector({ role, pageKey }: { role: string; pageKey: string }) {
+    const current = perms[role]?.[pageKey] ?? 'off'
+    const busy = togglingKey === `${role}:${pageKey}`
+    return (
+      <div className={`inline-flex rounded-lg border border-gray-200 overflow-hidden ${busy ? 'opacity-50' : ''}`}>
+        {LEVELS.map(lv => (
+          <button
+            key={lv.value}
+            onClick={() => handleLevelChange(role, pageKey, lv.value)}
+            disabled={busy}
+            className={`px-2.5 py-1 text-xs font-medium border-r border-gray-200 last:border-r-0 transition-colors ${
+              current === lv.value ? lv.active : 'bg-white text-gray-400 hover:bg-gray-50'
+            }`}
+          >
+            {lv.label}
+          </button>
+        ))}
+      </div>
+    )
+  }
+
   return (
     <div className="space-y-6">
-      <div className="bg-white rounded-xl border border-gray-200">
+      {/* 탭 */}
+      <div className="flex gap-1 bg-gray-100 p-1 rounded-xl w-fit">
+        {([['team', '팀원 관리'], ['entities', '사업자 관리'], ['permissions', '권한 안내']] as const).map(([key, label]) => (
+          <button
+            key={key}
+            onClick={() => setActiveTab(key)}
+            className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${activeTab === key ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
+
+      {/* 권한 안내 탭 */}
+      {activeTab === 'permissions' && (
+        <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+          <div className="px-6 py-4 border-b border-gray-100">
+            <h2 className="text-sm font-semibold text-gray-900">역할별 접근 권한</h2>
+            <p className="text-xs text-gray-400 mt-1">토글로 켜고 끄면 즉시 적용돼요. 관리자는 항상 전체 접근이에요.</p>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full">
+              <thead>
+                <tr className="bg-gray-50 border-b border-gray-100">
+                  <th className="text-left text-xs font-semibold text-gray-500 px-6 py-3">메뉴</th>
+                  <th className="text-center text-xs font-semibold px-6 py-3">
+                    <span className="px-2 py-1 rounded-full bg-yellow-100 text-yellow-800">관리자</span>
+                  </th>
+                  {ROLES.map(r => (
+                    <th key={r.role} className="text-center text-xs font-semibold px-6 py-3">
+                      <span className={`px-2 py-1 rounded-full ${r.color}`}>{r.label}</span>
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-50">
+                {ALL_PERM_ROWS.map((row) => (
+                  <tr key={row.label} className="hover:bg-gray-50">
+                    <td className="px-6 py-3.5 text-sm text-gray-700">{row.label}</td>
+                    <td className="px-6 py-3.5 text-center">
+                      {row.fixed
+                        ? <span className="text-xs px-2 py-1 rounded-full bg-green-50 text-green-600 font-medium">{row.fixed.admin}</span>
+                        : <span className="inline-flex h-5 w-9 items-center rounded-full bg-green-400 cursor-not-allowed opacity-60"><span className="inline-block h-3.5 w-3.5 translate-x-4 rounded-full bg-white shadow" /></span>
+                      }
+                    </td>
+                    {ROLES.map(r => (
+                      <td key={r.role} className="px-6 py-3.5 text-center">
+                        {row.fixed
+                          ? <span className={`text-xs px-2 py-1 rounded-full ${row.fixed[r.role as 'manager' | 'member'] === '어드민만' ? 'bg-red-50 text-red-400' : 'bg-gray-50 text-gray-500'}`}>{row.fixed[r.role as 'manager' | 'member']}</span>
+                          : <LevelSelector role={r.role} pageKey={row.pageKey!} />
+                        }
+                      </td>
+                    ))}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <div className="px-6 py-4 border-t border-gray-100 bg-gray-50 space-y-2">
+            <p className="text-xs text-gray-400">변경 사항은 해당 역할 직원이 다음 페이지 이동 시 반영돼요.</p>
+            <div className="text-xs text-gray-400 space-y-1 pt-1 border-t border-gray-200">
+              <p className="font-medium text-gray-500">권한 단계 안내</p>
+              <p><span className="font-medium text-gray-600">끄기</span> — 메뉴가 숨겨지고 접근이 차단돼요.</p>
+              <p><span className="font-medium text-gray-600">담당만</span> — 팀원 관리에서 지정한 담당 사업부의 매출 건, 또는 본인이 직접 담당자로 지정된 건만 볼 수 있어요. 담당 사업부가 없으면 본인 건만 표시돼요.</p>
+              <p><span className="font-medium text-gray-600">읽기</span> — 전체 데이터를 볼 수 있지만 수정은 불가해요.</p>
+              <p><span className="font-medium text-gray-600">전체</span> — 전체 데이터를 보고 수정할 수 있어요.</p>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {activeTab === 'team' && <div className="bg-white rounded-xl border border-gray-200">
         <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100">
           <h2 className="text-sm font-semibold text-gray-900">현재 팀원 ({users.length}명)</h2>
           <button
@@ -275,16 +405,16 @@ export default function AdminClient({ users: initialUsers, entities: initialEnti
             </div>
           ))}
         </div>
-      </div>
+      </div>}
 
-      {success && (
+      {activeTab === 'team' && success && (
         <div className="bg-green-50 border border-green-200 text-green-700 text-sm px-4 py-3 rounded-lg">
           {success}
         </div>
       )}
 
       {/* 사업자 관리 */}
-      <div className="bg-white rounded-xl border border-gray-200">
+      {activeTab === 'entities' && <div className="bg-white rounded-xl border border-gray-200">
         <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100">
           <h2 className="text-sm font-semibold text-gray-900">사업자 관리 ({entities.length}개)</h2>
           <button
@@ -375,9 +505,9 @@ export default function AdminClient({ users: initialUsers, entities: initialEnti
             >취소</button>
           </form>
         )}
-      </div>
+      </div>}
 
-      {showForm && (
+      {activeTab === 'team' && showForm && (
         <div className="bg-white rounded-xl border border-gray-200 p-6">
           <h2 className="text-sm font-semibold text-gray-900 mb-4">새 팀원 초대</h2>
           <p className="text-xs text-gray-400 mb-4">

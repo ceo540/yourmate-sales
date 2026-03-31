@@ -39,18 +39,18 @@ interface Props {
   year: number
 }
 
-function fmt(n: number) {
-  if (Math.abs(n) >= 100000000) return `${(n / 100000000).toFixed(1)}억`
-  if (Math.abs(n) >= 10000000) return `${Math.round(n / 10000000) * 10}백만`
-  if (Math.abs(n) >= 10000) return `${Math.round(n / 10000)}만`
-  return n.toLocaleString()
-}
-function fmtFull(n: number) { return n.toLocaleString() + '원' }
+function fmt(n: number) { return n.toLocaleString() }
+function fmtW(n: number) { return n.toLocaleString() + '원' }
 
 const MONTHS = [1,2,3,4,5,6,7,8,9,10,11,12]
+type PeriodType = 'monthly' | 'quarterly' | 'halfyear' | 'yearly'
 
 export default function FinanceClient({ sales, fixedCosts, payroll, year }: Props) {
-  const [selectedMonth, setSelectedMonth] = useState(new Date().getMonth() + 1)
+  const now = new Date()
+  const [selectedMonth, setSelectedMonth] = useState(now.getMonth() + 1)
+  const [selectedQuarter, setSelectedQuarter] = useState(Math.ceil((now.getMonth() + 1) / 3))
+  const [selectedHalf, setSelectedHalf] = useState(now.getMonth() < 6 ? 1 : 2)
+  const [periodType, setPeriodType] = useState<PeriodType>('monthly')
   const [filterEntity, setFilterEntity] = useState('all')
 
   const entities = useMemo(() => {
@@ -72,45 +72,69 @@ export default function FinanceClient({ sales, fixedCosts, payroll, year }: Prop
       const vat = mSales.reduce((s, r) => s + ((r.revenue ?? 0) > 0 ? Math.round((r.revenue ?? 0) * 0.1) : 0), 0)
       const totalCost = costItems + vat
       const grossProfit = revenue - totalCost
-
       const fixedTotal = filterEntity === 'all'
         ? fixedCosts.reduce((s, f) => s + f.amount, 0)
         : fixedCosts.filter(f => f.business_entity === filterEntity).reduce((s, f) => s + f.amount, 0)
-
       const payrollTotal = payroll
         .filter(p => p.month === m && (filterEntity === 'all' || p.business_entity === filterEntity))
         .reduce((s, p) => s + p.base_salary + p.meal_allowance + p.mileage_allowance + p.allowances + p.fixed_bonus + p.bonus - p.unpaid_leave, 0)
-
       const operatingProfit = grossProfit - fixedTotal - payrollTotal
-
       return { month: m, revenue, totalCost, grossProfit, fixedTotal, payrollTotal, operatingProfit, salesCount: mSales.length }
     })
   }, [sales, fixedCosts, payroll, year, filterEntity])
 
-  const selected = monthlyData[selectedMonth - 1]
+  // 선택된 기간의 월 목록
+  const activeMonths = useMemo(() => {
+    if (periodType === 'monthly') return [selectedMonth]
+    if (periodType === 'quarterly') return [1, 2, 3].map(i => (selectedQuarter - 1) * 3 + i)
+    if (periodType === 'halfyear') return Array.from({ length: 6 }, (_, i) => (selectedHalf - 1) * 6 + i + 1)
+    return MONTHS
+  }, [periodType, selectedMonth, selectedQuarter, selectedHalf])
 
-  // 선택 월 상세
-  const selectedSales = useMemo(() => {
-    const mStr = `${year}-${String(selectedMonth).padStart(2, '0')}`
-    return sales.filter(s =>
-      s.inflow_date?.startsWith(mStr) &&
-      (filterEntity === 'all' || s.entity?.[0]?.name === filterEntity)
+  // 기간 합산 데이터
+  const periodData = useMemo(() => {
+    return activeMonths.reduce((acc, m) => {
+      const d = monthlyData[m - 1]
+      return {
+        revenue: acc.revenue + d.revenue,
+        totalCost: acc.totalCost + d.totalCost,
+        grossProfit: acc.grossProfit + d.grossProfit,
+        fixedTotal: acc.fixedTotal + d.fixedTotal,
+        payrollTotal: acc.payrollTotal + d.payrollTotal,
+        operatingProfit: acc.operatingProfit + d.operatingProfit,
+        salesCount: acc.salesCount + d.salesCount,
+      }
+    }, { revenue: 0, totalCost: 0, grossProfit: 0, fixedTotal: 0, payrollTotal: 0, operatingProfit: 0, salesCount: 0 })
+  }, [activeMonths, monthlyData])
+
+  const periodSales = useMemo(() => {
+    return sales.filter(s => {
+      if (!s.inflow_date?.startsWith(String(year))) return false
+      const m = parseInt(s.inflow_date.slice(5, 7))
+      return activeMonths.includes(m) && (filterEntity === 'all' || s.entity?.[0]?.name === filterEntity)
+    })
+  }, [sales, activeMonths, year, filterEntity])
+
+  const periodPayroll = useMemo(() => {
+    return payroll.filter(p =>
+      activeMonths.includes(p.month) &&
+      (filterEntity === 'all' || p.business_entity === filterEntity)
     )
-  }, [sales, selectedMonth, year, filterEntity])
+  }, [payroll, activeMonths, filterEntity])
 
-  const selectedPayroll = payroll.filter(p =>
-    p.month === selectedMonth &&
-    (filterEntity === 'all' || p.business_entity === filterEntity)
-  )
+  const periodLabel = useMemo(() => {
+    if (periodType === 'monthly') return `${selectedMonth}월`
+    if (periodType === 'quarterly') return `${selectedQuarter}분기 (${(selectedQuarter - 1) * 3 + 1}–${selectedQuarter * 3}월)`
+    if (periodType === 'halfyear') return selectedHalf === 1 ? '상반기 (1–6월)' : '하반기 (7–12월)'
+    return `${year}년 전체`
+  }, [periodType, selectedMonth, selectedQuarter, selectedHalf, year])
 
-  // 미수금 (완납 아닌 것, 매출 있는 것)
+  // 미수금 / 미지급
   const receivables = sales.filter(s =>
     s.payment_status && s.payment_status !== '완납' && s.payment_status !== '계약전' && (s.revenue ?? 0) > 0 &&
     (filterEntity === 'all' || s.entity?.[0]?.name === filterEntity)
   )
   const totalReceivables = receivables.reduce((s, r) => s + (r.revenue ?? 0), 0)
-
-  // 미지급 원가
   const unpaidCosts = sales
     .filter(s => filterEntity === 'all' || s.entity?.[0]?.name === filterEntity)
     .flatMap(s => s.sale_costs.filter(c => !c.is_paid && c.category === '외부원가'))
@@ -125,7 +149,6 @@ export default function FinanceClient({ sales, fixedCosts, payroll, year }: Prop
   }), { revenue: 0, totalCost: 0, grossProfit: 0, operatingProfit: 0 })
 
   const maxRevenue = Math.max(...monthlyData.map(m => m.revenue), 1)
-
   const labelCls = 'text-xs text-gray-400 mb-0.5'
   const valueCls = 'text-lg font-bold text-gray-900'
 
@@ -151,7 +174,7 @@ export default function FinanceClient({ sales, fixedCosts, payroll, year }: Prop
         ].map(item => (
           <div key={item.label} className="bg-white rounded-xl border border-gray-200 p-4">
             <p className={labelCls}>{item.label}</p>
-            <p className={`${valueCls} ${item.color}`}>{fmt(item.value)}<span className="text-xs font-normal text-gray-400 ml-0.5">원</span></p>
+            <p className={`${valueCls} ${item.color}`}>{fmtW(item.value)}</p>
           </div>
         ))}
       </div>
@@ -162,14 +185,14 @@ export default function FinanceClient({ sales, fixedCosts, payroll, year }: Prop
         <div className="flex items-end gap-1.5 h-28">
           {monthlyData.map(m => {
             const revenueH = maxRevenue > 0 ? Math.round((m.revenue / maxRevenue) * 100) : 0
-            const isSelected = m.month === selectedMonth
+            const isSelected = activeMonths.includes(m.month)
             return (
-              <button key={m.month} onClick={() => setSelectedMonth(m.month)}
+              <button key={m.month} onClick={() => { setPeriodType('monthly'); setSelectedMonth(m.month) }}
                 className="flex-1 flex flex-col items-center gap-1 group"
               >
                 <div className="w-full flex flex-col justify-end" style={{ height: '80px' }}>
                   <div
-                    className={`w-full rounded-t transition-all ${isSelected ? '' : 'opacity-60 hover:opacity-80'}`}
+                    className={`w-full rounded-t transition-all ${isSelected ? '' : 'opacity-40 hover:opacity-70'}`}
                     style={{
                       height: `${revenueH}%`,
                       backgroundColor: m.operatingProfit >= 0 ? '#FFCE00' : '#fca5a5',
@@ -188,103 +211,128 @@ export default function FinanceClient({ sales, fixedCosts, payroll, year }: Prop
         </div>
       </div>
 
-      {/* 선택 월 손익계산서 */}
+      {/* 손익계산서 */}
       <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
-        <div className="px-5 py-4 border-b border-gray-100 flex items-center justify-between">
-          <h2 className="text-sm font-bold text-gray-900">{selectedMonth}월 손익계산서</h2>
-          <div className="flex gap-1">
-            {MONTHS.map(m => (
-              <button key={m} onClick={() => setSelectedMonth(m)}
-                className={`w-7 h-7 rounded-lg text-xs transition-colors ${m === selectedMonth ? 'font-bold text-gray-900' : 'text-gray-400 hover:bg-gray-100'}`}
-                style={m === selectedMonth ? { backgroundColor: '#FFCE00' } : {}}
-              >{m}</button>
-            ))}
+        <div className="px-5 py-4 border-b border-gray-100 space-y-3">
+          <div className="flex items-center justify-between">
+            <h2 className="text-sm font-bold text-gray-900">{periodLabel} 손익계산서</h2>
+            {/* 기간 타입 선택 */}
+            <div className="flex gap-0.5 bg-gray-100 p-0.5 rounded-lg">
+              {([['monthly', '월별'], ['quarterly', '분기별'], ['halfyear', '반기별'], ['yearly', '년별']] as const).map(([type, label]) => (
+                <button
+                  key={type}
+                  onClick={() => setPeriodType(type)}
+                  className={`px-2.5 py-1 rounded-md text-xs font-medium transition-all ${periodType === type ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
           </div>
+
+          {/* 하위 선택 */}
+          {periodType === 'monthly' && (
+            <div className="flex gap-1 flex-wrap">
+              {MONTHS.map(m => (
+                <button key={m} onClick={() => setSelectedMonth(m)}
+                  className={`w-7 h-7 rounded-lg text-xs transition-colors ${m === selectedMonth ? 'font-bold text-gray-900' : 'text-gray-400 hover:bg-gray-100'}`}
+                  style={m === selectedMonth ? { backgroundColor: '#FFCE00' } : {}}
+                >{m}</button>
+              ))}
+            </div>
+          )}
+          {periodType === 'quarterly' && (
+            <div className="flex gap-1.5">
+              {[1, 2, 3, 4].map(q => (
+                <button key={q} onClick={() => setSelectedQuarter(q)}
+                  className={`px-3 py-1 rounded-lg text-xs font-medium transition-colors ${q === selectedQuarter ? 'text-gray-900' : 'text-gray-400 hover:bg-gray-100'}`}
+                  style={q === selectedQuarter ? { backgroundColor: '#FFCE00' } : {}}
+                >Q{q}</button>
+              ))}
+            </div>
+          )}
+          {periodType === 'halfyear' && (
+            <div className="flex gap-1.5">
+              {[['상반기', 1], ['하반기', 2]].map(([label, h]) => (
+                <button key={h} onClick={() => setSelectedHalf(h as number)}
+                  className={`px-3 py-1 rounded-lg text-xs font-medium transition-colors ${h === selectedHalf ? 'text-gray-900' : 'text-gray-400 hover:bg-gray-100'}`}
+                  style={h === selectedHalf ? { backgroundColor: '#FFCE00' } : {}}
+                >{label}</button>
+              ))}
+            </div>
+          )}
         </div>
 
         <div className="px-5 py-4 space-y-0">
-          {/* 매출 */}
           <div className="flex items-center justify-between py-2.5 border-b border-gray-50">
             <span className="text-sm font-semibold text-gray-700">매출</span>
-            <span className="text-sm font-bold text-gray-900">{fmtFull(selected.revenue)}</span>
+            <span className="text-sm font-bold text-gray-900">{fmtW(periodData.revenue)}</span>
           </div>
           <div className="flex items-center justify-between py-2 pl-4 text-xs text-gray-500">
             <span>건 수</span>
-            <span>{selected.salesCount}건</span>
+            <span>{periodData.salesCount}건</span>
           </div>
-
-          {/* 원가 */}
           <div className="flex items-center justify-between py-2.5 border-b border-gray-50">
             <span className="text-sm font-semibold text-gray-700">원가</span>
-            <span className="text-sm font-semibold text-red-400">- {fmtFull(selected.totalCost)}</span>
+            <span className="text-sm font-semibold text-red-400">- {fmtW(periodData.totalCost)}</span>
           </div>
-
-          {/* 매출총이익 */}
-          <div className={`flex items-center justify-between py-2.5 border-b border-gray-100 rounded-lg px-2 -mx-2 ${selected.grossProfit >= 0 ? 'bg-blue-50' : 'bg-red-50'}`}>
+          <div className={`flex items-center justify-between py-2.5 border-b border-gray-100 rounded-lg px-2 -mx-2 ${periodData.grossProfit >= 0 ? 'bg-blue-50' : 'bg-red-50'}`}>
             <span className="text-sm font-bold text-gray-700">매출총이익</span>
-            <span className={`text-sm font-bold ${selected.grossProfit >= 0 ? 'text-blue-600' : 'text-red-500'}`}>{fmtFull(selected.grossProfit)}</span>
+            <span className={`text-sm font-bold ${periodData.grossProfit >= 0 ? 'text-blue-600' : 'text-red-500'}`}>{fmtW(periodData.grossProfit)}</span>
           </div>
-
           <div className="py-1" />
-
-          {/* 고정비 */}
           <div className="flex items-center justify-between py-2.5 border-b border-gray-50">
             <span className="text-sm font-semibold text-gray-700">고정비</span>
-            <span className="text-sm font-semibold text-gray-500">- {fmtFull(selected.fixedTotal)}</span>
+            <span className="text-sm font-semibold text-gray-500">- {fmtW(periodData.fixedTotal)}</span>
           </div>
-
-          {/* 인건비 */}
           <div className="flex items-center justify-between py-2.5 border-b border-gray-50">
             <span className="text-sm font-semibold text-gray-700">인건비</span>
-            <span className="text-sm font-semibold text-gray-500">- {fmtFull(selected.payrollTotal)}</span>
+            <span className="text-sm font-semibold text-gray-500">- {fmtW(periodData.payrollTotal)}</span>
           </div>
-          {selectedPayroll.length > 0 && (
+          {periodPayroll.length > 0 && (
             <div className="pl-4 pb-1 space-y-0.5">
-              {selectedPayroll.map((p, i) => {
+              {periodPayroll.map((p, i) => {
                 const gross = p.base_salary + p.meal_allowance + p.mileage_allowance + p.allowances + p.fixed_bonus + p.bonus - p.unpaid_leave
                 return (
                   <div key={i} className="flex items-center justify-between text-xs text-gray-400 py-0.5">
-                    <span>{p.employee_name} {p.business_entity ? `(${p.business_entity})` : ''}</span>
+                    <span>{p.employee_name}{p.business_entity ? ` (${p.business_entity})` : ''}{periodType !== 'monthly' ? ` · ${p.month}월` : ''}</span>
                     <span>{gross.toLocaleString()}원</span>
                   </div>
                 )
               })}
             </div>
           )}
-
-          {/* 영업이익 */}
-          <div className={`flex items-center justify-between py-3 rounded-xl px-3 -mx-1 mt-1 ${selected.operatingProfit >= 0 ? 'bg-green-50' : 'bg-red-50'}`}>
+          <div className={`flex items-center justify-between py-3 rounded-xl px-3 -mx-1 mt-1 ${periodData.operatingProfit >= 0 ? 'bg-green-50' : 'bg-red-50'}`}>
             <span className="text-base font-bold text-gray-800">영업이익</span>
             <div className="text-right">
-              <span className={`text-base font-bold ${selected.operatingProfit >= 0 ? 'text-green-600' : 'text-red-500'}`}>
-                {fmtFull(selected.operatingProfit)}
+              <span className={`text-base font-bold ${periodData.operatingProfit >= 0 ? 'text-green-600' : 'text-red-500'}`}>
+                {fmtW(periodData.operatingProfit)}
               </span>
-              {selected.revenue > 0 && (
+              {periodData.revenue > 0 && (
                 <p className="text-xs text-gray-400 mt-0.5">
-                  이익률 {Math.round((selected.operatingProfit / selected.revenue) * 100)}%
+                  이익률 {Math.round((periodData.operatingProfit / periodData.revenue) * 100)}%
                 </p>
               )}
             </div>
           </div>
         </div>
 
-        {/* 이번 달 매출 건 목록 */}
-        {selectedSales.length > 0 && (
+        {periodSales.length > 0 && (
           <div className="border-t border-gray-100">
             <p className="text-xs font-semibold text-gray-400 px-5 pt-3 pb-2">매출 상세</p>
             <div className="divide-y divide-gray-50">
-              {selectedSales.map(s => {
+              {periodSales.map(s => {
                 const cost = s.sale_costs.reduce((cs, c) => cs + c.amount, 0) + ((s.revenue ?? 0) > 0 ? Math.round((s.revenue ?? 0) * 0.1) : 0)
                 const profit = (s.revenue ?? 0) - cost
                 return (
                   <div key={s.id} className="flex items-center gap-3 px-5 py-2.5">
                     <div className="flex-1 min-w-0">
                       <p className="text-sm text-gray-800 truncate">{s.name}</p>
-                      <p className="text-xs text-gray-400">{s.entity?.[0]?.name ?? '-'}</p>
+                      <p className="text-xs text-gray-400">{s.entity?.[0]?.name ?? '-'}{s.inflow_date && periodType !== 'monthly' ? ` · ${s.inflow_date.slice(5, 7)}월` : ''}</p>
                     </div>
                     <div className="text-right text-xs flex-shrink-0 space-y-0.5">
-                      <p className="font-semibold text-gray-700">{fmt(s.revenue ?? 0)}원</p>
-                      <p className={profit >= 0 ? 'text-green-600' : 'text-red-400'}>이익 {fmt(profit)}원</p>
+                      <p className="font-semibold text-gray-700">{fmtW(s.revenue ?? 0)}</p>
+                      <p className={profit >= 0 ? 'text-green-600' : 'text-red-400'}>이익 {fmtW(profit)}</p>
                     </div>
                   </div>
                 )
@@ -299,7 +347,7 @@ export default function FinanceClient({ sales, fixedCosts, payroll, year }: Prop
         <div className="bg-white rounded-xl border border-orange-100 overflow-hidden">
           <div className="px-5 py-3.5 border-b border-orange-50 flex items-center justify-between">
             <h2 className="text-sm font-semibold text-gray-700">미수금</h2>
-            <span className="text-sm font-bold text-orange-500">{fmtFull(totalReceivables)}</span>
+            <span className="text-sm font-bold text-orange-500">{fmtW(totalReceivables)}</span>
           </div>
           {receivables.length === 0 ? (
             <p className="px-5 py-6 text-sm text-gray-400 text-center">미수금 없음</p>
@@ -311,7 +359,7 @@ export default function FinanceClient({ sales, fixedCosts, payroll, year }: Prop
                     <p className="text-sm text-gray-800 truncate">{s.name}</p>
                     <span className="text-xs text-orange-500">{s.payment_status}</span>
                   </div>
-                  <span className="text-sm font-semibold text-orange-400 flex-shrink-0">{fmt(s.revenue ?? 0)}원</span>
+                  <span className="text-sm font-semibold text-orange-400 flex-shrink-0">{fmtW(s.revenue ?? 0)}</span>
                 </div>
               ))}
             </div>
@@ -321,12 +369,12 @@ export default function FinanceClient({ sales, fixedCosts, payroll, year }: Prop
         <div className="bg-white rounded-xl border border-red-100 overflow-hidden">
           <div className="px-5 py-3.5 border-b border-red-50 flex items-center justify-between">
             <h2 className="text-sm font-semibold text-gray-700">미지급 원가</h2>
-            <span className="text-sm font-bold text-red-400">{fmtFull(totalUnpaid)}</span>
+            <span className="text-sm font-bold text-red-400">{fmtW(totalUnpaid)}</span>
           </div>
           {unpaidCosts.length === 0 ? (
             <p className="px-5 py-6 text-sm text-gray-400 text-center">미지급 없음</p>
           ) : (
-            <p className="px-5 py-4 text-sm text-gray-500">{unpaidCosts.length}건 · {fmtFull(totalUnpaid)}</p>
+            <p className="px-5 py-4 text-sm text-gray-500">{unpaidCosts.length}건 · {fmtW(totalUnpaid)}</p>
           )}
         </div>
       </div>

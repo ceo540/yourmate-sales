@@ -7,12 +7,20 @@ import { useRouter } from 'next/navigation'
 import { useEffect, useState } from 'react'
 
 const nav = [
-  { href: '/dashboard', label: '대시보드', icon: '🏠' },
-  { href: '/sales', label: '매출 현황', icon: '💰' },
-  { href: '/sales/report', label: '매출 보고서', icon: '📄' },
-  { href: '/receivables', label: '미수금 현황', icon: '🔔' },
-  { href: '/vendors', label: '거래처 DB', icon: '🏢' },
-  { href: '/payments', label: '지급 관리', icon: '📋' },
+  { href: '/dashboard',    label: '대시보드',    icon: '🏠', pageKey: 'dashboard' },
+  { href: '/sales',        label: '매출 현황',   icon: '💰', pageKey: 'sales' },
+  { href: '/sales/report', label: '매출 보고서', icon: '📄', pageKey: 'sales_report' },
+  { href: '/receivables',  label: '미수금 현황', icon: '🔔', pageKey: 'receivables' },
+  { href: '/vendors',      label: '거래처 DB',   icon: '🏢', pageKey: 'vendors' },
+]
+
+const adminNav = [
+  { href: '/payments',    label: '지급 관리',   icon: '📋', pageKey: 'payments' },
+  { href: '/finance',     label: '재무 현황',   icon: '📈', pageKey: 'finance' },
+  { href: '/payroll',     label: '인건비 관리', icon: '💼', pageKey: 'payroll' },
+  { href: '/fixed-costs', label: '고정비 관리', icon: '🔒', pageKey: 'fixed_costs' },
+  { href: '/cashflow',    label: '자금일보',    icon: '📊', pageKey: 'cashflow' },
+  { href: '/admin',       label: '팀원 관리',   icon: '⚙️', pageKey: 'admin_panel' },
 ]
 
 const ROLE_LABELS: Record<string, string> = {
@@ -27,9 +35,16 @@ const ROLE_COLORS: Record<string, string> = {
 export default function Sidebar() {
   const pathname = usePathname()
   const router = useRouter()
-  const [isAdmin, setIsAdmin] = useState(false)
+  const [isAdmin, setIsAdmin] = useState(() => {
+    if (typeof window === 'undefined') return false
+    return localStorage.getItem('ym_is_admin') === '1'
+  })
   const [userName, setUserName] = useState('')
   const [userRole, setUserRole] = useState('')
+  const [permissions, setPermissions] = useState<Record<string, string>>(() => {
+    if (typeof window === 'undefined') return {}
+    try { return JSON.parse(localStorage.getItem('ym_perms') ?? '{}') } catch { return {} }
+  })
   const [mobileOpen, setMobileOpen] = useState(false)
 
   useEffect(() => {
@@ -38,9 +53,24 @@ export default function Sidebar() {
       if (!user) return
       supabase.from('profiles').select('role, name').eq('id', user.id).single()
         .then(({ data }) => {
-          if (data?.role === 'admin') setIsAdmin(true)
+          const role = data?.role ?? 'member'
+          const admin = role === 'admin'
+          setIsAdmin(admin)
           setUserName(data?.name ?? '')
-          setUserRole(data?.role ?? 'member')
+          setUserRole(role)
+          localStorage.setItem('ym_is_admin', admin ? '1' : '0')
+          if (admin) {
+            localStorage.setItem('ym_perms', JSON.stringify({}))
+            setPermissions({})
+          } else {
+            supabase.from('role_permissions').select('page_key, access_level').eq('role', role)
+              .then(({ data: perms }) => {
+                const map: Record<string, string> = {}
+                for (const p of (perms ?? [])) map[p.page_key] = p.access_level
+                setPermissions(map)
+                localStorage.setItem('ym_perms', JSON.stringify(map))
+              })
+          }
         })
     })
   }, [])
@@ -72,7 +102,7 @@ export default function Sidebar() {
 
       {/* 네비게이션 */}
       <nav className="flex-1 px-3 py-4 space-y-0.5 overflow-y-auto">
-        {nav.map((item) => {
+        {nav.filter(item => isAdmin || permissions[item.pageKey] !== 'off').map((item) => {
           const isActive = pathname === item.href ||
             (pathname.startsWith(item.href + '/') && !nav.some(o => o.href !== item.href && pathname.startsWith(o.href)))
           return (
@@ -89,16 +119,10 @@ export default function Sidebar() {
             </Link>
           )
         })}
-        {isAdmin && (
+        {(isAdmin || adminNav.some(item => permissions[item.pageKey])) && (
           <>
             <div className="border-t border-gray-100 my-2" />
-            {[
-              { href: '/finance', label: '재무 현황', icon: '📈' },
-              { href: '/payroll', label: '인건비 관리', icon: '💼' },
-              { href: '/fixed-costs', label: '고정비 관리', icon: '🔒' },
-              { href: '/cashflow', label: '자금일보', icon: '📊' },
-              { href: '/admin', label: '팀원 관리', icon: '⚙️' },
-            ].map(item => (
+            {adminNav.filter(item => isAdmin || (permissions[item.pageKey] ?? 'off') !== 'off').map(item => (
               <Link
                 key={item.href}
                 href={item.href}
@@ -206,7 +230,7 @@ export default function Sidebar() {
               <button onClick={() => setMobileOpen(false)} className="text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded transition-colors text-xl">×</button>
             </div>
             <nav className="flex-1 px-3 py-4 space-y-0.5">
-              {nav.map((item) => {
+              {nav.filter(item => isAdmin || permissions[item.pageKey] !== 'off').map((item) => {
                 const isActive = pathname === item.href ||
                   (pathname.startsWith(item.href + '/') && !nav.some(o => o.href !== item.href && pathname.startsWith(o.href)))
                 return (
@@ -223,15 +247,10 @@ export default function Sidebar() {
                   </Link>
                 )
               })}
-              {isAdmin && (
+              {(isAdmin || adminNav.some(item => permissions[item.pageKey])) && (
                 <>
                   <div className="border-t border-gray-100 my-2" />
-                  {[
-                    { href: '/finance', label: '재무 현황', icon: '📈' },
-                    { href: '/payroll', label: '인건비 관리', icon: '💼' },
-                    { href: '/cashflow', label: '자금일보', icon: '📊' },
-                    { href: '/admin', label: '팀원 관리', icon: '⚙️' },
-                  ].map(item => (
+                  {adminNav.filter(item => isAdmin || (permissions[item.pageKey] ?? 'off') !== 'off').map(item => (
                     <Link
                       key={item.href}
                       href={item.href}
