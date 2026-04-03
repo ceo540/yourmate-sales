@@ -15,7 +15,7 @@ const features = [
   },
   {
     icon: '📄',
-    title: '매출 보고서',
+    title: '계약 목록',
     href: '/sales/report',
     description: '전체 계약 건 목록, 원가 입력, 수금상태 관리, 일괄 변경을 처리합니다.',
   },

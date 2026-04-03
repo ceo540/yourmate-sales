@@ -1,6 +1,7 @@
 import { createClient } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
 import Sidebar from '@/components/layout/Sidebar'
+import AiChat from '@/components/AiChat'
 
 export default async function DashboardLayout({
   children,
@@ -17,9 +18,10 @@ export default async function DashboardLayout({
   return (
     <div className="flex min-h-screen bg-gray-50">
       <Sidebar />
-      <main className="flex-1 md:ml-60 pt-14 md:pt-0 p-4 md:p-8 min-h-screen">
+      <main className="flex-1 md:ml-44 pt-16 p-4 md:p-8 min-h-screen">
         {children}
       </main>
+      <AiChat />
     </div>
   )
 }

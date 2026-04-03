@@ -32,12 +32,17 @@ export async function GET() {
     confirmed_at: u.confirmed_at,
   }]))
 
-  const users = (profiles ?? []).map(p => ({
-    ...p,
-    email: authMap.get(p.id)?.email ?? null,
-    last_sign_in_at: authMap.get(p.id)?.last_sign_in_at ?? null,
-    confirmed_at: authMap.get(p.id)?.confirmed_at ?? null,
-  }))
+  const users = (profiles ?? []).map(p => {
+    const rawDepts = (p as any).departments
+    const departments: string[] = Array.isArray(rawDepts) ? rawDepts : (typeof rawDepts === 'string' ? (() => { try { return JSON.parse(rawDepts) } catch { return [] } })() : [])
+    return {
+      ...p,
+      departments,
+      email: authMap.get(p.id)?.email ?? null,
+      last_sign_in_at: authMap.get(p.id)?.last_sign_in_at ?? null,
+      confirmed_at: authMap.get(p.id)?.confirmed_at ?? null,
+    }
+  })
 
   return NextResponse.json({ users })
 }

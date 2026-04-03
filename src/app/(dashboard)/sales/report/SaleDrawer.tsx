@@ -18,6 +18,7 @@ interface Sale {
   name: string
   department: string | null
   client_org: string | null
+  customer_id: string | null
   service_type: string | null
   revenue: number | null
   payment_status: string | null
@@ -35,12 +36,14 @@ interface Sale {
 interface Profile { id: string; name: string }
 interface BusinessEntity { id: string; name: string }
 interface Vendor { id: string; name: string; type: string }
+interface Customer { id: string; name: string; type: string }
 
 interface Props {
   sale: Sale
   entities: BusinessEntity[]
   vendors: Vendor[]
   profiles: Profile[]
+  customers: Customer[]
   isAdmin: boolean
   onClose: () => void
   onSaved: (updated: Sale) => void
@@ -50,13 +53,14 @@ interface Props {
 const PAYMENT_STATUSES = ['계약전', '계약완료', '선금수령', '중도금수령', '완납']
 const CONTRACT_TYPES = ['나라장터', '세금계산서', '카드결제', '기타']
 
-export default function SaleDrawer({ sale, entities, vendors, profiles, isAdmin, onClose, onSaved, onDeleted }: Props) {
+export default function SaleDrawer({ sale, entities, vendors, profiles, customers, isAdmin, onClose, onSaved, onDeleted }: Props) {
   const router = useRouter()
   const [, startTransition] = useTransition()
   const [saving, setSaving] = useState(false)
   const [name, setName] = useState(sale.name)
   const [serviceType, setServiceType] = useState(sale.service_type ?? '')
   const [clientOrg, setClientOrg] = useState(sale.client_org ?? '')
+  const [customerId, setCustomerId] = useState(sale.customer_id ?? '')
   const [entityId, setEntityId] = useState(sale.entity?.id ?? '')
   const [contractType, setContractType] = useState(sale.contract_type ?? '')
   const [assigneeId, setAssigneeId] = useState(sale.assignee?.id ?? '')
@@ -81,6 +85,7 @@ export default function SaleDrawer({ sale, entities, vendors, profiles, isAdmin,
         name: name.trim(),
         department: derivedDept,
         client_org: clientOrg || null,
+        customer_id: customerId || null,
         service_type: serviceType || null,
         assignee_id: assigneeId || null,
         entity_id: entityId || null,
@@ -103,6 +108,7 @@ export default function SaleDrawer({ sale, entities, vendors, profiles, isAdmin,
       name: name.trim(),
       department: derivedDept,
       client_org: clientOrg || null,
+      customer_id: customerId || null,
       service_type: serviceType || null,
       assignee: profiles.find(p => p.id === assigneeId) ?? null,
       entity: entities.find(e => e.id === entityId) ?? null,
@@ -179,6 +185,22 @@ export default function SaleDrawer({ sale, entities, vendors, profiles, isAdmin,
           {/* 발주처 */}
           <div>
             <label className="block text-xs font-semibold text-gray-400 uppercase tracking-wide mb-1.5">발주처</label>
+            {customers.length > 0 && (
+              <select
+                value={customerId}
+                onChange={e => {
+                  setCustomerId(e.target.value)
+                  const c = customers.find(c => c.id === e.target.value)
+                  if (c) setClientOrg(c.name)
+                }}
+                className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-yellow-400 bg-white mb-2"
+              >
+                <option value="">고객 DB에서 선택</option>
+                {customers.map(c => (
+                  <option key={c.id} value={c.id}>{c.name} ({c.type})</option>
+                ))}
+              </select>
+            )}
             <input
               value={clientOrg}
               onChange={e => setClientOrg(e.target.value)}
@@ -298,6 +320,12 @@ export default function SaleDrawer({ sale, entities, vendors, profiles, isAdmin,
               삭제
             </button>
           )}
+          <button
+            onClick={() => router.push(`/sales/${sale.id}?from=/sales/report`)}
+            className="px-4 py-2.5 rounded-lg text-sm font-medium bg-blue-50 text-blue-600 hover:bg-blue-100 transition-colors"
+          >
+            업무 관리
+          </button>
           <button onClick={onClose}
             className="px-4 py-2.5 rounded-lg text-sm font-medium bg-gray-100 text-gray-600 hover:bg-gray-200 transition-colors">
             닫기

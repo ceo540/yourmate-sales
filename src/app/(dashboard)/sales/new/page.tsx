@@ -5,17 +5,20 @@ import { createSale } from '../actions'
 import SubmitButton from '@/components/ui/SubmitButton'
 
 interface BusinessEntity { id: string; name: string }
+interface Customer { id: string; name: string; type: string }
 
 const PAYMENT_STATUSES = ['계약전', '계약완료', '선금수령', '중도금수령', '완납'] as const
 
 export default async function NewSalePage() {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
-  const [{ data: currentProfile }, { data: profiles }, { data: entities }] = await Promise.all([
+  const [{ data: currentProfile }, { data: profiles }, { data: entities }, { data: customersRaw }] = await Promise.all([
     supabase.from('profiles').select('id, role, name').eq('id', user!.id).single(),
     supabase.from('profiles').select('id, name').order('name'),
     supabase.from('business_entities').select('id, name').order('name'),
+    supabase.from('customers').select('id, name, type').order('name'),
   ])
+  const customers = (customersRaw ?? []) as Customer[]
   const isAdmin = currentProfile?.role === 'admin' || currentProfile?.role === 'manager'
 
   return (
@@ -86,14 +89,25 @@ export default async function NewSalePage() {
           {/* 발주처 */}
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1.5">
-              발주처 <span className="text-gray-400 font-normal text-xs">(예: 용인교육지원청 지역교육과)</span>
+              발주처 <span className="text-gray-400 font-normal text-xs">(고객 DB에서 선택하거나 직접 입력)</span>
             </label>
+            {customers.length > 0 && (
+              <select
+                name="customer_id"
+                className="w-full px-4 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-yellow-400 bg-white mb-2"
+              >
+                <option value="">고객 DB에서 선택 (선택사항)</option>
+                {customers.map(c => (
+                  <option key={c.id} value={c.id}>{c.name} ({c.type})</option>
+                ))}
+              </select>
+            )}
             <input
               name="client_org"
-              placeholder="기관명 + 부서명까지 입력"
+              placeholder="기관명 + 부서명 (예: 용인교육지원청 지역교육과)"
               className="w-full px-4 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-yellow-400 focus:ring-1 focus:ring-yellow-400"
             />
-            <p className="text-xs text-gray-400 mt-1">공공기관 수의계약 한도 집계에 사용돼요. 민간 거래는 비워도 됩니다.</p>
+            <p className="text-xs text-gray-400 mt-1">고객 DB 선택 시 매출이 자동 연결됩니다. 새 기관은 직접 입력 후 고객 DB에서 추가하세요.</p>
           </div>
 
           {/* 사업자 */}

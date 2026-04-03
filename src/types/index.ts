@@ -31,24 +31,25 @@ export const DEPARTMENT_LABELS: Record<Department, string> = {
 
 // 서비스 → 사업부 자동 매핑
 export const SERVICE_TO_DEPT: Record<string, string> = {
-  'SOS':       '002_entertainment',
-  '002ENT':    '002_entertainment',
+  'SOS':        'sound_of_school',
+  '002ENT':     '002_entertainment',
   '교육프로그램':  'artkiwoom',
   '납품설치':    'school_store',
   '유지보수':    'school_store',
   '교구대여':    'school_store',
-  '기념제작':    'school_store',
-  '사진영상':    '002_creative',
+  '제작인쇄':    'school_store',
+  '콘텐츠제작':  '002_creative',
   '행사운영':    '002_creative',
-  '디자인 인쇄':  '002_creative',
+  '행사대여':    '002_creative',
+  '프로젝트':    '002_creative',
 }
 
 // 매출 현황 계층 구조 (사업부 → 서비스)
 export const DEPT_SERVICE_GROUPS = [
   { depts: ['002_entertainment', 'sound_of_school'], label: '002 Entertainment', services: ['002ENT', 'SOS'] },
-  { depts: ['artkiwoom'],    label: '아트키움',    services: ['교육프로그램'] },
-  { depts: ['school_store'], label: '학교상점',    services: ['납품설치', '유지보수', '교구대여', '기념제작'] },
-  { depts: ['002_creative'], label: '002 Creative', services: ['사진영상', '행사운영', '디자인 인쇄'] },
+  { depts: ['artkiwoom'],    label: '아트키움',     services: ['교육프로그램'] },
+  { depts: ['school_store'], label: '학교상점',     services: ['납품설치', '유지보수', '교구대여', '제작인쇄'] },
+  { depts: ['002_creative'], label: '002 Creative', services: ['콘텐츠제작', '행사운영', '행사대여', '프로젝트'] },
   { depts: ['yourmate'],     label: '유어메이트',   services: [] },
 ]
 
@@ -56,9 +57,9 @@ export const DEPT_SERVICE_GROUPS = [
 export const SERVICE_TYPES: Partial<Record<string, string[]>> = {
   sound_of_school: ['SOS'],
   artkiwoom: ['교육프로그램'],
-  school_store: ['납품설치', '유지보수', '교구대여', '기념제작'],
+  school_store: ['납품설치', '유지보수', '교구대여', '제작인쇄'],
   '002_entertainment': ['002ENT', 'SOS'],
-  '002_creative': ['사진영상', '행사운영', '디자인 인쇄'],
+  '002_creative': ['콘텐츠제작', '행사운영', '행사대여', '프로젝트'],
 }
 
 // 프로젝트
@@ -189,6 +190,39 @@ export interface Policy {
   title: string
   department: Department
   content: string
+  updated_at: string
+}
+
+// 리드 파이프라인
+export const LEAD_STATUSES = ['신규', '회신대기', '견적발송', '진행중', '완료', '취소'] as const
+export type LeadStatus = typeof LEAD_STATUSES[number]
+
+export const LEAD_CHANNELS = ['전화', '이메일', '카카오', '채널톡', '기타'] as const
+export const LEAD_SOURCES = ['네이버', '인스타', '유튜브', '지인', '기존고객', '기타'] as const
+
+export interface Lead {
+  id: string
+  lead_id: string
+  inflow_date: string | null
+  remind_date: string | null
+  service_type: string | null
+  contact_name: string | null
+  client_org: string | null
+  phone: string | null
+  office_phone: string | null
+  email: string | null
+  initial_content: string | null
+  assignee_id: string | null
+  assignee?: { id: string; name: string }
+  status: LeadStatus
+  channel: string | null
+  inflow_source: string | null
+  notes: string | null
+  contact_1: string | null
+  contact_2: string | null
+  contact_3: string | null
+  converted_sale_id: string | null
+  created_at: string
   updated_at: string
 }
 

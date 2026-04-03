@@ -12,17 +12,26 @@ export default async function ReceivablesPage() {
   const accessLevel = await getAccessLevel(profile?.role, 'receivables')
   if (accessLevel === 'off') redirect('/dashboard')
 
-  const [{ data: sales }, { data: entities }] = await Promise.all([
+  const [{ data: salesRaw }, { data: entities }, { data: profiles }] = await Promise.all([
     supabase
       .from('sales')
-      .select('id, name, revenue, payment_status, inflow_date, created_at, entity:business_entities!left(id, name), assignee:profiles!left(id, name)')
+      .select('id, name, revenue, payment_status, inflow_date, created_at, assignee_id, entity_id')
       .neq('payment_status', '완납')
       .not('payment_status', 'is', null)
       .neq('payment_status', '계약전')
       .gt('revenue', 0)
       .order('created_at', { ascending: false }),
     supabase.from('business_entities').select('id, name').order('name'),
+    supabase.from('profiles').select('id, name'),
   ])
+
+  const profileMap = Object.fromEntries((profiles ?? []).map(p => [p.id, { id: p.id, name: p.name }]))
+  const entityMap = Object.fromEntries((entities ?? []).map(e => [e.id, { id: e.id, name: e.name }]))
+  const sales = (salesRaw ?? []).map((s: any) => ({
+    ...s,
+    entity: s.entity_id ? (entityMap[s.entity_id] ?? null) : null,
+    assignee: s.assignee_id ? (profileMap[s.assignee_id] ?? null) : null,
+  }))
 
   return (
     <div className="max-w-5xl mx-auto">

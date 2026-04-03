@@ -49,12 +49,14 @@ export default async function DashboardPage() {
   const admin = createAdminClient()
   let salesQuery = supabase
     .from('sales')
-    .select('id, name, revenue, payment_status, inflow_date, created_at, entity:business_entities(id, name), sale_costs(id, amount, is_paid, category)')
+    .select('id, name, revenue, payment_status, inflow_date, created_at, entity_id')
     .order('created_at', { ascending: false })
   if (!showAll) salesQuery = salesQuery.eq('assignee_id', profile!.id)
 
-  const [{ data: allSales }, { data: payrollRows }, { data: faAccounts }, { data: cashflowTxs }] = await Promise.all([
+  const [{ data: salesRaw }, { data: allEntities }, { data: allCosts }, { data: payrollRows }, { data: faAccounts }, { data: cashflowTxs }] = await Promise.all([
     salesQuery,
+    supabase.from('business_entities').select('id, name'),
+    supabase.from('sale_costs').select('id, sale_id, amount, is_paid, category'),
     isAdmin
       ? supabase.from('payroll').select('base_salary, meal_allowance, mileage_allowance, allowances, fixed_bonus, bonus, unpaid_leave').eq('year', thisYear).eq('month', thisMonth)
       : Promise.resolve({ data: [] }),
@@ -62,7 +64,17 @@ export default async function DashboardPage() {
     showCashBalance ? admin.from('cashflow').select('account_id, type, amount, transfer_account_id') : Promise.resolve({ data: [] }),
   ])
 
-  const sales = allSales ?? []
+  const entityMapDash = Object.fromEntries((allEntities ?? []).map(e => [e.id, { id: e.id, name: e.name }]))
+  const costsMapDash: Record<string, any[]> = {}
+  for (const c of (allCosts ?? [])) {
+    if (!costsMapDash[c.sale_id]) costsMapDash[c.sale_id] = []
+    costsMapDash[c.sale_id].push(c)
+  }
+  const sales = (salesRaw ?? []).map((s: any) => ({
+    ...s,
+    entity: s.entity_id ? (entityMapDash[s.entity_id] ?? null) : null,
+    sale_costs: costsMapDash[s.id] ?? [],
+  }))
 
   // 이번 달 입금 건 (inflow_date 기준)
   const thisMonthSales = sales.filter(s => s.inflow_date && s.inflow_date >= monthStart && s.inflow_date < nextMonthStart)
@@ -116,6 +128,18 @@ export default async function DashboardPage() {
   // 최근 계약 8건
   const recentSales = sales.slice(0, 8)
 
+  // 리드 리마인드 (오늘 이하, 완료/취소 제외)
+  const today = now.toISOString().slice(0, 10)
+  let leadsReminderQuery = supabase
+    .from('leads')
+    .select('id, lead_id, client_org, contact_name, status, remind_date, service_type')
+    .lte('remind_date', today)
+    .not('status', 'in', '(완료,취소)')
+    .order('remind_date', { ascending: true })
+    .limit(5)
+  if (!isAdmin) leadsReminderQuery = leadsReminderQuery.eq('assignee_id', profile!.id)
+  const { data: leadsReminder } = await leadsReminderQuery
+
   return (
     <div className="max-w-5xl mx-auto">
       <div className="mb-6">
@@ -162,6 +186,38 @@ export default async function DashboardPage() {
           </div>
         )}
       </div>
+
+      {/* 리드 리마인드 위젯 */}
+      {(leadsReminder ?? []).length > 0 && (
+        <div className="mb-4 bg-orange-50 border border-orange-200 rounded-xl overflow-hidden">
+          <div className="flex items-center justify-between px-5 py-3 border-b border-orange-100">
+            <h2 className="text-sm font-semibold text-orange-700">🔔 리드 리마인드 {(leadsReminder ?? []).length}건</h2>
+            <Link href="/leads" className="text-xs text-orange-500 hover:text-orange-700">전체 보기 →</Link>
+          </div>
+          <div className="divide-y divide-orange-100">
+            {(leadsReminder ?? []).map(l => {
+              const target = new Date(l.remind_date)
+              target.setHours(0, 0, 0, 0)
+              const diffDays = Math.round((target.getTime() - now.setHours(0,0,0,0)) / 86400000)
+              const dday = diffDays === 0 ? 'D-day' : diffDays < 0 ? `D${diffDays}` : `D-${diffDays}`
+              const ddayColor = diffDays <= 0 ? 'text-red-600 font-bold' : diffDays <= 3 ? 'text-orange-600 font-semibold' : 'text-yellow-600'
+              return (
+                <Link key={l.id} href="/leads" className="flex items-center gap-3 px-5 py-2.5 hover:bg-orange-100 transition-colors">
+                  <span className={`text-xs w-12 shrink-0 ${ddayColor}`}>{dday}</span>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-medium text-gray-800 truncate">{l.client_org || '-'}</p>
+                    {l.contact_name && <p className="text-xs text-gray-400">{l.contact_name}</p>}
+                  </div>
+                  <div className="flex items-center gap-2 shrink-0">
+                    {l.service_type && <span className="text-xs px-1.5 py-0.5 bg-orange-100 text-orange-600 rounded-full">{l.service_type}</span>}
+                    <span className="text-xs text-gray-500">{l.status}</span>
+                  </div>
+                </Link>
+              )
+            })}
+          </div>
+        </div>
+      )}
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         {/* 최근 계약 */}

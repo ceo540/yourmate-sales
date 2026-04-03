@@ -1,10 +1,10 @@
 'use client'
-import React, { useState, useMemo, useTransition } from 'react'
+import React, { useState, useTransition } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import { DEPARTMENT_LABELS, DEPT_SERVICE_GROUPS, type Department } from '@/types'
+import { DEPT_SERVICE_GROUPS } from '@/types'
 import SaleExpandEditor from './SaleExpandEditor'
-import { bulkDeleteSales, bulkUpdateSalesStatus, updateEntityType } from '../actions'
+import { bulkDeleteSales, bulkUpdateSalesStatus } from '../actions'
 
 interface CostItem {
   id: string
@@ -19,6 +19,7 @@ interface Sale {
   name: string
   department: string | null
   client_org: string | null
+  customer_id: string | null
   service_type: string | null
   revenue: number | null
   payment_status: string | null
@@ -27,6 +28,7 @@ interface Sale {
   payment_date: string | null
   dropbox_url: string | null
   contract_type: string | null
+  cost_confirmed?: boolean | null
   created_at: string
   assignee: { id: string; name: string } | null
   entity: { id: string; name: string } | null
@@ -50,11 +52,14 @@ interface Profile {
   name: string
 }
 
+interface Customer { id: string; name: string; type: string }
+
 interface Props {
   sales: Sale[]
   vendors: Vendor[]
   entities: BusinessEntity[]
   profiles: Profile[]
+  customers: Customer[]
   isAdmin: boolean
 }
 
@@ -80,20 +85,55 @@ const CONTRACT_BADGE_COLORS: Record<string, string> = {
 
 const SERVICE_COLORS: Record<string, string> = {
   '002ENT':   'bg-blue-50 text-blue-700',
-  'SOS':      'bg-indigo-50 text-indigo-700',
+  'SOS':       'bg-indigo-50 text-indigo-700',
   '교육프로그램': 'bg-emerald-50 text-emerald-700',
   '납품설치':   'bg-orange-50 text-orange-700',
   '유지보수':   'bg-amber-50 text-amber-700',
   '교구대여':   'bg-yellow-50 text-yellow-700',
-  '기념제작':   'bg-lime-50 text-lime-700',
-  '사진영상':   'bg-purple-50 text-purple-700',
+  '제작인쇄':   'bg-lime-50 text-lime-700',
+  '콘텐츠제작':  'bg-purple-50 text-purple-700',
   '행사운영':   'bg-pink-50 text-pink-700',
-  '디자인 인쇄': 'bg-rose-50 text-rose-700',
+  '행사대여':   'bg-fuchsia-50 text-fuchsia-700',
+  '프로젝트':   'bg-rose-50 text-rose-700',
+}
+
+function SortTh({ field, label, sortField, sortDir, onSort, className = '' }: {
+  field: SortField
+  label: string
+  sortField: SortField | null
+  sortDir: SortDir
+  onSort: (f: SortField) => void
+  className?: string
+}) {
+  const active = sortField === field
+  return (
+    <th
+      onClick={() => onSort(field)}
+      className={`text-xs font-semibold px-4 py-3.5 whitespace-nowrap cursor-pointer select-none group/th ${active ? 'text-blue-600' : 'text-gray-500 hover:text-gray-800'} ${className}`}
+    >
+      <span className="inline-flex items-center gap-1">
+        {label}
+        {active ? (
+          <span className="text-blue-500">{sortDir === 'asc' ? '↑' : '↓'}</span>
+        ) : (
+          <span className="text-gray-300 opacity-0 group-hover/th:opacity-100 transition-opacity">↕</span>
+        )}
+      </span>
+    </th>
+  )
 }
 
 const CURRENT_YEAR = new Date().getFullYear()
 const YEARS = [CURRENT_YEAR, CURRENT_YEAR - 1, CURRENT_YEAR - 2]
-const LIMIT_MAP: Record<string, number> = { '일반기업': 22_000_000, '여성기업': 55_000_000 }
+
+const PAYMENT_STATUS_ORDER = ['계약전', '계약완료', '선금수령', '중도금수령', '완납']
+
+type SortField = 'name' | 'service_type' | 'client_org' | 'entity' | 'assignee' | 'inflow_date' | 'payment_date' | 'revenue' | 'cost' | 'profit' | 'payment_status'
+type SortDir = 'asc' | 'desc'
+
+// 선택적으로 숨길 수 있는 컬럼 목록
+const OPTIONAL_COLS = ['사업자', '발주처', '계약방법', '담당자', '결제일', '메모'] as const
+type OptionalCol = typeof OPTIONAL_COLS[number]
 
 function getQuarter(date: string | null) {
   if (!date) return null
@@ -111,7 +151,7 @@ function matchesFilter(sale: Sale, year: number | null, period: string) {
   return (d.getMonth() + 1) === Number(period)
 }
 
-export default function SalesReportClient({ sales: initialSales, vendors, entities, profiles, isAdmin }: Props) {
+export default function SalesReportClient({ sales: initialSales, vendors, entities, profiles, customers, isAdmin }: Props) {
   const [sales, setSales] = useState(initialSales)
   const [filterYear, setFilterYear] = useState<number | null>(CURRENT_YEAR)
   const [filterPeriod, setFilterPeriod] = useState('all')
@@ -121,34 +161,21 @@ export default function SalesReportClient({ sales: initialSales, vendors, entiti
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
   const [bulkLoading, setBulkLoading] = useState(false)
   const [expandedSaleId, setExpandedSaleId] = useState<string | null>(null)
-  const [entityTypes, setEntityTypes] = useState<Record<string, string>>(() => {
-    const map: Record<string, string> = {}
-    for (const e of entities) map[e.id] = e.entity_type ?? '일반기업'
-    return map
-  })
+  // 기본으로 숨길 컬럼
+  const [hiddenCols, setHiddenCols] = useState<Set<OptionalCol>>(new Set(['발주처', '계약방법', '결제일', '메모']))
+  const [sortField, setSortField] = useState<SortField | null>(null)
+  const [sortDir, setSortDir] = useState<SortDir>('asc')
   const [, startTransition] = useTransition()
   const router = useRouter()
 
-  const limitYear = filterYear ?? CURRENT_YEAR
-  const limitRows = useMemo(() => {
-    const map = new Map<string, { entityId: string; entityName: string; clientOrg: string; total: number }>()
-    for (const s of sales) {
-      if (!s.client_org || !s.entity || !s.inflow_date) continue
-      if (new Date(s.inflow_date).getFullYear() !== limitYear) continue
-      const key = `${s.entity.id}||${s.client_org}`
-      const existing = map.get(key)
-      if (existing) { existing.total += s.revenue ?? 0 }
-      else map.set(key, { entityId: s.entity.id, entityName: s.entity.name, clientOrg: s.client_org, total: s.revenue ?? 0 })
-    }
-    return Array.from(map.values()).sort((a, b) =>
-      a.entityName !== b.entityName ? a.entityName.localeCompare(b.entityName) : b.total - a.total
-    )
-  }, [sales, limitYear])
-
-  const handleEntityTypeChange = async (entityId: string, newType: string) => {
-    setEntityTypes(prev => ({ ...prev, [entityId]: newType }))
-    await updateEntityType(entityId, newType)
-  }
+  const show = (col: OptionalCol) => !hiddenCols.has(col)
+  const toggleCol = (col: OptionalCol) => setHiddenCols(prev => {
+    const n = new Set(prev)
+    n.has(col) ? n.delete(col) : n.add(col)
+    return n
+  })
+  // 항상 표시: checkbox, 건명, 서비스, 유입일, 매출액, 원가, 이익, 수금상태 = 8
+  const totalCols = 8 + OPTIONAL_COLS.filter(c => show(c)).length
 
   const filtered = sales
     .filter(s => filterYear ? matchesFilter(s, filterYear, filterPeriod) : true)
@@ -159,13 +186,51 @@ export default function SalesReportClient({ sales: initialSales, vendors, entiti
     .filter(s => filterEntity === 'all' ? true : (s.entity?.id ?? '') === filterEntity)
     .filter(s => filterStatus === 'all' ? true : (s.payment_status ?? '계약전') === filterStatus)
 
-  const summary = filtered.reduce((acc, s) => {
+  const handleSort = (field: SortField) => {
+    if (sortField === field) {
+      if (sortDir === 'asc') setSortDir('desc')
+      else { setSortField(null) }
+    } else {
+      setSortField(field)
+      setSortDir('asc')
+    }
+  }
+
+  const getSaleValues = (s: Sale) => {
+    const revenue = s.revenue ?? 0
+    const cost = s.sale_costs.reduce((c, i) => c + i.amount, 0) + (revenue > 0 ? Math.round(revenue * 0.1) : 0)
+    return { revenue, cost, profit: revenue - cost }
+  }
+
+  const sorted = sortField ? [...filtered].sort((a, b) => {
+    const dir = sortDir === 'asc' ? 1 : -1
+    switch (sortField) {
+      case 'name': return dir * a.name.localeCompare(b.name, 'ko')
+      case 'service_type': return dir * (a.service_type ?? '').localeCompare(b.service_type ?? '', 'ko')
+      case 'client_org': return dir * (a.client_org ?? '').localeCompare(b.client_org ?? '', 'ko')
+      case 'entity': return dir * (a.entity?.name ?? '').localeCompare(b.entity?.name ?? '', 'ko')
+      case 'assignee': return dir * ((a.assignee as { name: string } | null)?.name ?? '').localeCompare((b.assignee as { name: string } | null)?.name ?? '', 'ko')
+      case 'inflow_date': return dir * (a.inflow_date ?? '').localeCompare(b.inflow_date ?? '')
+      case 'payment_date': return dir * (a.payment_date ?? '').localeCompare(b.payment_date ?? '')
+      case 'revenue': return dir * ((a.revenue ?? 0) - (b.revenue ?? 0))
+      case 'cost': return dir * (getSaleValues(a).cost - getSaleValues(b).cost)
+      case 'profit': return dir * (getSaleValues(a).profit - getSaleValues(b).profit)
+      case 'payment_status': {
+        const ai = PAYMENT_STATUS_ORDER.indexOf(a.payment_status ?? '계약전')
+        const bi = PAYMENT_STATUS_ORDER.indexOf(b.payment_status ?? '계약전')
+        return dir * (ai - bi)
+      }
+      default: return 0
+    }
+  }) : filtered
+
+  const summary = sorted.reduce((acc, s) => {
     const revenue = s.revenue ?? 0
     const cost = s.sale_costs.reduce((c, i) => c + i.amount, 0) + (revenue > 0 ? Math.round(revenue * 0.1) : 0)
     return { revenue: acc.revenue + revenue, cost: acc.cost + cost, profit: acc.profit + (revenue - cost) }
   }, { revenue: 0, cost: 0, profit: 0 })
 
-  const allFilteredIds = filtered.map(s => s.id)
+  const allFilteredIds = sorted.map(s => s.id)
   const allSelected = allFilteredIds.length > 0 && allFilteredIds.every(id => selectedIds.has(id))
 
   const toggleAll = () => {
@@ -213,7 +278,7 @@ export default function SalesReportClient({ sales: initialSales, vendors, entiti
   return (
     <>
       {/* 필터 */}
-      <div className="flex items-center gap-2 mb-6 flex-wrap">
+      <div className="flex items-center gap-2 mb-4 flex-wrap">
         <select
           value={filterYear ?? 'all'}
           onChange={e => { setFilterYear(e.target.value === 'all' ? null : Number(e.target.value)); setFilterPeriod('all') }}
@@ -267,76 +332,54 @@ export default function SalesReportClient({ sales: initialSales, vendors, entiti
           <option value="all">전체 수금상태</option>
           {Object.keys(PAYMENT_STATUS_COLORS).map(s => <option key={s} value={s}>{s}</option>)}
         </select>
-        <span className="text-sm text-gray-400 ml-2">{filtered.length}건</span>
+        <span className="text-sm text-gray-400 ml-1">{sorted.length}건</span>
+        {sortField && (
+          <button
+            onClick={() => setSortField(null)}
+            className="flex items-center gap-1 ml-1 text-xs px-2.5 py-1.5 rounded-lg bg-blue-50 text-blue-600 border border-blue-100 hover:bg-blue-100 transition-colors"
+          >
+            <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 4h13M3 8h9m-9 4h9m5-4v12m0 0l-4-4m4 4l4-4" />
+            </svg>
+            정렬 중 · 해제
+          </button>
+        )}
       </div>
 
-      {/* 수의계약 한도 현황 */}
-      {limitRows.length > 0 && (
-        <div className="bg-white rounded-xl border border-gray-200 mb-6">
-          <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
-            <h2 className="text-sm font-semibold text-gray-900">수의계약 한도 현황</h2>
-            <span className="text-xs text-gray-400">{limitYear}년 기준 · 발주처 입력된 건만 집계</span>
-          </div>
-          <div className="overflow-x-auto">
-            <table className="w-full min-w-[700px]">
-              <thead>
-                <tr className="border-b border-gray-100 bg-gray-50">
-                  <th className="text-left text-xs font-semibold text-gray-500 px-4 py-3">계약 사업자</th>
-                  <th className="text-left text-xs font-semibold text-gray-500 px-4 py-3">발주처</th>
-                  <th className="text-left text-xs font-semibold text-gray-500 px-4 py-3">구분</th>
-                  <th className="text-right text-xs font-semibold text-gray-500 px-4 py-3">계약 총액</th>
-                  <th className="text-right text-xs font-semibold text-gray-500 px-4 py-3">한도</th>
-                  <th className="text-right text-xs font-semibold text-gray-500 px-4 py-3">잔여</th>
-                  <th className="text-left text-xs font-semibold text-gray-500 px-4 py-3 w-36">사용률</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-50">
-                {limitRows.map(row => {
-                  const eType = entityTypes[row.entityId] ?? '일반기업'
-                  const limit = LIMIT_MAP[eType] ?? 22_000_000
-                  const pct = Math.min(100, Math.round((row.total / limit) * 100))
-                  const remaining = limit - row.total
-                  const barColor = pct >= 100 ? 'bg-red-500' : pct >= 80 ? 'bg-orange-400' : pct >= 50 ? 'bg-yellow-400' : 'bg-green-400'
-                  const amtColor = pct >= 100 ? 'text-red-600 font-bold' : pct >= 80 ? 'text-orange-500 font-semibold' : 'text-gray-900 font-medium'
-                  return (
-                    <tr key={`${row.entityId}-${row.clientOrg}`} className="hover:bg-gray-50">
-                      <td className="px-4 py-3 text-sm text-gray-900">{row.entityName}</td>
-                      <td className="px-4 py-3 text-sm text-gray-700">{row.clientOrg}</td>
-                      <td className="px-4 py-3">
-                        {isAdmin ? (
-                          <select
-                            value={eType}
-                            onChange={e => handleEntityTypeChange(row.entityId, e.target.value)}
-                            className="text-xs px-2 py-1 rounded-lg border border-gray-200 bg-white focus:outline-none focus:border-yellow-400"
-                          >
-                            <option value="일반기업">일반기업</option>
-                            <option value="여성기업">여성기업</option>
-                          </select>
-                        ) : (
-                          <span className="text-xs px-2 py-1 rounded-full bg-gray-100 text-gray-600">{eType}</span>
-                        )}
-                      </td>
-                      <td className={`px-4 py-3 text-right text-sm ${amtColor}`}>{row.total.toLocaleString()}원</td>
-                      <td className="px-4 py-3 text-right text-xs text-gray-400">{limit.toLocaleString()}원</td>
-                      <td className="px-4 py-3 text-right text-sm">
-                        {remaining > 0
-                          ? <span className="text-gray-600">{remaining.toLocaleString()}원</span>
-                          : <span className="text-red-500 font-semibold">초과</span>}
-                      </td>
-                      <td className="px-4 py-3">
-                        <div className="flex items-center gap-2">
-                          <div className="flex-1 bg-gray-100 rounded-full h-1.5">
-                            <div className={`h-1.5 rounded-full ${barColor}`} style={{ width: `${pct}%` }} />
-                          </div>
-                          <span className={`text-xs w-8 text-right ${pct >= 80 ? amtColor : 'text-gray-500'}`}>{pct}%</span>
-                        </div>
-                      </td>
-                    </tr>
-                  )
-                })}
-              </tbody>
-            </table>
-          </div>
+      {/* 컬럼 토글 */}
+      <div className="flex items-center gap-2 mb-4 flex-wrap">
+        <span className="text-xs text-gray-400">컬럼:</span>
+        {OPTIONAL_COLS.map(col => (
+          <button
+            key={col}
+            onClick={() => toggleCol(col)}
+            className={`text-xs px-2.5 py-1 rounded-full border transition-colors ${
+              show(col)
+                ? 'bg-gray-100 text-gray-700 border-gray-200'
+                : 'bg-white text-gray-300 border-gray-100'
+            }`}
+          >
+            {col}
+          </button>
+        ))}
+      </div>
+
+      {/* 합계 바 */}
+      {filtered.length > 0 && (
+        <div className="flex items-center gap-5 px-4 py-2.5 mb-3 bg-yellow-50 border border-yellow-100 rounded-xl text-sm flex-wrap">
+          <span className="text-xs text-gray-500 font-semibold">{sorted.length}건 합계</span>
+          <span>
+            <span className="text-xs text-gray-400 mr-1">매출</span>
+            <span className="font-bold text-gray-900">{summary.revenue.toLocaleString()}원</span>
+          </span>
+          <span>
+            <span className="text-xs text-gray-400 mr-1">원가</span>
+            <span className="font-semibold text-gray-600">{summary.cost.toLocaleString()}원</span>
+          </span>
+          <span>
+            <span className="text-xs text-gray-400 mr-1">이익</span>
+            <span className={`font-bold ${summary.profit >= 0 ? 'text-green-600' : 'text-red-500'}`}>{summary.profit.toLocaleString()}원</span>
+          </span>
         </div>
       )}
 
@@ -372,42 +415,32 @@ export default function SalesReportClient({ sales: initialSales, vendors, entiti
         )}
 
         <div className="overflow-x-auto">
-          <table className="w-full min-w-[1100px]">
+          <table className="w-full min-w-[680px]">
             <thead>
-              {filtered.length > 0 && (
-                <tr className="border-b-2 border-gray-200 bg-yellow-50">
-                  <td colSpan={9} className="px-4 py-3 text-xs font-semibold text-gray-600">합계 ({filtered.length}건)</td>
-                  <td className="px-4 py-3 text-right text-sm font-bold text-gray-900 whitespace-nowrap">{summary.revenue.toLocaleString()}원</td>
-                  <td className="px-4 py-3 text-right text-sm font-semibold text-gray-600 whitespace-nowrap">{summary.cost.toLocaleString()}원</td>
-                  <td className="px-4 py-3 text-right whitespace-nowrap">
-                    <span className={`text-sm font-bold ${summary.profit >= 0 ? 'text-green-600' : 'text-red-500'}`}>{summary.profit.toLocaleString()}원</span>
-                  </td>
-                  <td colSpan={2} />
-                </tr>
-              )}
               <tr className="border-b border-gray-100 bg-gray-50">
-                <th className="px-4 py-3.5 w-8">
+                <th className="sticky left-0 z-20 bg-gray-50 w-[48px] px-4 py-3.5">
                   <input type="checkbox" checked={allSelected} onChange={toggleAll} className="w-3.5 h-3.5 accent-yellow-400 cursor-pointer" />
                 </th>
-                <th className="text-left text-xs font-semibold text-gray-500 px-4 py-3.5">건명</th>
-                <th className="text-left text-xs font-semibold text-gray-500 px-4 py-3.5">서비스</th>
-                <th className="text-left text-xs font-semibold text-gray-500 px-4 py-3.5">사업자</th>
-                <th className="text-left text-xs font-semibold text-gray-500 px-4 py-3.5">발주처</th>
-                <th className="text-left text-xs font-semibold text-gray-500 px-4 py-3.5">계약방법</th>
-                <th className="text-left text-xs font-semibold text-gray-500 px-4 py-3.5">담당자</th>
-                <th className="text-left text-xs font-semibold text-gray-500 px-4 py-3.5">유입일</th>
-                <th className="text-left text-xs font-semibold text-gray-500 px-4 py-3.5">결제일</th>
-                <th className="text-right text-xs font-semibold text-gray-500 px-4 py-3.5">매출액</th>
-                <th className="text-right text-xs font-semibold text-gray-500 px-4 py-3.5">원가</th>
-                <th className="text-right text-xs font-semibold text-gray-500 px-4 py-3.5">이익</th>
-                <th className="text-left text-xs font-semibold text-gray-500 px-4 py-3.5">수금상태</th>
-                <th className="text-left text-xs font-semibold text-gray-500 px-4 py-3.5">메모</th>
+                <SortTh field="name" label="건명" sortField={sortField} sortDir={sortDir} onSort={handleSort}
+                  className="sticky left-[48px] z-20 bg-gray-50 text-left after:absolute after:right-0 after:top-0 after:bottom-0 after:w-px after:bg-gray-200" />
+                <SortTh field="service_type" label="서비스" sortField={sortField} sortDir={sortDir} onSort={handleSort} />
+                {show('사업자') && <SortTh field="entity" label="사업자" sortField={sortField} sortDir={sortDir} onSort={handleSort} />}
+                {show('발주처') && <SortTh field="client_org" label="발주처" sortField={sortField} sortDir={sortDir} onSort={handleSort} />}
+                {show('계약방법') && <th className="text-left text-xs font-semibold text-gray-500 px-4 py-3.5 whitespace-nowrap">계약방법</th>}
+                {show('담당자') && <SortTh field="assignee" label="담당자" sortField={sortField} sortDir={sortDir} onSort={handleSort} />}
+                <SortTh field="inflow_date" label="유입일" sortField={sortField} sortDir={sortDir} onSort={handleSort} />
+                {show('결제일') && <SortTh field="payment_date" label="결제일" sortField={sortField} sortDir={sortDir} onSort={handleSort} />}
+                <SortTh field="revenue" label="매출액" sortField={sortField} sortDir={sortDir} onSort={handleSort} className="text-right" />
+                <SortTh field="cost" label="원가" sortField={sortField} sortDir={sortDir} onSort={handleSort} className="text-right" />
+                <SortTh field="profit" label="이익" sortField={sortField} sortDir={sortDir} onSort={handleSort} className="text-right" />
+                <SortTh field="payment_status" label="수금상태" sortField={sortField} sortDir={sortDir} onSort={handleSort} />
+                {show('메모') && <th className="text-left text-xs font-semibold text-gray-500 px-4 py-3.5 whitespace-nowrap">메모</th>}
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-50">
-              {filtered.length === 0 && (
+              {sorted.length === 0 && (
                 <tr>
-                  <td colSpan={14} className="py-16 text-center text-sm text-gray-400">
+                  <td colSpan={totalCols} className="py-16 text-center text-sm text-gray-400">
                     해당 기간에 매출 건이 없어요.{' '}
                     <Link href="/sales/new" className="text-yellow-600 font-medium hover:underline">
                       새 매출 건 추가하기 →
@@ -415,92 +448,130 @@ export default function SalesReportClient({ sales: initialSales, vendors, entiti
                   </td>
                 </tr>
               )}
-              {filtered.map(sale => {
+              {sorted.map(sale => {
                 const revenue = sale.revenue ?? 0
                 const cost = sale.sale_costs.reduce((s, c) => s + c.amount, 0) + (revenue > 0 ? Math.round(revenue * 0.1) : 0)
                 const profit = revenue - cost
                 const payStatus = sale.payment_status ?? '계약전'
                 const isExpanded = expandedSaleId === sale.id
+                const isHighlighted = isExpanded || selectedIds.has(sale.id)
+                const hasCosts = sale.sale_costs.length > 0
+                const costConfirmed = sale.cost_confirmed === true
+                // sticky cell background: must match row bg and support hover
+                const stickyBg = isHighlighted ? 'bg-yellow-50' : 'bg-white'
 
                 return (
                   <React.Fragment key={sale.id}>
-                  <tr
-                    onClick={() => setExpandedSaleId(isExpanded ? null : sale.id)}
-                    className={`cursor-pointer transition-colors ${isExpanded ? 'bg-yellow-50' : selectedIds.has(sale.id) ? 'bg-yellow-50 hover:bg-yellow-100' : 'hover:bg-gray-50'}`}
-                  >
-                    <td className="px-4 py-3.5 w-8" onClick={e => e.stopPropagation()}>
-                      <input type="checkbox" checked={selectedIds.has(sale.id)} onChange={() => toggleOne(sale.id)} className="w-3.5 h-3.5 accent-yellow-400 cursor-pointer" />
-                    </td>
-                    <td className="px-4 py-3.5 max-w-[180px]">
-                      {sale.dropbox_url ? (
-                        <a href={sale.dropbox_url} target="_blank" rel="noopener noreferrer"
-                          onClick={e => e.stopPropagation()}
-                          className="text-sm font-medium text-blue-600 hover:underline flex items-center gap-1 truncate" title={sale.name}>
-                          <span className="truncate">{sale.name}</span>
-                          <span className="text-xs flex-shrink-0">↗</span>
-                        </a>
-                      ) : (
-                        <span className="text-sm font-medium text-gray-900 truncate block" title={sale.name}>{sale.name}</span>
+                    <tr
+                      onClick={() => setExpandedSaleId(isExpanded ? null : sale.id)}
+                      className={`group cursor-pointer transition-colors ${isHighlighted ? 'bg-yellow-50 hover:bg-yellow-100' : 'hover:bg-gray-50'}`}
+                    >
+                      {/* sticky: 체크박스 */}
+                      <td
+                        className={`sticky left-0 z-10 w-[48px] px-4 py-3.5 transition-colors ${isHighlighted ? 'bg-yellow-50 group-hover:bg-yellow-100' : 'bg-white group-hover:bg-gray-50'}`}
+                        onClick={e => e.stopPropagation()}
+                      >
+                        <input type="checkbox" checked={selectedIds.has(sale.id)} onChange={() => toggleOne(sale.id)} className="w-3.5 h-3.5 accent-yellow-400 cursor-pointer" />
+                      </td>
+                      {/* sticky: 건명 + 원가 완료 표시 */}
+                      <td className={`sticky left-[48px] z-10 px-4 py-3.5 max-w-[200px] transition-colors after:absolute after:right-0 after:top-0 after:bottom-0 after:w-px after:bg-gray-100 ${isHighlighted ? 'bg-yellow-50 group-hover:bg-yellow-100' : 'bg-white group-hover:bg-gray-50'}`}>
+                        <div className="flex items-center gap-1.5">
+                          {costConfirmed ? (
+                            <span className="flex items-center gap-0.5 text-xs px-1.5 py-0.5 rounded-full bg-green-100 text-green-700 flex-shrink-0 font-medium">
+                              <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" />
+                              </svg>
+                              원가
+                            </span>
+                          ) : hasCosts ? (
+                            <span className="w-1.5 h-1.5 rounded-full bg-gray-300 flex-shrink-0" title="원가 입력됨 (미확인)" />
+                          ) : null}
+                          {sale.dropbox_url ? (
+                            <a href={sale.dropbox_url} target="_blank" rel="noopener noreferrer"
+                              onClick={e => e.stopPropagation()}
+                              className="text-sm font-medium text-blue-600 hover:underline flex items-center gap-1 truncate min-w-0" title={sale.name}>
+                              <span className="truncate">{sale.name}</span>
+                              <span className="text-xs flex-shrink-0">↗</span>
+                            </a>
+                          ) : (
+                            <span className="text-sm font-medium text-gray-900 truncate" title={sale.name}>{sale.name}</span>
+                          )}
+                        </div>
+                      </td>
+                      <td className="px-4 py-3.5 whitespace-nowrap">
+                        {sale.service_type
+                          ? <span className={`text-xs px-2 py-1 rounded-full ${SERVICE_COLORS[sale.service_type] ?? 'bg-gray-100 text-gray-600'}`}>{sale.service_type}</span>
+                          : <span className="text-xs text-gray-300">-</span>}
+                      </td>
+                      {show('사업자') && (
+                        <td className="px-4 py-3.5 whitespace-nowrap">
+                          {sale.entity
+                            ? <span className="text-xs px-2 py-1 rounded-full bg-blue-50 text-blue-700">{sale.entity.name}</span>
+                            : <span className="text-xs text-gray-300">-</span>}
+                        </td>
                       )}
-                    </td>
-                    <td className="px-4 py-3.5 whitespace-nowrap">
-                      {sale.service_type
-                        ? <span className={`text-xs px-2 py-1 rounded-full ${SERVICE_COLORS[sale.service_type] ?? 'bg-gray-100 text-gray-600'}`}>{sale.service_type}</span>
-                        : <span className="text-xs text-gray-300">-</span>}
-                    </td>
-                    <td className="px-4 py-3.5 whitespace-nowrap">
-                      {sale.entity ? (
-                        <span className="text-xs px-2 py-1 rounded-full bg-blue-50 text-blue-700">{sale.entity.name}</span>
-                      ) : (
-                        <span className="text-xs text-gray-300">-</span>
+                      {show('발주처') && (
+                        <td className="px-4 py-3.5 text-xs text-gray-600 max-w-[140px]" title={sale.client_org ?? ''}>
+                          <div className="flex items-center gap-1 truncate">
+                            <span className="truncate">{sale.client_org || <span className="text-gray-300">-</span>}</span>
+                            {sale.customer_id && (
+                              <a href="/customers" className="shrink-0 text-yellow-500 hover:text-yellow-700" title="고객 DB 연결됨">🗂️</a>
+                            )}
+                          </div>
+                        </td>
                       )}
-                    </td>
-                    <td className="px-4 py-3.5 text-xs text-gray-600 max-w-[140px] truncate" title={sale.client_org ?? ''}>
-                      {sale.client_org || <span className="text-gray-300">-</span>}
-                    </td>
-                    <td className="px-4 py-3.5 whitespace-nowrap">
-                      {sale.contract_type ? (
-                        <span className={`text-xs px-2 py-1 rounded-full ${CONTRACT_BADGE_COLORS[sale.contract_type] ?? 'bg-gray-100 text-gray-500'}`}>
-                          {sale.contract_type}
+                      {show('계약방법') && (
+                        <td className="px-4 py-3.5 whitespace-nowrap">
+                          {sale.contract_type
+                            ? <span className={`text-xs px-2 py-1 rounded-full ${CONTRACT_BADGE_COLORS[sale.contract_type] ?? 'bg-gray-100 text-gray-500'}`}>{sale.contract_type}</span>
+                            : <span className="text-xs text-gray-300">-</span>}
+                        </td>
+                      )}
+                      {show('담당자') && (
+                        <td className="px-4 py-3.5 text-xs text-gray-600 whitespace-nowrap">{(sale.assignee as any)?.name ?? '-'}</td>
+                      )}
+                      <td className="px-4 py-3.5 text-xs text-gray-500 whitespace-nowrap">{formatDate(sale.inflow_date)}</td>
+                      {show('결제일') && (
+                        <td className="px-4 py-3.5 text-xs text-gray-500 whitespace-nowrap">{formatDate(sale.payment_date)}</td>
+                      )}
+                      <td className="px-4 py-3.5 text-right text-sm font-medium text-gray-900 whitespace-nowrap">
+                        {revenue > 0 ? revenue.toLocaleString() : <span className="text-gray-300">-</span>}
+                      </td>
+                      <td className="px-4 py-3.5 text-right text-sm whitespace-nowrap">
+                        {hasCosts ? (
+                          <span className="text-gray-600">{cost.toLocaleString()}</span>
+                        ) : (
+                          <span className="text-gray-300">-</span>
+                        )}
+                      </td>
+                      <td className="px-4 py-3.5 text-right whitespace-nowrap">
+                        {revenue > 0
+                          ? <span className={`text-sm font-medium ${profit >= 0 ? 'text-green-600' : 'text-red-500'}`}>{profit.toLocaleString()}</span>
+                          : <span className="text-gray-300 text-sm">-</span>}
+                      </td>
+                      <td className="px-4 py-3.5 whitespace-nowrap">
+                        <span className={`text-xs px-2.5 py-1 rounded-full font-medium ${PAYMENT_STATUS_COLORS[payStatus] ?? 'bg-gray-100 text-gray-500'}`}>
+                          {payStatus}
                         </span>
-                      ) : (
-                        <span className="text-xs text-gray-300">-</span>
+                      </td>
+                      {show('메모') && (
+                        <td className="px-4 py-3.5 text-xs text-gray-400 max-w-[120px] truncate" title={sale.memo ?? ''}>{sale.memo || '-'}</td>
                       )}
-                    </td>
-                    <td className="px-4 py-3.5 text-xs text-gray-600 whitespace-nowrap">{(sale.assignee as any)?.name ?? '-'}</td>
-                    <td className="px-4 py-3.5 text-xs text-gray-500 whitespace-nowrap">{formatDate(sale.inflow_date)}</td>
-                    <td className="px-4 py-3.5 text-xs text-gray-500 whitespace-nowrap">{formatDate(sale.payment_date)}</td>
-                    <td className="px-4 py-3.5 text-right text-sm font-medium text-gray-900 whitespace-nowrap">
-                      {revenue > 0 ? revenue.toLocaleString() : <span className="text-gray-300">-</span>}
-                    </td>
-                    <td className="px-4 py-3.5 text-right text-sm text-gray-600 whitespace-nowrap">
-                      {cost > 0 ? cost.toLocaleString() : <span className="text-gray-300">-</span>}
-                    </td>
-                    <td className="px-4 py-3.5 text-right whitespace-nowrap">
-                      {revenue > 0 ? (
-                        <span className={`text-sm font-medium ${profit >= 0 ? 'text-green-600' : 'text-red-500'}`}>{profit.toLocaleString()}</span>
-                      ) : <span className="text-gray-300 text-sm">-</span>}
-                    </td>
-                    <td className="px-4 py-3.5 whitespace-nowrap">
-                      <span className={`text-xs px-2.5 py-1 rounded-full font-medium ${PAYMENT_STATUS_COLORS[payStatus] ?? 'bg-gray-100 text-gray-500'}`}>
-                        {payStatus}
-                      </span>
-                    </td>
-                    <td className="px-4 py-3.5 text-xs text-gray-400 max-w-[120px] truncate" title={sale.memo ?? ''}>{sale.memo || '-'}</td>
-                  </tr>
-                  {isExpanded && (
-                    <SaleExpandEditor
-                      sale={sale}
-                      colSpan={14}
-                      entities={entities}
-                      vendors={vendors}
-                      profiles={profiles}
-                      isAdmin={isAdmin}
-                      onClose={() => setExpandedSaleId(null)}
-                      onSaved={handleSaleSaved}
-                      onDeleted={handleSaleDeleted}
-                    />
-                  )}
+                    </tr>
+                    {isExpanded && (
+                      <SaleExpandEditor
+                        sale={sale}
+                        colSpan={totalCols}
+                        entities={entities}
+                        vendors={vendors}
+                        profiles={profiles}
+                        customers={customers}
+                        isAdmin={isAdmin}
+                        onClose={() => setExpandedSaleId(null)}
+                        onSaved={handleSaleSaved}
+                        onDeleted={handleSaleDeleted}
+                      />
+                    )}
                   </React.Fragment>
                 )
               })}

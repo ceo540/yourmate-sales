@@ -14,11 +14,18 @@ export default async function VendorsPage() {
   const accessLevel = await getAccessLevel(profile?.role, 'vendors')
   if (accessLevel === 'off') redirect('/dashboard')
 
-  const { data: vendors } = await supabase
-    .from('vendors')
-    .select('*, sale_costs!vendor_id(amount, is_paid)')
-    .order('type')
-    .order('name')
+  const [{ data: vendorsRaw }, { data: vendorCosts }] = await Promise.all([
+    supabase.from('vendors').select('*').order('type').order('name'),
+    supabase.from('sale_costs').select('vendor_id, amount, is_paid'),
+  ])
+
+  const costsMap: Record<string, { amount: number; is_paid: boolean }[]> = {}
+  for (const c of (vendorCosts ?? [])) {
+    if (!c.vendor_id) continue
+    if (!costsMap[c.vendor_id]) costsMap[c.vendor_id] = []
+    costsMap[c.vendor_id].push({ amount: c.amount, is_paid: c.is_paid })
+  }
+  const vendors = (vendorsRaw ?? []).map((v: any) => ({ ...v, sale_costs: costsMap[v.id] ?? [] }))
 
   return (
     <div className="max-w-4xl mx-auto">

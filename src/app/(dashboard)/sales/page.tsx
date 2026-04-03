@@ -16,16 +16,12 @@ export default async function SalesPage() {
 
   const isAdmin = profile?.role === 'admin'
   const showAll = isAdmin || accessLevel === 'full' || accessLevel === 'read'
-  const myDepts: string[] = (profile as any)?.departments ?? []
-
-  const [{ data: vendors }, { data: entities }] = await Promise.all([
-    supabase.from('vendors').select('id, name, type').order('name'),
-    supabase.from('business_entities').select('id, name, business_number').order('name'),
-  ])
+  const rawDepts = (profile as any)?.departments
+  const myDepts: string[] = Array.isArray(rawDepts) ? rawDepts : (typeof rawDepts === 'string' ? (() => { try { return JSON.parse(rawDepts) } catch { return [] } })() : [])
 
   let salesQuery = supabase
     .from('sales')
-    .select('*, assignee:profiles!assignee_id(id, name), entity:business_entities!entity_id(id, name), sale_costs(*)')
+    .select('*')
     .order('created_at', { ascending: false })
 
   if (!showAll) {
@@ -37,7 +33,28 @@ export default async function SalesPage() {
     }
   }
 
-  const { data: sales } = await salesQuery
+  const [{ data: vendors }, { data: entities }, { data: profiles }, { data: salesRaw }, { data: allCosts }] = await Promise.all([
+    supabase.from('vendors').select('id, name, type').order('name'),
+    supabase.from('business_entities').select('id, name, entity_type, business_number').order('name'),
+    supabase.from('profiles').select('id, name').order('name'),
+    salesQuery,
+    supabase.from('sale_costs').select('*'),
+  ])
+
+  const profileMap = Object.fromEntries((profiles ?? []).map(p => [p.id, p]))
+  const entityMap = Object.fromEntries((entities ?? []).map(e => [e.id, { id: e.id, name: e.name }]))
+  const costsMap: Record<string, any[]> = {}
+  for (const cost of (allCosts ?? [])) {
+    if (!costsMap[cost.sale_id]) costsMap[cost.sale_id] = []
+    costsMap[cost.sale_id].push(cost)
+  }
+
+  const sales = (salesRaw ?? []).map((s: any) => ({
+    ...s,
+    assignee: s.assignee_id ? (profileMap[s.assignee_id] ?? null) : null,
+    entity: s.entity_id ? (entityMap[s.entity_id] ?? null) : null,
+    sale_costs: costsMap[s.id] ?? [],
+  }))
 
   return (
     <div className="max-w-7xl mx-auto">

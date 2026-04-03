@@ -1,9 +1,11 @@
 import { createClient } from '@/lib/supabase/server'
+import { createAdminClient } from '@/lib/supabase/admin'
 import { notFound, redirect } from 'next/navigation'
 import Link from 'next/link'
 import { DEPARTMENT_LABELS } from '@/types'
 import { updateSale } from '../actions'
 import SubmitButton from '@/components/ui/SubmitButton'
+import TasksSection from './TasksSection'
 
 interface BusinessEntity { id: string; name: string }
 
@@ -15,12 +17,14 @@ export default async function EditSalePage({ params, searchParams }: { params: P
   const supabase = await createClient()
 
   const { data: { user } } = await supabase.auth.getUser()
-  const { data: profile } = await supabase.from('profiles').select('id, role').eq('id', user!.id).single()
+
+  const adminSupabase2 = createAdminClient()
+  const { data: profile } = await adminSupabase2.from('profiles').select('id, role').eq('id', user!.id).single()
   const isAdmin = profile?.role === 'admin' || profile?.role === 'manager'
 
   const { data: sale } = await supabase
     .from('sales')
-    .select('*, assignee:profiles(id, name), entity:business_entities(id, name)')
+    .select('*')
     .eq('id', id)
     .single()
 
@@ -29,16 +33,28 @@ export default async function EditSalePage({ params, searchParams }: { params: P
   // member는 본인 담당 건만 접근 가능
   if (!isAdmin && sale.assignee_id !== profile?.id) redirect('/sales')
 
-  const [{ data: profiles }, { data: entities }] = await Promise.all([
+  const adminSupabase = createAdminClient()
+  const [{ data: profiles }, { data: entities }, { data: rawTasks }] = await Promise.all([
     supabase.from('profiles').select('id, name').order('name'),
     supabase.from('business_entities').select('id, name').order('name'),
+    adminSupabase.from('tasks').select('*').eq('sale_id', id).order('created_at'),
   ])
+
+  // FK 없으므로 수동 조인
+  const profileMap = Object.fromEntries((profiles ?? []).map(p => [p.id, p]))
+  const entityMap = Object.fromEntries((entities ?? []).map(e => [e.id, e]))
+  const saleAssignee = sale.assignee_id ? (profileMap[sale.assignee_id] ?? null) : null
+  const saleEntity = sale.entity_id ? (entityMap[sale.entity_id] ?? null) : null
+  const tasks = (rawTasks ?? []).map(t => ({
+    ...t,
+    assignee: t.assignee_id ? (profileMap[t.assignee_id] ?? null) : null,
+  }))
 
   return (
     <div className="max-w-2xl mx-auto">
       <div className="flex items-center gap-3 mb-8">
         <Link href={from ?? '/sales/report'} className="text-gray-400 hover:text-gray-600 text-sm">
-          ← {from === '/sales' ? '매출 현황' : '매출 보고서'}
+          ← {from === '/sales' ? '매출 현황' : '계약 목록'}
         </Link>
         <span className="text-gray-300">/</span>
         <span className="text-sm text-gray-600 font-medium">{sale.name}</span>
@@ -79,7 +95,7 @@ export default async function EditSalePage({ params, searchParams }: { params: P
               <label className="block text-sm font-medium text-gray-700 mb-1.5">담당자</label>
               <select
                 name="assignee_id"
-                defaultValue={(sale.assignee as any)?.id ?? ''}
+                defaultValue={saleAssignee?.id ?? ''}
                 className="w-full px-4 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-yellow-400 bg-white"
               >
                 <option value="">선택 안함</option>
@@ -95,7 +111,7 @@ export default async function EditSalePage({ params, searchParams }: { params: P
               <label className="block text-sm font-medium text-gray-700 mb-1.5">계약 사업자</label>
               <select
                 name="entity_id"
-                defaultValue={(sale.entity as any)?.id ?? ''}
+                defaultValue={saleEntity?.id ?? ''}
                 className="w-full px-4 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-yellow-400 bg-white"
               >
                 <option value="">선택 안함</option>
@@ -208,6 +224,18 @@ export default async function EditSalePage({ params, searchParams }: { params: P
             </Link>
           </div>
         </form>
+      </div>
+
+      {/* 업무 관리 */}
+      <div className="bg-white rounded-xl border border-gray-200 p-8 mt-6">
+        <TasksSection
+          saleId={id}
+          serviceType={sale.service_type}
+          tasks={tasks}
+          profiles={profiles ?? []}
+          currentUserId={user!.id}
+          isAdmin={isAdmin}
+        />
       </div>
     </div>
   )

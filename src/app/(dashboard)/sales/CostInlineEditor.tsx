@@ -223,11 +223,14 @@ export default function CostInlineEditor({ saleId, revenue, initialItems, vendor
   const [quickCat, setQuickCat] = useState<'내부원가' | '외부원가'>('외부원가')
   const [quickVendorText, setQuickVendorText] = useState('')
   const [quickItem, setQuickItem] = useState('')
+  const [quickAmount, setQuickAmount] = useState('')
+  const [quickMode, setQuickMode] = useState<'amount' | 'breakdown'>('amount')
   const [quickUnitPrice, setQuickUnitPrice] = useState('')
   const [quickQuantity, setQuickQuantity] = useState('')
   const [quickUnit, setQuickUnit] = useState('명')
   const [quickLoading, setQuickLoading] = useState(false)
   const itemRef = useRef<HTMLInputElement>(null)
+  const amountRef = useRef<HTMLInputElement>(null)
   const unitPriceRef = useRef<HTMLInputElement>(null)
   const qtyRef = useRef<HTMLInputElement>(null)
 
@@ -279,27 +282,36 @@ export default function CostInlineEditor({ saleId, revenue, initialItems, vendor
 
   // 빠른 추가
   const handleQuickAdd = async () => {
-    const computedAmount = calcAmount(quickUnitPrice, quickQuantity)
-    if (!quickItem.trim() || computedAmount === null) return
+    const computedAmount = quickMode === 'breakdown'
+      ? calcAmount(quickUnitPrice, quickQuantity)
+      : (Number(quickAmount) || null)
+    if (!quickItem.trim() || !computedAmount) return
     setQuickLoading(true)
-    const vendorId = quickCat === '외부원가' ? await resolveVendorId(quickVendorText) : null
-    const supabase = createClient()
-    const { data, error } = await supabase.from('sale_costs').insert({
-      sale_id: saleId, item: quickItem.trim(), amount: computedAmount, category: quickCat,
-      vendor_id: vendorId,
-      unit_price: Number(quickUnitPrice) || null,
-      quantity: Number(quickQuantity) || null,
-      unit: quickUnit || null,
-    }).select().single()
-    if (!error && data) {
-      update([...items, { ...data, category: quickCat }])
-      setQuickItem('')
-      setQuickUnitPrice('')
-      setQuickQuantity('')
-      setQuickVendorText('')
-      setTimeout(() => itemRef.current?.focus(), 50)
+    try {
+      const vendorId = quickCat === '외부원가' ? await resolveVendorId(quickVendorText) : null
+      const supabase = createClient()
+      const { data, error } = await supabase.from('sale_costs').insert({
+        sale_id: saleId, item: quickItem.trim(), amount: computedAmount, category: quickCat,
+        vendor_id: vendorId,
+        unit_price: quickMode === 'breakdown' ? (Number(quickUnitPrice) || null) : null,
+        quantity: quickMode === 'breakdown' ? (Number(quickQuantity) || null) : null,
+        unit: quickMode === 'breakdown' ? (quickUnit || null) : null,
+      }).select().single()
+      if (error) { alert('원가 추가 실패: ' + error.message); return }
+      if (data) {
+        update([...items, { ...data, category: quickCat }])
+        setQuickItem('')
+        setQuickAmount('')
+        setQuickUnitPrice('')
+        setQuickQuantity('')
+        setQuickVendorText('')
+        setTimeout(() => itemRef.current?.focus(), 50)
+      }
+    } catch (e) {
+      alert('원가 추가 오류: ' + (e instanceof Error ? e.message : String(e)))
+    } finally {
+      setQuickLoading(false)
     }
-    setQuickLoading(false)
   }
 
   // 비율 삽입
@@ -346,14 +358,20 @@ export default function CostInlineEditor({ saleId, revenue, initialItems, vendor
   const totalCost = items.reduce((s, i) => s + i.amount, 0) + vatAmount
   const profit = revenue - totalCost
   const profitRate = revenue > 0 ? Math.round((profit / revenue) * 100) : 0
-  const previewQuickAmount = calcAmount(quickUnitPrice, quickQuantity)
+  const previewQuickAmount = quickMode === 'breakdown'
+    ? calcAmount(quickUnitPrice, quickQuantity)
+    : (Number(quickAmount) || null)
+  const canAdd = !!quickItem.trim() && !!previewQuickAmount
 
   return (
     <div className="border-l-4 border-yellow-400 bg-yellow-50/30">
 
       {/* ── 빠른 추가 바 ── */}
       <div className="px-5 py-3 border-b border-yellow-200 bg-yellow-50">
-        <p className="text-xs font-semibold text-yellow-700 mb-2">원가 입력</p>
+        <div className="flex items-center justify-between mb-2">
+          <p className="text-xs font-semibold text-yellow-700">원가 입력</p>
+          <span className="text-xs text-gray-300 hidden lg:block">Tab 이동 · Enter 추가</span>
+        </div>
         <div className="flex items-center gap-2 flex-wrap">
 
           {/* 카테고리 토글 */}
@@ -373,7 +391,7 @@ export default function CostInlineEditor({ saleId, revenue, initialItems, vendor
                   value={quickVendorText}
                   onChange={e => { setQuickVendorText(e.target.value); setNewVendorForm(false); if (!quickItem) setQuickItem(e.target.value) }}
                   onKeyDown={e => { if (e.key === 'Tab') { e.preventDefault(); itemRef.current?.focus() } }}
-                  className={`w-36 text-sm px-2.5 py-1.5 border rounded-lg bg-white focus:outline-none focus:border-yellow-400 ${isNewVendor ? 'border-yellow-400' : 'border-gray-200'}`}
+                  className={`w-32 text-sm px-2.5 py-1.5 border rounded-lg bg-white focus:outline-none focus:border-yellow-400 ${isNewVendor ? 'border-yellow-400' : 'border-gray-200'}`}
                 />
                 {isNewVendor && !newVendorForm && (
                   <button type="button"
@@ -391,49 +409,69 @@ export default function CostInlineEditor({ saleId, revenue, initialItems, vendor
           {/* 항목명 */}
           <input ref={itemRef} placeholder="항목명" value={quickItem}
             onChange={e => setQuickItem(e.target.value)}
-            onKeyDown={e => { if (e.key === 'Tab') { e.preventDefault(); unitPriceRef.current?.focus() } if (e.key === 'Enter') handleQuickAdd() }}
+            onKeyDown={e => {
+              if (e.key === 'Tab') { e.preventDefault(); (quickMode === 'amount' ? amountRef : unitPriceRef).current?.focus() }
+              if (e.key === 'Enter') handleQuickAdd()
+            }}
             className="flex-1 min-w-[80px] text-sm px-2.5 py-1.5 border border-gray-200 rounded-lg bg-white focus:outline-none focus:border-yellow-400"
           />
 
-          {/* 단가 */}
-          <div className="relative">
-            <input ref={unitPriceRef} type="number" placeholder="단가"
-              value={quickUnitPrice}
-              onChange={e => setQuickUnitPrice(e.target.value)}
-              onKeyDown={e => { if (e.key === 'Tab') { e.preventDefault(); qtyRef.current?.focus() } if (e.key === 'Enter') handleQuickAdd() }}
-              className="w-28 text-sm px-2.5 py-1.5 pr-5 border border-gray-200 rounded-lg bg-white focus:outline-none focus:border-yellow-400"
-            />
-            <span className="absolute right-2 top-1/2 -translate-y-1/2 text-xs text-gray-300">원</span>
-          </div>
-
-          <span className="text-gray-400 text-sm font-medium">×</span>
-
-          {/* 수량 */}
-          <input ref={qtyRef} type="number" placeholder="수량"
-            value={quickQuantity}
-            onChange={e => setQuickQuantity(e.target.value)}
-            onKeyDown={e => e.key === 'Enter' && handleQuickAdd()}
-            className="w-16 text-sm px-2.5 py-1.5 border border-gray-200 rounded-lg bg-white focus:outline-none focus:border-yellow-400"
-          />
-
-          {/* 단위 */}
-          <select value={quickUnit} onChange={e => setQuickUnit(e.target.value)}
-            className="text-sm px-2 py-1.5 border border-gray-200 rounded-lg bg-white focus:outline-none focus:border-yellow-400"
-          >
-            {UNITS.map(u => <option key={u}>{u}</option>)}
-          </select>
-
-          {/* 자동 계산 미리보기 */}
-          {previewQuickAmount !== null && (
-            <span className="text-xs text-gray-600">= <strong>{previewQuickAmount.toLocaleString()}원</strong></span>
+          {/* 금액 직접 입력 (기본 모드) */}
+          {quickMode === 'amount' && (
+            <div className="relative">
+              <input ref={amountRef} type="number" placeholder="금액"
+                value={quickAmount}
+                onChange={e => setQuickAmount(e.target.value)}
+                onKeyDown={e => e.key === 'Enter' && handleQuickAdd()}
+                className="w-32 text-sm px-2.5 py-1.5 pr-5 border border-gray-200 rounded-lg bg-white focus:outline-none focus:border-yellow-400"
+              />
+              <span className="absolute right-2 top-1/2 -translate-y-1/2 text-xs text-gray-300">원</span>
+            </div>
           )}
 
+          {/* 단가×수량 모드 */}
+          {quickMode === 'breakdown' && (
+            <>
+              <div className="relative">
+                <input ref={unitPriceRef} type="number" placeholder="단가"
+                  value={quickUnitPrice}
+                  onChange={e => setQuickUnitPrice(e.target.value)}
+                  onKeyDown={e => { if (e.key === 'Tab') { e.preventDefault(); qtyRef.current?.focus() } if (e.key === 'Enter') handleQuickAdd() }}
+                  className="w-28 text-sm px-2.5 py-1.5 pr-5 border border-gray-200 rounded-lg bg-white focus:outline-none focus:border-yellow-400"
+                />
+                <span className="absolute right-2 top-1/2 -translate-y-1/2 text-xs text-gray-300">원</span>
+              </div>
+              <span className="text-gray-400 text-sm">×</span>
+              <input ref={qtyRef} type="number" placeholder="수량"
+                value={quickQuantity}
+                onChange={e => setQuickQuantity(e.target.value)}
+                onKeyDown={e => e.key === 'Enter' && handleQuickAdd()}
+                className="w-16 text-sm px-2.5 py-1.5 border border-gray-200 rounded-lg bg-white focus:outline-none focus:border-yellow-400"
+              />
+              <select value={quickUnit} onChange={e => setQuickUnit(e.target.value)}
+                className="text-sm px-2 py-1.5 border border-gray-200 rounded-lg bg-white focus:outline-none focus:border-yellow-400"
+              >
+                {UNITS.map(u => <option key={u}>{u}</option>)}
+              </select>
+              {previewQuickAmount !== null && (
+                <span className="text-xs text-gray-600">= <strong>{previewQuickAmount.toLocaleString()}원</strong></span>
+              )}
+            </>
+          )}
+
+          {/* 단가×수량 토글 */}
+          <button type="button"
+            onClick={() => { setQuickMode(m => m === 'amount' ? 'breakdown' : 'amount'); setQuickAmount(''); setQuickUnitPrice(''); setQuickQuantity('') }}
+            className="text-xs text-gray-400 hover:text-gray-600 border border-dashed border-gray-300 px-2 py-1.5 rounded-lg transition-colors whitespace-nowrap"
+            title={quickMode === 'amount' ? '단가×수량으로 전환' : '금액 직접입력으로 전환'}
+          >{quickMode === 'amount' ? '단가×수량' : '금액입력'}</button>
+
           <button onClick={handleQuickAdd}
-            disabled={quickLoading || !quickItem.trim() || previewQuickAmount === null}
-            className="text-xs px-3 py-1.5 rounded-lg font-semibold disabled:opacity-40 whitespace-nowrap hover:opacity-80 transition-all"
+            disabled={quickLoading || !canAdd}
+            className="text-xs px-3 py-1.5 rounded-lg font-semibold disabled:opacity-40 disabled:cursor-not-allowed whitespace-nowrap hover:opacity-80 transition-all"
             style={{ backgroundColor: '#FFCE00', color: '#121212' }}
+            title={!quickItem.trim() ? '항목명을 입력하세요' : !previewQuickAmount ? '금액을 입력하세요' : ''}
           >{quickLoading ? '...' : '추가 ↵'}</button>
-          <span className="text-xs text-gray-300 hidden lg:block">Tab 이동 · Enter 추가</span>
         </div>
 
         {/* 새 거래처 인라인 등록 폼 */}
