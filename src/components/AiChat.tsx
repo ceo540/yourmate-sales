@@ -252,8 +252,8 @@ export default function AiChat() {
 
       {/* 채팅 패널 */}
       {open && (
-        <div className={`fixed bottom-[88px] right-6 z-50 bg-white rounded-2xl shadow-2xl border border-gray-100 flex flex-col overflow-hidden transition-all duration-200 ${
-          expanded ? 'w-[680px] max-h-[80vh]' : 'w-[420px] max-h-[600px]'
+        <div className={`fixed bottom-[88px] right-4 md:right-6 z-50 bg-white rounded-2xl shadow-2xl border border-gray-100 flex flex-col overflow-hidden transition-all duration-200 ${
+          expanded ? 'w-[calc(100vw-32px)] md:w-[680px] max-h-[80vh]' : 'w-[calc(100vw-32px)] md:w-[420px] max-h-[85vh] md:max-h-[85vh]'
         }`}>
           {/* 헤더 */}
           <div className="px-4 py-3 border-b border-gray-100 flex items-center gap-2 flex-shrink-0" style={{ backgroundColor: '#FFCE00' }}>

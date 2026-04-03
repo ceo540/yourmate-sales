@@ -1,6 +1,7 @@
 import Anthropic from '@anthropic-ai/sdk'
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
+import { createAdminClient } from '@/lib/supabase/admin'
 import { getDropboxToken } from '@/lib/dropbox'
 
 const client = new Anthropic()
@@ -133,7 +134,13 @@ const SYSTEM_PROMPT = `너는 유어메이트(yourmate) 사내 시스템 "빵빵
 3. 노션 프로젝트 조회 (상태, PM, TODO, 업무순서 등)
 4. 드롭박스 폴더 파일 목록 조회
 5. 리드(잠재 고객) 등록 및 관리
-6. 업무 관련 도움
+6. 고객 DB 조회 (기관·담당자 검색, 거래 이력 확인)
+7. 업무 관련 도움
+
+## 고객 DB 규칙
+- 기관(학교/기업 등) 또는 담당자 이름 언급 시 search_customers로 먼저 확인
+- 거래 이력, 담당자 연락처, 기관 정보 질문 → search_customers 사용
+- 고객 DB와 리드는 별개야: 리드는 아직 계약 전 문의, 고객 DB는 거래 기록이 있는 곳
 
 ## 리드 관리 규칙
 - 리드 = 아직 계약 안 된 잠재 고객 문의. 계약 성사되면 매출건으로 전환.
@@ -423,6 +430,17 @@ const TOOLS: Anthropic.Tool[] = [
         search: { type: 'string', description: '기관명 또는 담당자명 검색어 (필수)' },
       },
       required: ['search'],
+    },
+  },
+  {
+    name: 'search_customers',
+    description: '고객 DB를 검색합니다. 기관(학교/기업 등)과 담당자(개인) 정보, 거래 이력을 조회할 수 있습니다.',
+    input_schema: {
+      type: 'object' as const,
+      properties: {
+        query: { type: 'string', description: '기관명 또는 담당자명 검색어' },
+        type: { type: 'string', description: '기관 유형 필터: 학교 | 공공기관 | 기업 | 개인 | 기타' },
+      },
     },
   },
   {
@@ -1051,6 +1069,41 @@ async function executeTool(name: string, input: Record<string, unknown>, userRol
     }).eq('id', lead.id)
 
     return { success: true, lead_id: lead.lead_id, client_org: lead.client_org, sale_id: sale.id, message: `"${lead.client_org}" 리드가 매출건으로 전환됐어! /sales/report에서 수정해줘.` }
+  }
+
+  if (name === 'search_customers') {
+    const adminDb = createAdminClient()
+    const query = input.query as string | undefined
+    const typeFilter = input.type as string | undefined
+
+    // 기관 검색
+    let orgQuery = adminDb
+      .from('customers')
+      .select('*')
+      .order('name')
+      .limit(15)
+    if (query) orgQuery = orgQuery.ilike('name', `%${query}%`)
+    if (typeFilter) orgQuery = orgQuery.eq('type', typeFilter)
+
+    // 담당자 검색
+    let personQuery = adminDb
+      .from('persons')
+      .select('*')
+      .order('name')
+      .limit(15)
+    if (query) personQuery = personQuery.ilike('name', `%${query}%`)
+
+    const [{ data: orgs, error: orgErr }, { data: persons, error: personErr }] = await Promise.all([orgQuery, personQuery])
+
+    if (orgErr) return { error: orgErr.message }
+    if (personErr) return { error: personErr.message }
+
+    return {
+      organizations: orgs ?? [],
+      persons: persons ?? [],
+      total_orgs: orgs?.length ?? 0,
+      total_persons: persons?.length ?? 0,
+    }
   }
 
   if (name === 'list_dropbox_files') {

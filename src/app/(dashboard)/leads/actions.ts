@@ -3,6 +3,7 @@ import { createClient } from '@/lib/supabase/server'
 import { revalidatePath } from 'next/cache'
 import { SERVICE_TO_DEPT } from '@/types'
 import { createSaleFolder } from '@/lib/dropbox'
+import { syncLeadToCustomerDB } from '@/lib/customer-sync'
 
 // LEAD{YYYYMMDD}-{NNNN} 형식 ID 생성
 async function generateLeadId(): Promise<string> {
@@ -45,6 +46,13 @@ export async function createLead(formData: FormData) {
     contact_2: (formData.get('contact_2') as string) || null,
     contact_3: (formData.get('contact_3') as string) || null,
   })
+
+  // 고객 DB 자동 upsert (콜드메일 리스트용)
+  const client_org = formData.get('client_org') as string | null
+  const contact_name = formData.get('contact_name') as string | null
+  const phone = formData.get('phone') as string | null
+  const email = formData.get('email') as string | null
+  await syncLeadToCustomerDB({ client_org, contact_name, phone, email })
 
   revalidatePath('/leads')
 }

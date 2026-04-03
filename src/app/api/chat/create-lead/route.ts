@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
+import { syncLeadToCustomerDB } from '@/lib/customer-sync'
 
 async function generateLeadId(supabase: Awaited<ReturnType<typeof createClient>>): Promise<string> {
   const today = new Date().toISOString().slice(0, 10).replace(/-/g, '')
@@ -63,6 +64,9 @@ export async function POST(req: NextRequest) {
     }).select('id, lead_id').single()
 
     if (error) throw new Error(error.message)
+
+    // 고객 DB 자동 upsert (콜드메일 리스트용)
+    await syncLeadToCustomerDB({ client_org, contact_name, phone, email })
 
     return NextResponse.json({ id: data.id, lead_id: data.lead_id })
   } catch (e) {

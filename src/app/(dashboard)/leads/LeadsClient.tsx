@@ -199,19 +199,19 @@ export default function LeadsClient({ leads, profiles, currentUserId, isAdmin }:
   function LeadForm({ onSubmit }: { onSubmit: (e: React.FormEvent) => void }) {
     return (
       <form onSubmit={onSubmit} className="space-y-4">
-        <div className="grid grid-cols-2 gap-3">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <div><label className={labelCls}>기관명 *</label>
             <input className={inputCls} value={form.client_org} onChange={e => setForm(f => ({ ...f, client_org: e.target.value }))} required /></div>
           <div><label className={labelCls}>담당자명 / 직급</label>
             <input className={inputCls} value={form.contact_name} onChange={e => setForm(f => ({ ...f, contact_name: e.target.value }))} /></div>
         </div>
-        <div className="grid grid-cols-2 gap-3">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <div><label className={labelCls}>휴대폰</label>
             <input className={inputCls} value={form.phone} onChange={e => setForm(f => ({ ...f, phone: e.target.value }))} /></div>
           <div><label className={labelCls}>이메일</label>
             <input className={inputCls} type="email" value={form.email} onChange={e => setForm(f => ({ ...f, email: e.target.value }))} /></div>
         </div>
-        <div className="grid grid-cols-2 gap-3">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <div><label className={labelCls}>서비스 분류</label>
             <select className={inputCls} value={form.service_type} onChange={e => setForm(f => ({ ...f, service_type: e.target.value }))}>
               <option value="">선택</option>
@@ -222,13 +222,13 @@ export default function LeadsClient({ leads, profiles, currentUserId, isAdmin }:
               {LEAD_STATUSES.map(s => <option key={s} value={s}>{s}</option>)}
             </select></div>
         </div>
-        <div className="grid grid-cols-2 gap-3">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <div><label className={labelCls}>최초 유입일</label>
             <input className={inputCls} type="date" value={form.inflow_date} onChange={e => setForm(f => ({ ...f, inflow_date: e.target.value }))} /></div>
           <div><label className={labelCls}>리마인드 날짜</label>
             <input className={inputCls} type="date" value={form.remind_date} onChange={e => setForm(f => ({ ...f, remind_date: e.target.value }))} /></div>
         </div>
-        <div className="grid grid-cols-2 gap-3">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <div><label className={labelCls}>소통 경로</label>
             <select className={inputCls} value={form.channel} onChange={e => setForm(f => ({ ...f, channel: e.target.value }))}>
               <option value="">선택</option>
@@ -249,7 +249,7 @@ export default function LeadsClient({ leads, profiles, currentUserId, isAdmin }:
         )}
         <div><label className={labelCls}>최초 유입 내용</label>
           <textarea className={inputCls} rows={2} value={form.initial_content} onChange={e => setForm(f => ({ ...f, initial_content: e.target.value }))} /></div>
-        <div className="grid grid-cols-3 gap-3">
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
           {(['contact_1', 'contact_2', 'contact_3'] as const).map((k, i) => (
             <div key={k}><label className={labelCls}>{i + 1}차 소통</label>
               <textarea className={inputCls} rows={2} value={form[k]} onChange={e => setForm(f => ({ ...f, [k]: e.target.value }))} /></div>
@@ -282,7 +282,7 @@ export default function LeadsClient({ leads, profiles, currentUserId, isAdmin }:
   return (
     <div className="flex flex-col gap-4">
       {/* 요약 카드 */}
-      <div className="grid grid-cols-4 gap-3">
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
         {[
           { label: '전체 리드', value: stats.total, color: 'text-gray-800', bg: 'bg-white' },
           { label: '신규 문의', value: stats.신규, color: 'text-blue-600', bg: 'bg-blue-50' },
@@ -313,7 +313,7 @@ export default function LeadsClient({ leads, profiles, currentUserId, isAdmin }:
         <div className="flex gap-2 ml-auto">
           <input type="text" placeholder="기관명, 담당자, ID 검색..."
             value={searchTerm} onChange={e => setSearchTerm(e.target.value)}
-            className="border border-gray-200 rounded-lg px-3 py-1.5 text-sm w-52 focus:outline-none focus:ring-2 focus:ring-yellow-300" />
+            className="border border-gray-200 rounded-lg px-3 py-1.5 text-sm w-full sm:w-52 focus:outline-none focus:ring-2 focus:ring-yellow-300" />
           {isAdmin && (
             <button onClick={openCreate}
               className="px-4 py-1.5 text-sm font-semibold rounded-lg whitespace-nowrap"
@@ -325,10 +325,10 @@ export default function LeadsClient({ leads, profiles, currentUserId, isAdmin }:
       </div>
 
       {/* 스플릿 뷰 */}
-      <div className="flex gap-4" style={{ height: 'calc(100vh - 360px)', minHeight: '520px' }}>
+      <div className="flex flex-col md:flex-row gap-4 md:h-[calc(100vh-360px)] md:min-h-[520px]">
 
-        {/* 왼쪽: 리드 목록 */}
-        <div className="w-[55%] flex flex-col border border-gray-200 rounded-xl bg-white overflow-hidden">
+        {/* 왼쪽: 리드 목록 — 모바일에서 상세 선택 시 숨김 */}
+        <div className={`${selectedLead ? 'hidden md:flex' : 'flex'} md:w-[55%] flex-col border border-gray-200 rounded-xl bg-white overflow-hidden min-h-[400px] md:min-h-0`}>
           <div className="overflow-y-auto flex-1">
             <table className="w-full text-sm">
               <thead className="sticky top-0 bg-gray-50 z-10">
@@ -387,8 +387,8 @@ export default function LeadsClient({ leads, profiles, currentUserId, isAdmin }:
           </div>
         </div>
 
-        {/* 오른쪽: 상세 패널 */}
-        <div className="flex-1 flex flex-col border border-gray-200 rounded-xl bg-white overflow-hidden">
+        {/* 오른쪽: 상세 패널 — 모바일에서 선택 시만 표시 */}
+        <div className={`${selectedLead ? 'flex' : 'hidden md:flex'} flex-1 flex-col border border-gray-200 rounded-xl bg-white overflow-hidden min-h-[400px] md:min-h-0`}>
           {!selectedLead ? (
             <div className="flex flex-col items-center justify-center h-full text-gray-400 gap-2">
               <span className="text-3xl">👈</span>
@@ -398,6 +398,9 @@ export default function LeadsClient({ leads, profiles, currentUserId, isAdmin }:
             <>
               {/* 헤더 */}
               <div className="px-5 py-4 border-b border-gray-100 sticky top-0 bg-white z-10 shrink-0">
+                <button onClick={() => setSelectedLead(null)} className="md:hidden flex items-center gap-1 text-xs text-gray-400 hover:text-gray-600 mb-2">
+                  ← 목록으로
+                </button>
                 <p className="text-xs text-gray-400">{selectedLead.lead_id}</p>
                 <h2 className="text-base font-bold text-gray-900 leading-tight">{selectedLead.client_org || '기관명 없음'}</h2>
                 <div className="flex items-center gap-1.5 mt-1.5 flex-wrap">

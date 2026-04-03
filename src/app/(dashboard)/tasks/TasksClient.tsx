@@ -201,8 +201,8 @@ export default function TasksClient({ tasks: initialTasks, profiles, sales, isAd
 
       {/* 목록 뷰 */}
       {viewMode === 'list' && filtered.length > 0 && (
-        <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
-          <table className="w-full">
+        <div className="bg-white rounded-xl border border-gray-200 overflow-x-auto">
+          <table className="w-full min-w-[600px]">
             <thead>
               <tr className="border-b border-gray-100 bg-gray-50">
                 <th className="text-left text-xs font-semibold text-gray-500 px-4 py-3">업무</th>
@@ -433,7 +433,7 @@ function EditTaskRow({ task, profiles, onSave, onCancel }: { task: Task; profile
         className="w-full px-3 py-1.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-yellow-400"
         placeholder="업무명"
       />
-      <div className="grid grid-cols-3 gap-2">
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
         <select value={assigneeId} onChange={e => setAssigneeId(e.target.value)} className="px-2 py-1.5 border border-gray-200 rounded-lg text-xs bg-white focus:outline-none focus:border-yellow-400">
           <option value="">담당자 없음</option>
           {profiles.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
@@ -494,7 +494,7 @@ function AddTaskForm({ profiles, sales, currentUserId, onCreated, onCancel }: {
     <form onSubmit={handleSubmit} className="bg-yellow-50 border border-yellow-200 rounded-xl p-4 mb-4 space-y-3">
       <input type="hidden" name="created_by" value={currentUserId} />
 
-      <div className="grid grid-cols-2 gap-3">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <div>
           <label className="block text-xs text-gray-500 mb-1">프로젝트 (매출 건) *</label>
           <select name="sale_id" required className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm bg-white focus:outline-none focus:border-yellow-400">
@@ -508,7 +508,7 @@ function AddTaskForm({ profiles, sales, currentUserId, onCreated, onCancel }: {
         </div>
       </div>
 
-      <div className="grid grid-cols-3 gap-3">
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
         <div>
           <label className="block text-xs text-gray-500 mb-1">담당자</label>
           <select name="assignee_id" className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm bg-white focus:outline-none focus:border-yellow-400">

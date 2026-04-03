@@ -145,7 +145,7 @@ export default function CustomersClient({ customers, persons, isAdmin }: Props) 
   return (
     <div className="flex flex-col gap-4">
       {/* 요약 카드 */}
-      <div className="grid grid-cols-4 gap-3">
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
         {[
           {label:'전체 기관',  value:`${customers.length}개`, color:'text-gray-800', bg:'bg-white'},
           {label:'누적 매출',  value:fmt(totalRevenue),        color:'text-green-600',bg:'bg-green-50'},
@@ -160,10 +160,10 @@ export default function CustomersClient({ customers, persons, isAdmin }: Props) 
       </div>
 
       {/* 스플릿 뷰 */}
-      <div className="flex gap-4" style={{height:'calc(100vh - 320px)', minHeight:'540px'}}>
+      <div className="flex flex-col md:flex-row gap-4 md:h-[calc(100vh-320px)] md:min-h-[540px]">
 
-        {/* 왼쪽: 목록 */}
-        <div className="w-[44%] flex flex-col border border-gray-200 rounded-xl bg-white overflow-hidden">
+        {/* 왼쪽: 목록 — 모바일에서 상세 선택 시 숨김 */}
+        <div className={`${detailId ? 'hidden md:flex' : 'flex'} md:w-[44%] flex-col border border-gray-200 rounded-xl bg-white overflow-hidden min-h-[400px] md:min-h-0`}>
           <div className="px-3 py-2.5 border-b border-gray-100 space-y-2 shrink-0">
             <div className="flex bg-gray-100 rounded-lg p-0.5 gap-0.5">
               <button onClick={()=>setListView('org')}
@@ -288,8 +288,8 @@ export default function CustomersClient({ customers, persons, isAdmin }: Props) 
           )}
         </div>
 
-        {/* 오른쪽: 상세 */}
-        <div className="flex-1 flex flex-col border border-gray-200 rounded-xl bg-white overflow-hidden">
+        {/* 오른쪽: 상세 — 모바일에서 선택 시만 표시 */}
+        <div className={`${detailId ? 'flex' : 'hidden md:flex'} flex-1 flex-col border border-gray-200 rounded-xl bg-white overflow-hidden min-h-[400px] md:min-h-0`}>
           {!detailId&&(
             <div className="flex flex-col items-center justify-center h-full text-gray-400 gap-2">
               <span className="text-3xl">🔗</span><p className="text-sm">기관 또는 담당자를 선택하세요</p>
@@ -303,6 +303,9 @@ export default function CustomersClient({ customers, persons, isAdmin }: Props) 
             return (
               <>
                 <div className="px-5 py-4 border-b border-gray-100 shrink-0">
+                  <button onClick={()=>setDetailId(null)} className="md:hidden flex items-center gap-1 text-xs text-gray-400 hover:text-gray-600 mb-2">
+                    ← 목록으로
+                  </button>
                   <div className="flex items-start justify-between">
                     <div>
                       <div className="flex items-center gap-2 flex-wrap">
@@ -416,6 +419,9 @@ export default function CustomersClient({ customers, persons, isAdmin }: Props) 
             return (
               <>
                 <div className="px-5 py-4 border-b border-gray-100 shrink-0">
+                  <button onClick={()=>setDetailId(null)} className="md:hidden flex items-center gap-1 text-xs text-gray-400 hover:text-gray-600 mb-2">
+                    ← 목록으로
+                  </button>
                   <div className="flex items-start gap-3">
                     <div className={`w-11 h-11 rounded-full flex items-center justify-center text-lg font-bold ${hasMoved?'bg-orange-100 text-orange-700':'bg-gray-100 text-gray-600'}`}>{p.name[0]}</div>
                     <div className="flex-1">
