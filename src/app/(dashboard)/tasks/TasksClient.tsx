@@ -23,13 +23,13 @@ interface Profile { id: string; name: string }
 interface Sale { id: string; name: string }
 interface Task {
   id: string
-  sale_id: string
+  project_id: string | null
   title: string
   status: string
   priority: string
   assignee_id: string | null
   due_date: string | null
-  memo: string | null
+  description: string | null
   assignee: { id: string; name: string } | null
   sale: { id: string; name: string } | null
 }
@@ -75,20 +75,20 @@ export default function TasksClient({ tasks: initialTasks, profiles, sales, isAd
     ...Object.fromEntries(STATUSES.map(s => [s, tasks.filter(t => t.status === s).length])),
   }
 
-  function handleStatusChange(taskId: string, saleId: string, status: string) {
+  function handleStatusChange(taskId: string, saleId: string | null, status: string) {
     setTasks(prev => prev.map(t => t.id === taskId ? { ...t, status } : t))
     startTransition(() => updateTaskStatus(taskId, status, saleId))
   }
 
-  function handleDelete(taskId: string, saleId: string) {
+  function handleDelete(taskId: string, saleId: string | null) {
     if (!confirm('업무를 삭제할까요?')) return
     setTasks(prev => prev.filter(t => t.id !== taskId))
     startTransition(() => deleteTask(taskId, saleId))
   }
 
-  // 프로젝트별 그룹화
+  // 프로젝트별 그룹화 (project_id 없는 업무는 '내부업무' 그룹)
   const grouped = filtered.reduce((acc, t) => {
-    const key = t.sale_id
+    const key = t.project_id ?? '__internal__'
     if (!acc[key]) acc[key] = { sale: t.sale, tasks: [] }
     acc[key].tasks.push(t)
     return acc
@@ -223,11 +223,11 @@ export default function TasksClient({ tasks: initialTasks, profiles, sales, isAd
                       <span className={`text-sm ${task.status === '완료' ? 'line-through text-gray-400' : 'text-gray-800 font-medium'}`}>
                         {task.title}
                       </span>
-                      {task.memo && <p className="text-xs text-gray-400 mt-0.5 truncate max-w-[200px]">{task.memo}</p>}
+                      {task.description && <p className="text-xs text-gray-400 mt-0.5 truncate max-w-[200px]">{task.description}</p>}
                     </td>
                     <td className="px-4 py-3">
                       {task.sale
-                        ? <a href={`/sales/${task.sale_id}?from=/tasks`} className="text-xs text-blue-600 hover:underline truncate max-w-[150px] block">{task.sale.name}</a>
+                        ? <a href={`/sales/${task.project_id}?from=/tasks`} className="text-xs text-blue-600 hover:underline truncate max-w-[150px] block">{task.sale.name}</a>
                         : <span className="text-xs text-gray-300">-</span>}
                     </td>
                     {isAdmin && (
@@ -246,7 +246,7 @@ export default function TasksClient({ tasks: initialTasks, profiles, sales, isAd
                     <td className="px-4 py-3">
                       <select
                         value={task.status}
-                        onChange={e => handleStatusChange(task.id, task.sale_id, e.target.value)}
+                        onChange={e => handleStatusChange(task.id, task.project_id, e.target.value)}
                         disabled={isPending}
                         className={`text-xs px-2 py-1 rounded-full font-medium border-0 cursor-pointer focus:outline-none ${STATUS_STYLE[task.status] ?? 'bg-gray-100 text-gray-600'}`}
                       >
@@ -255,7 +255,7 @@ export default function TasksClient({ tasks: initialTasks, profiles, sales, isAd
                     </td>
                     {isAdmin && (
                       <td className="px-4 py-3">
-                        <button onClick={() => handleDelete(task.id, task.sale_id)} className="text-gray-300 hover:text-red-400 text-lg leading-none">×</button>
+                        <button onClick={() => handleDelete(task.id, task.project_id)} className="text-gray-300 hover:text-red-400 text-lg leading-none">×</button>
                       </td>
                     )}
                   </tr>
@@ -278,8 +278,8 @@ interface ProjectGroupProps {
   isAdmin: boolean
   editingId: string | null
   isPending: boolean
-  onStatusChange: (taskId: string, saleId: string, status: string) => void
-  onDelete: (taskId: string, saleId: string) => void
+  onStatusChange: (taskId: string, saleId: string | null, status: string) => void
+  onDelete: (taskId: string, saleId: string | null) => void
   onEditStart: (id: string) => void
   onEditDone: () => void
   onTaskUpdated: (task: Task) => void
@@ -298,13 +298,17 @@ function ProjectGroup({ saleId, saleName, tasks, profiles, isAdmin, editingId, i
       >
         <div className="flex items-center gap-2">
           <span className="text-xs text-gray-400 transition-transform" style={{ display: 'inline-block', transform: collapsed ? 'rotate(-90deg)' : 'rotate(0deg)' }}>▼</span>
-          <a
-            href={`/sales/${saleId}?from=/tasks`}
-            onClick={e => e.stopPropagation()}
-            className="text-sm font-semibold text-gray-900 hover:text-blue-600 hover:underline"
-          >
-            {saleName}
-          </a>
+          {saleId !== '__internal__' ? (
+            <a
+              href={`/sales/${saleId}?from=/tasks`}
+              onClick={e => e.stopPropagation()}
+              className="text-sm font-semibold text-gray-900 hover:text-blue-600 hover:underline"
+            >
+              {saleName}
+            </a>
+          ) : (
+            <span className="text-sm font-semibold text-gray-900">{saleName}</span>
+          )}
           <span className="text-xs text-gray-400">{tasks.length}개</span>
         </div>
         {doneCount > 0 && (
@@ -347,8 +351,8 @@ interface TaskRowProps {
   task: Task
   isAdmin: boolean
   isPending: boolean
-  onStatusChange: (taskId: string, saleId: string, status: string) => void
-  onDelete: (taskId: string, saleId: string) => void
+  onStatusChange: (taskId: string, saleId: string | null, status: string) => void
+  onDelete: (taskId: string, saleId: string | null) => void
   onEdit: () => void
 }
 
@@ -358,7 +362,7 @@ function TaskRow({ task, isAdmin, isPending, onStatusChange, onDelete, onEdit }:
     <div className={`flex items-center gap-3 px-4 py-3 hover:bg-gray-50 transition-colors ${task.status === '완료' ? 'opacity-50' : ''}`}>
       <select
         value={task.status}
-        onChange={e => onStatusChange(task.id, task.sale_id, e.target.value)}
+        onChange={e => onStatusChange(task.id, task.project_id, e.target.value)}
         disabled={isPending}
         onClick={e => e.stopPropagation()}
         className={`text-xs px-2 py-1 rounded-full font-medium border-0 cursor-pointer focus:outline-none flex-shrink-0 ${STATUS_STYLE[task.status] ?? 'bg-gray-100 text-gray-600'}`}
@@ -385,7 +389,7 @@ function TaskRow({ task, isAdmin, isPending, onStatusChange, onDelete, onEdit }:
       {isAdmin && (
         <div className="flex items-center gap-1 flex-shrink-0">
           <button onClick={onEdit} className="text-gray-300 hover:text-blue-400 text-xs px-1.5 py-0.5 rounded hover:bg-blue-50 transition-colors">수정</button>
-          <button onClick={() => onDelete(task.id, task.sale_id)} className="text-gray-300 hover:text-red-400 text-lg leading-none ml-0.5">×</button>
+          <button onClick={() => onDelete(task.id, task.project_id)} className="text-gray-300 hover:text-red-400 text-lg leading-none ml-0.5">×</button>
         </div>
       )}
     </div>
@@ -398,7 +402,7 @@ function EditTaskRow({ task, profiles, onSave, onCancel }: { task: Task; profile
   const [priority, setPriority] = useState(task.priority)
   const [assigneeId, setAssigneeId] = useState(task.assignee_id ?? '')
   const [dueDate, setDueDate] = useState(task.due_date ?? '')
-  const [memo, setMemo] = useState(task.memo ?? '')
+  const [memo, setMemo] = useState(task.description ?? '')
   const [saving, setSaving] = useState(false)
 
   async function handleSave() {
@@ -406,7 +410,7 @@ function EditTaskRow({ task, profiles, onSave, onCancel }: { task: Task; profile
     setSaving(true)
     const fd = new FormData()
     fd.set('id', task.id)
-    fd.set('sale_id', task.sale_id)
+    if (task.project_id) fd.set('project_id', task.project_id)
     fd.set('title', title)
     fd.set('priority', priority)
     fd.set('assignee_id', assigneeId)
@@ -419,7 +423,7 @@ function EditTaskRow({ task, profiles, onSave, onCancel }: { task: Task; profile
       priority,
       assignee_id: assigneeId || null,
       due_date: dueDate || null,
-      memo: memo || null,
+      description: memo || null,
       assignee: profiles.find(p => p.id === assigneeId) ?? null,
     })
     setSaving(false)
@@ -467,38 +471,37 @@ function AddTaskForm({ profiles, sales, currentUserId, onCreated, onCancel }: {
   async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault()
     const fd = new FormData(e.currentTarget)
-    if (!fd.get('sale_id') || !fd.get('title')) return
+    if (!fd.get('title')) return
     setSubmitting(true)
     await createTask(fd)
     // 임시 객체로 낙관적 업데이트
     const profileMap = Object.fromEntries(profiles.map(p => [p.id, p]))
     const saleMap = Object.fromEntries(sales.map(s => [s.id, s]))
     const assigneeId = fd.get('assignee_id') as string
-    const saleId = fd.get('sale_id') as string
+    const saleId = (fd.get('project_id') as string) || null
     onCreated({
       id: crypto.randomUUID(),
-      sale_id: saleId,
+      project_id: saleId,
       title: fd.get('title') as string,
       status: '할 일',
       priority: (fd.get('priority') as string) || '보통',
       assignee_id: assigneeId || null,
       due_date: (fd.get('due_date') as string) || null,
-      memo: (fd.get('memo') as string) || null,
+      description: (fd.get('memo') as string) || null,
       assignee: assigneeId ? (profileMap[assigneeId] ?? null) : null,
-      sale: saleMap[saleId] ?? null,
+      sale: saleId ? (saleMap[saleId] ?? null) : null,
     })
     setSubmitting(false)
   }
 
   return (
     <form onSubmit={handleSubmit} className="bg-yellow-50 border border-yellow-200 rounded-xl p-4 mb-4 space-y-3">
-      <input type="hidden" name="created_by" value={currentUserId} />
 
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <div>
-          <label className="block text-xs text-gray-500 mb-1">프로젝트 (매출 건) *</label>
-          <select name="sale_id" required className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm bg-white focus:outline-none focus:border-yellow-400">
-            <option value="">선택하세요</option>
+          <label className="block text-xs text-gray-500 mb-1">프로젝트 (매출 건)</label>
+          <select name="project_id" className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm bg-white focus:outline-none focus:border-yellow-400">
+            <option value="">없음 (내부 업무)</option>
             {sales.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
           </select>
         </div>

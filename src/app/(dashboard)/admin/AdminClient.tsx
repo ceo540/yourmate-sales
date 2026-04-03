@@ -3,7 +3,7 @@
 import { useState, useRef, useEffect, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
 import { DEPARTMENT_LABELS, type Department } from '@/types'
-import { createEntity, updateEntity, deleteEntity, updatePermission } from './actions'
+import { createEntity, updateEntity, deleteEntity, updatePermission, updateJoinDate, setInitialLeave, createOneOnOne, deleteOneOnOne, updateDocumentStatus, updateEmployeeEntity } from './actions'
 
 interface UserProfile {
   id: string
@@ -12,6 +12,8 @@ interface UserProfile {
   departments: string[] | null
   role: string
   created_at: string
+  join_date?: string | null
+  entity_id?: string | null
   last_sign_in_at: string | null
   confirmed_at: string | null
 }
@@ -22,10 +24,23 @@ interface BusinessEntity {
   business_number: string | null
 }
 
+interface OneOnOne {
+  id: string; member_id: string; date: string
+  content: string | null; action_items: string | null; created_at: string
+}
+interface DocRequest {
+  id: string; member_id: string; doc_type: string
+  purpose: string | null; status: string; created_at: string; processed_at: string | null
+}
+
 interface Props {
   users: UserProfile[]
   entities: BusinessEntity[]
   permissionsByRole: Record<string, Record<string, string>>
+  usedDaysMap: Record<string, number>
+  initialDaysMap: Record<string, number>
+  oneOnOnes: OneOnOne[]
+  docRequests: DocRequest[]
 }
 
 const DEPT_KEYS = Object.keys(DEPARTMENT_LABELS) as Department[]
@@ -54,7 +69,7 @@ function DeptCheckboxes({ selected, onChange }: { selected: string[], onChange: 
   )
 }
 
-export default function AdminClient({ users: initialUsers, entities: initialEntities, permissionsByRole: initialPerms }: Props) {
+export default function AdminClient({ users: initialUsers, entities: initialEntities, permissionsByRole: initialPerms, usedDaysMap, initialDaysMap, oneOnOnes: initialOneOnOnes, docRequests: initialDocRequests }: Props) {
   const router = useRouter()
   const [, startTransition] = useTransition()
   const [users, setUsers] = useState(initialUsers)
@@ -69,7 +84,19 @@ export default function AdminClient({ users: initialUsers, entities: initialEnti
   const dropdownRef = useRef<HTMLDivElement>(null)
 
   // 사업자 관리 상태
-  const [activeTab, setActiveTab] = useState<'team' | 'entities' | 'permissions'>('team')
+  const [activeTab, setActiveTab] = useState<'team' | 'entities' | 'permissions' | 'hr'>('team')
+  const [editingJoinId, setEditingJoinId] = useState<string | null>(null)
+  const [joinDateVal, setJoinDateVal] = useState('')
+  const [editingInitialId, setEditingInitialId] = useState<string | null>(null)
+  const [initialDaysVal, setInitialDaysVal] = useState('')
+
+  // 직원 카드 상태
+  const [selectedUserId, setSelectedUserId] = useState<string | null>(null)
+  const [hrDetailTab, setHrDetailTab] = useState<'info' | 'oo' | 'docs'>('info')
+  const [oneOnOnes, setOneOnOnes] = useState<OneOnOne[]>(initialOneOnOnes)
+  const [docRequests, setDocRequests] = useState<DocRequest[]>(initialDocRequests)
+  const [ooForm, setOoForm] = useState({ date: '', content: '', action_items: '' })
+  const [showOoForm, setShowOoForm] = useState(false)
   const [perms, setPerms] = useState(initialPerms)
   const [togglingKey, setTogglingKey] = useState<string | null>(null)
   const [entities, setEntities] = useState(initialEntities)
@@ -241,8 +268,8 @@ export default function AdminClient({ users: initialUsers, entities: initialEnti
   return (
     <div className="space-y-6">
       {/* 탭 */}
-      <div className="flex gap-1 bg-gray-100 p-1 rounded-xl w-fit">
-        {([['team', '팀원 관리'], ['entities', '사업자 관리'], ['permissions', '권한 안내']] as const).map(([key, label]) => (
+      <div className="flex flex-wrap gap-1 bg-gray-100 p-1 rounded-xl w-fit">
+        {([['team', '팀원 관리'], ['hr', '직원 관리'], ['entities', '사업자 관리'], ['permissions', '권한 안내']] as const).map(([key, label]) => (
           <button
             key={key}
             onClick={() => setActiveTab(key)}
@@ -252,6 +279,330 @@ export default function AdminClient({ users: initialUsers, entities: initialEnti
           </button>
         ))}
       </div>
+
+      {/* 직원 관리 탭 */}
+      {activeTab === 'hr' && (() => {
+        const ROLE_COLORS: Record<string, string> = {
+          admin: 'bg-yellow-100 text-yellow-800', manager: 'bg-blue-100 text-blue-700', member: 'bg-gray-100 text-gray-600',
+        }
+        const ROLE_LABELS: Record<string, string> = { admin: '대표', manager: '팀장', member: '팀원' }
+        const DOC_TYPES = ['재직증명서', '경력증명서', '근로소득원천징수영수증', '급여명세서', '기타']
+        const DOC_STATUS: Record<string, string> = { 요청: 'bg-yellow-100 text-yellow-700', 처리중: 'bg-blue-100 text-blue-700', 발급완료: 'bg-green-100 text-green-700' }
+
+        function calcLeave(joinDate: string | null | undefined) {
+          if (!joinDate) return null
+          const join = new Date(joinDate)
+          const today = new Date()
+          const totalMonths = (today.getFullYear() - join.getFullYear()) * 12 + (today.getMonth() - join.getMonth())
+          if (totalMonths < 12) return Math.min(totalMonths, 11)
+          return Math.min(15 + Math.floor((Math.floor(totalMonths / 12) - 1) / 2), 25)
+        }
+        function calcTenureStr(joinDate: string) {
+          const join = new Date(joinDate)
+          const today = new Date()
+          const totalMonths = (today.getFullYear() - join.getFullYear()) * 12 + (today.getMonth() - join.getMonth())
+          const y = Math.floor(totalMonths / 12); const m = totalMonths % 12
+          return m > 0 ? `${y}년 ${m}개월` : `${y}년`
+        }
+
+        const selectedUser = users.find(u => u.id === selectedUserId) ?? null
+        const userOOs = oneOnOnes.filter(o => o.member_id === selectedUserId).sort((a, b) => b.date.localeCompare(a.date))
+        const userDocs = docRequests.filter(d => d.member_id === selectedUserId).sort((a, b) => b.created_at.localeCompare(a.created_at))
+
+        return (
+          <div className={`flex gap-4 ${selectedUser ? 'items-start' : ''}`}>
+            {/* 직원 카드 그리드 */}
+            <div className={`grid grid-cols-2 gap-3 ${selectedUser ? 'w-72 shrink-0' : 'flex-1 sm:grid-cols-3'}`}>
+              {users.map(u => {
+                const joinDate = u.join_date ?? null
+                const usedDays = usedDaysMap[u.id] ?? 0
+                const annualLeave = calcLeave(joinDate)
+                const remaining = annualLeave != null ? annualLeave - usedDays : null
+                const lastOO = oneOnOnes.filter(o => o.member_id === u.id).sort((a, b) => b.date.localeCompare(a.date))[0]
+                const pendingDocs = docRequests.filter(d => d.member_id === u.id && d.status === '요청').length
+                const isSelected = selectedUserId === u.id
+
+                return (
+                  <button key={u.id} onClick={() => { setSelectedUserId(isSelected ? null : u.id); setHrDetailTab('info') }}
+                    className={`text-left p-4 rounded-2xl border-2 transition-all hover:shadow-md ${isSelected ? 'border-gray-900 bg-gray-50' : 'border-gray-100 bg-white hover:border-gray-300'}`}>
+                    {/* 아바타 + 이름 */}
+                    <div className="flex items-center gap-2.5 mb-3">
+                      <div className="w-10 h-10 rounded-full bg-gradient-to-br from-gray-200 to-gray-300 flex items-center justify-center text-base font-bold text-gray-600 shrink-0">
+                        {u.name?.[0]}
+                      </div>
+                      <div className="min-w-0">
+                        <p className="font-semibold text-gray-900 text-sm truncate">{u.name}</p>
+                        <span className={`text-[11px] px-1.5 py-0.5 rounded-full font-medium ${ROLE_COLORS[u.role] ?? 'bg-gray-100 text-gray-500'}`}>
+                          {ROLE_LABELS[u.role] ?? u.role}
+                        </span>
+                      </div>
+                    </div>
+
+                    {/* 입사/근속 */}
+                    <div className="text-xs text-gray-400 mb-2">
+                      {joinDate ? (
+                        <><span className="font-medium text-gray-600">{calcTenureStr(joinDate)}</span> · {joinDate}</>
+                      ) : (
+                        <span className="text-red-400">입사일 미입력</span>
+                      )}
+                    </div>
+
+                    {/* 소속 사업자 */}
+                    {u.entity_id && (
+                      <div className="text-[11px] text-gray-400 mb-2 truncate">
+                        🏢 {entities.find(e => e.id === u.entity_id)?.name ?? ''}
+                      </div>
+                    )}
+
+                    {/* 연차 바 */}
+                    {annualLeave != null && (
+                      <div className="mb-2">
+                        <div className="flex justify-between text-[11px] text-gray-400 mb-1">
+                          <span>연차 {usedDays}/{annualLeave}일</span>
+                          <span className={remaining != null && remaining <= 3 ? 'text-red-500 font-medium' : 'text-green-600'}>잔여 {remaining}일</span>
+                        </div>
+                        <div className="bg-gray-100 rounded-full h-1.5">
+                          <div className={`h-1.5 rounded-full ${usedDays/annualLeave >= 0.8 ? 'bg-red-400' : usedDays/annualLeave >= 0.5 ? 'bg-yellow-400' : 'bg-green-400'}`}
+                            style={{ width: `${Math.min(Math.round(usedDays/annualLeave*100), 100)}%` }} />
+                        </div>
+                      </div>
+                    )}
+
+                    {/* 배지 */}
+                    <div className="flex gap-1.5 flex-wrap mt-2">
+                      {lastOO && <span className="text-[11px] bg-purple-50 text-purple-600 px-1.5 py-0.5 rounded-full">원온원 {lastOO.date.slice(5)}</span>}
+                      {pendingDocs > 0 && <span className="text-[11px] bg-yellow-50 text-yellow-600 px-1.5 py-0.5 rounded-full">서류요청 {pendingDocs}</span>}
+                    </div>
+                  </button>
+                )
+              })}
+            </div>
+
+            {/* 상세 패널 */}
+            {selectedUser && (
+              <div className="flex-1 bg-white border border-gray-200 rounded-2xl overflow-hidden min-w-0">
+                {/* 패널 헤더 */}
+                <div className="px-5 py-4 border-b border-gray-100 flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-full bg-gradient-to-br from-gray-200 to-gray-300 flex items-center justify-center text-base font-bold text-gray-600">
+                      {selectedUser.name?.[0]}
+                    </div>
+                    <div>
+                      <p className="font-bold text-gray-900">{selectedUser.name}</p>
+                      <p className="text-xs text-gray-400">{selectedUser.email}</p>
+                    </div>
+                  </div>
+                  <button onClick={() => setSelectedUserId(null)} className="text-gray-300 hover:text-gray-600 text-xl px-1">×</button>
+                </div>
+
+                {/* 상세 탭 */}
+                <div className="flex border-b border-gray-100">
+                  {([['info','기본 정보'],['oo','원온원'],['docs','서류 발급']] as const).map(([key, label]) => (
+                    <button key={key} onClick={() => setHrDetailTab(key)}
+                      className={`flex-1 py-2.5 text-xs font-medium transition-colors ${hrDetailTab === key ? 'border-b-2 border-gray-900 text-gray-900' : 'text-gray-400 hover:text-gray-600'}`}>
+                      {label}
+                    </button>
+                  ))}
+                </div>
+
+                <div className="p-5">
+                  {/* 기본 정보 */}
+                  {hrDetailTab === 'info' && (
+                    <div className="space-y-4">
+                      <div className="grid grid-cols-2 gap-4">
+                        <div>
+                          <p className="text-xs text-gray-400 mb-1">입사일</p>
+                          {editingJoinId === selectedUser.id ? (
+                            <div className="flex gap-2">
+                              <input type="date" value={joinDateVal} onChange={e => setJoinDateVal(e.target.value)}
+                                className="flex-1 border border-gray-200 rounded-lg px-2 py-1.5 text-sm" />
+                              <button onClick={async () => { await updateJoinDate(selectedUser.id, joinDateVal); setEditingJoinId(null); startTransition(() => router.refresh()) }}
+                                className="px-2 py-1.5 bg-gray-900 text-white text-xs rounded-lg">저장</button>
+                              <button onClick={() => setEditingJoinId(null)} className="px-2 py-1.5 border text-xs rounded-lg text-gray-400">✕</button>
+                            </div>
+                          ) : (
+                            <button onClick={() => { setEditingJoinId(selectedUser.id); setJoinDateVal(selectedUser.join_date ?? '') }}
+                              className="text-sm font-medium text-gray-700 hover:text-blue-600 underline decoration-dashed underline-offset-2">
+                              {selectedUser.join_date ?? '미입력 — 클릭해서 입력'}
+                            </button>
+                          )}
+                        </div>
+                        <div>
+                          <p className="text-xs text-gray-400 mb-1">근속기간</p>
+                          <p className="text-sm font-medium text-gray-700">
+                            {selectedUser.join_date ? calcTenureStr(selectedUser.join_date) : '-'}
+                          </p>
+                        </div>
+                      </div>
+
+                      {/* 소속 사업자 */}
+                      <div>
+                        <p className="text-xs text-gray-400 mb-1">소속 사업자</p>
+                        <select
+                          value={selectedUser.entity_id ?? ''}
+                          onChange={async e => {
+                            await updateEmployeeEntity(selectedUser.id, e.target.value)
+                            setUsers(prev => prev.map(u => u.id === selectedUser.id ? { ...u, entity_id: e.target.value || null } : u))
+                          }}
+                          className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm bg-white"
+                        >
+                          <option value="">미지정</option>
+                          {entities.map(e => (
+                            <option key={e.id} value={e.id}>{e.name}</option>
+                          ))}
+                        </select>
+                      </div>
+
+                      {/* 연차 현황 */}
+                      {(() => {
+                        const annualLeave = calcLeave(selectedUser.join_date)
+                        const used = usedDaysMap[selectedUser.id] ?? 0
+                        const remaining = annualLeave != null ? annualLeave - used : null
+                        return annualLeave != null ? (
+                          <div className="bg-gray-50 rounded-xl p-4">
+                            <p className="text-xs font-semibold text-gray-500 mb-3">연차 현황 ({new Date().getFullYear()}년)</p>
+                            <div className="grid grid-cols-3 gap-3 mb-3">
+                              {[{ label:'발생', value:`${annualLeave}일`, color:'text-gray-800' },
+                                { label:'사용', value:`${used}일`, color:'text-yellow-600' },
+                                { label:'잔여', value:`${remaining}일`, color: remaining != null && remaining <= 3 ? 'text-red-500' : 'text-green-600' }
+                              ].map(s => (
+                                <div key={s.label} className="text-center">
+                                  <p className="text-[11px] text-gray-400 mb-0.5">{s.label}</p>
+                                  <p className={`font-bold text-lg ${s.color}`}>{s.value}</p>
+                                </div>
+                              ))}
+                            </div>
+                            <div>
+                              <p className="text-xs text-gray-400 mb-1">초기 사용일수 (시스템 도입 전)</p>
+                              {editingInitialId === selectedUser.id ? (
+                                <div className="flex gap-2">
+                                  <input type="number" min="0" max="25" step="0.5" value={initialDaysVal} onChange={e => setInitialDaysVal(e.target.value)}
+                                    className="w-20 border border-gray-200 rounded-lg px-2 py-1.5 text-sm bg-white" placeholder="0" />
+                                  <button onClick={async () => { await setInitialLeave(selectedUser.id, parseFloat(initialDaysVal)||0); setEditingInitialId(null); startTransition(() => router.refresh()) }}
+                                    className="px-2 py-1.5 bg-gray-900 text-white text-xs rounded-lg">저장</button>
+                                  <button onClick={() => setEditingInitialId(null)} className="px-2 py-1.5 border text-xs rounded-lg text-gray-400">✕</button>
+                                </div>
+                              ) : (
+                                <button onClick={() => { setEditingInitialId(selectedUser.id); setInitialDaysVal(String(initialDaysMap[selectedUser.id] ?? '')) }}
+                                  className="text-sm text-gray-600 hover:text-blue-600 underline decoration-dashed underline-offset-2">
+                                  {(initialDaysMap[selectedUser.id] ?? 0) > 0 ? `${initialDaysMap[selectedUser.id]}일` : '미입력 — 클릭해서 입력'}
+                                </button>
+                              )}
+                            </div>
+                          </div>
+                        ) : null
+                      })()}
+                    </div>
+                  )}
+
+                  {/* 원온원 */}
+                  {hrDetailTab === 'oo' && (
+                    <div className="space-y-3">
+                      <button onClick={() => setShowOoForm(v => !v)}
+                        className="w-full py-2 border border-dashed border-gray-300 rounded-xl text-sm text-gray-500 hover:border-gray-400 hover:text-gray-700 transition-colors">
+                        + 새 미팅 기록 추가
+                      </button>
+
+                      {showOoForm && (
+                        <div className="bg-gray-50 rounded-xl p-4 space-y-3">
+                          <div>
+                            <label className="text-xs text-gray-400 mb-1 block">날짜</label>
+                            <input type="date" value={ooForm.date} onChange={e => setOoForm(f => ({...f, date: e.target.value}))}
+                              className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm bg-white" />
+                          </div>
+                          <div>
+                            <label className="text-xs text-gray-400 mb-1 block">주요 내용</label>
+                            <textarea value={ooForm.content} onChange={e => setOoForm(f => ({...f, content: e.target.value}))}
+                              className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm bg-white resize-none" rows={3}
+                              placeholder="미팅에서 나눈 내용..." />
+                          </div>
+                          <div>
+                            <label className="text-xs text-gray-400 mb-1 block">액션 아이템</label>
+                            <textarea value={ooForm.action_items} onChange={e => setOoForm(f => ({...f, action_items: e.target.value}))}
+                              className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm bg-white resize-none" rows={2}
+                              placeholder="- 할 일 1&#10;- 할 일 2" />
+                          </div>
+                          <div className="flex gap-2">
+                            <button onClick={async () => {
+                              if (!ooForm.date) return
+                              await createOneOnOne(selectedUser.id, ooForm.date, ooForm.content, ooForm.action_items)
+                              setOneOnOnes(prev => [{ id: Date.now().toString(), member_id: selectedUser.id, date: ooForm.date, content: ooForm.content, action_items: ooForm.action_items, created_at: new Date().toISOString() }, ...prev])
+                              setOoForm({ date: '', content: '', action_items: '' })
+                              setShowOoForm(false)
+                            }} className="flex-1 py-2 bg-gray-900 text-white text-sm rounded-lg hover:bg-gray-800">저장</button>
+                            <button onClick={() => setShowOoForm(false)} className="flex-1 py-2 border border-gray-200 text-sm rounded-lg text-gray-500">취소</button>
+                          </div>
+                        </div>
+                      )}
+
+                      {userOOs.length === 0 && !showOoForm && (
+                        <p className="text-center text-sm text-gray-400 py-6">원온원 기록이 없어요.</p>
+                      )}
+
+                      {userOOs.map(o => (
+                        <div key={o.id} className="border border-gray-100 rounded-xl p-4">
+                          <div className="flex items-center justify-between mb-2">
+                            <span className="text-sm font-semibold text-gray-800">{o.date}</span>
+                            <button onClick={async () => { await deleteOneOnOne(o.id); setOneOnOnes(prev => prev.filter(x => x.id !== o.id)) }}
+                              className="text-xs text-gray-300 hover:text-red-400">삭제</button>
+                          </div>
+                          {o.content && <p className="text-sm text-gray-600 whitespace-pre-line mb-2">{o.content}</p>}
+                          {o.action_items && (
+                            <div className="bg-blue-50 rounded-lg p-2.5">
+                              <p className="text-xs font-semibold text-blue-600 mb-1">액션 아이템</p>
+                              <p className="text-xs text-blue-700 whitespace-pre-line">{o.action_items}</p>
+                            </div>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  {/* 서류 발급 */}
+                  {hrDetailTab === 'docs' && (
+                    <div className="space-y-3">
+                      <div className="bg-gray-50 rounded-xl p-4">
+                        <p className="text-xs font-semibold text-gray-500 mb-2">직접 발급 등록</p>
+                        <div className="flex gap-2">
+                          <select id="doc-type-select" className="flex-1 border border-gray-200 rounded-lg px-2 py-1.5 text-sm bg-white">
+                            {DOC_TYPES.map(t => <option key={t}>{t}</option>)}
+                          </select>
+                          <button onClick={async () => {
+                            const sel = document.getElementById('doc-type-select') as HTMLSelectElement
+                            const docType = sel.value
+                            const admin = await import('@/lib/supabase/admin').then(m => m.createAdminClient())
+                            // actions를 통해 처리
+                            const { data } = await admin.from('document_requests').insert({ member_id: selectedUser.id, doc_type: docType, status: '발급완료', processed_at: new Date().toISOString() }).select().single()
+                            if (data) setDocRequests(prev => [data as DocRequest, ...prev])
+                          }} className="px-3 py-1.5 bg-gray-900 text-white text-xs rounded-lg whitespace-nowrap">발급완료 처리</button>
+                        </div>
+                      </div>
+
+                      {userDocs.length === 0 ? (
+                        <p className="text-center text-sm text-gray-400 py-6">서류 발급 이력이 없어요.</p>
+                      ) : userDocs.map(d => (
+                        <div key={d.id} className="flex items-center justify-between py-3 border-b border-gray-50 last:border-0">
+                          <div>
+                            <p className="text-sm font-medium text-gray-800">{d.doc_type}</p>
+                            <p className="text-xs text-gray-400">{d.created_at.slice(0,10)}{d.purpose ? ` · ${d.purpose}` : ''}</p>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <span className={`text-xs px-2 py-0.5 rounded-full ${DOC_STATUS[d.status] ?? 'bg-gray-100 text-gray-500'}`}>{d.status}</span>
+                            {d.status === '요청' && (
+                              <button onClick={async () => { await updateDocumentStatus(d.id, '발급완료'); setDocRequests(prev => prev.map(x => x.id === d.id ? {...x, status:'발급완료'} : x)) }}
+                                className="text-xs px-2 py-0.5 bg-green-100 text-green-700 rounded-full hover:bg-green-200">처리</button>
+                            )}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
+        )
+      })()}
 
       {/* 권한 안내 탭 */}
       {activeTab === 'permissions' && (

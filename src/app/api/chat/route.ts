@@ -1183,10 +1183,32 @@ export async function POST(req: NextRequest) {
 
     const today = new Date().toLocaleDateString('ko-KR', { year: 'numeric', month: 'long', day: 'numeric', timeZone: 'Asia/Seoul' })
     const systemWithDate = `오늘 날짜: ${today}\n현재 사용자: ${userName} (권한: ${userRole})\n${userRole === 'member' ? '※ 이 사용자는 팀원 권한이라 본인 담당 건만 조회 가능해.\n' : ''}${modeCtx}\n${SYSTEM_PROMPT}`
-    const apiMessages: Anthropic.MessageParam[] = messages.map((m: { role: string; content: string }) => ({
-      role: m.role as 'user' | 'assistant',
-      content: m.content,
-    }))
+    const apiMessages: Anthropic.MessageParam[] = messages.map((m: {
+      role: string
+      content: string
+      imageData?: { base64: string; mediaType: string }
+    }) => {
+      if (m.imageData) {
+        return {
+          role: m.role as 'user' | 'assistant',
+          content: [
+            {
+              type: 'image' as const,
+              source: {
+                type: 'base64' as const,
+                media_type: (m.imageData.mediaType || 'image/jpeg') as 'image/jpeg' | 'image/png' | 'image/gif' | 'image/webp',
+                data: m.imageData.base64,
+              },
+            },
+            { type: 'text' as const, text: m.content },
+          ],
+        }
+      }
+      return {
+        role: m.role as 'user' | 'assistant',
+        content: m.content,
+      }
+    })
 
     // tool_use 루프
     let response = await client.messages.create({

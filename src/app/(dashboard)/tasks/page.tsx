@@ -31,7 +31,7 @@ export default async function TasksPage() {
   const tasks = (rawTasks ?? []).map(t => ({
     ...t,
     assignee: t.assignee_id ? (profileMap[t.assignee_id] ?? null) : null,
-    sale: t.sale_id ? (saleMap[t.sale_id] ?? null) : null,
+    sale: t.project_id ? (saleMap[t.project_id] ?? null) : null,
   }))
 
   return (

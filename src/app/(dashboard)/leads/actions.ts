@@ -1,5 +1,6 @@
 'use server'
 import { createClient } from '@/lib/supabase/server'
+import { createAdminClient } from '@/lib/supabase/admin'
 import { revalidatePath } from 'next/cache'
 import { SERVICE_TO_DEPT } from '@/types'
 import { createSaleFolder } from '@/lib/dropbox'
@@ -78,6 +79,15 @@ export async function updateLead(id: string, data: Partial<{
 }>) {
   const supabase = await createClient()
   await supabase.from('leads').update({ ...data, updated_at: new Date().toISOString() }).eq('id', id)
+  // 고객 DB 동기화 (연락처 관련 필드 변경 시)
+  if ('client_org' in data || 'contact_name' in data || 'phone' in data || 'email' in data) {
+    await syncLeadToCustomerDB({
+      client_org: data.client_org ?? null,
+      contact_name: data.contact_name ?? null,
+      phone: data.phone ?? null,
+      email: data.email ?? null,
+    })
+  }
   revalidatePath('/leads')
 }
 
@@ -96,9 +106,18 @@ export async function convertLeadToSale(leadId: string) {
   const serviceType = lead.service_type as string | null
   const department = (serviceType && SERVICE_TO_DEPT[serviceType]) || null
 
+  // 고객 DB에서 customer_id 조회 (createLead 시 sync됨)
+  let customerId: string | null = null
+  if (lead.client_org) {
+    const adminDb = createAdminClient()
+    const { data: cust } = await adminDb.from('customers').select('id').ilike('name', lead.client_org.trim()).limit(1).single()
+    customerId = cust?.id ?? null
+  }
+
   const { data: sale, error } = await supabase.from('sales').insert({
     name: lead.client_org ? `${lead.client_org} (리드전환)` : '(리드전환)',
     client_org: lead.client_org,
+    customer_id: customerId,
     service_type: serviceType,
     department,
     assignee_id: lead.assignee_id,

@@ -27,6 +27,7 @@ interface LeadData {
 interface Message {
   role: 'user' | 'assistant'
   content: string
+  imagePreview?: string | null   // 썸네일용 (localStorage 저장용)
   saleData?: SaleData | null
   leadData?: LeadData | null
   notionUrl?: string | null
@@ -65,10 +66,12 @@ export default function AiChat() {
   const [loading, setLoading] = useState(false)
   const [creatingId, setCreatingId] = useState<number | null>(null)
   const [creatingLeadId, setCreatingLeadId] = useState<number | null>(null)
+  const [imageAttachment, setImageAttachment] = useState<{ base64: string; mediaType: string; preview: string } | null>(null)
   const [reminders, setReminders] = useState<{ id: string; lead_id: string; client_org: string | null; remind_date: string; status: string }[]>([])
   const [remindersChecked, setRemindersChecked] = useState(false)
   const bottomRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLTextAreaElement>(null)
+  const fileInputRef = useRef<HTMLInputElement>(null)
   const router = useRouter()
 
   useEffect(() => {
@@ -125,13 +128,36 @@ export default function AiChat() {
     setMessages([{ role: 'assistant', content: INIT_MSG }])
   }
 
+  const handleImageSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    const reader = new FileReader()
+    reader.onload = () => {
+      const dataUrl = reader.result as string
+      const base64 = dataUrl.split(',')[1]
+      const mediaType = file.type || 'image/jpeg'
+      setImageAttachment({ base64, mediaType, preview: dataUrl })
+    }
+    reader.readAsDataURL(file)
+    e.target.value = ''
+  }
+
   const send = async (overrideText?: string) => {
     const text = (overrideText ?? input).trim()
-    if (!text || loading) return
+    const hasImage = !!imageAttachment
+    if (!text && !hasImage || loading) return
     setInput('')
     if (inputRef.current) inputRef.current.style.height = 'auto'
 
-    const newMessages: Message[] = [...messages, { role: 'user', content: text }]
+    const userMsg: Message = {
+      role: 'user',
+      content: text || '이 이미지 분석해줘.',
+      imagePreview: imageAttachment?.preview ?? null,
+    }
+    const capturedImage = imageAttachment
+    setImageAttachment(null)
+
+    const newMessages: Message[] = [...messages, userMsg]
     setMessages(newMessages)
     setLoading(true)
 
@@ -147,7 +173,13 @@ export default function AiChat() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          messages: newMessages.map(m => ({ role: m.role, content: m.content })),
+          messages: newMessages.map(m => ({
+            role: m.role,
+            content: m.content,
+            ...(m === userMsg && capturedImage ? {
+              imageData: { base64: capturedImage.base64, mediaType: capturedImage.mediaType }
+            } : {}),
+          })),
           mode: activeMode,
         }),
       })
@@ -343,6 +375,13 @@ export default function AiChat() {
           <div className="flex-1 overflow-y-auto px-4 py-3 space-y-3 min-h-0">
             {messages.map((msg, i) => (
               <div key={i} className={`flex flex-col ${msg.role === 'user' ? 'items-end' : 'items-start'}`}>
+                {msg.imagePreview && (
+                  <img
+                    src={msg.imagePreview}
+                    alt="첨부 이미지"
+                    className="max-w-[200px] max-h-[160px] rounded-xl mb-1 object-cover border border-gray-200"
+                  />
+                )}
                 <div
                   className={`max-w-[85%] px-3 py-2 rounded-2xl text-sm whitespace-pre-wrap leading-relaxed ${
                     msg.role === 'user'
@@ -430,31 +469,64 @@ export default function AiChat() {
           </div>
 
           {/* 입력 */}
-          <div className="px-3 py-3 border-t border-gray-100 flex gap-2 items-end">
-            <textarea
-              ref={inputRef}
-              value={input}
-              onChange={e => setInput(e.target.value)}
-              onKeyDown={handleKeyDown}
-              placeholder={mode ? MODE_PLACEHOLDER[mode] : '뭐 할지 선택하거나 바로 입력해...'}
-              rows={1}
-              className="flex-1 resize-none px-3 py-2 text-sm border border-gray-200 rounded-xl focus:outline-none focus:border-yellow-400 focus:ring-1 focus:ring-yellow-400 max-h-32 overflow-y-auto"
-              onInput={e => {
-                const t = e.target as HTMLTextAreaElement
-                t.style.height = 'auto'
-                t.style.height = Math.min(t.scrollHeight, 128) + 'px'
-              }}
-            />
-            <button
-              onClick={() => send()}
-              disabled={!input.trim() || loading}
-              className="w-8 h-8 rounded-xl flex items-center justify-center flex-shrink-0 disabled:opacity-40 transition-all hover:opacity-80"
-              style={{ backgroundColor: '#FFCE00' }}
-            >
-              <svg className="w-4 h-4" fill="none" stroke="#121212" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 12h14M12 5l7 7-7 7" />
-              </svg>
-            </button>
+          <div className="px-3 py-3 border-t border-gray-100 flex flex-col gap-2">
+            {/* 이미지 미리보기 */}
+            {imageAttachment && (
+              <div className="relative w-fit">
+                <img
+                  src={imageAttachment.preview}
+                  alt="첨부 이미지"
+                  className="h-20 rounded-xl object-cover border border-gray-200"
+                />
+                <button
+                  onClick={() => setImageAttachment(null)}
+                  className="absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full bg-gray-600 text-white text-xs flex items-center justify-center hover:bg-gray-800"
+                >×</button>
+              </div>
+            )}
+            <div className="flex gap-2 items-end">
+              {/* 숨겨진 파일 입력 — 모바일에서 카메라/갤러리 선택 가능 */}
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept="image/*"
+                className="hidden"
+                onChange={handleImageSelect}
+              />
+              <button
+                onClick={() => fileInputRef.current?.click()}
+                className="w-8 h-8 rounded-xl flex items-center justify-center flex-shrink-0 border border-gray-200 text-gray-400 hover:text-gray-600 hover:border-gray-300 transition-colors"
+                title="이미지 첨부"
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13" />
+                </svg>
+              </button>
+              <textarea
+                ref={inputRef}
+                value={input}
+                onChange={e => setInput(e.target.value)}
+                onKeyDown={handleKeyDown}
+                placeholder={mode ? MODE_PLACEHOLDER[mode] : '뭐 할지 선택하거나 바로 입력해...'}
+                rows={1}
+                className="flex-1 resize-none px-3 py-2 text-sm border border-gray-200 rounded-xl focus:outline-none focus:border-yellow-400 focus:ring-1 focus:ring-yellow-400 max-h-32 overflow-y-auto"
+                onInput={e => {
+                  const t = e.target as HTMLTextAreaElement
+                  t.style.height = 'auto'
+                  t.style.height = Math.min(t.scrollHeight, 128) + 'px'
+                }}
+              />
+              <button
+                onClick={() => send()}
+                disabled={(!input.trim() && !imageAttachment) || loading}
+                className="w-8 h-8 rounded-xl flex items-center justify-center flex-shrink-0 disabled:opacity-40 transition-all hover:opacity-80"
+                style={{ backgroundColor: '#FFCE00' }}
+              >
+                <svg className="w-4 h-4" fill="none" stroke="#121212" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 12h14M12 5l7 7-7 7" />
+                </svg>
+              </button>
+            </div>
           </div>
         </div>
       )}

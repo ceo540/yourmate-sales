@@ -37,7 +37,7 @@ export default async function EditSalePage({ params, searchParams }: { params: P
   const [{ data: profiles }, { data: entities }, { data: rawTasks }] = await Promise.all([
     supabase.from('profiles').select('id, name').order('name'),
     supabase.from('business_entities').select('id, name').order('name'),
-    adminSupabase.from('tasks').select('*').eq('sale_id', id).order('created_at'),
+    adminSupabase.from('tasks').select('*').eq('project_id', id).order('created_at'),
   ])
 
   // FK 없으므로 수동 조인

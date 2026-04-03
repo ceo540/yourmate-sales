@@ -23,13 +23,13 @@ const PRIORITY_STYLE: Record<string, string> = {
 interface Profile { id: string; name: string }
 interface Task {
   id: string
-  sale_id: string
+  project_id: string | null
   title: string
   status: string
   priority: string
   assignee_id: string | null
   due_date: string | null
-  memo: string | null
+  description: string | null
   assignee?: { name: string } | null
 }
 
@@ -99,7 +99,6 @@ export default function TasksSection({ saleId, serviceType, tasks, profiles, cur
           className="bg-yellow-50 border border-yellow-200 rounded-xl p-4 mb-4 space-y-3"
         >
           <input type="hidden" name="sale_id" value={saleId} />
-          <input type="hidden" name="created_by" value={currentUserId} />
 
           <input
             name="title"
@@ -135,6 +134,7 @@ export default function TasksSection({ saleId, serviceType, tasks, profiles, cur
           </div>
 
           <input name="memo" placeholder="메모 (선택)" className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-yellow-400" />
+
 
           <div className="flex gap-2">
             <button type="submit" className="px-4 py-2 bg-yellow-400 text-yellow-900 rounded-lg text-sm font-medium hover:bg-yellow-500">추가</button>
