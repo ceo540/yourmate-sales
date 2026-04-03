@@ -85,7 +85,7 @@ export interface Project {
 }
 
 // 업무(태스크)
-export type TaskStatus = '시작 전' | '진행중' | '완료' | '취소'
+export type TaskStatus = '할 일' | '진행중' | '검토중' | '완료' | '보류'
 
 export interface Task {
   id: string

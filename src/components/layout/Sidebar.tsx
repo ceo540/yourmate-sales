@@ -40,10 +40,10 @@ const NAV_GROUPS: Record<string, NavItem[]> = {
     { href: '/admin',        label: '팀원 관리', icon: '⚙️', pageKey: 'admin_panel', adminOnly: true },
   ],
   팀: [
-    { href: '/notice-demo',       label: '공지사항', icon: '📢', pageKey: 'notice' },
+    { href: '/notice',             label: '공지사항', icon: '📢', pageKey: 'notice' },
     { href: '/calendar-demo',     label: '캘린더',   icon: '📅', pageKey: 'calendar' },
     { href: '/weekly-report-demo',label: '주간보고', icon: '📝', pageKey: 'weekly_report' },
-    { href: '/attendance-demo',   label: '근태 관리', icon: '⏰', pageKey: 'attendance' },
+    { href: '/attendance',         label: '근태 관리', icon: '⏰', pageKey: 'attendance' },
     { href: '/hr',                 label: '연차 관리', icon: '🏖️', pageKey: 'hr' },
     { href: '/expenses-demo',     label: '경비 처리', icon: '💳', pageKey: 'expenses' },
   ],
