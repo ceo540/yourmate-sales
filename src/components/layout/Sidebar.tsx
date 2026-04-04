@@ -21,8 +21,13 @@ interface NavItem {
 // ─────────────────────────────────────────────────────────────────
 const NAV_GROUPS: Record<string, NavItem[]> = {
   사업부: [
-    { href: '/departments',  label: '사업부 목록', icon: '🏢', pageKey: 'departments' },
-    { href: '/tasks',        label: '업무 관리',   icon: '✅', pageKey: 'tasks' },
+    { href: '/departments/sound_of_school',   label: 'SOS',             icon: '🎵', pageKey: 'departments' },
+    { href: '/departments/artkiwoom',         label: '아트키움',         icon: '🎨', pageKey: 'departments' },
+    { href: '/departments/school_store',      label: '학교상점',         icon: '🏫', pageKey: 'departments' },
+    { href: '/departments/002_creative',      label: '002 Creative',     icon: '🎬', pageKey: 'departments' },
+    { href: '/departments/yourmate',          label: '유어메이트',       icon: '🏢', pageKey: 'departments' },
+    { href: '/departments/002_entertainment', label: '002 ENT',          icon: '🎤', pageKey: 'departments' },
+    { href: '/tasks',                         label: '업무 관리',        icon: '✅', pageKey: 'tasks' },
   ],
   영업: [
     { href: '/sales',        label: '매출 현황', icon: '💰', pageKey: 'sales' },
@@ -41,7 +46,7 @@ const NAV_GROUPS: Record<string, NavItem[]> = {
   팀: [
     { href: '/notice',            label: '공지사항', icon: '📢', pageKey: 'notice' },
     { href: '/calendar-demo',     label: '캘린더',   icon: '📅', pageKey: 'calendar',      demo: true },
-    { href: '/weekly-report-demo',label: '주간보고', icon: '📝', pageKey: 'weekly_report', demo: true },
+    { href: '/weekly-report',      label: '주간보고', icon: '📝', pageKey: 'weekly_report' },
     { href: '/attendance',        label: '근태 관리', icon: '⏰', pageKey: 'attendance' },
     { href: '/hr',                label: '연차 관리', icon: '🏖️', pageKey: 'hr' },
     { href: '/expenses',          label: '경비 처리', icon: '💳', pageKey: 'expenses' },
@@ -63,6 +68,8 @@ function detectCategory(pathname: string): string {
       return cat
     }
   }
+  // /departments/* → 사업부 카테고리 폴백
+  if (pathname.startsWith('/departments')) return '사업부'
   return CATEGORIES[0]
 }
 
