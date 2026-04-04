@@ -56,6 +56,7 @@ interface Rental {
   assignee_name: string | null
   inflow_source: string | null
   notes: string | null
+  content: string | null
   items: RentalItem[]
 }
 
@@ -68,6 +69,13 @@ export default function RentalDetailClient({ rental, profiles }: Props) {
   const router = useRouter()
   const [isPending, startTransition] = useTransition()
   const [editing, setEditing] = useState(false)
+  const [content, setContent] = useState(rental.content ?? '')
+  const [contentSaved, setContentSaved] = useState(true)
+
+  async function handleContentSave() {
+    await updateRental(rental.id, { content })
+    setContentSaved(true)
+  }
   const [editForm, setEditForm] = useState({
     customer_name: rental.customer_name,
     contact_name: rental.contact_name ?? '',
@@ -405,6 +413,35 @@ export default function RentalDetailClient({ rental, profiles }: Props) {
             </div>
           </>
         )}
+      </div>
+
+      {/* 내용 / 상담 메모 */}
+      <div className="bg-white border border-gray-200 rounded-2xl p-5 mb-4">
+        <div className="flex items-center justify-between mb-3">
+          <h2 className="text-sm font-semibold text-gray-700">내용 · 상담 메모</h2>
+          {!contentSaved && (
+            <button onClick={handleContentSave}
+              className="text-xs px-3 py-1.5 bg-gray-900 text-white rounded-lg hover:bg-gray-800">
+              저장
+            </button>
+          )}
+          {contentSaved && content && (
+            <span className="text-xs text-gray-300">저장됨</span>
+          )}
+        </div>
+        <textarea
+          value={content}
+          onChange={e => { setContent(e.target.value); setContentSaved(false) }}
+          onBlur={handleContentSave}
+          placeholder="상담 내용, 요청사항, 특이사항 등 자유롭게 기록하세요.
+
+예)
+- 담당자: 홍길동 선생님
+- 요청사항: 젬베 채 추가 요청
+- 특이사항: 현관 앞 배송 요망"
+          className="w-full text-sm text-gray-700 leading-relaxed resize-none outline-none placeholder-gray-300 min-h-[180px]"
+          rows={8}
+        />
       </div>
     </div>
   )
