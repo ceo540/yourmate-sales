@@ -25,6 +25,11 @@ export async function middleware(request: NextRequest) {
 
   const { data: { user } } = await supabase.auth.getUser()
 
+  // 외부 웹훅 — 인증 없이 통과
+  if (request.nextUrl.pathname.startsWith('/api/channeltalk')) {
+    return NextResponse.next()
+  }
+
   if (request.nextUrl.pathname.startsWith('/register')) {
     return NextResponse.redirect(new URL('/login', request.url))
   }
