@@ -1,4 +1,5 @@
 import { createClient } from '@/lib/supabase/server'
+import { createAdminClient } from '@/lib/supabase/admin'
 import { redirect, notFound } from 'next/navigation'
 import Link from 'next/link'
 import { DEPARTMENT_LABELS, Department } from '@/types'
@@ -58,6 +59,32 @@ export default async function DeptPage({ params }: { params: Promise<{ dept: str
     .eq('year', currentYear)
     .order('created_at', { ascending: true })
 
+  // 해당 사업부 업무 (sales.department = dept 인 project의 tasks)
+  const admin = createAdminClient()
+  const saleIds = (salesRaw ?? []).map(s => s.id)
+  let tasks: any[] = []
+  if (saleIds.length > 0) {
+    const { data: rawTasks } = await admin
+      .from('tasks')
+      .select('*')
+      .in('project_id', saleIds)
+      .order('due_date', { ascending: true, nullsFirst: false })
+
+    const assigneeIds = [...new Set((rawTasks ?? []).map((t: any) => t.assignee_id).filter(Boolean))]
+    let taskProfileMap: Record<string, string> = {}
+    if (assigneeIds.length > 0) {
+      const { data: taskProfiles } = await admin.from('profiles').select('id, name').in('id', assigneeIds)
+      taskProfileMap = Object.fromEntries((taskProfiles ?? []).map(p => [p.id, p.name]))
+    }
+    const saleNameMap = Object.fromEntries((salesRaw ?? []).map(s => [s.id, s.name]))
+
+    tasks = (rawTasks ?? []).map((t: any) => ({
+      ...t,
+      assignee: t.assignee_id ? { name: taskProfileMap[t.assignee_id] ?? '' } : null,
+      sale: t.project_id ? { name: saleNameMap[t.project_id] ?? '' } : null,
+    }))
+  }
+
   return (
     <div className="max-w-4xl mx-auto">
       <div className="mb-4">
@@ -71,6 +98,7 @@ export default async function DeptPage({ params }: { params: Promise<{ dept: str
         deptIcon={DEPT_ICONS[dept as Department]}
         sales={sales}
         goals={goals ?? []}
+        tasks={tasks}
         isAdmin={isAdmin}
         year={currentYear}
       />

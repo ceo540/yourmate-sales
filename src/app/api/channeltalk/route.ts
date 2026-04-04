@@ -527,7 +527,8 @@ async function sendGroupMessage(chatKey: string, text: string) {
       'Content-Type': 'application/json',
     },
     body: JSON.stringify({
-      blocks: [{ type: 'text', text }],
+      plainText: text,
+      blocks: [{ type: 'text', value: text }],
     }),
   })
   const data = await res.json()

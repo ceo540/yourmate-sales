@@ -20,14 +20,15 @@ interface NavItem {
 // 새 카테고리 추가: 아래 객체에 키와 아이템 배열 추가하면 끝
 // ─────────────────────────────────────────────────────────────────
 const NAV_GROUPS: Record<string, NavItem[]> = {
+  사업부: [
+    { href: '/departments',  label: '사업부 목록', icon: '🏢', pageKey: 'departments' },
+    { href: '/tasks',        label: '업무 관리',   icon: '✅', pageKey: 'tasks' },
+  ],
   영업: [
-    { href: '/dashboard',    label: '대시보드',  icon: '🏠', pageKey: 'dashboard' },
-    { href: '/departments',  label: '사업부',    icon: '🏢', pageKey: 'departments' },
     { href: '/sales',        label: '매출 현황', icon: '💰', pageKey: 'sales' },
     { href: '/sales/report', label: '계약 목록', icon: '📄', pageKey: 'sales_report' },
     { href: '/leads',        label: '리드 관리', icon: '📥', pageKey: 'leads' },
     { href: '/rentals',      label: '렌탈 관리', icon: '🎸', pageKey: 'rentals' },
-    { href: '/tasks',        label: '업무 관리', icon: '✅', pageKey: 'tasks' },
   ],
   재무: [
     { href: '/receivables',  label: '미수금 현황', icon: '🔔', pageKey: 'receivables' },
@@ -37,18 +38,18 @@ const NAV_GROUPS: Record<string, NavItem[]> = {
     { href: '/fixed-costs',  label: '고정비 관리', icon: '🔒', pageKey: 'fixed_costs', adminOnly: true },
     { href: '/cashflow',     label: '자금일보',    icon: '📊', pageKey: 'cashflow',    adminOnly: true },
   ],
+  팀: [
+    { href: '/notice',            label: '공지사항', icon: '📢', pageKey: 'notice' },
+    { href: '/calendar-demo',     label: '캘린더',   icon: '📅', pageKey: 'calendar',      demo: true },
+    { href: '/weekly-report-demo',label: '주간보고', icon: '📝', pageKey: 'weekly_report', demo: true },
+    { href: '/attendance',        label: '근태 관리', icon: '⏰', pageKey: 'attendance' },
+    { href: '/hr',                label: '연차 관리', icon: '🏖️', pageKey: 'hr' },
+    { href: '/expenses',          label: '경비 처리', icon: '💳', pageKey: 'expenses' },
+  ],
   관리: [
     { href: '/customers',    label: '고객 DB',   icon: '🗂️', pageKey: 'customers' },
     { href: '/vendors',      label: '거래처 DB', icon: '🏢', pageKey: 'vendors' },
     { href: '/admin',        label: '팀원 관리', icon: '⚙️', pageKey: 'admin_panel', adminOnly: true },
-  ],
-  팀: [
-    { href: '/notice',             label: '공지사항', icon: '📢', pageKey: 'notice' },
-    { href: '/calendar-demo',     label: '캘린더',   icon: '📅', pageKey: 'calendar',      demo: true },
-    { href: '/weekly-report-demo',label: '주간보고', icon: '📝', pageKey: 'weekly_report', demo: true },
-    { href: '/attendance',         label: '근태 관리', icon: '⏰', pageKey: 'attendance' },
-    { href: '/hr',                 label: '연차 관리', icon: '🏖️', pageKey: 'hr' },
-    { href: '/expenses',           label: '경비 처리', icon: '💳', pageKey: 'expenses' },
   ],
 }
 
@@ -156,6 +157,18 @@ export default function Sidebar() {
           </div>
           <p className="text-sm font-bold text-gray-900">유어메이트</p>
         </div>
+
+        {/* 홈 버튼 */}
+        <Link
+          href="/dashboard"
+          className={`flex items-center justify-center w-9 h-9 rounded-lg mr-2 transition-colors flex-shrink-0 ${
+            pathname === '/dashboard' ? 'text-gray-900' : 'text-gray-400 hover:text-gray-700 hover:bg-gray-50'
+          }`}
+          style={pathname === '/dashboard' ? { backgroundColor: '#FFCE00' } : {}}
+          title="홈"
+        >
+          <span className="text-base">🏠</span>
+        </Link>
 
         {/* 카테고리 탭 */}
         <nav className="flex items-center h-full">

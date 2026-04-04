@@ -28,12 +28,26 @@ interface Sale {
   assignee: { name: string } | null
 }
 
+interface Task {
+  id: string
+  title: string
+  status: string
+  priority: string | null
+  assignee_id: string | null
+  assignee: { name: string } | null
+  project_id: string | null
+  sale: { name: string } | null
+  due_date: string | null
+  description: string | null
+}
+
 interface DeptClientProps {
   dept: string
   deptLabel: string
   deptIcon: string
   sales: Sale[]
   goals: Goal[]
+  tasks: Task[]
   isAdmin: boolean
   year: number
 }
@@ -52,8 +66,22 @@ const PAY_STATUS_COLORS: Record<string, string> = {
   '취소':   'bg-red-100 text-red-500',
 }
 
-export default function DeptClient({ dept, deptLabel, deptIcon, sales, goals, isAdmin, year }: DeptClientProps) {
-  const [tab, setTab] = useState<'projects' | 'goals'>('projects')
+const TASK_STATUS_COLORS: Record<string, string> = {
+  '할 일':  'bg-gray-100 text-gray-500',
+  '진행중': 'bg-blue-100 text-blue-700',
+  '검토중': 'bg-purple-100 text-purple-700',
+  '완료':   'bg-green-100 text-green-700',
+  '보류':   'bg-yellow-100 text-yellow-700',
+}
+
+const PRIORITY_COLORS: Record<string, string> = {
+  '높음': 'text-red-500',
+  '보통': 'text-yellow-500',
+  '낮음': 'text-gray-400',
+}
+
+export default function DeptClient({ dept, deptLabel, deptIcon, sales, goals, tasks, isAdmin, year }: DeptClientProps) {
+  const [tab, setTab] = useState<'projects' | 'goals' | 'tasks'>('projects')
   const [showGoalForm, setShowGoalForm] = useState(false)
   const [editingGoal, setEditingGoal] = useState<Goal | null>(null)
   const [filterStatus, setFilterStatus] = useState('전체')
@@ -82,7 +110,7 @@ export default function DeptClient({ dept, deptLabel, deptIcon, sales, goals, is
 
       {/* 탭 */}
       <div className="flex gap-1 mb-5 border-b border-gray-200">
-        {(['projects', 'goals'] as const).map(t => (
+        {(['projects', 'tasks', 'goals'] as const).map(t => (
           <button
             key={t}
             onClick={() => setTab(t)}
@@ -90,7 +118,7 @@ export default function DeptClient({ dept, deptLabel, deptIcon, sales, goals, is
               tab === t ? 'border-yellow-400 text-gray-900' : 'border-transparent text-gray-400 hover:text-gray-700'
             }`}
           >
-            {t === 'projects' ? `프로젝트 (${sales.length})` : `목표 (${goals.length})`}
+            {t === 'projects' ? `프로젝트 (${sales.length})` : t === 'tasks' ? `업무 (${tasks.length})` : `목표 (${goals.length})`}
           </button>
         ))}
       </div>
@@ -172,6 +200,55 @@ export default function DeptClient({ dept, deptLabel, deptIcon, sales, goals, is
                   )}
                 </table>
               </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ─ 업무 탭 ─ */}
+      {tab === 'tasks' && (
+        <div>
+          <div className="flex justify-between items-center mb-4">
+            <p className="text-sm text-gray-500">이 사업부 프로젝트에 연결된 업무 {tasks.length}개</p>
+          </div>
+
+          {tasks.length === 0 ? (
+            <div className="text-center py-16 text-gray-400 text-sm">등록된 업무가 없습니다</div>
+          ) : (
+            <div className="space-y-1">
+              {(['할 일', '진행중', '검토중', '완료', '보류'] as const).map(status => {
+                const grouped = tasks.filter(t => t.status === status)
+                if (grouped.length === 0) return null
+                return (
+                  <div key={status} className="mb-4">
+                    <div className="flex items-center gap-2 mb-2">
+                      <span className={`text-[11px] px-2 py-0.5 rounded-full font-medium ${TASK_STATUS_COLORS[status]}`}>
+                        {status}
+                      </span>
+                      <span className="text-xs text-gray-400">{grouped.length}개</span>
+                    </div>
+                    <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
+                      {grouped.map((task, idx) => (
+                        <div key={task.id} className={`flex items-start gap-3 px-4 py-3 ${idx !== grouped.length - 1 ? 'border-b border-gray-50' : ''}`}>
+                          <div className="flex-1 min-w-0">
+                            <p className="text-sm font-medium text-gray-900">{task.title}</p>
+                            {task.sale && (
+                              <p className="text-[11px] text-gray-400 mt-0.5">📁 {task.sale.name}</p>
+                            )}
+                          </div>
+                          <div className="flex items-center gap-3 flex-shrink-0 text-xs text-gray-400">
+                            {task.priority && (
+                              <span className={`font-medium ${PRIORITY_COLORS[task.priority] ?? ''}`}>{task.priority}</span>
+                            )}
+                            {task.assignee && <span>{task.assignee.name}</span>}
+                            {task.due_date && <span>{task.due_date.slice(0, 10)}</span>}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )
+              })}
             </div>
           )}
         </div>
