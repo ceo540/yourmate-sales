@@ -513,10 +513,10 @@ async function sendGroupMessage(chatKey: string, text: string) {
     return
   }
 
-  // chatKey가 "group-556532" 형식이면 그대로 사용, 숫자만이면 "group-" 붙이기
-  const normalizedKey = chatKey.startsWith('group-') ? chatKey : `group-${chatKey}`
+  // chatKey "group-556532" 또는 "556532" → 숫자 ID만 추출
+  const groupId = chatKey.startsWith('group-') ? chatKey.replace('group-', '') : chatKey
 
-  const url = `https://api.channel.io/open/v5/group-chats/${normalizedKey}/messages`
+  const url = `https://api.channel.io/open/v5/groups/${groupId}/messages`
   console.log('[ChannelTalk send] url:', url, '| text:', text.slice(0, 50))
 
   const res = await fetch(url, {
@@ -527,7 +527,7 @@ async function sendGroupMessage(chatKey: string, text: string) {
       'Content-Type': 'application/json',
     },
     body: JSON.stringify({
-      blocks: [{ type: 'text', value: text }],
+      blocks: [{ type: 'text', text }],
     }),
   })
   const data = await res.json()
