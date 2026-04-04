@@ -22,6 +22,7 @@ interface NavItem {
 const NAV_GROUPS: Record<string, NavItem[]> = {
   영업: [
     { href: '/dashboard',    label: '대시보드',  icon: '🏠', pageKey: 'dashboard' },
+    { href: '/departments',  label: '사업부',    icon: '🏢', pageKey: 'departments' },
     { href: '/sales',        label: '매출 현황', icon: '💰', pageKey: 'sales' },
     { href: '/sales/report', label: '계약 목록', icon: '📄', pageKey: 'sales_report' },
     { href: '/leads',        label: '리드 관리', icon: '📥', pageKey: 'leads' },

@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { waitUntil } from '@vercel/functions'
 import Anthropic from '@anthropic-ai/sdk'
 import { createAdminClient } from '@/lib/supabase/admin'
 import crypto from 'crypto'
@@ -651,11 +652,13 @@ export async function POST(req: NextRequest) {
   }
   // ────────────────────────────────────────────────────────────
 
-  // Claude 처리 (비동기 — 응답은 ChannelTalk API로 직접 전송)
-  processWithClaude(chatKey, messageText).catch(async (err) => {
-    console.error('[ChannelTalk bot error]', err)
-    await sendGroupMessage(chatKey, '오류 발생했어. 잠시 후 다시 해봐.').catch(console.error)
-  })
+  // waitUntil: 200 먼저 반환하고 Claude 처리 완료까지 함수 유지
+  waitUntil(
+    processWithClaude(chatKey, messageText).catch(async (err) => {
+      console.error('[ChannelTalk bot error]', err)
+      await sendGroupMessage(chatKey, '오류 발생했어. 잠시 후 다시 해봐.').catch(console.error)
+    })
+  )
 
   return NextResponse.json({ result: 'ok' })
 }
