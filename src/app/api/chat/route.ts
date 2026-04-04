@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { getDropboxToken } from '@/lib/dropbox'
+import { logApiUsage } from '@/lib/api-usage'
 
 const client = new Anthropic()
 
@@ -380,7 +381,7 @@ const TOOLS: Anthropic.Tool[] = [
       type: 'object' as const,
       properties: {
         search: { type: 'string', description: '기관명 또는 담당자명 검색어' },
-        status: { type: 'string', description: '상태 필터: 신규 | 회신대기 | 견적발송 | 진행중 | 완료 | 취소' },
+        status: { type: 'string', description: '상태 필터: 유입 | 회신대기 | 견적발송 | 조율중 | 진행중 | 완료 | 취소' },
       },
     },
   },
@@ -412,7 +413,7 @@ const TOOLS: Anthropic.Tool[] = [
       type: 'object' as const,
       properties: {
         search: { type: 'string', description: '기관명 또는 담당자명 검색어 (필수)' },
-        status: { type: 'string', description: '새 상태: 신규 | 회신대기 | 견적발송 | 진행중 | 완료 | 취소' },
+        status: { type: 'string', description: '새 상태: 유입 | 회신대기 | 견적발송 | 조율중 | 진행중 | 완료 | 취소' },
         service_type: { type: 'string', description: '서비스 유형: 교육프로그램 | 납품설치 | 유지보수 | 교구대여 | 제작인쇄 | 콘텐츠제작 | 행사운영 | 행사대여 | 프로젝트 | SOS | 002ENT' },
         remind_date: { type: 'string', description: '리마인드 날짜 YYYY-MM-DD' },
         contact_log: { type: 'string', description: '새 소통 내용 (1→2→3차 순서로 빈 칸에 자동 저장)' },
@@ -572,6 +573,7 @@ async function executeTool(name: string, input: Record<string, unknown>, userRol
         model: 'claude-haiku-4-5-20251001', max_tokens: 800,
         messages: [{ role: 'user', content: `계약건 프로젝트 페이지를 JSON으로만 작성:\n건명:${saleName}\n발주처:${clientOrg||'미정'}\n서비스:${serviceType||'미정'}\n금액:${revenue?revenue.toLocaleString()+'원':'미정'}\n메모:${memo||'없음'}\n\n{"about":"2~3문장","prep_steps":["준비1","준비2","준비3"],"exec_steps":["실행1","실행2","실행3"],"todos":["TODO1","TODO2","TODO3","TODO4","TODO5"],"goal":"목표","deliverables":["산출물1","산출물2"]}` }],
       })
+      logApiUsage({ model: 'claude-haiku-4-5-20251001', endpoint: 'chat', userId, inputTokens: propRes.usage.input_tokens, outputTokens: propRes.usage.output_tokens }).catch(() => {})
       const pt = propRes.content[0].type === 'text' ? propRes.content[0].text : ''
       const pm = pt.match(/\{[\s\S]*\}/)
       if (pm) proposal = JSON.parse(pm[0])
@@ -731,6 +733,7 @@ async function executeTool(name: string, input: Record<string, unknown>, userRol
         ],
       }],
     })
+    logApiUsage({ model: 'claude-haiku-4-5-20251001', endpoint: 'chat', userId, inputTokens: analysisRes.usage.input_tokens, outputTokens: analysisRes.usage.output_tokens }).catch(() => {})
 
     const analysisText = analysisRes.content[0].type === 'text' ? analysisRes.content[0].text : ''
     const jsonMatch = analysisText.match(/\{[\s\S]*\}/)
@@ -985,7 +988,7 @@ async function executeTool(name: string, input: Record<string, unknown>, userRol
       channel: (input.channel as string) || null,
       inflow_source: (input.inflow_source as string) || null,
       assignee_id,
-      status: '신규',
+      status: '유입',
     }).select('id, lead_id').single()
 
     if (error) return { error: error.message }
@@ -1218,6 +1221,7 @@ export async function POST(req: NextRequest) {
       tools: TOOLS,
       messages: apiMessages,
     })
+    logApiUsage({ model: 'claude-sonnet-4-6', endpoint: 'chat', userId: user.id, inputTokens: response.usage.input_tokens, outputTokens: response.usage.output_tokens }).catch(() => {})
 
     while (response.stop_reason === 'tool_use') {
       const toolUseBlocks = response.content.filter(b => b.type === 'tool_use') as Anthropic.ToolUseBlock[]
@@ -1243,6 +1247,7 @@ export async function POST(req: NextRequest) {
         tools: TOOLS,
         messages: apiMessages,
       })
+      logApiUsage({ model: 'claude-sonnet-4-6', endpoint: 'chat', userId: user.id, inputTokens: response.usage.input_tokens, outputTokens: response.usage.output_tokens }).catch(() => {})
     }
 
     const raw = response.content.find(b => b.type === 'text') as Anthropic.TextBlock | undefined

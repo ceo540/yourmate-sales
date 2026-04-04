@@ -3,6 +3,7 @@ import { waitUntil } from '@vercel/functions'
 import Anthropic from '@anthropic-ai/sdk'
 import { createAdminClient } from '@/lib/supabase/admin'
 import crypto from 'crypto'
+import { logApiUsage } from '@/lib/api-usage'
 
 const anthropic = new Anthropic()
 
@@ -136,7 +137,7 @@ const TOOLS: Anthropic.Tool[] = [
       type: 'object' as const,
       properties: {
         search: { type: 'string', description: '기관명 또는 담당자명 검색어' },
-        status: { type: 'string', description: '신규 | 회신대기 | 견적발송 | 진행중 | 완료 | 취소' },
+        status: { type: 'string', description: '유입 | 회신대기 | 견적발송 | 조율중 | 진행중 | 완료 | 취소' },
       },
     },
   },
@@ -165,7 +166,7 @@ const TOOLS: Anthropic.Tool[] = [
       type: 'object' as const,
       properties: {
         search: { type: 'string', description: '기관명 또는 담당자명 검색어 (필수)' },
-        status: { type: 'string', description: '신규 | 회신대기 | 견적발송 | 진행중 | 완료 | 취소' },
+        status: { type: 'string', description: '유입 | 회신대기 | 견적발송 | 조율중 | 진행중 | 완료 | 취소' },
         remind_date: { type: 'string', description: '리마인드 날짜 YYYY-MM-DD' },
         contact_log: { type: 'string', description: '새 소통 내용' },
         notes: { type: 'string', description: '메모' },
@@ -405,7 +406,7 @@ async function executeTool(name: string, input: Record<string, unknown>): Promis
       inflow_date: new Date().toISOString().slice(0, 10),
       remind_date: (input.remind_date as string) || null,
       channel: (input.channel as string) || null,
-      assignee_id, status: '신규',
+      assignee_id, status: '유입',
     }).select('id, lead_id').single()
     if (error) return { error: error.message }
     return { success: true, lead_id: lead.lead_id, message: `리드 등록 완료! (${lead.lead_id})` }
@@ -557,6 +558,7 @@ async function processWithClaude(chatKey: string, userMessage: string) {
       tools: TOOLS,
       messages,
     })
+    logApiUsage({ model: 'claude-sonnet-4-6', endpoint: 'channeltalk', userId: null, inputTokens: response.usage.input_tokens, outputTokens: response.usage.output_tokens }).catch(() => {})
 
     if (response.stop_reason === 'end_turn') {
       const textBlock = response.content.find(c => c.type === 'text')
