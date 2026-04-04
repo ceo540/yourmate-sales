@@ -504,14 +504,21 @@ async function executeTool(name: string, input: Record<string, unknown>): Promis
   return { error: '알 수 없는 도구' }
 }
 
-async function sendGroupMessage(chatId: string, text: string) {
+async function sendGroupMessage(chatKey: string, text: string) {
   const key = process.env.CHANNELTALK_ACCESS_KEY
   const secret = process.env.CHANNELTALK_ACCESS_SECRET
   if (!key || !secret) {
     console.error('ChannelTalk keys not set')
     return
   }
-  const res = await fetch(`https://api.channel.io/open/v5/group-chats/${chatId}/messages`, {
+
+  // chatKey가 "group-556532" 형식이면 그대로 사용, 숫자만이면 "group-" 붙이기
+  const normalizedKey = chatKey.startsWith('group-') ? chatKey : `group-${chatKey}`
+
+  const url = `https://api.channel.io/open/v5/group-chats/${normalizedKey}/messages`
+  console.log('[ChannelTalk send] url:', url, '| text:', text.slice(0, 50))
+
+  const res = await fetch(url, {
     method: 'POST',
     headers: {
       'x-access-key': key,
@@ -524,12 +531,14 @@ async function sendGroupMessage(chatId: string, text: string) {
   })
   const data = await res.json()
   if (!res.ok) {
-    console.error('ChannelTalk send error:', data)
+    console.error('ChannelTalk send error:', JSON.stringify(data))
+  } else {
+    console.log('[ChannelTalk send] success')
   }
   return data
 }
 
-async function processWithClaude(chatId: string, userMessage: string) {
+async function processWithClaude(chatKey: string, userMessage: string) {
   const today = new Date().toLocaleDateString('ko-KR', { year: 'numeric', month: 'long', day: 'numeric', timeZone: 'Asia/Seoul' })
   const system = `오늘 날짜: ${today}\n${SYSTEM_PROMPT}`
 
@@ -550,7 +559,7 @@ async function processWithClaude(chatId: string, userMessage: string) {
     if (response.stop_reason === 'end_turn') {
       const textBlock = response.content.find(c => c.type === 'text')
       if (textBlock && textBlock.type === 'text' && textBlock.text.trim()) {
-        await sendGroupMessage(chatId, textBlock.text.trim())
+        await sendGroupMessage(chatKey, textBlock.text.trim())
       }
       break
     }
@@ -603,12 +612,13 @@ export async function POST(req: NextRequest) {
 
   const personId = entity?.personId as string | undefined
   const messageText = ((entity?.plainText || entity?.content || '') as string).trim()
-  const chatId = entity?.chatId as string | undefined
+  // chatKey 우선 사용 (예: "group-556532"), 없으면 chatId fallback
+  const chatKey = (entity?.chatKey || entity?.chatId) as string | undefined
 
   // personId 항상 로그 (Vercel 로그에서 ID 확인용)
-  console.log('[ChannelTalk] personId:', personId, '| chatId:', chatId)
+  console.log('[ChannelTalk] personId:', personId, '| chatKey:', chatKey)
 
-  if (!messageText || !chatId) {
+  if (!messageText || !chatKey) {
     return NextResponse.json({ result: 'no content' })
   }
 
@@ -628,8 +638,7 @@ export async function POST(req: NextRequest) {
 
   if (allowedIds.length === 0) {
     // 아직 허용 ID 미설정 — 메시지 발신자 ID를 채팅방에 알려주고 차단
-    processWithClaude(chatId, '').catch(() => {})
-    await sendGroupMessage(chatId,
+    await sendGroupMessage(chatKey,
       `빵빵이 권한 설정 필요!\n\n발신자 ID: ${personId || '확인불가'}\n\nVercel 환경변수 CHANNELTALK_ALLOWED_IDS에 이 ID를 추가해줘.`
     ).catch(console.error)
     return NextResponse.json({ result: 'setup required' })
@@ -643,9 +652,9 @@ export async function POST(req: NextRequest) {
   // ────────────────────────────────────────────────────────────
 
   // Claude 처리 (비동기 — 응답은 ChannelTalk API로 직접 전송)
-  processWithClaude(chatId, messageText).catch(async (err) => {
+  processWithClaude(chatKey, messageText).catch(async (err) => {
     console.error('[ChannelTalk bot error]', err)
-    await sendGroupMessage(chatId, '오류 발생했어. 잠시 후 다시 해봐.').catch(console.error)
+    await sendGroupMessage(chatKey, '오류 발생했어. 잠시 후 다시 해봐.').catch(console.error)
   })
 
   return NextResponse.json({ result: 'ok' })
