@@ -12,6 +12,7 @@ interface NavItem {
   icon: string
   pageKey: string
   adminOnly?: boolean
+  demo?: boolean
 }
 
 // ─────────────────────────────────────────────────────────────────
@@ -24,6 +25,7 @@ const NAV_GROUPS: Record<string, NavItem[]> = {
     { href: '/sales',        label: '매출 현황', icon: '💰', pageKey: 'sales' },
     { href: '/sales/report', label: '계약 목록', icon: '📄', pageKey: 'sales_report' },
     { href: '/leads',        label: '리드 관리', icon: '📥', pageKey: 'leads' },
+    { href: '/rentals',      label: '렌탈 관리', icon: '🎸', pageKey: 'rentals' },
     { href: '/tasks',        label: '업무 관리', icon: '✅', pageKey: 'tasks' },
   ],
   재무: [
@@ -41,8 +43,8 @@ const NAV_GROUPS: Record<string, NavItem[]> = {
   ],
   팀: [
     { href: '/notice',             label: '공지사항', icon: '📢', pageKey: 'notice' },
-    { href: '/calendar-demo',     label: '캘린더',   icon: '📅', pageKey: 'calendar' },
-    { href: '/weekly-report-demo',label: '주간보고', icon: '📝', pageKey: 'weekly_report' },
+    { href: '/calendar-demo',     label: '캘린더',   icon: '📅', pageKey: 'calendar',      demo: true },
+    { href: '/weekly-report-demo',label: '주간보고', icon: '📝', pageKey: 'weekly_report', demo: true },
     { href: '/attendance',         label: '근태 관리', icon: '⏰', pageKey: 'attendance' },
     { href: '/hr',                 label: '연차 관리', icon: '🏖️', pageKey: 'hr' },
     { href: '/expenses',           label: '경비 처리', icon: '💳', pageKey: 'expenses' },
@@ -205,6 +207,7 @@ export default function Sidebar() {
               >
                 <span className="text-sm">{item.icon}</span>
                 <span>{item.label}</span>
+                {item.demo && <span className="ml-auto text-[9px] px-1 py-0.5 rounded bg-gray-100 text-gray-400 font-medium">데모</span>}
               </Link>
             )
           })}
@@ -275,6 +278,7 @@ export default function Sidebar() {
                         >
                           <span>{item.icon}</span>
                           <span>{item.label}</span>
+                          {item.demo && <span className="ml-auto text-[9px] px-1 py-0.5 rounded bg-gray-100 text-gray-400 font-medium">데모</span>}
                         </Link>
                       )
                     })}

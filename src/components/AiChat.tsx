@@ -35,6 +35,13 @@ interface Message {
 
 const INIT_MSG = '뭐 할 거야?'
 
+const EXAMPLES: Record<string, string[]> = {
+  'new-sale':  ['OO학교 행사운영 2천만원 계약 체결했어', 'OO기관 납품설치 1500만원, 수금 50% 완료'],
+  'new-lead':  ['OO중학교 납품설치 문의 전화 왔어, 4/15 리마인드 걸어줘', '채널톡으로 악기 대여 문의 들어왔어'],
+  'update':    ['포천시청소년재단 견적 보냈어', '경기도교육청 상태 진행중으로 바꿔줘'],
+  'chat':      ['이번달 매출 얼마야?', '리마인드 임박한 리드 있어?', '미수금 현황 알려줘'],
+}
+
 const MODES = [
   { id: 'new-sale' as ChatMode, label: '📝 새 계약건',       reply: '상담 중이야? 아니면 메모 정리해서 넣을 거야?' },
   { id: 'new-lead' as ChatMode, label: '🎯 새 리드',         reply: '상담 중이야? 아니면 내용 정리해서 넣을 거야?' },
@@ -261,6 +268,7 @@ export default function AiChat() {
   }
 
   const showModeButtons = mode === null && messages.length <= 1 && !loading
+  const showExamples = mode !== null && messages.length <= 2 && !loading
 
   return (
     <>
@@ -368,6 +376,22 @@ export default function AiChat() {
                   </button>
                 ))}
               </div>
+            </div>
+          )}
+
+          {/* 예시 칩 */}
+          {showExamples && mode && EXAMPLES[mode] && (
+            <div className="px-3 pb-2 pt-1.5 flex flex-wrap gap-1.5 border-b border-gray-100 flex-shrink-0">
+              <p className="w-full text-[10px] text-gray-400 mb-0.5">예시 👇</p>
+              {EXAMPLES[mode].map((ex, i) => (
+                <button
+                  key={i}
+                  onClick={() => send(ex)}
+                  className="text-xs px-2.5 py-1.5 rounded-full border border-gray-200 bg-gray-50 text-gray-600 hover:bg-yellow-50 hover:border-yellow-300 hover:text-yellow-900 transition-colors text-left"
+                >
+                  {ex}
+                </button>
+              ))}
             </div>
           )}
 

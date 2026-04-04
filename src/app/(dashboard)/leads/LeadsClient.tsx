@@ -336,8 +336,8 @@ export default function LeadsClient({ leads, profiles, currentUserId, isAdmin }:
                   <th className="w-1 p-0" />
                   <th className="text-left px-3 py-3 text-xs font-semibold text-gray-500 w-24 whitespace-nowrap">D-day</th>
                   <th className="text-left px-3 py-3 text-xs font-semibold text-gray-500">기관명</th>
-                  <th className="text-left px-3 py-3 text-xs font-semibold text-gray-500">서비스</th>
-                  <th className="text-left px-3 py-3 text-xs font-semibold text-gray-500">담당</th>
+                  <th className="hidden sm:table-cell text-left px-3 py-3 text-xs font-semibold text-gray-500">서비스</th>
+                  <th className="hidden sm:table-cell text-left px-3 py-3 text-xs font-semibold text-gray-500">담당</th>
                   <th className="text-left px-3 py-3 text-xs font-semibold text-gray-500">상태</th>
                 </tr>
               </thead>
@@ -368,12 +368,12 @@ export default function LeadsClient({ leads, profiles, currentUserId, isAdmin }:
                         <div className="font-medium text-gray-900 text-sm leading-tight">{lead.client_org || '-'}</div>
                         <div className="text-xs text-gray-400 mt-0.5">{lead.contact_name || ''}</div>
                       </td>
-                      <td className="px-3 py-3">
+                      <td className="hidden sm:table-cell px-3 py-3">
                         {lead.service_type
                           ? <span className="text-xs px-2 py-0.5 bg-gray-100 text-gray-600 rounded-full whitespace-nowrap">{lead.service_type}</span>
                           : <span className="text-gray-300 text-xs">-</span>}
                       </td>
-                      <td className="px-3 py-3 text-gray-500 text-xs whitespace-nowrap">{(lead.assignee as any)?.name || '-'}</td>
+                      <td className="hidden sm:table-cell px-3 py-3 text-gray-500 text-xs whitespace-nowrap">{(lead.assignee as any)?.name || '-'}</td>
                       <td className="px-3 py-3">
                         <span className={`text-xs px-2 py-0.5 rounded-full font-medium whitespace-nowrap ${STATUS_BADGE[lead.status] || 'bg-gray-100 text-gray-500'}`}>
                           {lead.status}
