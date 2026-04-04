@@ -591,8 +591,8 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'invalid json' }, { status: 400 })
   }
 
-  // 디버깅용 로그
-  console.log('[ChannelTalk webhook]', JSON.stringify({ event: payload.event, entityType: (payload.entity as Record<string, unknown>)?.personType, content: (payload.entity as Record<string, unknown>)?.plainText || (payload.entity as Record<string, unknown>)?.content }))
+  // 디버깅용 로그 — 전체 페이로드
+  console.log('[ChannelTalk FULL]', JSON.stringify(payload))
 
   const entity = payload.entity as Record<string, unknown> | undefined
 
