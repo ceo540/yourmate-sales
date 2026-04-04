@@ -1,6 +1,7 @@
 import { createClient } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
 import AdminClient from './AdminClient'
+import { parseDepartments } from '@/lib/utils'
 
 export default async function AdminPage() {
   const supabase = await createClient()
@@ -41,8 +42,7 @@ export default async function AdminPage() {
   }]))
 
   const users = (profilesRaw ?? []).map(p => {
-    const rawDepts = (p as any).departments
-    const departments: string[] = Array.isArray(rawDepts) ? rawDepts : (typeof rawDepts === 'string' ? (() => { try { return JSON.parse(rawDepts) } catch { return [] } })() : [])
+    const departments = parseDepartments((p as any).departments)
     return {
       ...p,
       departments,

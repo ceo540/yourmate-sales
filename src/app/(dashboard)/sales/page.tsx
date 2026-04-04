@@ -2,6 +2,7 @@ import { createClient } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
 import Link from 'next/link'
 import SalesClient from './SalesClient'
+import { parseDepartments } from '@/lib/utils'
 
 export default async function SalesPage() {
   const supabase = await createClient()
@@ -16,8 +17,7 @@ export default async function SalesPage() {
 
   const isAdmin = profile?.role === 'admin'
   const showAll = isAdmin || accessLevel === 'full' || accessLevel === 'read'
-  const rawDepts = (profile as any)?.departments
-  const myDepts: string[] = Array.isArray(rawDepts) ? rawDepts : (typeof rawDepts === 'string' ? (() => { try { return JSON.parse(rawDepts) } catch { return [] } })() : [])
+  const myDepts = parseDepartments((profile as any)?.departments)
 
   let salesQuery = supabase
     .from('sales')
@@ -33,13 +33,18 @@ export default async function SalesPage() {
     }
   }
 
-  const [{ data: vendors }, { data: entities }, { data: profiles }, { data: salesRaw }, { data: allCosts }] = await Promise.all([
+  const [{ data: vendors }, { data: entities }, { data: profiles }, { data: salesRaw }] = await Promise.all([
     supabase.from('vendors').select('id, name, type').order('name'),
     supabase.from('business_entities').select('id, name, entity_type, business_number').order('name'),
     supabase.from('profiles').select('id, name').order('name'),
     salesQuery,
-    supabase.from('sale_costs').select('*'),
   ])
+
+  // 로드된 매출 건에 해당하는 원가만 조회 (전체 X)
+  const saleIds = (salesRaw ?? []).map((s: any) => s.id)
+  const { data: allCosts } = saleIds.length > 0
+    ? await supabase.from('sale_costs').select('*').in('sale_id', saleIds)
+    : { data: [] }
 
   const profileMap = Object.fromEntries((profiles ?? []).map(p => [p.id, p]))
   const entityMap = Object.fromEntries((entities ?? []).map(e => [e.id, { id: e.id, name: e.name }]))

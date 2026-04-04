@@ -47,3 +47,17 @@ export function getStatusColor(status: string) {
     default: return 'text-gray-600 bg-gray-50'
   }
 }
+
+// profiles.departments JSONB 파싱 (string | string[] | null 모두 처리)
+export function parseDepartments(raw: unknown): string[] {
+  if (Array.isArray(raw)) return raw as string[]
+  if (typeof raw === 'string') {
+    try { return JSON.parse(raw) } catch { return [] }
+  }
+  return []
+}
+
+// 금액 포맷팅
+export function fmt(n: number | null | undefined): string {
+  return (n || 0).toLocaleString()
+}

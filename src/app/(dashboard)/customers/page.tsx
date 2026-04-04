@@ -34,16 +34,16 @@ export default async function CustomersPage() {
     `)
     .order('name')
 
-  // 기관별 매출 집계 (customer_id 연결된 것만)
+  // 기관별 매출 집계 (customer_id 연결된 것만, 필요한 컬럼만 선택)
   const { data: salesAgg } = await supabase
     .from('sales')
-    .select('customer_id, amount, title, service_type, client_org, created_at')
+    .select('id, customer_id, revenue, title, service_type, created_at')
     .not('customer_id', 'is', null)
 
   // 기관 데이터 가공
   const customers = (customersRaw ?? []).map((c: any) => {
     const orgSales = (salesAgg ?? []).filter((s: any) => s.customer_id === c.id)
-    const totalSales = orgSales.reduce((sum: number, s: any) => sum + (s.amount || 0), 0)
+    const totalSales = orgSales.reduce((sum: number, s: any) => sum + (s.revenue || 0), 0)
     const contacts = (c.person_org_relations ?? []).map((r: any) => ({
       id:          r.id,
       person_id:   r.persons?.id,
@@ -67,7 +67,7 @@ export default async function CustomersPage() {
       last_deal_date: lastSale?.created_at?.slice(0, 10) || null,
       contacts,
       sales: orgSales.map((s: any) => ({
-        id: s.id, title: s.title, amount: s.amount || 0,
+        id: s.id, title: s.title, amount: s.revenue || 0,
         service_type: s.service_type, date: s.created_at?.slice(0, 10),
       })),
     }
