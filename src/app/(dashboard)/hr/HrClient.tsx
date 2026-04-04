@@ -185,30 +185,32 @@ export default function HrClient({ members, initialLeaves, initialDocRequests, i
       </div>
 
       {/* 탭 + 신청 버튼 */}
-      <div className="flex items-center justify-between flex-wrap gap-2">
-        <div className="flex gap-2 flex-wrap">
-          {([
-            ['overview', '연차 현황'],
-            ['requests', `신청 목록${pendingCount > 0 ? ` (${pendingCount})` : ''}`],
-            ['docs', '서류 신청'],
-            ['calendar', '달력'],
-          ] as const).map(([t, label]) => (
-            <button key={t} onClick={() => setTab(t)}
-              className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${tab === t ? 'bg-gray-900 text-white' : 'bg-white border border-gray-200 text-gray-600 hover:bg-gray-50'}`}>
-              {label}
-            </button>
-          ))}
+      <div className="flex items-center justify-between gap-2">
+        <div className="flex-1 overflow-x-auto">
+          <div className="flex gap-1.5 min-w-max">
+            {([
+              ['overview', '현황'],
+              ['requests', `신청${pendingCount > 0 ? ` (${pendingCount})` : ''}`],
+              ['docs', '서류'],
+              ['calendar', '달력'],
+            ] as const).map(([t, label]) => (
+              <button key={t} onClick={() => setTab(t)}
+                className={`px-3 py-2 rounded-lg text-sm font-medium transition-colors whitespace-nowrap ${tab === t ? 'bg-gray-900 text-white' : 'bg-white border border-gray-200 text-gray-600 hover:bg-gray-50'}`}>
+                {label}
+              </button>
+            ))}
+          </div>
         </div>
-        <div className="flex gap-2">
+        <div className="flex gap-2 shrink-0">
           {tab === 'docs' && (
             <button onClick={() => setShowDocForm(true)}
-              className="bg-white border border-gray-200 text-gray-700 text-sm px-4 py-2 rounded-lg hover:bg-gray-50">
-              + 서류 신청
+              className="bg-white border border-gray-200 text-gray-700 text-sm px-3 py-2 rounded-lg hover:bg-gray-50 whitespace-nowrap">
+              + 서류
             </button>
           )}
           <button onClick={() => setShowForm(true)}
-            className="bg-gray-900 text-white text-sm px-4 py-2 rounded-lg hover:bg-gray-800">
-            + 연차 신청
+            className="bg-gray-900 text-white text-sm px-3 py-2 rounded-lg hover:bg-gray-800 whitespace-nowrap">
+            + 연차
           </button>
         </div>
       </div>
@@ -218,16 +220,16 @@ export default function HrClient({ members, initialLeaves, initialDocRequests, i
         <div className="bg-white border border-gray-200 rounded-2xl overflow-hidden">
           {isAdmin ? (
             <div className="overflow-x-auto">
-              <table className="w-full min-w-[560px] text-sm">
+              <table className="w-full text-sm">
                 <thead className="bg-gray-50">
                   <tr className="text-xs text-gray-500">
-                    <th className="px-5 py-3 text-left">이름</th>
-                    <th className="px-4 py-3 text-left">입사일</th>
-                    <th className="px-4 py-3 text-center">근속</th>
-                    <th className="px-4 py-3 text-center">발생</th>
-                    <th className="px-4 py-3 text-center">사용</th>
-                    <th className="px-4 py-3 text-center">잔여</th>
-                    <th className="px-4 py-3 text-center hidden sm:table-cell">소진율</th>
+                    <th className="px-4 py-3 text-left">이름</th>
+                    <th className="px-3 py-3 text-left hidden sm:table-cell">입사일</th>
+                    <th className="px-3 py-3 text-center hidden sm:table-cell">근속</th>
+                    <th className="px-3 py-3 text-center">발생</th>
+                    <th className="px-3 py-3 text-center">사용</th>
+                    <th className="px-3 py-3 text-center">잔여</th>
+                    <th className="px-3 py-3 text-center hidden md:table-cell">소진율</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-50">
@@ -238,32 +240,32 @@ export default function HrClient({ members, initialLeaves, initialDocRequests, i
                     const pct = total > 0 ? Math.round(used / total * 100) : 0
                     return (
                       <tr key={m.id} className="hover:bg-gray-50">
-                        <td className="px-5 py-3">
-                          <div className="flex items-center gap-2.5">
+                        <td className="px-4 py-3">
+                          <div className="flex items-center gap-2">
                             <div className="w-8 h-8 rounded-full bg-gray-100 flex items-center justify-center text-xs font-bold text-gray-600 shrink-0">
                               {m.name?.[0] ?? '?'}
                             </div>
                             <div>
-                              <p className="font-medium text-gray-800">{m.name}</p>
-                              <p className="text-xs text-gray-400">{m.role}</p>
+                              <p className="font-medium text-gray-800 text-sm">{m.name}</p>
+                              <p className="text-xs text-gray-400 sm:hidden">{m.joinDate ? calcTenure(m.joinDate) : '미입력'}</p>
                             </div>
                           </div>
                         </td>
-                        <td className="px-4 py-3 text-gray-500 text-xs">{m.joinDate ?? <span className="text-red-400">미입력</span>}</td>
-                        <td className="px-4 py-3 text-center text-xs text-gray-600">{m.joinDate ? calcTenure(m.joinDate) : '-'}</td>
-                        <td className="px-4 py-3 text-center font-semibold text-gray-800">{total > 0 ? `${total}일` : '-'}</td>
-                        <td className="px-4 py-3 text-center text-blue-600 font-medium">{used > 0 ? `${used}일` : '0일'}</td>
-                        <td className={`px-4 py-3 text-center font-bold ${total > 0 ? (remaining <= 3 ? 'text-red-500' : remaining <= 7 ? 'text-yellow-600' : 'text-green-600') : 'text-gray-300'}`}>
+                        <td className="px-3 py-3 text-gray-500 text-xs hidden sm:table-cell">{m.joinDate ?? <span className="text-red-400">미입력</span>}</td>
+                        <td className="px-3 py-3 text-center text-xs text-gray-600 hidden sm:table-cell">{m.joinDate ? calcTenure(m.joinDate) : '-'}</td>
+                        <td className="px-3 py-3 text-center font-semibold text-gray-800 text-sm">{total > 0 ? `${total}일` : '-'}</td>
+                        <td className="px-3 py-3 text-center text-blue-600 font-medium text-sm">{used > 0 ? `${used}일` : '0일'}</td>
+                        <td className={`px-3 py-3 text-center font-bold text-sm ${total > 0 ? (remaining <= 3 ? 'text-red-500' : remaining <= 7 ? 'text-yellow-600' : 'text-green-600') : 'text-gray-300'}`}>
                           {total > 0 ? `${remaining}일` : '-'}
                         </td>
-                        <td className="px-4 py-3 hidden sm:table-cell">
+                        <td className="px-3 py-3 hidden md:table-cell">
                           {total > 0 ? (
                             <div className="flex items-center gap-2">
-                              <div className="flex-1 bg-gray-100 rounded-full h-2 min-w-[60px]">
+                              <div className="flex-1 bg-gray-100 rounded-full h-2 min-w-[50px]">
                                 <div className={`h-2 rounded-full ${pct >= 80 ? 'bg-red-400' : pct >= 60 ? 'bg-yellow-400' : 'bg-green-400'}`}
                                   style={{ width: `${pct}%` }} />
                               </div>
-                              <span className="text-xs text-gray-400 w-8 text-right">{pct}%</span>
+                              <span className="text-xs text-gray-400 w-7 text-right">{pct}%</span>
                             </div>
                           ) : <span className="text-xs text-gray-300">-</span>}
                         </td>
@@ -350,23 +352,23 @@ export default function HrClient({ members, initialLeaves, initialDocRequests, i
                       {l.reason && <p className="text-xs text-gray-400 mt-0.5">{l.reason}</p>}
                     </div>
                     {isAdmin && (
-                      <div className="text-right space-y-1.5 shrink-0">
+                      <div className="shrink-0 space-y-1.5 mt-1">
                         {l.director_approval === '대기' && (
-                          <div className="flex gap-1">
+                          <div className="flex gap-1 justify-end">
                             <span className="text-[11px] text-gray-400 self-center">이사</span>
-                            <button onClick={() => handleApprove(l.id, 'director', '승인')} className="text-xs px-2 py-0.5 bg-green-100 text-green-700 rounded hover:bg-green-200">승인</button>
-                            <button onClick={() => handleApprove(l.id, 'director', '반려')} className="text-xs px-2 py-0.5 bg-red-100 text-red-500 rounded hover:bg-red-200">반려</button>
+                            <button onClick={() => handleApprove(l.id, 'director', '승인')} className="text-xs px-2.5 py-1 bg-green-100 text-green-700 rounded-lg hover:bg-green-200">승인</button>
+                            <button onClick={() => handleApprove(l.id, 'director', '반려')} className="text-xs px-2.5 py-1 bg-red-100 text-red-500 rounded-lg hover:bg-red-200">반려</button>
                           </div>
                         )}
                         {l.director_approval === '승인' && l.ceo_approval === '대기' && (
-                          <div className="flex gap-1">
+                          <div className="flex gap-1 justify-end">
                             <span className="text-[11px] text-gray-400 self-center">대표</span>
-                            <button onClick={() => handleApprove(l.id, 'ceo', '승인')} className="text-xs px-2 py-0.5 bg-green-100 text-green-700 rounded hover:bg-green-200">승인</button>
-                            <button onClick={() => handleApprove(l.id, 'ceo', '반려')} className="text-xs px-2 py-0.5 bg-red-100 text-red-500 rounded hover:bg-red-200">반려</button>
+                            <button onClick={() => handleApprove(l.id, 'ceo', '승인')} className="text-xs px-2.5 py-1 bg-green-100 text-green-700 rounded-lg hover:bg-green-200">승인</button>
+                            <button onClick={() => handleApprove(l.id, 'ceo', '반려')} className="text-xs px-2.5 py-1 bg-red-100 text-red-500 rounded-lg hover:bg-red-200">반려</button>
                           </div>
                         )}
                         {(l.director_approval !== '대기' || l.ceo_approval !== '대기') && (
-                          <div className="text-[11px] text-gray-300">
+                          <div className="text-[11px] text-gray-300 text-right">
                             이사 {l.director_approval} · 대표 {l.ceo_approval}
                           </div>
                         )}
@@ -421,7 +423,7 @@ export default function HrClient({ members, initialLeaves, initialDocRequests, i
               <div key={d} className={`text-center text-xs font-semibold py-2 ${i === 0 ? 'text-red-400' : i === 6 ? 'text-blue-400' : 'text-gray-400'}`}>{d}</div>
             ))}
           </div>
-          <div className="grid grid-cols-7 gap-1">
+          <div className="grid grid-cols-7 gap-0.5 sm:gap-1">
             {calDays.map((day, i) => {
               if (!day) return <div key={i} />
               const dayLeaves = getLeavesOnDay(day)
@@ -429,18 +431,18 @@ export default function HrClient({ members, initialLeaves, initialDocRequests, i
               const isToday = ds === today.toISOString().slice(0, 10)
               const isSun = (i % 7 === 0), isSat = (i % 7 === 6)
               return (
-                <div key={i} className={`min-h-[60px] p-1 rounded-lg border ${isToday ? 'border-yellow-400 bg-yellow-50' : 'border-gray-100'}`}>
-                  <div className={`text-xs font-medium mb-1 ${isToday ? 'text-yellow-700' : isSun ? 'text-red-400' : isSat ? 'text-blue-400' : 'text-gray-600'}`}>{day}</div>
+                <div key={i} className={`min-h-[44px] sm:min-h-[60px] p-0.5 sm:p-1 rounded-lg border ${isToday ? 'border-yellow-400 bg-yellow-50' : 'border-gray-100'}`}>
+                  <div className={`text-[11px] sm:text-xs font-medium mb-0.5 sm:mb-1 ${isToday ? 'text-yellow-700' : isSun ? 'text-red-400' : isSat ? 'text-blue-400' : 'text-gray-600'}`}>{day}</div>
                   <div className="space-y-0.5">
-                    {dayLeaves.slice(0, 2).map(l => {
-                      const name = isAdmin ? (memberMap[l.member_id]?.name ?? '?') : l.type
+                    {dayLeaves.slice(0, 1).map(l => {
+                      const name = isAdmin ? (memberMap[l.member_id]?.name?.[0] ?? '?') : '휴'
                       return (
-                        <div key={l.id} className="text-[10px] px-1 py-0.5 rounded truncate font-medium bg-gray-900 text-white">
+                        <div key={l.id} className="text-[9px] sm:text-[10px] px-0.5 sm:px-1 py-0.5 rounded truncate font-bold bg-gray-900 text-white text-center">
                           {name}
                         </div>
                       )
                     })}
-                    {dayLeaves.length > 2 && <div className="text-[10px] text-gray-400 px-1">+{dayLeaves.length - 2}명</div>}
+                    {dayLeaves.length > 1 && <div className="text-[9px] text-gray-400 text-center">+{dayLeaves.length - 1}</div>}
                   </div>
                 </div>
               )
@@ -452,7 +454,7 @@ export default function HrClient({ members, initialLeaves, initialDocRequests, i
       {/* 서류 신청 모달 */}
       {showDocForm && (
         <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-2xl w-full max-w-sm p-6">
+          <div className="bg-white rounded-2xl w-full max-w-sm p-6 max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between mb-5">
               <h3 className="text-lg font-bold text-gray-900">서류 신청</h3>
               <button onClick={() => setShowDocForm(false)} className="text-gray-400 hover:text-gray-600 text-xl">×</button>
@@ -489,7 +491,7 @@ export default function HrClient({ members, initialLeaves, initialDocRequests, i
       {/* 연차 신청 모달 */}
       {showForm && (
         <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-2xl w-full max-w-md p-6">
+          <div className="bg-white rounded-2xl w-full max-w-md p-6 max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between mb-1">
               <h3 className="text-lg font-bold text-gray-900">연차 신청</h3>
               <button onClick={() => setShowForm(false)} className="text-gray-400 hover:text-gray-600 text-xl">×</button>
