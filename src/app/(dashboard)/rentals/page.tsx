@@ -7,30 +7,33 @@ export default async function RentalsPage() {
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) redirect('/login')
 
-  const [{ data: rentalsRaw }, { data: itemCounts }, { data: profilesRaw }] = await Promise.all([
+  const [{ data: rentalsRaw }, { data: allItems }, { data: profilesRaw }, { data: customersRaw }] = await Promise.all([
     supabase.from('rentals').select('*').order('created_at', { ascending: false }),
-    supabase.from('rental_items').select('rental_id'),
+    supabase.from('rental_items').select('*').order('created_at'),
     supabase.from('profiles').select('id, name').order('name'),
+    supabase.from('customers').select('id, name, type').order('name'),
   ])
 
   const profileMap = Object.fromEntries((profilesRaw ?? []).map(p => [p.id, p.name]))
 
-  // 계약별 품목 수 집계
-  const countMap: Record<string, number> = {}
-  for (const item of itemCounts ?? []) {
-    countMap[item.rental_id] = (countMap[item.rental_id] || 0) + 1
+  // 렌탈별 품목 그룹핑
+  const itemsByRental: Record<string, typeof allItems> = {}
+  for (const item of allItems ?? []) {
+    if (!itemsByRental[item.rental_id]) itemsByRental[item.rental_id] = []
+    itemsByRental[item.rental_id]!.push(item)
   }
 
   const rentals = (rentalsRaw ?? []).map((r: any) => ({
     ...r,
     assignee_name: r.assignee_id ? (profileMap[r.assignee_id] ?? null) : null,
-    items_count: countMap[r.id] ?? 0,
+    items: itemsByRental[r.id] ?? [],
   }))
 
   return (
     <RentalsClient
       rentals={rentals}
       profiles={profilesRaw ?? []}
+      customers={customersRaw ?? []}
     />
   )
 }

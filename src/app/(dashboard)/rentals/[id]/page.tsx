@@ -23,8 +23,12 @@ export default async function RentalDetailPage({ params }: { params: Promise<{ i
       rental={{
         ...rental,
         assignee_name: rental.assignee_id ? (profileMap[rental.assignee_id] ?? null) : null,
-        content: rental.content ?? null,
-        items: items ?? [],
+        content:       rental.content ?? null,
+        dropbox_url:   rental.dropbox_url ?? null,
+        contact_1:     rental.contact_1 ?? null,
+        contact_2:     rental.contact_2 ?? null,
+        contact_3:     rental.contact_3 ?? null,
+        items:         items ?? [],
       }}
       profiles={profilesRaw ?? []}
     />
