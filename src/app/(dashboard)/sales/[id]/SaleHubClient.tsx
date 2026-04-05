@@ -99,6 +99,7 @@ export default function SaleHubClient({ sale, tasks: initialTasks, logs, profile
   const [newLog, setNewLog] = useState('')
   const [newLogType, setNewLogType] = useState('통화')
   const [logContactedAt, setLogContactedAt] = useState(() => new Date().toISOString().slice(0, 16))
+  const [logError, setLogError] = useState<string | null>(null)
 
   useEffect(() => { setLocalLogs(logs) }, [logs])
 
@@ -124,12 +125,17 @@ export default function SaleHubClient({ sale, tasks: initialTasks, logs, profile
   function handleAddLog(type: string) {
     if (!newLog.trim()) return
     setNewLogType(type)
+    setLogError(null)
     startTransition(async () => {
-      await createLog(sale.id, newLog, type, logContactedAt ? new Date(logContactedAt).toISOString() : undefined)
-      setNewLog('')
-      setLogContactedAt(new Date().toISOString().slice(0, 16))
-      const updated = await getSaleLogs(sale.id)
-      setLocalLogs(updated)
+      try {
+        await createLog(sale.id, newLog, type, logContactedAt ? new Date(logContactedAt).toISOString() : undefined)
+        setNewLog('')
+        setLogContactedAt(new Date().toISOString().slice(0, 16))
+        const updated = await getSaleLogs(sale.id)
+        setLocalLogs(updated)
+      } catch (e: any) {
+        setLogError('저장 실패: ' + (e?.message ?? String(e)))
+      }
     })
   }
 
@@ -243,6 +249,9 @@ export default function SaleHubClient({ sale, tasks: initialTasks, logs, profile
                 onChange={e => setLogContactedAt(e.target.value)}
                 className="text-xs border border-gray-200 rounded-lg px-2 py-1.5 focus:outline-none focus:border-yellow-400" />
             </div>
+            {logError && (
+              <p className="text-xs text-red-500 mb-2">{logError}</p>
+            )}
             <div className="flex gap-2 flex-wrap">
               {['통화','이메일','방문','내부회의','메모','기타'].map(type => (
                 <button key={type}
