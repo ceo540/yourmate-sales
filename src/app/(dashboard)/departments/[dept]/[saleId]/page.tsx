@@ -30,7 +30,6 @@ export default async function DeptSalePage({
 
   const { data: sale } = await admin.from('sales').select('*, notes, project_overview').eq('id', saleId).single()
   if (!sale) notFound()
-  if (!isAdmin && sale.assignee_id !== profile?.id) redirect(`/departments/${dept}`)
 
   const [{ data: profiles }, { data: entities }, { data: customers }, { data: rawTasks }, logsResult] = await Promise.all([
     admin.from('profiles').select('id, name').order('name'),
