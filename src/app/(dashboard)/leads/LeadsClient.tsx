@@ -1,26 +1,42 @@
 'use client'
-import { useState, useTransition, useEffect } from 'react'
+import { useState, useTransition, useEffect, useCallback } from 'react'
 import { Lead, LeadStatus, LEAD_STATUSES, LEAD_CHANNELS, LEAD_SOURCES } from '@/types'
 import { createLead, updateLead, deleteLead, convertLeadToSale } from './actions'
+import { createLeadLog, getLeadLogs, deleteLeadLog } from '../sales/[id]/log-actions'
 
 const SERVICE_TYPES = [
   'SOS', '교육프로그램', '납품설치', '유지보수', '교구대여', '제작인쇄',
   '콘텐츠제작', '행사운영', '행사대여', '프로젝트', '002ENT',
 ]
 
+const LOG_TYPE_COLORS: Record<string, string> = {
+  통화: 'bg-blue-50 text-blue-600', 이메일: 'bg-purple-50 text-purple-600',
+  방문: 'bg-green-50 text-green-600', 메모: 'bg-yellow-50 text-yellow-700',
+  내부회의: 'bg-orange-50 text-orange-600', 기타: 'bg-gray-100 text-gray-500',
+}
+
+interface LeadLog {
+  id: string; content: string; log_type: string
+  contacted_at: string | null; created_at: string
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  author: any
+}
+
 const STATUS_BADGE: Record<string, string> = {
-  '신규':    'bg-blue-100 text-blue-700',
+  '유입':    'bg-blue-100 text-blue-700',
   '회신대기': 'bg-yellow-100 text-yellow-700',
   '견적발송': 'bg-orange-100 text-orange-700',
+  '조율중':   'bg-purple-100 text-purple-700',
   '진행중':   'bg-green-100 text-green-700',
   '완료':    'bg-gray-100 text-gray-500',
   '취소':    'bg-red-100 text-red-400',
 }
 
 const STATUS_BAR: Record<string, string> = {
-  '신규':    'bg-blue-500',
+  '유입':    'bg-blue-500',
   '회신대기': 'bg-yellow-400',
   '견적발송': 'bg-orange-400',
+  '조율중':   'bg-purple-400',
   '진행중':   'bg-green-500',
   '완료':    'bg-gray-300',
   '취소':    'bg-red-300',
@@ -48,11 +64,6 @@ function sortByDday(a: Lead, b: Lead): number {
   return da - db
 }
 
-// contact_1/2/3 텍스트에서 날짜 파싱: "[2026-04-03] 내용" 형식
-function parseContact(text: string): { date: string | null; body: string } {
-  const m = text.match(/^\[(\d{4}-\d{2}-\d{2})\] ([\s\S]+)$/)
-  return m ? { date: m[1], body: m[2] } : { date: null, body: text }
-}
 
 interface Props {
   leads: Lead[]
@@ -74,7 +85,7 @@ const EMPTY_FORM: FormState = {
   inflow_date: new Date().toISOString().slice(0, 10),
   remind_date: '', service_type: '', contact_name: '', client_org: '',
   phone: '', office_phone: '', email: '', initial_content: '',
-  assignee_id: '', status: '신규', channel: '', inflow_source: '',
+  assignee_id: '', status: '유입', channel: '', inflow_source: '',
   notes: '', contact_1: '', contact_2: '', contact_3: '',
 }
 
@@ -87,8 +98,13 @@ export default function LeadsClient({ leads, profiles, currentUserId, isAdmin }:
   const [editMode, setEditMode] = useState(false)
   const [isPending, startTransition] = useTransition()
   const [convertingId, setConvertingId] = useState<string | null>(null)
-  const [showAddContact, setShowAddContact] = useState(false)
-  const [addContactText, setAddContactText] = useState('')
+
+  // 소통 로그 (project_logs)
+  const [leadLogs, setLeadLogs] = useState<LeadLog[]>([])
+  const [loadingLogs, setLoadingLogs] = useState(false)
+  const [newLeadLog, setNewLeadLog] = useState('')
+  const [newLeadLogType, setNewLeadLogType] = useState('통화')
+  const [leadLogContactedAt, setLeadLogContactedAt] = useState(() => new Date().toISOString().slice(0, 16))
 
   // leads 업데이트 시 선택된 리드 동기화
   useEffect(() => {
@@ -96,6 +112,19 @@ export default function LeadsClient({ leads, profiles, currentUserId, isAdmin }:
     const updated = leads.find(l => l.id === selectedLead.id)
     if (updated) setSelectedLead(updated)
   }, [leads])
+
+  // 리드 선택 시 소통 로그 로드
+  const refreshLeadLogs = useCallback(async (leadId: string) => {
+    setLoadingLogs(true)
+    const logs = await getLeadLogs(leadId)
+    setLeadLogs(logs as unknown as LeadLog[])
+    setLoadingLogs(false)
+  }, [])
+
+  useEffect(() => {
+    if (!selectedLead) { setLeadLogs([]); return }
+    refreshLeadLogs(selectedLead.id)
+  }, [selectedLead?.id])
 
   const filtered = leads
     .filter(l => {
@@ -109,7 +138,7 @@ export default function LeadsClient({ leads, profiles, currentUserId, isAdmin }:
   // 요약 카드
   const stats = {
     total: leads.length,
-    신규: leads.filter(l => l.status === '신규').length,
+    유입: leads.filter(l => l.status === '유입').length,
     진행중: leads.filter(l => l.status === '진행중').length,
     remindOverdue: leads.filter(l =>
       l.remind_date && !['완료','취소'].includes(l.status) && daysFromToday(l.remind_date) <= 0
@@ -128,7 +157,7 @@ export default function LeadsClient({ leads, profiles, currentUserId, isAdmin }:
       client_org: lead.client_org || '', phone: lead.phone || '',
       office_phone: lead.office_phone || '', email: lead.email || '',
       initial_content: lead.initial_content || '', assignee_id: lead.assignee_id || '',
-      status: (lead.status || '신규') as LeadStatus, channel: lead.channel || '',
+      status: (lead.status || '유입') as LeadStatus, channel: lead.channel || '',
       inflow_source: lead.inflow_source || '', notes: lead.notes || '',
       contact_1: lead.contact_1 || '', contact_2: lead.contact_2 || '', contact_3: lead.contact_3 || '',
     })
@@ -175,21 +204,27 @@ export default function LeadsClient({ leads, profiles, currentUserId, isAdmin }:
     else { alert('매출건으로 전환됐어! /sales/report 에서 확인해줘.') }
   }
 
-  function handleAddContact() {
-    if (!selectedLead || !addContactText.trim()) return
-    const date = new Date().toISOString().slice(0, 10)
-    const text = `[${date}] ${addContactText.trim()}`
-    const nextField = !selectedLead.contact_1 ? 'contact_1'
-      : !selectedLead.contact_2 ? 'contact_2'
-      : !selectedLead.contact_3 ? 'contact_3' : null
-    if (!nextField) {
-      alert('소통 내역이 3개 가득 찼어요. 수정에서 직접 편집해주세요.')
-      return
-    }
+  function handleAddLeadLog(type: string) {
+    if (!newLeadLog.trim() || !selectedLead) return
+    setNewLeadLogType(type)
     startTransition(async () => {
-      await updateLead(selectedLead.id, { [nextField]: text })
-      setAddContactText('')
-      setShowAddContact(false)
+      await createLeadLog(
+        selectedLead.id,
+        newLeadLog,
+        type,
+        leadLogContactedAt ? new Date(leadLogContactedAt).toISOString() : undefined,
+      )
+      setNewLeadLog('')
+      setLeadLogContactedAt(new Date().toISOString().slice(0, 16))
+      await refreshLeadLogs(selectedLead.id)
+    })
+  }
+
+  function handleDeleteLeadLog(logId: string) {
+    if (!selectedLead || !confirm('이 소통 기록을 삭제할까요?')) return
+    startTransition(async () => {
+      await deleteLeadLog(logId)
+      await refreshLeadLogs(selectedLead.id)
     })
   }
 
@@ -270,22 +305,13 @@ export default function LeadsClient({ leads, profiles, currentUserId, isAdmin }:
     )
   }
 
-  // 소통 내역 목록 (contact_1/2/3 중 값 있는 것만)
-  const contactEntries = selectedLead
-    ? ([selectedLead.contact_1, selectedLead.contact_2, selectedLead.contact_3] as (string | null)[])
-        .map((c, i) => c ? { index: i + 1, ...parseContact(c) } : null)
-        .filter(Boolean) as { index: number; date: string | null; body: string }[]
-    : []
-
-  const contactsFull = contactEntries.length >= 3
-
   return (
     <div className="flex flex-col gap-4">
       {/* 요약 카드 */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
         {[
           { label: '전체 리드', value: stats.total, color: 'text-gray-800', bg: 'bg-white' },
-          { label: '신규 문의', value: stats.신규, color: 'text-blue-600', bg: 'bg-blue-50' },
+          { label: '신규 유입', value: stats.유입, color: 'text-blue-600', bg: 'bg-blue-50' },
           { label: '진행중', value: stats.진행중, color: 'text-green-600', bg: 'bg-green-50' },
           { label: '리마인드 초과', value: stats.remindOverdue, color: 'text-red-600', bg: 'bg-red-50' },
         ].map(s => (
@@ -355,7 +381,7 @@ export default function LeadsClient({ leads, profiles, currentUserId, isAdmin }:
                         isSelected ? 'bg-yellow-50 ring-1 ring-inset ring-yellow-200' :
                         dday?.rowBg ? `${dday.rowBg} hover:brightness-95` : 'hover:bg-gray-50'
                       }`}
-                      onClick={() => { setSelectedLead(isSelected ? null : lead); setShowAddContact(false); setAddContactText('') }}>
+                      onClick={() => { setSelectedLead(isSelected ? null : lead); setNewLeadLog('') }}>
                       <td className="p-0">
                         <div className={`w-1 min-h-[52px] ${STATUS_BAR[lead.status] || 'bg-gray-200'}`} />
                       </td>
@@ -450,75 +476,61 @@ export default function LeadsClient({ leads, profiles, currentUserId, isAdmin }:
                   </div>
                 )}
 
-                {/* 소통 내역 타임라인 */}
+                {/* 소통 내역 (project_logs 기반) */}
                 <div>
-                  <div className="flex items-center justify-between mb-2">
-                    <p className="text-xs text-gray-400">소통 내역 ({contactEntries.length}/3)</p>
-                    {!contactsFull && (
-                      <button
-                        onClick={() => setShowAddContact(v => !v)}
-                        className="text-xs px-2.5 py-1 rounded-full border border-gray-200 hover:bg-gray-50 text-gray-500 hover:text-gray-700 transition-colors">
-                        {showAddContact ? '취소' : '+ 소통 추가'}
-                      </button>
-                    )}
+                  <p className="text-xs text-gray-400 mb-2">소통 내역 ({leadLogs.length}건)</p>
+
+                  {/* 소통 입력 폼 */}
+                  <div className="bg-gray-50 border border-gray-200 rounded-xl p-3 mb-3">
+                    <textarea
+                      value={newLeadLog}
+                      onChange={e => setNewLeadLog(e.target.value)}
+                      placeholder="소통 내용을 기록하세요..."
+                      rows={2}
+                      className="w-full text-sm bg-white border border-gray-200 rounded-lg px-3 py-2 resize-none focus:outline-none focus:border-yellow-400 mb-2"
+                    />
+                    <div className="flex items-center gap-2 mb-2">
+                      <label className="text-xs text-gray-400 shrink-0">소통 일시</label>
+                      <input type="datetime-local" value={leadLogContactedAt}
+                        onChange={e => setLeadLogContactedAt(e.target.value)}
+                        className="text-xs border border-gray-200 rounded-lg px-2 py-1.5 bg-white focus:outline-none focus:border-yellow-400" />
+                    </div>
+                    <div className="flex gap-1.5 flex-wrap">
+                      {['통화','이메일','방문','내부회의','메모','기타'].map(type => (
+                        <button key={type}
+                          onClick={() => handleAddLeadLog(type)}
+                          disabled={isPending || !newLeadLog.trim()}
+                          className={`px-2.5 py-1 text-xs rounded-lg border transition-all disabled:opacity-40 ${
+                            newLeadLogType === type ? 'border-yellow-400 bg-yellow-50 text-gray-800' : 'border-gray-200 text-gray-500 hover:border-yellow-300'
+                          }`}>{type}로 저장</button>
+                      ))}
+                    </div>
                   </div>
 
-                  {/* 기존 소통 내역 */}
-                  {contactEntries.length === 0 && !showAddContact ? (
+                  {/* 로그 목록 */}
+                  {loadingLogs ? (
+                    <p className="text-xs text-gray-300 text-center py-3">불러오는 중...</p>
+                  ) : leadLogs.length === 0 ? (
                     <p className="text-xs text-gray-300 italic py-1">아직 소통 내역이 없어요.</p>
                   ) : (
-                    <div className="relative pl-5">
-                      <div className="absolute left-1.5 top-2 bottom-2 w-px bg-gray-200" />
-                      <div className="space-y-3">
-                        {contactEntries.map(c => (
-                          <div key={c.index} className="relative flex gap-2">
-                            <div className="absolute -left-[13px] top-1.5 w-3 h-3 rounded-full border-2 border-white shadow-sm"
-                              style={{ backgroundColor: '#FFCE00' }} />
-                            <div className="flex-1">
-                              <div className="flex items-center gap-2 mb-1">
-                                <span className="text-xs font-semibold text-gray-500">{c.index}차</span>
-                                {c.date && <span className="text-xs text-gray-300">{c.date}</span>}
-                              </div>
-                              <div className="bg-gray-50 rounded-lg p-2.5 text-sm text-gray-700 whitespace-pre-wrap">{c.body}</div>
-                            </div>
+                    <div className="space-y-2">
+                      {leadLogs.map(log => (
+                        <div key={log.id} className="bg-white border border-gray-100 rounded-xl px-3 py-2.5 group">
+                          <div className="flex items-center gap-2 mb-1.5">
+                            <span className={`text-[11px] px-2 py-0.5 rounded-full font-medium ${LOG_TYPE_COLORS[log.log_type] ?? 'bg-gray-100 text-gray-500'}`}>{log.log_type}</span>
+                            <span className="text-xs text-gray-400">
+                              {new Date(log.contacted_at || log.created_at).toLocaleDateString('ko-KR', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                            </span>
+                            <span className="text-xs text-gray-400 ml-auto">{(log.author as any)?.name ?? '-'}</span>
+                            {isAdmin && (
+                              <button onClick={() => handleDeleteLeadLog(log.id)}
+                                className="opacity-0 group-hover:opacity-100 text-xs text-gray-300 hover:text-red-400 transition-all">✕</button>
+                            )}
                           </div>
-                        ))}
-
-                        {/* 소통 추가 인라인 폼 */}
-                        {showAddContact && (
-                          <div className="relative flex gap-2">
-                            <div className="absolute -left-[13px] top-1.5 w-3 h-3 rounded-full border-2 border-dashed border-yellow-400 bg-white" />
-                            <div className="flex-1">
-                              <div className="text-xs font-semibold text-gray-500 mb-1">
-                                {contactEntries.length + 1}차 소통 추가
-                                <span className="ml-1.5 text-gray-400 font-normal">{new Date().toISOString().slice(0,10)}</span>
-                              </div>
-                              <textarea
-                                className="w-full border border-yellow-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-yellow-300 resize-none bg-yellow-50/30"
-                                rows={3}
-                                placeholder="소통 내용을 입력하세요..."
-                                value={addContactText}
-                                onChange={e => setAddContactText(e.target.value)}
-                                autoFocus
-                              />
-                              <div className="flex justify-end mt-1.5">
-                                <button
-                                  onClick={handleAddContact}
-                                  disabled={!addContactText.trim() || isPending}
-                                  className="px-3 py-1.5 text-xs font-semibold rounded-lg disabled:opacity-40"
-                                  style={{ backgroundColor: '#FFCE00', color: '#121212' }}>
-                                  {isPending ? '저장 중...' : '추가'}
-                                </button>
-                              </div>
-                            </div>
-                          </div>
-                        )}
-                      </div>
+                          <p className="text-sm text-gray-700 leading-relaxed whitespace-pre-wrap">{log.content}</p>
+                        </div>
+                      ))}
                     </div>
-                  )}
-
-                  {contactsFull && (
-                    <p className="text-xs text-gray-400 mt-1">소통 내역 3개 모두 사용 중. 수정에서 편집하세요.</p>
                   )}
                 </div>
 

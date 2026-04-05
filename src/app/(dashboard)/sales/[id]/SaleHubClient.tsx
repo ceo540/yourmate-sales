@@ -23,6 +23,7 @@ interface Task {
 }
 interface Log {
   id: string; content: string; log_type: string; created_at: string
+  contacted_at?: string | null
   author: { name: string } | null
 }
 interface Sale {
@@ -96,6 +97,7 @@ export default function SaleHubClient({ sale, tasks: initialTasks, logs, profile
   // 소통 내역
   const [newLog, setNewLog] = useState('')
   const [newLogType, setNewLogType] = useState('통화')
+  const [logContactedAt, setLogContactedAt] = useState(() => new Date().toISOString().slice(0, 16))
 
   const pendingTasks = tasks.filter(t => t.status !== '완료' && t.status !== '보류')
   const completedTasks = tasks.filter(t => t.status === '완료')
@@ -120,8 +122,9 @@ export default function SaleHubClient({ sale, tasks: initialTasks, logs, profile
     if (!newLog.trim()) return
     setNewLogType(type)
     startTransition(async () => {
-      await createLog(sale.id, newLog, type)
+      await createLog(sale.id, newLog, type, logContactedAt ? new Date(logContactedAt).toISOString() : undefined)
       setNewLog('')
+      setLogContactedAt(new Date().toISOString().slice(0, 16))
     })
   }
 
@@ -229,6 +232,12 @@ export default function SaleHubClient({ sale, tasks: initialTasks, logs, profile
               placeholder="소통 내용을 기록하세요 (통화 내용, 이메일 요약, 방문 메모 등)"
               rows={2}
               className="w-full text-sm border border-gray-200 rounded-lg px-3 py-2 resize-none focus:outline-none focus:border-yellow-400 mb-2" />
+            <div className="flex items-center gap-2 mb-2">
+              <label className="text-xs text-gray-400 shrink-0">소통 일시</label>
+              <input type="datetime-local" value={logContactedAt}
+                onChange={e => setLogContactedAt(e.target.value)}
+                className="text-xs border border-gray-200 rounded-lg px-2 py-1.5 focus:outline-none focus:border-yellow-400" />
+            </div>
             <div className="flex gap-2 flex-wrap">
               {['통화','이메일','방문','내부회의','메모','기타'].map(type => (
                 <button key={type}
@@ -248,7 +257,7 @@ export default function SaleHubClient({ sale, tasks: initialTasks, logs, profile
                 <div key={log.id} className="bg-white border border-gray-100 rounded-xl px-4 py-3 group">
                   <div className="flex items-center gap-2 mb-2">
                     <span className={`text-[11px] px-2 py-0.5 rounded-full font-medium ${LOG_TYPE_COLORS[log.log_type] ?? 'bg-gray-100 text-gray-500'}`}>{log.log_type}</span>
-                    <span className="text-xs text-gray-400">{new Date(log.created_at).toLocaleDateString('ko-KR', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</span>
+                    <span className="text-xs text-gray-400">{new Date(log.contacted_at || log.created_at).toLocaleDateString('ko-KR', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</span>
                     <span className="text-xs text-gray-400 ml-auto">{log.author?.name ?? '-'}</span>
                     {isAdmin && (
                       <button onClick={() => startTransition(() => deleteLog(log.id, sale.id))}

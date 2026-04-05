@@ -34,7 +34,8 @@ export async function createRental(data: {
   }).select('id').single()
   if (error) return { error: error.message }
 
-  // 드롭박스 폴더 자동 생성 (교구대여 경로)
+  // sales 레코드 자동 생성 + 연결
+  let dropboxUrl: string | null = null
   try {
     const folderUrl = await createSaleFolder({
       service_type: '교구대여',
@@ -42,22 +43,58 @@ export async function createRental(data: {
       inflow_date: data.rental_start ?? null,
     })
     if (folderUrl) {
+      dropboxUrl = folderUrl
       await supabase.from('rentals').update({ dropbox_url: folderUrl }).eq('id', rental.id)
     }
-  } catch (_) {
-    // 드롭박스 실패해도 렌탈 등록은 성공으로 처리
+  } catch (_) {}
+
+  const { data: newSale } = await supabase.from('sales').insert({
+    name: `${data.customer_name} 교구대여`,
+    service_type: '교구대여',
+    department: 'school_store',
+    revenue: data.total_amount ?? 0,
+    payment_status: '계약전',
+    client_org: data.customer_name,
+    customer_id: data.customer_id ?? null,
+    assignee_id: data.assignee_id ?? null,
+    inflow_date: data.rental_start ?? null,
+    dropbox_url: dropboxUrl,
+  }).select('id').single()
+
+  if (newSale) {
+    await supabase.from('rentals').update({ sale_id: newSale.id }).eq('id', rental.id)
   }
 
   revalidatePath('/rentals')
+  revalidatePath('/sales')
   return { success: true, id: rental.id }
 }
 
 export async function updateRental(id: string, data: Record<string, unknown>) {
   const supabase = await createClient()
+
+  // sales 동기화 (total_amount, status 변경 시)
+  const { data: rental } = await supabase.from('rentals').select('sale_id').eq('id', id).single()
+  if (rental?.sale_id) {
+    const salesUpdate: Record<string, unknown> = {}
+    if (data.total_amount !== undefined) salesUpdate.revenue = data.total_amount
+    if (data.status !== undefined) {
+      const statusMap: Record<string, string> = {
+        '유입': '계약전', '확정': '계약완료', '진행중': '선금수령', '반납': '완납',
+      }
+      salesUpdate.payment_status = statusMap[data.status as string] ?? '계약전'
+    }
+    if (data.dropbox_url !== undefined) salesUpdate.dropbox_url = data.dropbox_url
+    if (Object.keys(salesUpdate).length > 0) {
+      await supabase.from('sales').update(salesUpdate).eq('id', rental.sale_id)
+    }
+  }
+
   const { error } = await supabase.from('rentals').update({ ...data, updated_at: new Date().toISOString() }).eq('id', id)
   if (error) return { error: error.message }
   revalidatePath('/rentals')
   revalidatePath(`/rentals/${id}`)
+  revalidatePath('/sales')
   return { success: true }
 }
 

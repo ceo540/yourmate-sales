@@ -31,20 +31,13 @@ export default async function DeptPage({ params }: { params: Promise<{ dept: str
   // 해당 사업부 프로젝트 목록
   const { data: salesRaw } = await supabase
     .from('sales')
-    .select('id, name, service_type, payment_status, revenue, inflow_date, client_org, assignee_id')
+    .select('id, name, service_type, payment_status, revenue, inflow_date, client_org, assignee_id, memo')
     .eq('department', dept)
     .order('created_at', { ascending: false })
 
-  // PM 이름 매핑
-  const assigneeIds = [...new Set((salesRaw ?? []).map(s => s.assignee_id).filter(Boolean))]
-  let profileMap: Record<string, string> = {}
-  if (assigneeIds.length > 0) {
-    const { data: profiles } = await supabase
-      .from('profiles')
-      .select('id, name')
-      .in('id', assigneeIds)
-    profileMap = Object.fromEntries((profiles ?? []).map(p => [p.id, p.name]))
-  }
+  // 전체 profiles (담당자 필터 + 새 건 폼용)
+  const { data: allProfiles } = await supabase.from('profiles').select('id, name').order('name')
+  const profileMap = Object.fromEntries((allProfiles ?? []).map(p => [p.id, p.name]))
 
   const sales = (salesRaw ?? []).map(s => ({
     ...s,
@@ -85,6 +78,22 @@ export default async function DeptPage({ params }: { params: Promise<{ dept: str
     }))
   }
 
+  // 매출 건별 업무 통계 (진행률 바용)
+  const taskStatsBySale: Record<string, { total: number; done: number; urgent: number }> = {}
+  for (const t of tasks) {
+    if (!t.project_id) continue
+    if (!taskStatsBySale[t.project_id]) taskStatsBySale[t.project_id] = { total: 0, done: 0, urgent: 0 }
+    taskStatsBySale[t.project_id].total++
+    if (t.status === '완료') taskStatsBySale[t.project_id].done++
+    if ((t.priority === '긴급' || t.priority === '높음') && t.status !== '완료' && t.status !== '보류') {
+      const due = t.due_date ? new Date(t.due_date) : null
+      const today = new Date(); today.setHours(0, 0, 0, 0)
+      if (due && due <= new Date(today.getTime() + 3 * 86400000)) {
+        taskStatsBySale[t.project_id].urgent++
+      }
+    }
+  }
+
   return (
     <div className="max-w-4xl mx-auto">
       <div className="mb-4">
@@ -99,6 +108,8 @@ export default async function DeptPage({ params }: { params: Promise<{ dept: str
         sales={sales}
         goals={goals ?? []}
         tasks={tasks}
+        profiles={allProfiles ?? []}
+        taskStatsBySale={taskStatsBySale}
         isAdmin={isAdmin}
         year={currentYear}
       />

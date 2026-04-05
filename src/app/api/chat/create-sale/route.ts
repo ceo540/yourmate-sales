@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { SERVICE_TO_DEPT } from '@/types'
 import { createSaleFolder } from '@/lib/dropbox'
+import { logApiUsage } from '@/lib/api-usage'
 
 const NOTION_DB_ID = '6401e402-25e9-4941-a89e-6e3107df5f74'
 const anthropic = new Anthropic()
@@ -32,6 +33,7 @@ async function generateProposal(params: {
   service_type: string | null
   revenue: number | null
   memo: string | null
+  userId: string | null
 }): Promise<ProjectProposal> {
   const { name, client_org, service_type, revenue, memo } = params
 
@@ -59,6 +61,7 @@ JSON 형식으로만 답변:
       max_tokens: 800,
       messages: [{ role: 'user', content: prompt }],
     })
+    logApiUsage({ model: 'claude-haiku-4-5-20251001', endpoint: 'create-sale', userId: params.userId, inputTokens: res.usage.input_tokens, outputTokens: res.usage.output_tokens }).catch(() => {})
     const text = res.content[0].type === 'text' ? res.content[0].text : ''
     const json = text.match(/\{[\s\S]*\}/)
     if (json) return JSON.parse(json[0]) as ProjectProposal
@@ -199,6 +202,7 @@ export async function POST(req: NextRequest) {
       service_type: service_type || null,
       revenue: revenue || null,
       memo: memo || null,
+      userId: user.id,
     })
 
     const notion = await createNotionProject({

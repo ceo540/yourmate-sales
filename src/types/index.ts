@@ -194,7 +194,7 @@ export interface Policy {
 }
 
 // 리드 파이프라인
-export const LEAD_STATUSES = ['신규', '회신대기', '견적발송', '진행중', '완료', '취소'] as const
+export const LEAD_STATUSES = ['유입', '회신대기', '견적발송', '조율중', '진행중', '완료', '취소'] as const
 export type LeadStatus = typeof LEAD_STATUSES[number]
 
 export const LEAD_CHANNELS = ['전화', '이메일', '카카오', '채널톡', '기타'] as const

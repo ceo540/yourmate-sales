@@ -3,7 +3,7 @@ import { createAdminClient } from '@/lib/supabase/admin'
 import { notFound, redirect } from 'next/navigation'
 import Link from 'next/link'
 import { DEPARTMENT_LABELS } from '@/types'
-import SaleHubClient from './SaleHubClient'
+import SaleHubClient from '@/app/(dashboard)/sales/[id]/SaleHubClient'
 
 const PAYMENT_STATUS_BADGE: Record<string, string> = {
   '계약전':    'bg-gray-100 text-gray-500',
@@ -13,10 +13,13 @@ const PAYMENT_STATUS_BADGE: Record<string, string> = {
   '완납':      'bg-green-50 text-green-600',
 }
 
-export default async function SalePage({ params }: {
-  params: Promise<{ id: string }>
+export default async function DeptSalePage({
+  params,
+}: {
+  params: Promise<{ dept: string; saleId: string }>
 }) {
-  const { id } = await params
+  const { dept, saleId } = await params
+
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) redirect('/login')
@@ -25,16 +28,15 @@ export default async function SalePage({ params }: {
   const { data: profile } = await admin.from('profiles').select('id, role, name').eq('id', user.id).single()
   const isAdmin = profile?.role === 'admin' || profile?.role === 'manager'
 
-  const { data: sale } = await admin.from('sales').select('*, notes, project_overview').eq('id', id).single()
+  const { data: sale } = await admin.from('sales').select('*, notes, project_overview').eq('id', saleId).single()
   if (!sale) notFound()
-  if (!isAdmin && sale.assignee_id !== profile?.id) redirect('/sales')
 
   const [{ data: profiles }, { data: entities }, { data: customers }, { data: rawTasks }, logsResult] = await Promise.all([
     admin.from('profiles').select('id, name').order('name'),
     admin.from('business_entities').select('id, name').order('name'),
     admin.from('customers').select('id, name, contact_name, type').order('name'),
-    admin.from('tasks').select('*').eq('project_id', id).order('created_at'),
-    admin.from('project_logs').select('*, profiles:author_id(name)').eq('sale_id', id).order('created_at', { ascending: false }).limit(50),
+    admin.from('tasks').select('*').eq('project_id', saleId).order('created_at'),
+    admin.from('project_logs').select('*, profiles:author_id(name)').eq('sale_id', saleId).order('created_at', { ascending: false }).limit(50),
   ])
 
   const profileMap = Object.fromEntries((profiles ?? []).map(p => [p.id, p]))
@@ -49,18 +51,15 @@ export default async function SalePage({ params }: {
     author: l.profiles ?? null,
   }))
 
-  const deptLabel = sale.department ? (DEPARTMENT_LABELS as any)[sale.department] : null
+  const deptLabel = (DEPARTMENT_LABELS as any)[dept] ?? dept
   const statusBadge = PAYMENT_STATUS_BADGE[sale.payment_status ?? '계약전'] ?? 'bg-gray-100 text-gray-500'
 
   return (
     <div className="max-w-2xl mx-auto">
-      {/* 미니 헤더 */}
+      {/* 브레드크럼 */}
       <div className="flex items-center gap-2 mb-3 text-sm">
-        <Link
-          href={sale.department ? `/departments/${sale.department}` : '/sales/report'}
-          className="text-gray-400 hover:text-gray-700 transition-colors"
-        >
-          ← {deptLabel ?? '계약 목록'}
+        <Link href={`/departments/${dept}`} className="text-gray-400 hover:text-gray-700 transition-colors">
+          ← {deptLabel}
         </Link>
         {sale.service_type && (
           <>

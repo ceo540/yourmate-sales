@@ -22,7 +22,7 @@ export default async function TasksPage() {
   const [{ data: rawTasks }, { data: profiles }, { data: sales }] = await Promise.all([
     tasksQuery,
     adminSupabase.from('profiles').select('id, name').order('name'),
-    adminSupabase.from('sales').select('id, name').order('name'),
+    adminSupabase.from('sales').select('id, name, department').order('name'),
   ])
 
   const profileMap = Object.fromEntries((profiles ?? []).map(p => [p.id, p]))

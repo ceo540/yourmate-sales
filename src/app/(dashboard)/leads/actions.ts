@@ -39,7 +39,7 @@ export async function createLead(formData: FormData) {
     email: (formData.get('email') as string) || null,
     initial_content: (formData.get('initial_content') as string) || null,
     assignee_id: (formData.get('assignee_id') as string) || null,
-    status: (formData.get('status') as string) || '신규',
+    status: (formData.get('status') as string) || '유입',
     channel: (formData.get('channel') as string) || null,
     inflow_source: (formData.get('inflow_source') as string) || null,
     notes: (formData.get('notes') as string) || null,

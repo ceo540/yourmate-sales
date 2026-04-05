@@ -3,7 +3,7 @@
 import { useState, useRef, useEffect, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
 import { DEPARTMENT_LABELS, type Department } from '@/types'
-import { createEntity, updateEntity, deleteEntity, updatePermission, updateJoinDate, setInitialLeave, createOneOnOne, deleteOneOnOne, updateDocumentStatus, updateEmployeeEntity } from './actions'
+import { createEntity, updateEntity, deleteEntity, updatePermission, updateJoinDate, setInitialLeave, createOneOnOne, deleteOneOnOne, updateDocumentStatus, updateEmployeeEntity, adminAddLeave, updateProfileDetail, upsertSalary, deleteSalary, addOnboardingItem, toggleOnboardingItem, deleteOnboardingItem, importOnboardingFromNotion, updateNotionTemplateUrl, createDepartment, updateDepartment, deleteDepartment, reorderDepartments } from './actions'
 
 interface UserProfile {
   id: string
@@ -16,6 +16,28 @@ interface UserProfile {
   entity_id?: string | null
   last_sign_in_at: string | null
   confirmed_at: string | null
+  phone?: string | null
+  emergency_name?: string | null
+  emergency_phone?: string | null
+  bank_name?: string | null
+  account_number?: string | null
+  birth_date?: string | null
+}
+
+interface SalaryRecord {
+  id: string; member_id: string; year: number; month: number
+  base_salary: number; deductions: number; net_salary: number; memo: string | null
+}
+
+interface OnboardingItem {
+  id: string; member_id: string; title: string; completed: boolean
+  completed_at: string | null; source: string; notion_block_id: string | null; sort_order: number
+}
+
+interface DeptRow {
+  id: string; key: string; label: string
+  description: string | null; color: string; sort_order: number
+  parent_id: string | null
 }
 
 interface BusinessEntity {
@@ -41,35 +63,40 @@ interface Props {
   initialDaysMap: Record<string, number>
   oneOnOnes: OneOnOne[]
   docRequests: DocRequest[]
+  salaryRecords: SalaryRecord[]
+  onboardingItems: OnboardingItem[]
+  notionTemplateUrl: string
+  orgDepts: DeptRow[]
 }
 
-const DEPT_KEYS = Object.keys(DEPARTMENT_LABELS) as Department[]
 const EMPTY_FORM = { name: '', email: '', departments: [] as string[], role: 'member' }
 
-function DeptCheckboxes({ selected, onChange }: { selected: string[], onChange: (v: string[]) => void }) {
+const DEPT_COLORS = ['#FBBF24','#60A5FA','#34D399','#A78BFA','#F87171','#FB923C','#38BDF8','#4ADE80','#F472B6','#9CA3AF']
+
+function DeptCheckboxes({ selected, onChange, depts }: { selected: string[], onChange: (v: string[]) => void, depts: DeptRow[] }) {
   const toggle = (key: string) =>
     onChange(selected.includes(key) ? selected.filter(d => d !== key) : [...selected, key])
   return (
     <div className="flex flex-wrap gap-2">
-      {DEPT_KEYS.map(key => (
+      {depts.map(d => (
         <button
-          key={key}
+          key={d.key}
           type="button"
-          onClick={() => toggle(key)}
+          onClick={() => toggle(d.key)}
           className={`text-xs px-2.5 py-1 rounded-full border transition-colors ${
-            selected.includes(key)
+            selected.includes(d.key)
               ? 'border-yellow-400 bg-yellow-50 text-yellow-800 font-medium'
               : 'border-gray-200 text-gray-500 hover:border-yellow-300'
           }`}
         >
-          {DEPARTMENT_LABELS[key]}
+          {d.label}
         </button>
       ))}
     </div>
   )
 }
 
-export default function AdminClient({ users: initialUsers, entities: initialEntities, permissionsByRole: initialPerms, usedDaysMap, initialDaysMap, oneOnOnes: initialOneOnOnes, docRequests: initialDocRequests }: Props) {
+export default function AdminClient({ users: initialUsers, entities: initialEntities, permissionsByRole: initialPerms, usedDaysMap, initialDaysMap, oneOnOnes: initialOneOnOnes, docRequests: initialDocRequests, salaryRecords: initialSalaryRecords, onboardingItems: initialOnboardingItems, notionTemplateUrl: initialNotionUrl, orgDepts: initialOrgDepts }: Props) {
   const router = useRouter()
   const [, startTransition] = useTransition()
   const [users, setUsers] = useState(initialUsers)
@@ -84,7 +111,7 @@ export default function AdminClient({ users: initialUsers, entities: initialEnti
   const dropdownRef = useRef<HTMLDivElement>(null)
 
   // 사업자 관리 상태
-  const [activeTab, setActiveTab] = useState<'team' | 'entities' | 'permissions' | 'hr'>('team')
+  const [activeTab, setActiveTab] = useState<'team' | 'entities' | 'permissions' | 'hr' | 'api-usage'>('team')
   const [editingJoinId, setEditingJoinId] = useState<string | null>(null)
   const [joinDateVal, setJoinDateVal] = useState('')
   const [editingInitialId, setEditingInitialId] = useState<string | null>(null)
@@ -92,11 +119,42 @@ export default function AdminClient({ users: initialUsers, entities: initialEnti
 
   // 직원 카드 상태
   const [selectedUserId, setSelectedUserId] = useState<string | null>(null)
-  const [hrDetailTab, setHrDetailTab] = useState<'info' | 'oo' | 'docs'>('info')
+  const [hrDetailTab, setHrDetailTab] = useState<'info' | 'salary' | 'oo' | 'docs' | 'onboarding'>('info')
   const [oneOnOnes, setOneOnOnes] = useState<OneOnOne[]>(initialOneOnOnes)
   const [docRequests, setDocRequests] = useState<DocRequest[]>(initialDocRequests)
   const [ooForm, setOoForm] = useState({ date: '', content: '', action_items: '' })
   const [showOoForm, setShowOoForm] = useState(false)
+  const [showLeaveForm, setShowLeaveForm] = useState(false)
+  const [leaveForm, setLeaveForm] = useState({ type: '연차', start_date: '', end_date: '', days: '', reason: '' })
+
+  // 임직원 상세 프로필
+  const [editingProfile, setEditingProfile] = useState(false)
+  const [profileForm, setProfileForm] = useState({ phone: '', emergency_name: '', emergency_phone: '', bank_name: '', account_number: '', birth_date: '' })
+  const [showAccountNumber, setShowAccountNumber] = useState(false)
+
+  // 급여 관리
+  const [salaryRecords, setSalaryRecords] = useState<SalaryRecord[]>(initialSalaryRecords)
+  const [salaryYear, setSalaryYear] = useState(new Date().getFullYear())
+  const [editingSalaryMonth, setEditingSalaryMonth] = useState<number | null>(null)
+  const [salaryForm, setSalaryForm] = useState({ base_salary: '', deductions: '', net_salary: '', memo: '' })
+
+  // 온보딩
+  const [onboardingItems, setOnboardingItems] = useState<OnboardingItem[]>(initialOnboardingItems)
+  const [newItemTitle, setNewItemTitle] = useState('')
+  const [showNewItemInput, setShowNewItemInput] = useState(false)
+  const [notionUrlInput, setNotionUrlInput] = useState(initialNotionUrl)
+  const [showNotionInput, setShowNotionInput] = useState(false)
+  const [notionImporting, setNotionImporting] = useState(false)
+
+  // 조직도 뷰
+  const [orgView, setOrgView] = useState(false)
+
+  // 부서 관리
+  const [depts, setDepts] = useState<DeptRow[]>(initialOrgDepts)
+  const [editingDeptId, setEditingDeptId] = useState<string | null>(null)
+  const [deptEditForm, setDeptEditForm] = useState({ label: '', description: '', color: '#9CA3AF' })
+  const [showDeptAddForm, setShowDeptAddForm] = useState(false)
+  const [deptAddForm, setDeptAddForm] = useState({ label: '', description: '', color: '#9CA3AF' })
   const [perms, setPerms] = useState(initialPerms)
   const [togglingKey, setTogglingKey] = useState<string | null>(null)
   const [entities, setEntities] = useState(initialEntities)
@@ -269,7 +327,7 @@ export default function AdminClient({ users: initialUsers, entities: initialEnti
     <div className="space-y-6">
       {/* 탭 */}
       <div className="flex flex-wrap gap-1 bg-gray-100 p-1 rounded-xl w-fit">
-        {([['team', '팀원 관리'], ['hr', '직원 관리'], ['entities', '사업자 관리'], ['permissions', '권한 안내']] as const).map(([key, label]) => (
+        {([['team', '팀원 관리'], ['hr', '직원 관리'], ['entities', '사업자 관리'], ['permissions', '권한 안내'], ['api-usage', 'API 사용료']] as const).map(([key, label]) => (
           <button
             key={key}
             onClick={() => setActiveTab(key)}
@@ -310,7 +368,241 @@ export default function AdminClient({ users: initialUsers, entities: initialEnti
         const userDocs = docRequests.filter(d => d.member_id === selectedUserId).sort((a, b) => b.created_at.localeCompare(a.created_at))
 
         return (
-          <div className={`flex gap-4 ${selectedUser ? 'items-start' : ''}`}>
+          <div className="space-y-4">
+          {/* 뷰 토글 */}
+          <div className="flex justify-end">
+            <div className="flex bg-gray-100 p-0.5 rounded-lg text-xs font-medium">
+              <button onClick={() => { setOrgView(false); setSelectedUserId(null) }}
+                className={`px-3 py-1.5 rounded-md transition-all ${!orgView ? 'bg-white shadow-sm text-gray-900' : 'text-gray-500'}`}>
+                카드 보기
+              </button>
+              <button onClick={() => { setOrgView(true); setSelectedUserId(null) }}
+                className={`px-3 py-1.5 rounded-md transition-all ${orgView ? 'bg-white shadow-sm text-gray-900' : 'text-gray-500'}`}>
+                조직도
+              </button>
+            </div>
+          </div>
+
+          {/* 조직도 트리 뷰 */}
+          {orgView && (() => {
+            const roots = [...depts].filter(d => !d.parent_id).sort((a, b) => a.sort_order - b.sort_order)
+            const getChildren = (parentId: string) => [...depts].filter(d => d.parent_id === parentId).sort((a, b) => a.sort_order - b.sort_order)
+
+            const DeptEditForm = ({ dept, onSave, onCancel }: { dept: DeptRow, onSave: (updated: Partial<DeptRow>) => void, onCancel: () => void }) => (
+              <div className="space-y-2 mb-3">
+                <input type="text" value={deptEditForm.label} onChange={e => setDeptEditForm(f => ({...f, label: e.target.value}))}
+                  className="w-full border border-gray-200 rounded-lg px-3 py-1.5 text-sm" placeholder="이름" />
+                <input type="text" value={deptEditForm.description} onChange={e => setDeptEditForm(f => ({...f, description: e.target.value}))}
+                  className="w-full border border-gray-200 rounded-lg px-3 py-1.5 text-xs text-gray-500" placeholder="설명 (선택)" />
+                <div className="flex items-center gap-1.5 flex-wrap">
+                  {DEPT_COLORS.map(c => (
+                    <button key={c} onClick={() => setDeptEditForm(f => ({...f, color: c}))}
+                      className={`w-5 h-5 rounded-full border-2 transition-all ${deptEditForm.color === c ? 'border-gray-800 scale-110' : 'border-transparent'}`}
+                      style={{ backgroundColor: c }} />
+                  ))}
+                  <input type="color" value={deptEditForm.color} onChange={e => setDeptEditForm(f => ({...f, color: e.target.value}))}
+                    className="w-5 h-5 rounded-full cursor-pointer border-0 p-0" />
+                </div>
+                <div className="flex gap-2">
+                  <button onClick={async () => {
+                    if (!deptEditForm.label.trim()) return
+                    await updateDepartment(dept.id, deptEditForm.label, deptEditForm.description, deptEditForm.color, dept.parent_id ?? undefined)
+                    onSave({ label: deptEditForm.label, description: deptEditForm.description || null, color: deptEditForm.color })
+                    setEditingDeptId(null)
+                  }} className="flex-1 py-1.5 bg-gray-900 text-white text-xs rounded-lg">저장</button>
+                  <button onClick={onCancel} className="flex-1 py-1.5 border text-xs rounded-lg text-gray-400">취소</button>
+                </div>
+              </div>
+            )
+
+            const EmployeeChips = ({ deptKey, color }: { deptKey: string, color: string }) => {
+              const deptUsers = users.filter(u => u.departments?.includes(deptKey))
+              if (deptUsers.length === 0) return <p className="text-xs text-gray-400 italic">소속 직원 없음</p>
+              return (
+                <div className="flex flex-wrap gap-1.5">
+                  {deptUsers.map(u => (
+                    <div key={u.id} className="flex items-center gap-1.5 rounded-xl px-2 py-1.5" style={{ backgroundColor: color + '20' }}>
+                      <div className="w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold text-gray-600 shrink-0"
+                        style={{ backgroundColor: color + '40' }}>
+                        {u.name?.[0]}
+                      </div>
+                      <div>
+                        <p className="text-xs font-semibold text-gray-800 leading-none">{u.name}</p>
+                        <span className="text-[10px] text-gray-400">{ROLE_LABELS[u.role] ?? u.role}</span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )
+            }
+
+            return (
+              <div>
+                {roots.map(root => {
+                  const children = getChildren(root.id)
+                  const isEditingRoot = editingDeptId === root.id
+                  return (
+                    <div key={root.id}>
+                      {/* 모회사 카드 */}
+                      <div className="bg-gray-900 text-white rounded-2xl p-5">
+                        {isEditingRoot ? (
+                          <DeptEditForm dept={root} onSave={u => setDepts(prev => prev.map(d => d.id === root.id ? {...d, ...u} : d))} onCancel={() => setEditingDeptId(null)} />
+                        ) : (
+                          <div className="flex items-start justify-between mb-4">
+                            <div>
+                              <div className="flex items-center gap-2 mb-0.5">
+                                <div className="w-3 h-3 rounded-full" style={{ backgroundColor: root.color }} />
+                                <h2 className="text-base font-bold text-white">{root.label}</h2>
+                                <span className="text-xs text-gray-400 bg-white/10 px-1.5 py-0.5 rounded-full">모회사</span>
+                              </div>
+                              {root.description && <p className="text-xs text-gray-400 ml-5">{root.description}</p>}
+                            </div>
+                            <div className="flex items-center gap-1">
+                              <button onClick={() => { setDeptEditForm({ label: root.label, description: root.description ?? '', color: root.color }); setEditingDeptId(root.id) }}
+                                className="p-1.5 text-gray-500 hover:text-white text-xs rounded">✏️</button>
+                              <button onClick={async () => {
+                                if (!confirm(`"${root.label}"을 삭제하시겠어요?`)) return
+                                await deleteDepartment(root.id)
+                                setDepts(prev => prev.filter(d => d.id !== root.id))
+                              }} className="p-1.5 text-gray-500 hover:text-red-400 text-xs rounded">🗑️</button>
+                            </div>
+                          </div>
+                        )}
+                        <EmployeeChips deptKey={root.key} color={root.color === '#1F2937' ? '#9CA3AF' : root.color} />
+                      </div>
+
+                      {/* 트리 커넥터 */}
+                      {children.length > 0 && (
+                        <>
+                          <div className="flex justify-center">
+                            <div className="w-px h-5 bg-gray-300" />
+                          </div>
+                          {/* 자회사 그리드 */}
+                          <div className="relative">
+                            {children.length > 1 && (
+                              <div className="absolute top-0 left-[8%] right-[8%] h-px bg-gray-300" />
+                            )}
+                            <div className={`grid gap-3 pt-5 ${
+                              children.length >= 4 ? 'grid-cols-2 sm:grid-cols-3' :
+                              children.length === 3 ? 'grid-cols-3' :
+                              children.length === 2 ? 'grid-cols-2' : 'grid-cols-1 max-w-xs mx-auto'
+                            }`}>
+                              {children.map((child, cIdx) => {
+                                const siblings = children
+                                const isEditingChild = editingDeptId === child.id
+                                return (
+                                  <div key={child.id} className="relative">
+                                    {/* 위 연결선 */}
+                                    <div className="flex justify-center">
+                                      <div className="w-px h-5 bg-gray-300 -mt-5" />
+                                    </div>
+                                    <div className="bg-white border border-gray-100 rounded-xl p-3 shadow-sm">
+                                      {isEditingChild ? (
+                                        <DeptEditForm dept={child} onSave={u => setDepts(prev => prev.map(d => d.id === child.id ? {...d, ...u} : d))} onCancel={() => setEditingDeptId(null)} />
+                                      ) : (
+                                        <div className="flex items-start justify-between mb-2">
+                                          <div>
+                                            <div className="flex items-center gap-1.5">
+                                              <div className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: child.color }} />
+                                              <p className="text-sm font-bold text-gray-800">{child.label}</p>
+                                            </div>
+                                            {child.description && <p className="text-[11px] text-gray-400 ml-4 mt-0.5">{child.description}</p>}
+                                          </div>
+                                          <div className="flex items-center gap-0.5 shrink-0">
+                                            <button disabled={cIdx === 0} onClick={async () => {
+                                              const newDepts = [...depts]
+                                              const ai = newDepts.findIndex(d => d.id === child.id)
+                                              const bi = newDepts.findIndex(d => d.id === siblings[cIdx - 1].id)
+                                              ;[newDepts[ai], newDepts[bi]] = [newDepts[bi], newDepts[ai]]
+                                              setDepts(newDepts)
+                                              await reorderDepartments(newDepts.map(d => d.id))
+                                            }} className="p-0.5 text-gray-300 hover:text-gray-600 disabled:opacity-20 text-xs">←</button>
+                                            <button disabled={cIdx === siblings.length - 1} onClick={async () => {
+                                              const newDepts = [...depts]
+                                              const ai = newDepts.findIndex(d => d.id === child.id)
+                                              const bi = newDepts.findIndex(d => d.id === siblings[cIdx + 1].id)
+                                              ;[newDepts[ai], newDepts[bi]] = [newDepts[bi], newDepts[ai]]
+                                              setDepts(newDepts)
+                                              await reorderDepartments(newDepts.map(d => d.id))
+                                            }} className="p-0.5 text-gray-300 hover:text-gray-600 disabled:opacity-20 text-xs">→</button>
+                                            <button onClick={() => { setDeptEditForm({ label: child.label, description: child.description ?? '', color: child.color }); setEditingDeptId(child.id) }}
+                                              className="p-1 text-gray-300 hover:text-blue-500 text-[11px] rounded">✏️</button>
+                                            <button onClick={async () => {
+                                              if (!confirm(`"${child.label}"을 삭제하시겠어요?`)) return
+                                              await deleteDepartment(child.id)
+                                              setDepts(prev => prev.filter(d => d.id !== child.id))
+                                            }} className="p-1 text-gray-300 hover:text-red-400 text-[11px] rounded">🗑️</button>
+                                          </div>
+                                        </div>
+                                      )}
+                                      <EmployeeChips deptKey={child.key} color={child.color} />
+                                    </div>
+                                  </div>
+                                )
+                              })}
+                            </div>
+                          </div>
+                        </>
+                      )}
+                    </div>
+                  )
+                })}
+
+                {/* 부서 추가 */}
+                <div className="mt-4">
+                  {showDeptAddForm ? (
+                    <div className="bg-white border-2 border-dashed border-gray-200 rounded-2xl p-4 space-y-2">
+                      <input type="text" value={deptAddForm.label} onChange={e => setDeptAddForm(f => ({...f, label: e.target.value}))}
+                        className="w-full border border-gray-200 rounded-lg px-3 py-1.5 text-sm" placeholder="이름 *" autoFocus />
+                      <input type="text" value={deptAddForm.description} onChange={e => setDeptAddForm(f => ({...f, description: e.target.value}))}
+                        className="w-full border border-gray-200 rounded-lg px-3 py-1.5 text-xs text-gray-500" placeholder="설명 (선택)" />
+                      <div>
+                        <p className="text-xs text-gray-400 mb-1">상위 조직</p>
+                        <select value={deptAddForm.color} onChange={() => {}}
+                          className="hidden" />
+                        <select defaultValue="" className="w-full border border-gray-200 rounded-lg px-2 py-1.5 text-sm bg-white"
+                          id="new-dept-parent">
+                          <option value="">없음 (최상위)</option>
+                          {depts.filter(d => !d.parent_id).map(d => (
+                            <option key={d.id} value={d.id}>{d.label}</option>
+                          ))}
+                        </select>
+                      </div>
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        {DEPT_COLORS.map(c => (
+                          <button key={c} onClick={() => setDeptAddForm(f => ({...f, color: c}))}
+                            className={`w-5 h-5 rounded-full border-2 transition-all ${deptAddForm.color === c ? 'border-gray-800 scale-110' : 'border-transparent'}`}
+                            style={{ backgroundColor: c }} />
+                        ))}
+                        <input type="color" value={deptAddForm.color} onChange={e => setDeptAddForm(f => ({...f, color: e.target.value}))}
+                          className="w-5 h-5 cursor-pointer border-0 p-0 rounded-full" />
+                      </div>
+                      <div className="flex gap-2">
+                        <button onClick={async () => {
+                          if (!deptAddForm.label.trim()) return
+                          const parentSel = (document.getElementById('new-dept-parent') as HTMLSelectElement)?.value
+                          const newDept = await createDepartment(deptAddForm.label.trim(), deptAddForm.description, deptAddForm.color, parentSel || undefined)
+                          if (newDept) setDepts(prev => [...prev, newDept as DeptRow])
+                          setDeptAddForm({ label: '', description: '', color: '#9CA3AF' })
+                          setShowDeptAddForm(false)
+                        }} className="flex-1 py-2 bg-gray-900 text-white text-sm rounded-lg">추가</button>
+                        <button onClick={() => { setShowDeptAddForm(false); setDeptAddForm({ label: '', description: '', color: '#9CA3AF' }) }}
+                          className="flex-1 py-2 border text-sm rounded-lg text-gray-400">취소</button>
+                      </div>
+                    </div>
+                  ) : (
+                    <button onClick={() => setShowDeptAddForm(true)}
+                      className="w-full py-3 border-2 border-dashed border-gray-200 rounded-2xl text-sm text-gray-400 hover:border-gray-300 hover:text-gray-600 transition-colors">
+                      + 부서 / 자회사 추가
+                    </button>
+                  )}
+                </div>
+              </div>
+            )
+          })()}
+
+          {/* 카드 + 상세 패널 뷰 */}
+          {!orgView && <div className={`flex gap-4 ${selectedUser ? 'items-start' : ''}`}>
             {/* 직원 카드 그리드 */}
             <div className={`grid grid-cols-2 gap-3 ${selectedUser ? 'w-72 shrink-0' : 'flex-1 sm:grid-cols-3'}`}>
               {users.map(u => {
@@ -396,10 +688,10 @@ export default function AdminClient({ users: initialUsers, entities: initialEnti
                 </div>
 
                 {/* 상세 탭 */}
-                <div className="flex border-b border-gray-100">
-                  {([['info','기본 정보'],['oo','원온원'],['docs','서류 발급']] as const).map(([key, label]) => (
-                    <button key={key} onClick={() => setHrDetailTab(key)}
-                      className={`flex-1 py-2.5 text-xs font-medium transition-colors ${hrDetailTab === key ? 'border-b-2 border-gray-900 text-gray-900' : 'text-gray-400 hover:text-gray-600'}`}>
+                <div className="flex border-b border-gray-100 overflow-x-auto">
+                  {([['info','정보'],['salary','급여'],['oo','원온원'],['docs','서류'],['onboarding','온보딩']] as const).map(([key, label]) => (
+                    <button key={key} onClick={() => setHrDetailTab(key as any)}
+                      className={`flex-1 min-w-max py-2.5 px-3 text-xs font-medium transition-colors ${hrDetailTab === key ? 'border-b-2 border-gray-900 text-gray-900' : 'text-gray-400 hover:text-gray-600'}`}>
                       {label}
                     </button>
                   ))}
@@ -441,8 +733,9 @@ export default function AdminClient({ users: initialUsers, entities: initialEnti
                         <select
                           value={selectedUser.entity_id ?? ''}
                           onChange={async e => {
-                            await updateEmployeeEntity(selectedUser.id, e.target.value)
-                            setUsers(prev => prev.map(u => u.id === selectedUser.id ? { ...u, entity_id: e.target.value || null } : u))
+                            const val = e.target.value
+                            setUsers(prev => prev.map(u => u.id === selectedUser.id ? { ...u, entity_id: val || null } : u))
+                            await updateEmployeeEntity(selectedUser.id, val)
                           }}
                           className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm bg-white"
                         >
@@ -492,6 +785,135 @@ export default function AdminClient({ users: initialUsers, entities: initialEnti
                           </div>
                         ) : null
                       })()}
+
+                      {/* 휴가 수동 추가 */}
+                      <div>
+                        <button onClick={() => setShowLeaveForm(v => !v)}
+                          className="w-full py-2 border border-dashed border-gray-300 rounded-xl text-sm text-gray-500 hover:border-gray-400 hover:text-gray-700 transition-colors">
+                          + 휴가 수동 추가
+                        </button>
+                        {showLeaveForm && (
+                          <div className="mt-3 bg-gray-50 rounded-xl p-4 space-y-3">
+                            <div className="grid grid-cols-2 gap-3">
+                              <div>
+                                <label className="text-xs text-gray-400 mb-1 block">유형</label>
+                                <select value={leaveForm.type} onChange={e => setLeaveForm(f => ({...f, type: e.target.value}))}
+                                  className="w-full border border-gray-200 rounded-lg px-2 py-1.5 text-sm bg-white">
+                                  {['연차','반차(오전)','반차(오후)','병가','경조사','공가','기타'].map(t => <option key={t}>{t}</option>)}
+                                </select>
+                              </div>
+                              <div>
+                                <label className="text-xs text-gray-400 mb-1 block">일수</label>
+                                <input type="number" min="0.5" max="30" step="0.5" value={leaveForm.days}
+                                  onChange={e => setLeaveForm(f => ({...f, days: e.target.value}))}
+                                  className="w-full border border-gray-200 rounded-lg px-2 py-1.5 text-sm bg-white" placeholder="1" />
+                              </div>
+                            </div>
+                            <div className="grid grid-cols-2 gap-3">
+                              <div>
+                                <label className="text-xs text-gray-400 mb-1 block">시작일</label>
+                                <input type="date" value={leaveForm.start_date} onChange={e => setLeaveForm(f => ({...f, start_date: e.target.value}))}
+                                  className="w-full border border-gray-200 rounded-lg px-2 py-1.5 text-sm bg-white" />
+                              </div>
+                              <div>
+                                <label className="text-xs text-gray-400 mb-1 block">종료일</label>
+                                <input type="date" value={leaveForm.end_date} onChange={e => setLeaveForm(f => ({...f, end_date: e.target.value}))}
+                                  className="w-full border border-gray-200 rounded-lg px-2 py-1.5 text-sm bg-white" />
+                              </div>
+                            </div>
+                            <div>
+                              <label className="text-xs text-gray-400 mb-1 block">사유 (선택)</label>
+                              <input type="text" value={leaveForm.reason} onChange={e => setLeaveForm(f => ({...f, reason: e.target.value}))}
+                                className="w-full border border-gray-200 rounded-lg px-2 py-1.5 text-sm bg-white" placeholder="사유 입력..." />
+                            </div>
+                            <div className="flex gap-2">
+                              <button onClick={async () => {
+                                if (!leaveForm.start_date || !leaveForm.end_date || !leaveForm.days) return
+                                await adminAddLeave(selectedUser.id, leaveForm.type, leaveForm.start_date, leaveForm.end_date, parseFloat(leaveForm.days), leaveForm.reason)
+                                setLeaveForm({ type: '연차', start_date: '', end_date: '', days: '', reason: '' })
+                                setShowLeaveForm(false)
+                                startTransition(() => router.refresh())
+                              }} className="flex-1 py-2 bg-gray-900 text-white text-sm rounded-lg hover:bg-gray-800">저장</button>
+                              <button onClick={() => setShowLeaveForm(false)} className="flex-1 py-2 border border-gray-200 text-sm rounded-lg text-gray-500">취소</button>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+
+                      {/* 임직원 상세 프로필 */}
+                      <div className="border-t border-gray-100 pt-4">
+                        <div className="flex items-center justify-between mb-3">
+                          <p className="text-xs font-semibold text-gray-500">개인 정보</p>
+                          {!editingProfile && (
+                            <button onClick={() => {
+                              setProfileForm({
+                                phone: selectedUser.phone ?? '',
+                                emergency_name: selectedUser.emergency_name ?? '',
+                                emergency_phone: selectedUser.emergency_phone ?? '',
+                                bank_name: selectedUser.bank_name ?? '',
+                                account_number: selectedUser.account_number ?? '',
+                                birth_date: selectedUser.birth_date ?? '',
+                              })
+                              setEditingProfile(true)
+                            }} className="text-xs text-gray-400 hover:text-blue-500 underline decoration-dashed underline-offset-2">편집</button>
+                          )}
+                        </div>
+                        {editingProfile ? (
+                          <div className="space-y-3">
+                            <div className="grid grid-cols-2 gap-3">
+                              {[['phone','연락처','010-0000-0000'],['emergency_name','비상연락처 이름','이름'],['emergency_phone','비상연락처 번호','010-0000-0000'],['birth_date','생년월일','']].map(([field, label, ph]) => (
+                                <div key={field}>
+                                  <label className="text-xs text-gray-400 mb-1 block">{label}</label>
+                                  <input type={field === 'birth_date' ? 'date' : 'text'} value={(profileForm as any)[field]}
+                                    onChange={e => setProfileForm(f => ({...f, [field]: e.target.value}))}
+                                    className="w-full border border-gray-200 rounded-lg px-2 py-1.5 text-sm bg-white" placeholder={ph} />
+                                </div>
+                              ))}
+                            </div>
+                            <div className="grid grid-cols-2 gap-3">
+                              <div>
+                                <label className="text-xs text-gray-400 mb-1 block">은행</label>
+                                <input type="text" value={profileForm.bank_name} onChange={e => setProfileForm(f => ({...f, bank_name: e.target.value}))}
+                                  className="w-full border border-gray-200 rounded-lg px-2 py-1.5 text-sm bg-white" placeholder="국민은행" />
+                              </div>
+                              <div>
+                                <label className="text-xs text-gray-400 mb-1 block">계좌번호</label>
+                                <input type="text" value={profileForm.account_number} onChange={e => setProfileForm(f => ({...f, account_number: e.target.value}))}
+                                  className="w-full border border-gray-200 rounded-lg px-2 py-1.5 text-sm bg-white" placeholder="000-000-000000" />
+                              </div>
+                            </div>
+                            <div className="flex gap-2">
+                              <button onClick={async () => {
+                                await updateProfileDetail(selectedUser.id, profileForm)
+                                setUsers(prev => prev.map(u => u.id === selectedUser.id ? {...u, ...profileForm, birth_date: profileForm.birth_date || null, phone: profileForm.phone || null, emergency_name: profileForm.emergency_name || null, emergency_phone: profileForm.emergency_phone || null, bank_name: profileForm.bank_name || null, account_number: profileForm.account_number || null } : u))
+                                setEditingProfile(false)
+                              }} className="flex-1 py-2 bg-gray-900 text-white text-sm rounded-lg hover:bg-gray-800">저장</button>
+                              <button onClick={() => setEditingProfile(false)} className="flex-1 py-2 border border-gray-200 text-sm rounded-lg text-gray-500">취소</button>
+                            </div>
+                          </div>
+                        ) : (
+                          <div className="grid grid-cols-2 gap-y-2 text-sm">
+                            {[
+                              ['연락처', selectedUser.phone],
+                              ['생년월일', selectedUser.birth_date],
+                              ['비상연락처', selectedUser.emergency_name ? `${selectedUser.emergency_name} ${selectedUser.emergency_phone ?? ''}` : null],
+                              ['계좌', selectedUser.bank_name ? `${selectedUser.bank_name} ${showAccountNumber ? selectedUser.account_number : (selectedUser.account_number ? '****' + selectedUser.account_number.slice(-4) : null)}` : null],
+                            ].map(([label, value]) => (
+                              <div key={label as string}>
+                                <p className="text-xs text-gray-400">{label}</p>
+                                <p className="text-gray-700 text-sm">
+                                  {value ?? <span className="text-gray-300 text-xs">미입력</span>}
+                                  {label === '계좌' && selectedUser.account_number && (
+                                    <button onClick={() => setShowAccountNumber(v => !v)} className="ml-1.5 text-[10px] text-gray-400 hover:text-gray-600">
+                                      {showAccountNumber ? '숨기기' : '보기'}
+                                    </button>
+                                  )}
+                                </p>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
                     </div>
                   )}
 
@@ -571,13 +993,11 @@ export default function AdminClient({ users: initialUsers, entities: initialEnti
                             const sel = document.getElementById('doc-type-select') as HTMLSelectElement
                             const docType = sel.value
                             const admin = await import('@/lib/supabase/admin').then(m => m.createAdminClient())
-                            // actions를 통해 처리
                             const { data } = await admin.from('document_requests').insert({ member_id: selectedUser.id, doc_type: docType, status: '발급완료', processed_at: new Date().toISOString() }).select().single()
                             if (data) setDocRequests(prev => [data as DocRequest, ...prev])
                           }} className="px-3 py-1.5 bg-gray-900 text-white text-xs rounded-lg whitespace-nowrap">발급완료 처리</button>
                         </div>
                       </div>
-
                       {userDocs.length === 0 ? (
                         <p className="text-center text-sm text-gray-400 py-6">서류 발급 이력이 없어요.</p>
                       ) : userDocs.map(d => (
@@ -597,9 +1017,221 @@ export default function AdminClient({ users: initialUsers, entities: initialEnti
                       ))}
                     </div>
                   )}
+
+                  {/* 급여 */}
+                  {hrDetailTab === 'salary' && (() => {
+                    const userSalary = salaryRecords.filter(s => s.member_id === selectedUser.id && s.year === salaryYear)
+                    const salaryMap = Object.fromEntries(userSalary.map(s => [s.month, s]))
+                    const totalBase = userSalary.reduce((a, s) => a + (s.base_salary ?? 0), 0)
+                    const totalNet = userSalary.reduce((a, s) => a + (s.net_salary ?? 0), 0)
+                    const fmt = (n: number) => n ? n.toLocaleString('ko-KR') + '원' : '-'
+                    return (
+                      <div className="space-y-3">
+                        {/* 연도 선택 */}
+                        <div className="flex items-center gap-2">
+                          <button onClick={() => setSalaryYear(y => y - 1)} className="p-1 rounded hover:bg-gray-100 text-gray-400">‹</button>
+                          <span className="text-sm font-semibold text-gray-800 w-12 text-center">{salaryYear}</span>
+                          <button onClick={() => setSalaryYear(y => y + 1)} className="p-1 rounded hover:bg-gray-100 text-gray-400">›</button>
+                        </div>
+                        {/* 월별 테이블 */}
+                        <div className="overflow-x-auto">
+                          <table className="w-full text-xs">
+                            <thead>
+                              <tr className="border-b border-gray-100">
+                                <th className="text-left py-2 text-gray-400 font-medium w-8">월</th>
+                                <th className="text-right py-2 text-gray-400 font-medium">기본급</th>
+                                <th className="text-right py-2 text-gray-400 font-medium">공제</th>
+                                <th className="text-right py-2 text-gray-400 font-medium">실수령</th>
+                                <th className="w-6"></th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {Array.from({length: 12}, (_, i) => i + 1).map(month => {
+                                const rec = salaryMap[month]
+                                const isEditing = editingSalaryMonth === month
+                                return (
+                                  <tr key={month} className="border-b border-gray-50 hover:bg-gray-50">
+                                    {isEditing ? (
+                                      <td colSpan={5} className="py-2">
+                                        <div className="grid grid-cols-2 gap-2 mb-2">
+                                          {[['base_salary','기본급'],['deductions','공제'],['net_salary','실수령']].map(([field, label]) => (
+                                            <div key={field}>
+                                              <label className="text-[10px] text-gray-400 block mb-0.5">{label}</label>
+                                              <input type="number" value={(salaryForm as any)[field]}
+                                                onChange={e => setSalaryForm(f => ({...f, [field]: e.target.value}))}
+                                                className="w-full border border-gray-200 rounded px-2 py-1 text-xs bg-white" placeholder="0" />
+                                            </div>
+                                          ))}
+                                          <div>
+                                            <label className="text-[10px] text-gray-400 block mb-0.5">메모</label>
+                                            <input type="text" value={salaryForm.memo}
+                                              onChange={e => setSalaryForm(f => ({...f, memo: e.target.value}))}
+                                              className="w-full border border-gray-200 rounded px-2 py-1 text-xs bg-white" />
+                                          </div>
+                                        </div>
+                                        <div className="flex gap-1.5">
+                                          <button onClick={async () => {
+                                            await upsertSalary(selectedUser.id, salaryYear, month, Number(salaryForm.base_salary)||0, Number(salaryForm.deductions)||0, Number(salaryForm.net_salary)||0, salaryForm.memo)
+                                            const newRec: SalaryRecord = { id: rec?.id ?? Date.now().toString(), member_id: selectedUser.id, year: salaryYear, month, base_salary: Number(salaryForm.base_salary)||0, deductions: Number(salaryForm.deductions)||0, net_salary: Number(salaryForm.net_salary)||0, memo: salaryForm.memo || null }
+                                            setSalaryRecords(prev => rec ? prev.map(s => s.id === rec.id ? newRec : s) : [...prev, newRec])
+                                            setEditingSalaryMonth(null)
+                                          }} className="flex-1 py-1 bg-gray-900 text-white rounded text-xs">저장</button>
+                                          <button onClick={() => setEditingSalaryMonth(null)} className="flex-1 py-1 border rounded text-xs text-gray-400">취소</button>
+                                          {rec && <button onClick={async () => { await deleteSalary(rec.id); setSalaryRecords(prev => prev.filter(s => s.id !== rec.id)); setEditingSalaryMonth(null) }} className="px-2 py-1 text-red-400 hover:text-red-600 text-xs">삭제</button>}
+                                        </div>
+                                      </td>
+                                    ) : (
+                                      <>
+                                        <td className="py-2 text-gray-500 font-medium">{month}월</td>
+                                        <td className="py-2 text-right text-gray-700">{rec ? fmt(rec.base_salary) : <span className="text-gray-300">-</span>}</td>
+                                        <td className="py-2 text-right text-gray-500">{rec ? fmt(rec.deductions) : <span className="text-gray-300">-</span>}</td>
+                                        <td className="py-2 text-right font-medium text-gray-800">{rec ? fmt(rec.net_salary) : <span className="text-gray-300">-</span>}</td>
+                                        <td className="py-2 text-right">
+                                          <button onClick={() => { setSalaryForm({ base_salary: String(rec?.base_salary ?? ''), deductions: String(rec?.deductions ?? ''), net_salary: String(rec?.net_salary ?? ''), memo: rec?.memo ?? '' }); setEditingSalaryMonth(month) }}
+                                            className="text-[10px] text-gray-300 hover:text-blue-500">{rec ? '편집' : '+'}</button>
+                                        </td>
+                                      </>
+                                    )}
+                                  </tr>
+                                )
+                              })}
+                            </tbody>
+                            {userSalary.length > 0 && (
+                              <tfoot>
+                                <tr className="border-t-2 border-gray-200">
+                                  <td className="py-2 text-xs font-bold text-gray-600">합계</td>
+                                  <td className="py-2 text-right text-xs font-bold text-gray-700">{fmt(totalBase)}</td>
+                                  <td></td>
+                                  <td className="py-2 text-right text-xs font-bold text-gray-800">{fmt(totalNet)}</td>
+                                  <td></td>
+                                </tr>
+                              </tfoot>
+                            )}
+                          </table>
+                        </div>
+                      </div>
+                    )
+                  })()}
+
+                  {/* 온보딩 */}
+                  {hrDetailTab === 'onboarding' && (() => {
+                    const userItems = onboardingItems.filter(o => o.member_id === selectedUser.id).sort((a, b) => a.sort_order - b.sort_order)
+                    const completedCount = userItems.filter(o => o.completed).length
+                    return (
+                      <div className="space-y-3">
+                        {/* 진행 현황 바 */}
+                        {userItems.length > 0 && (
+                          <div>
+                            <div className="flex justify-between text-xs text-gray-500 mb-1">
+                              <span>온보딩 진행</span>
+                              <span className="font-medium">{completedCount} / {userItems.length}</span>
+                            </div>
+                            <div className="bg-gray-100 rounded-full h-2">
+                              <div className="bg-green-400 h-2 rounded-full transition-all"
+                                style={{ width: `${Math.round(completedCount / userItems.length * 100)}%` }} />
+                            </div>
+                          </div>
+                        )}
+
+                        {/* Notion 가져오기 */}
+                        <div>
+                          <button onClick={() => setShowNotionInput(v => !v)}
+                            className="flex items-center gap-1.5 text-xs text-gray-500 hover:text-gray-700 border border-gray-200 rounded-lg px-3 py-1.5 hover:border-gray-300 transition-colors">
+                            <span>Notion에서 가져오기</span>
+                          </button>
+                          {showNotionInput && (
+                            <div className="mt-2 bg-gray-50 rounded-xl p-3 space-y-2">
+                              <input type="text" value={notionUrlInput} onChange={e => setNotionUrlInput(e.target.value)}
+                                className="w-full border border-gray-200 rounded-lg px-3 py-2 text-xs bg-white"
+                                placeholder="Notion 페이지 URL 붙여넣기..." />
+                              <div className="flex gap-2">
+                                <button disabled={notionImporting} onClick={async () => {
+                                  if (!notionUrlInput) return
+                                  setNotionImporting(true)
+                                  try {
+                                    await updateNotionTemplateUrl(notionUrlInput)
+                                    const count = await importOnboardingFromNotion(selectedUser.id, notionUrlInput)
+                                    startTransition(() => router.refresh())
+                                    setShowNotionInput(false)
+                                    alert(`${count}개 항목을 가져왔어요.`)
+                                  } catch (e: any) {
+                                    alert(e.message ?? '가져오기 실패')
+                                  } finally {
+                                    setNotionImporting(false)
+                                  }
+                                }} className="flex-1 py-1.5 bg-gray-900 text-white text-xs rounded-lg disabled:opacity-50">
+                                  {notionImporting ? '가져오는 중...' : '가져오기'}
+                                </button>
+                                <button onClick={() => setShowNotionInput(false)} className="flex-1 py-1.5 border text-xs rounded-lg text-gray-400">취소</button>
+                              </div>
+                            </div>
+                          )}
+                        </div>
+
+                        {/* 체크리스트 */}
+                        {userItems.length === 0 && !showNotionInput && (
+                          <p className="text-center text-sm text-gray-400 py-4">온보딩 항목이 없어요.</p>
+                        )}
+                        <div className="space-y-1">
+                          {userItems.map(item => (
+                            <div key={item.id} className="flex items-center gap-2.5 group py-1.5">
+                              <input type="checkbox" checked={item.completed}
+                                onChange={async e => {
+                                  const val = e.target.checked
+                                  setOnboardingItems(prev => prev.map(o => o.id === item.id ? {...o, completed: val} : o))
+                                  await toggleOnboardingItem(item.id, val)
+                                }}
+                                className="w-4 h-4 rounded border-gray-300 accent-gray-800 shrink-0" />
+                              <span className={`flex-1 text-sm ${item.completed ? 'line-through text-gray-300' : 'text-gray-700'}`}>{item.title}</span>
+                              {item.source === 'notion' && <span className="text-[10px] text-gray-300 shrink-0">N</span>}
+                              <button onClick={async () => {
+                                setOnboardingItems(prev => prev.filter(o => o.id !== item.id))
+                                await deleteOnboardingItem(item.id)
+                              }} className="text-gray-200 hover:text-red-400 opacity-0 group-hover:opacity-100 text-xs shrink-0">×</button>
+                            </div>
+                          ))}
+                        </div>
+
+                        {/* 항목 추가 */}
+                        {showNewItemInput ? (
+                          <div className="flex gap-2 mt-1">
+                            <input type="text" value={newItemTitle} onChange={e => setNewItemTitle(e.target.value)}
+                              onKeyDown={async e => {
+                                if (e.key === 'Enter' && newItemTitle.trim()) {
+                                  const sortOrder = userItems.length
+                                  const optimistic: OnboardingItem = { id: Date.now().toString(), member_id: selectedUser.id, title: newItemTitle.trim(), completed: false, completed_at: null, source: 'manual', notion_block_id: null, sort_order: sortOrder }
+                                  setOnboardingItems(prev => [...prev, optimistic])
+                                  setNewItemTitle('')
+                                  setShowNewItemInput(false)
+                                  await addOnboardingItem(selectedUser.id, optimistic.title, sortOrder)
+                                }
+                              }}
+                              autoFocus
+                              className="flex-1 border border-gray-200 rounded-lg px-3 py-1.5 text-sm bg-white" placeholder="항목 이름..." />
+                            <button onClick={async () => {
+                              if (!newItemTitle.trim()) { setShowNewItemInput(false); return }
+                              const sortOrder = userItems.length
+                              const optimistic: OnboardingItem = { id: Date.now().toString(), member_id: selectedUser.id, title: newItemTitle.trim(), completed: false, completed_at: null, source: 'manual', notion_block_id: null, sort_order: sortOrder }
+                              setOnboardingItems(prev => [...prev, optimistic])
+                              setNewItemTitle('')
+                              setShowNewItemInput(false)
+                              await addOnboardingItem(selectedUser.id, optimistic.title, sortOrder)
+                            }} className="px-3 py-1.5 bg-gray-900 text-white text-xs rounded-lg">추가</button>
+                            <button onClick={() => { setShowNewItemInput(false); setNewItemTitle('') }} className="px-2 py-1.5 border text-xs rounded-lg text-gray-400">✕</button>
+                          </div>
+                        ) : (
+                          <button onClick={() => setShowNewItemInput(true)}
+                            className="w-full py-2 border border-dashed border-gray-300 rounded-xl text-sm text-gray-500 hover:border-gray-400 hover:text-gray-700 transition-colors">
+                            + 항목 추가
+                          </button>
+                        )}
+                      </div>
+                    )
+                  })()}
                 </div>
               </div>
             )}
+          </div>}
           </div>
         )
       })()}
@@ -689,7 +1321,7 @@ export default function AdminClient({ users: initialUsers, entities: initialEnti
                   {user.email && <p className="text-xs text-gray-400">{user.email}</p>}
                   {editingId === user.id ? (
                     <div className="mt-2 space-y-2">
-                      <DeptCheckboxes selected={editDepts} onChange={setEditDepts} />
+                      <DeptCheckboxes selected={editDepts} onChange={setEditDepts} depts={depts} />
                       <div className="flex gap-2">
                         <button
                           onClick={() => handleDeptSave(user.id)}
@@ -860,6 +1492,8 @@ export default function AdminClient({ users: initialUsers, entities: initialEnti
         )}
       </div>}
 
+      {activeTab === 'api-usage' && <ApiUsageTab />}
+
       {activeTab === 'team' && showForm && (
         <div className="bg-white rounded-xl border border-gray-200 p-6">
           <h2 className="text-sm font-semibold text-gray-900 mb-4">새 팀원 초대</h2>
@@ -891,7 +1525,7 @@ export default function AdminClient({ users: initialUsers, entities: initialEnti
             </div>
             <div>
               <label className="block text-xs font-medium text-gray-600 mb-2">담당 사업부 (복수 선택 가능)</label>
-              <DeptCheckboxes selected={form.departments} onChange={v => setForm(f => ({ ...f, departments: v }))} />
+              <DeptCheckboxes selected={form.departments} onChange={v => setForm(f => ({ ...f, departments: v }))} depts={depts} />
             </div>
             <div>
               <label className="block text-xs font-medium text-gray-600 mb-1">권한</label>
@@ -924,6 +1558,159 @@ export default function AdminClient({ users: initialUsers, entities: initialEnti
           </form>
         </div>
       )}
+    </div>
+  )
+}
+
+function ApiUsageTab() {
+  const [data, setData] = useState<{
+    monthly: { month: string; cost_usd: number; input_tokens: number; output_tokens: number; requests: number }[]
+    byEndpoint: { endpoint: string; cost_usd: number; requests: number }[]
+    byModel: { model: string; cost_usd: number; requests: number }[]
+    byUser: { user_id: string; name: string; cost_usd: number; requests: number }[]
+    total: { cost_usd: number; requests: number; input_tokens: number; output_tokens: number }
+  } | null>(null)
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    fetch('/api/admin/api-usage?months=3')
+      .then(r => r.json())
+      .then(d => { setData(d); setLoading(false) })
+      .catch(() => setLoading(false))
+  }, [])
+
+  const KRW_RATE = 1380
+  const fmt = (usd: number) => `$${usd.toFixed(4)}`
+  const fmtKrw = (usd: number) => `₩${Math.round(usd * KRW_RATE).toLocaleString()}`
+  const fmtNum = (n: number) => n.toLocaleString()
+
+  const thisMonth = new Date().toISOString().slice(0, 7)
+  const thisMonthData = data?.monthly.find(m => m.month === thisMonth)
+
+  if (loading) return <div className="text-sm text-gray-400 py-8 text-center">불러오는 중...</div>
+  if (!data) return <div className="text-sm text-red-400 py-8 text-center">데이터 조회 실패</div>
+
+  return (
+    <div className="space-y-6">
+      {/* 요약 카드 */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+        {[
+          { label: '이번 달 비용', value: fmt(thisMonthData?.cost_usd ?? 0), sub: fmtKrw(thisMonthData?.cost_usd ?? 0) },
+          { label: '이번 달 요청', value: fmtNum(thisMonthData?.requests ?? 0) + '회', sub: null },
+          { label: '3개월 누적', value: fmt(data.total.cost_usd), sub: fmtKrw(data.total.cost_usd) },
+          { label: '총 토큰', value: fmtNum(data.total.input_tokens + data.total.output_tokens), sub: `in ${fmtNum(data.total.input_tokens)} / out ${fmtNum(data.total.output_tokens)}` },
+        ].map(c => (
+          <div key={c.label} className="bg-white rounded-xl border border-gray-200 p-4">
+            <p className="text-xs text-gray-500 mb-1">{c.label}</p>
+            <p className="text-lg font-bold text-gray-900">{c.value}</p>
+            {c.sub && <p className="text-xs text-gray-400 mt-0.5">{c.sub}</p>}
+          </div>
+        ))}
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        {/* 월별 현황 */}
+        <div className="bg-white rounded-xl border border-gray-200 p-4">
+          <h3 className="text-sm font-semibold text-gray-800 mb-3">월별 현황</h3>
+          <table className="w-full text-xs">
+            <thead>
+              <tr className="text-gray-400 border-b border-gray-100">
+                <th className="text-left py-1.5">월</th>
+                <th className="text-right py-1.5">요청</th>
+                <th className="text-right py-1.5">비용(USD)</th>
+                <th className="text-right py-1.5">비용(KRW)</th>
+              </tr>
+            </thead>
+            <tbody>
+              {data.monthly.length === 0 ? (
+                <tr><td colSpan={4} className="text-center text-gray-300 py-4">데이터 없음</td></tr>
+              ) : data.monthly.map(m => (
+                <tr key={m.month} className="border-b border-gray-50">
+                  <td className="py-1.5 text-gray-700">{m.month}</td>
+                  <td className="py-1.5 text-right text-gray-600">{fmtNum(m.requests)}</td>
+                  <td className="py-1.5 text-right text-gray-800 font-medium">{fmt(m.cost_usd)}</td>
+                  <td className="py-1.5 text-right text-gray-500">{fmtKrw(m.cost_usd)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+
+        {/* 엔드포인트별 */}
+        <div className="bg-white rounded-xl border border-gray-200 p-4">
+          <h3 className="text-sm font-semibold text-gray-800 mb-3">기능별 사용량</h3>
+          <table className="w-full text-xs">
+            <thead>
+              <tr className="text-gray-400 border-b border-gray-100">
+                <th className="text-left py-1.5">기능</th>
+                <th className="text-right py-1.5">요청</th>
+                <th className="text-right py-1.5">비용</th>
+              </tr>
+            </thead>
+            <tbody>
+              {data.byEndpoint.length === 0 ? (
+                <tr><td colSpan={3} className="text-center text-gray-300 py-4">데이터 없음</td></tr>
+              ) : data.byEndpoint.map(e => (
+                <tr key={e.endpoint} className="border-b border-gray-50">
+                  <td className="py-1.5 text-gray-700">{e.endpoint}</td>
+                  <td className="py-1.5 text-right text-gray-600">{fmtNum(e.requests)}</td>
+                  <td className="py-1.5 text-right text-gray-800 font-medium">{fmt(e.cost_usd)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+
+        {/* 사용자별 */}
+        <div className="bg-white rounded-xl border border-gray-200 p-4">
+          <h3 className="text-sm font-semibold text-gray-800 mb-3">사용자별 사용량</h3>
+          <table className="w-full text-xs">
+            <thead>
+              <tr className="text-gray-400 border-b border-gray-100">
+                <th className="text-left py-1.5">이름</th>
+                <th className="text-right py-1.5">요청</th>
+                <th className="text-right py-1.5">비용</th>
+              </tr>
+            </thead>
+            <tbody>
+              {data.byUser.length === 0 ? (
+                <tr><td colSpan={3} className="text-center text-gray-300 py-4">데이터 없음</td></tr>
+              ) : data.byUser.map(u => (
+                <tr key={u.user_id} className="border-b border-gray-50">
+                  <td className="py-1.5 text-gray-700">{u.name}</td>
+                  <td className="py-1.5 text-right text-gray-600">{fmtNum(u.requests)}</td>
+                  <td className="py-1.5 text-right text-gray-800 font-medium">{fmt(u.cost_usd)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+
+        {/* 모델별 */}
+        <div className="bg-white rounded-xl border border-gray-200 p-4">
+          <h3 className="text-sm font-semibold text-gray-800 mb-3">모델별 사용량</h3>
+          <table className="w-full text-xs">
+            <thead>
+              <tr className="text-gray-400 border-b border-gray-100">
+                <th className="text-left py-1.5">모델</th>
+                <th className="text-right py-1.5">요청</th>
+                <th className="text-right py-1.5">비용</th>
+              </tr>
+            </thead>
+            <tbody>
+              {data.byModel.length === 0 ? (
+                <tr><td colSpan={3} className="text-center text-gray-300 py-4">데이터 없음</td></tr>
+              ) : data.byModel.map(m => (
+                <tr key={m.model} className="border-b border-gray-50">
+                  <td className="py-1.5 text-gray-700 truncate max-w-[140px]">{m.model.replace('claude-', '')}</td>
+                  <td className="py-1.5 text-right text-gray-600">{fmtNum(m.requests)}</td>
+                  <td className="py-1.5 text-right text-gray-800 font-medium">{fmt(m.cost_usd)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
     </div>
   )
 }
