@@ -13,6 +13,15 @@ export default async function DailyReportPage() {
   const isAdmin = profile?.role === 'admin' || profile?.role === 'manager'
   const today = new Date().toISOString().slice(0, 10)
 
+  // 내 담당 업무 목록 (링크용)
+  const { data: myTasks } = await admin
+    .from('tasks')
+    .select('id, title, status, project_id')
+    .eq('assignee_id', user.id)
+    .not('status', 'eq', 'done')
+    .order('due_date', { ascending: true, nullsFirst: false })
+    .limit(50)
+
   // 테이블 없을 때 graceful fallback
   let myReports: any[] = []
   let todayTeamReports: any[] = []
@@ -22,7 +31,7 @@ export default async function DailyReportPage() {
   try {
     const { data: reports, error } = await admin
       .from('daily_reports')
-      .select('id, report_date, tasks_done, issues, tomorrow_plan, status')
+      .select('id, report_date, tasks_done, issues, tomorrow_plan, status, linked_task_ids')
       .eq('user_id', user.id)
       .order('report_date', { ascending: false })
       .limit(7)
@@ -105,6 +114,7 @@ using (
         currentUserId={user.id}
         isAdmin={isAdmin}
         today={today}
+        myTasks={myTasks ?? []}
       />
     </div>
   )

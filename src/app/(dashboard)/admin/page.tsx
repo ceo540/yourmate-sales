@@ -25,7 +25,7 @@ export default async function AdminPage() {
   const { createAdminClient } = await import('@/lib/supabase/admin')
   const adminClient = createAdminClient()
   const year = new Date().getFullYear()
-  const [{ data: authUsersData }, { data: allPerms }, { data: leaveRows }, { data: oneOnOnes }, { data: docRequests }, { data: leaveBalancesRaw }, { data: salaryRecords }, { data: onboardingItems }, { data: notionTemplateUrl }, { data: orgDepts }] = await Promise.all([
+  const [{ data: authUsersData }, { data: allPerms }, { data: leaveRows }, { data: oneOnOnes }, { data: docRequests }, { data: leaveBalancesRaw }, { data: salaryRecords }, { data: onboardingItems }, { data: notionTemplateUrl }, { data: orgDepts }, { data: employeeCards }] = await Promise.all([
     adminClient.auth.admin.listUsers(),
     adminClient.from('role_permissions').select('role, page_key, access_level').neq('role', 'admin'),
     adminClient.from('leave_requests').select('member_id, days')
@@ -38,6 +38,7 @@ export default async function AdminPage() {
     adminClient.from('onboarding_items').select('*').order('sort_order'),
     adminClient.from('system_settings').select('value').eq('key', 'onboarding_notion_url').single(),
     adminClient.from('departments').select('*').order('sort_order'),
+    adminClient.from('employee_cards').select('*').order('employee_name'),
   ])
   const authMap = new Map(authUsersData?.users?.map(u => [u.id, {
     email: u.email,
@@ -95,6 +96,7 @@ export default async function AdminPage() {
         onboardingItems={onboardingItems ?? []}
         notionTemplateUrl={notionTemplateUrl?.value ?? ''}
         orgDepts={orgDepts ?? []}
+        employeeCards={employeeCards ?? []}
       />
     </div>
   )

@@ -2,7 +2,7 @@
 import { useState, useTransition, useEffect, useCallback } from 'react'
 import { Lead, LeadStatus, LEAD_STATUSES, LEAD_CHANNELS, LEAD_SOURCES } from '@/types'
 import { createLead, updateLead, deleteLead, convertLeadToSale } from './actions'
-import { createLeadLog, getLeadLogs, deleteLeadLog } from '../sales/[id]/log-actions'
+import { createLeadLog, getLeadLogs, deleteLeadLog } from './lead-log-actions'
 
 const SERVICE_TYPES = [
   'SOS', '교육프로그램', '납품설치', '유지보수', '교구대여', '제작인쇄',
@@ -78,7 +78,6 @@ type FormState = {
   office_phone: string; email: string; initial_content: string
   assignee_id: string; status: LeadStatus; channel: string
   inflow_source: string; notes: string
-  contact_1: string; contact_2: string; contact_3: string
 }
 
 const EMPTY_FORM: FormState = {
@@ -86,7 +85,7 @@ const EMPTY_FORM: FormState = {
   remind_date: '', service_type: '', contact_name: '', client_org: '',
   phone: '', office_phone: '', email: '', initial_content: '',
   assignee_id: '', status: '유입', channel: '', inflow_source: '',
-  notes: '', contact_1: '', contact_2: '', contact_3: '',
+  notes: '',
 }
 
 export default function LeadsClient({ leads, profiles, currentUserId, isAdmin }: Props) {
@@ -159,7 +158,6 @@ export default function LeadsClient({ leads, profiles, currentUserId, isAdmin }:
       initial_content: lead.initial_content || '', assignee_id: lead.assignee_id || '',
       status: (lead.status || '유입') as LeadStatus, channel: lead.channel || '',
       inflow_source: lead.inflow_source || '', notes: lead.notes || '',
-      contact_1: lead.contact_1 || '', contact_2: lead.contact_2 || '', contact_3: lead.contact_3 || '',
     })
     setEditMode(true)
   }
@@ -183,7 +181,6 @@ export default function LeadsClient({ leads, profiles, currentUserId, isAdmin }:
         initial_content: form.initial_content || null, assignee_id: form.assignee_id || null,
         status: form.status, channel: form.channel || null,
         inflow_source: form.inflow_source || null, notes: form.notes || null,
-        contact_1: form.contact_1 || null, contact_2: form.contact_2 || null, contact_3: form.contact_3 || null,
       })
       setEditMode(false)
     })
@@ -284,12 +281,6 @@ export default function LeadsClient({ leads, profiles, currentUserId, isAdmin }:
         )}
         <div><label className={labelCls}>최초 유입 내용</label>
           <textarea className={inputCls} rows={2} value={form.initial_content} onChange={e => setForm(f => ({ ...f, initial_content: e.target.value }))} /></div>
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-          {(['contact_1', 'contact_2', 'contact_3'] as const).map((k, i) => (
-            <div key={k}><label className={labelCls}>{i + 1}차 소통</label>
-              <textarea className={inputCls} rows={2} value={form[k]} onChange={e => setForm(f => ({ ...f, [k]: e.target.value }))} /></div>
-          ))}
-        </div>
         <div><label className={labelCls}>메모</label>
           <textarea className={inputCls} rows={2} value={form.notes} onChange={e => setForm(f => ({ ...f, notes: e.target.value }))} /></div>
         <div className="flex justify-end gap-2 pt-2">

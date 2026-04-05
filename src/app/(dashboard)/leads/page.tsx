@@ -1,6 +1,9 @@
 import { createClient } from '@/lib/supabase/server'
+import { createAdminClient } from '@/lib/supabase/admin'
 import { redirect } from 'next/navigation'
 import LeadsClient from './LeadsClient'
+
+export const dynamic = 'force-dynamic'
 
 export default async function LeadsPage() {
   const supabase = await createClient()
@@ -8,22 +11,13 @@ export default async function LeadsPage() {
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) redirect('/login')
 
-  const { data: profile } = await supabase.from('profiles').select('id, role').eq('id', user.id).single()
+  const admin = createAdminClient()
+  const { data: profile } = await admin.from('profiles').select('id, role').eq('id', user.id).single()
   const role = profile?.role || 'member'
-  const isMember = role === 'member'
-
-  let leadsQuery = supabase
-    .from('leads')
-    .select('*')
-    .order('inflow_date', { ascending: false })
-
-  if (isMember) {
-    leadsQuery = leadsQuery.eq('assignee_id', user.id)
-  }
 
   const [{ data: leadsRaw }, { data: profilesRaw }] = await Promise.all([
-    leadsQuery,
-    supabase.from('profiles').select('id, name').order('name'),
+    admin.from('leads').select('*').order('inflow_date', { ascending: false }),
+    admin.from('profiles').select('id, name').order('name'),
   ])
 
   const profileMap = Object.fromEntries((profilesRaw ?? []).map(p => [p.id, p]))

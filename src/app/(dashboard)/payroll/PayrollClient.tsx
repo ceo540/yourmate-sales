@@ -1,7 +1,7 @@
 'use client'
 import { useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
-import { upsertPayroll, deletePayroll, upsertBusinessEntity, deleteBusinessEntity, upsertBonusItem, deleteBonusItem, upsertEmployeeCard, deleteEmployeeCard, generateMonthlyFromCards } from './actions'
+import { upsertPayroll, deletePayroll, upsertBusinessEntity, deleteBusinessEntity, upsertBonusItem, deleteBonusItem, generateMonthlyFromCards } from './actions'
 import CsvImportTab from './CsvImportTab'
 import TaxReportTab from './TaxReportTab'
 
@@ -76,19 +76,12 @@ interface Props {
   employeeCards: EmployeeCard[]
 }
 
-type TabType = 'cards' | 'employee' | 'freelancer' | 'bonus_detail' | 'csv_import' | 'tax_report'
+type TabType = 'employee' | 'freelancer' | 'bonus_detail' | 'csv_import' | 'tax_report'
 
 const CURRENT_YEAR = new Date().getFullYear()
 const YEARS = [CURRENT_YEAR, CURRENT_YEAR - 1, CURRENT_YEAR - 2]
 const MONTHS = Array.from({ length: 12 }, (_, i) => i + 1)
-const TAB_LABELS: Record<TabType, string> = { cards: '직원 카드', employee: '직원 급여', freelancer: '프리랜서', bonus_detail: '상여 세부내역', csv_import: 'CSV 임포트', tax_report: '세금 리포트' }
-
-const EMPTY_CARD = {
-  id: '', employee_name: '', business_entity: '', profile_id: null as string | null,
-  base_salary: 0, meal_allowance: 0, mileage_allowance: 0, allowances: 0, fixed_bonus: 0,
-  national_pension: 0, health_insurance: 0, employment_insurance: 0, income_tax: 0,
-  resident_id: '', bank_info: '', dependents: 0, hourly_rate: 0, memo: '', is_active: true,
-}
+const TAB_LABELS: Record<TabType, string> = { employee: '직원 급여', freelancer: '프리랜서', bonus_detail: '상여 세부내역', csv_import: 'CSV 임포트', tax_report: '세금 리포트' }
 
 function fmt(n: number) { return n.toLocaleString() }
 function maskId(id: string | null) {
@@ -213,7 +206,7 @@ function ExportButton({ filterYear, filterMonth }: { filterYear: number; filterM
 export default function PayrollClient({ payroll, profiles, businessEntities, bonusItems: initialBonusItems, employeeCards: initialCards }: Props) {
   const router = useRouter()
   const [, startTransition] = useTransition()
-  const [tab, setTab] = useState<TabType>('cards')
+  const [tab, setTab] = useState<TabType>('employee')
   const [filterBiz, setFilterBiz] = useState('all')
   const [filterYear, setFilterYear] = useState(CURRENT_YEAR)
   const [filterMonth, setFilterMonth] = useState<number | 'all'>('all')
@@ -227,12 +220,8 @@ export default function PayrollClient({ payroll, profiles, businessEntities, bon
   const [showResidentId, setShowResidentId] = useState(false)
   const [dependents, setDependents] = useState(0)
 
-  // 직원 카드
-  const [cards, setCards] = useState(initialCards)
-  const [showCardModal, setShowCardModal] = useState(false)
-  const [cardForm, setCardForm] = useState({ ...EMPTY_CARD })
-  const [cardSaving, setCardSaving] = useState(false)
-  const [cardDependents, setCardDependents] = useState(0)
+  // 직원 카드 (급여설정은 /admin에서, 여기선 월급여 생성 + 상여 드롭다운에만 사용)
+  const [cards] = useState(initialCards)
   const [generating, setGenerating] = useState(false)
 
   // 상여 세부항목
@@ -287,67 +276,12 @@ export default function PayrollClient({ payroll, profiles, businessEntities, bon
         { label: '총 실수령액', value: total - tax, color: 'text-green-600' },
       ]
     }
-    // 직원 카드 탭
-    const activeCards = cards.filter(c => c.is_active)
-    const totalBaseSalary = activeCards.reduce((s, c) => s + c.base_salary, 0)
-    const totalMonthly = activeCards.reduce((s, c) =>
-      s + c.base_salary + c.meal_allowance + c.mileage_allowance + c.allowances + c.fixed_bonus, 0)
     return [
-      { label: '재직 인원', value: activeCards.length, color: 'text-gray-900' },
-      { label: '월 기본급 합계', value: totalBaseSalary, color: 'text-gray-900' },
-      { label: '월 총 고정 인건비', value: totalMonthly, color: 'text-yellow-700' },
+      { label: '', value: 0, color: '' },
+      { label: '', value: 0, color: '' },
+      { label: '', value: 0, color: '' },
     ]
   })()
-
-  // ── 직원 카드 핸들러 ──
-  function openNewCard() {
-    setCardForm({ ...EMPTY_CARD })
-    setCardDependents(0)
-    setShowCardModal(true)
-  }
-
-  function openEditCard(c: EmployeeCard) {
-    setCardForm({
-      id: c.id, employee_name: c.employee_name,
-      business_entity: c.business_entity ?? '', profile_id: c.profile_id,
-      base_salary: c.base_salary, meal_allowance: c.meal_allowance,
-      mileage_allowance: c.mileage_allowance, allowances: c.allowances, fixed_bonus: c.fixed_bonus,
-      national_pension: c.national_pension, health_insurance: c.health_insurance,
-      employment_insurance: c.employment_insurance, income_tax: c.income_tax,
-      resident_id: c.resident_id ?? '', bank_info: c.bank_info ?? '',
-      dependents: c.dependents, hourly_rate: c.hourly_rate ?? 0, memo: c.memo ?? '', is_active: c.is_active,
-    })
-    setCardDependents(c.dependents)
-    setShowCardModal(true)
-  }
-
-  async function handleCardSave() {
-    if (!cardForm.employee_name.trim()) return alert('이름을 입력해주세요.')
-    setCardSaving(true)
-    await upsertEmployeeCard({
-      ...(cardForm.id ? { id: cardForm.id } : {}),
-      employee_name: cardForm.employee_name,
-      business_entity: cardForm.business_entity || null,
-      profile_id: cardForm.profile_id || null,
-      base_salary: cardForm.base_salary, meal_allowance: cardForm.meal_allowance,
-      mileage_allowance: cardForm.mileage_allowance, allowances: cardForm.allowances,
-      fixed_bonus: cardForm.fixed_bonus,
-      national_pension: cardForm.national_pension, health_insurance: cardForm.health_insurance,
-      employment_insurance: cardForm.employment_insurance, income_tax: cardForm.income_tax,
-      resident_id: cardForm.resident_id || null, bank_info: cardForm.bank_info || null,
-      dependents: cardDependents, hourly_rate: cardForm.hourly_rate || null,
-      memo: cardForm.memo || null, is_active: cardForm.is_active,
-    })
-    setCardSaving(false)
-    setShowCardModal(false)
-    startTransition(() => router.refresh())
-  }
-
-  async function handleCardDelete(id: string) {
-    if (!confirm('직원 카드를 삭제하시겠어요?')) return
-    await deleteEmployeeCard(id)
-    setCards(prev => prev.filter(c => c.id !== id))
-  }
 
   async function handleGenerate() {
     const month = filterMonth === 'all' ? new Date().getMonth() + 1 : filterMonth
@@ -363,14 +297,8 @@ export default function PayrollClient({ payroll, profiles, businessEntities, bon
     startTransition(() => router.refresh())
   }
 
-  const cardNumF = (key: keyof typeof cardForm) => ({
-    value: (cardForm[key] as number) === 0 ? '' : (cardForm[key] as number).toLocaleString(),
-    onChange: (e: React.ChangeEvent<HTMLInputElement>) =>
-      setCardForm(f => ({ ...f, [key]: Number(e.target.value.replace(/[^0-9]/g, '')) || 0 })),
-  })
-
   function openNew() {
-    setForm({ ...EMPTY_FORM, employee_type: tab === 'cards' ? 'employee' : tab })
+    setForm({ ...EMPTY_FORM, employee_type: tab === 'bonus_detail' ? 'employee' : tab })
     setShowResidentId(false)
     setShowModal(true)
   }
@@ -552,7 +480,7 @@ export default function PayrollClient({ payroll, profiles, businessEntities, bon
 
       {/* 탭 */}
       <div className="flex gap-1 mb-5 bg-gray-100 p-1 rounded-lg w-fit flex-wrap">
-        {(['cards', 'employee', 'freelancer', 'bonus_detail', 'csv_import', 'tax_report'] as TabType[]).map(t => (
+        {(['employee', 'freelancer', 'bonus_detail', 'csv_import', 'tax_report'] as TabType[]).map(t => (
           <button key={t} onClick={() => setTab(t)}
             className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${tab === t ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}>
             {TAB_LABELS[t]}
@@ -568,8 +496,8 @@ export default function PayrollClient({ payroll, profiles, businessEntities, bon
         <TaxReportTab payroll={payroll} businessEntities={businessEntities} />
       )}
 
-      {/* 요약 카드 (CSV/세금 탭 제외) */}
-      {!['csv_import', 'tax_report'].includes(tab) && (
+      {/* 요약 카드 (직원/프리랜서/상여 탭만) */}
+      {['employee', 'freelancer', 'bonus_detail'].includes(tab) && (
         <div className="grid grid-cols-3 gap-3 md:gap-4 mb-5">
           {summary.map(item => (
             <div key={item.label} className="bg-white rounded-xl border border-gray-200 p-4 md:p-5">
@@ -580,81 +508,16 @@ export default function PayrollClient({ payroll, profiles, businessEntities, bon
         </div>
       )}
 
-      {/* ── 직원 카드 탭 ── */}
-      {tab === 'cards' && (
-        <div>
-          <div className="flex items-center justify-between mb-4">
-            <p className="text-sm text-gray-500">직원별 고정 급여 정보. 매달 급여 생성 시 기준 데이터로 사용됩니다.</p>
-            <button onClick={openNewCard}
-              className="text-sm px-4 py-2 rounded-lg font-semibold hover:opacity-80 transition-all"
-              style={{ backgroundColor: '#FFCE00', color: '#121212' }}>
-              + 직원 추가
-            </button>
-          </div>
-          {cards.length === 0 ? (
-            <div className="bg-white rounded-xl border border-gray-200 py-16 text-center text-sm text-gray-400">
-              등록된 직원이 없습니다. 직원 추가 버튼으로 카드를 만들어주세요.
-            </div>
-          ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-              {cards.map(c => {
-                const gross = c.base_salary + c.meal_allowance + c.mileage_allowance + c.allowances + c.fixed_bonus
-                const ded = c.national_pension + c.health_insurance + c.employment_insurance + c.income_tax
-                return (
-                  <div key={c.id} className={`bg-white rounded-xl border p-5 ${c.is_active ? 'border-gray-200' : 'border-gray-100 opacity-60'}`}>
-                    <div className="flex items-start justify-between mb-3">
-                      <div>
-                        <div className="flex items-center gap-2">
-                          <h3 className="font-bold text-gray-900">{c.employee_name}</h3>
-                          {!c.is_active && <span className="text-xs px-1.5 py-0.5 bg-gray-100 text-gray-400 rounded-full">비활성</span>}
-                        </div>
-                        {c.business_entity && <p className="text-xs text-blue-500 mt-0.5">{c.business_entity}</p>}
-                      </div>
-                      <div className="flex gap-2">
-                        <button onClick={() => openEditCard(c)} className="text-xs px-2.5 py-1 rounded-lg border border-gray-200 text-gray-500 hover:bg-yellow-100 hover:text-yellow-800 transition-colors">수정</button>
-                        <button onClick={() => handleCardDelete(c.id)} className="text-xs text-gray-300 hover:text-red-400 transition-colors">삭제</button>
-                      </div>
-                    </div>
-                    <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-xs mb-3">
-                      <div className="flex justify-between"><span className="text-gray-400">기본급</span><span className="font-medium">{fmt(c.base_salary)}원</span></div>
-                      {c.meal_allowance > 0 && <div className="flex justify-between"><span className="text-gray-400">식대</span><span>{fmt(c.meal_allowance)}원</span></div>}
-                      {c.mileage_allowance > 0 && <div className="flex justify-between"><span className="text-gray-400">자가운전</span><span>{fmt(c.mileage_allowance)}원</span></div>}
-                      {c.allowances > 0 && <div className="flex justify-between"><span className="text-gray-400">수당</span><span>{fmt(c.allowances)}원</span></div>}
-                      {c.fixed_bonus > 0 && <div className="flex justify-between"><span className="text-gray-400">고정상여</span><span>{fmt(c.fixed_bonus)}원</span></div>}
-                    </div>
-                    <div className="border-t border-gray-50 pt-2 grid grid-cols-2 gap-x-4 gap-y-1 text-xs mb-3">
-                      {c.national_pension > 0 && <div className="flex justify-between"><span className="text-gray-400">국민연금</span><span className="text-red-400">-{fmt(c.national_pension)}원</span></div>}
-                      {c.health_insurance > 0 && <div className="flex justify-between"><span className="text-gray-400">건강보험</span><span className="text-red-400">-{fmt(c.health_insurance)}원</span></div>}
-                      {c.employment_insurance > 0 && <div className="flex justify-between"><span className="text-gray-400">고용보험</span><span className="text-red-400">-{fmt(c.employment_insurance)}원</span></div>}
-                      {c.income_tax > 0 && <div className="flex justify-between"><span className="text-gray-400">소득세</span><span className="text-red-400">-{fmt(c.income_tax)}원</span></div>}
-                    </div>
-                    {c.hourly_rate && c.hourly_rate > 0 && (
-                      <div className="flex items-center justify-between text-xs mb-2 bg-blue-50 rounded-lg px-3 py-1.5">
-                        <span className="text-blue-500">시급</span>
-                        <div className="text-right">
-                          <span className="font-semibold text-blue-700">{fmt(c.hourly_rate)}원</span>
-                          <span className="text-blue-400 ml-2">추가수당 {fmt(Math.round(c.hourly_rate * 1.5))}원</span>
-                        </div>
-                      </div>
-                    )}
-                    <div className="flex items-center justify-between pt-2 border-t border-gray-100">
-                      <span className="text-xs text-gray-400">월 실수령</span>
-                      <span className="text-base font-bold text-green-600">{fmt(gross - ded)}원</span>
-                    </div>
-                  </div>
-                )
-              })}
-            </div>
-          )}
-        </div>
-      )}
-
       {/* ── 직원 급여 테이블 ── */}
       {tab === 'employee' && (
         <div>
-          {cards.filter(c => c.is_active).length > 0 && (
-            <div className="flex items-center justify-between mb-3 bg-blue-50 border border-blue-100 rounded-xl px-4 py-3">
-              <p className="text-sm text-blue-700">직원 카드 {cards.filter(c => c.is_active).length}명 등록됨 — 이달 급여를 카드에서 자동 생성할 수 있습니다.</p>
+          <div className="flex items-center justify-between mb-3 bg-blue-50 border border-blue-100 rounded-xl px-4 py-3">
+            <p className="text-sm text-blue-700">
+              {cards.filter(c => c.is_active).length > 0
+                ? `직원 ${cards.filter(c => c.is_active).length}명 설정됨 — 이달 급여를 자동 생성할 수 있습니다.`
+                : '직원 급여설정은 팀원 관리 → 직원 선택 → 급여설정 탭에서 합니다.'}
+            </p>
+            {cards.filter(c => c.is_active).length > 0 && (
               <button
                 onClick={handleGenerate}
                 disabled={generating}
@@ -662,8 +525,8 @@ export default function PayrollClient({ payroll, profiles, businessEntities, bon
                 style={{ backgroundColor: '#FFCE00', color: '#121212' }}>
                 {generating ? '생성 중...' : `${filterYear}년 ${filterMonth === 'all' ? new Date().getMonth() + 1 : filterMonth}월 급여 생성`}
               </button>
-            </div>
-          )}
+            )}
+          </div>
         <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
           <div className="overflow-x-auto">
             <table className="w-full min-w-[1100px]">
@@ -934,162 +797,6 @@ export default function PayrollClient({ payroll, profiles, businessEntities, bon
                 ))}
               </tbody>
             </table>
-          </div>
-        </div>
-      )}
-
-      {/* ── 직원 카드 모달 ── */}
-      {showCardModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-          <div className="absolute inset-0 bg-black/40" onClick={() => setShowCardModal(false)} />
-          <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-lg max-h-[90vh] overflow-y-auto">
-            <div className="px-6 py-5 border-b border-gray-100 flex items-center justify-between">
-              <h2 className="text-base font-bold text-gray-900">{cardForm.id ? '직원 카드 수정' : '직원 카드 추가'}</h2>
-              <button onClick={() => setShowCardModal(false)} className="text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded transition-colors text-xl leading-none">×</button>
-            </div>
-            <div className="px-6 py-5 space-y-4">
-              {/* 이름 */}
-              <div className="flex items-center gap-3">
-                <label className="text-sm text-gray-600 w-24 flex-shrink-0">이름 *</label>
-                <input autoFocus value={cardForm.employee_name}
-                  onChange={e => setCardForm(f => ({ ...f, employee_name: e.target.value }))}
-                  placeholder="홍길동"
-                  className="flex-1 px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-yellow-400" />
-              </div>
-              {/* 사업자 */}
-              <div className="flex items-center gap-3">
-                <label className="text-sm text-gray-600 w-24 flex-shrink-0">사업자</label>
-                <select value={cardForm.business_entity}
-                  onChange={e => setCardForm(f => ({ ...f, business_entity: e.target.value }))}
-                  className="flex-1 px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-yellow-400 bg-white">
-                  <option value="">미지정</option>
-                  {businessEntities.map(b => <option key={b.id} value={b.name}>{b.name}</option>)}
-                </select>
-              </div>
-              {/* 지급항목 */}
-              <div className="border-t border-gray-100 pt-4">
-                <p className="text-xs font-semibold text-gray-700 mb-3">지급 항목</p>
-                <div className="space-y-2.5">
-                  {([
-                    { label: '기본급 *', key: 'base_salary' as const },
-                    { label: '식대', key: 'meal_allowance' as const },
-                    { label: '자가운전보조금', key: 'mileage_allowance' as const },
-                    { label: '수당', key: 'allowances' as const },
-                    { label: '고정상여', key: 'fixed_bonus' as const },
-                  ]).map(({ label, key }) => (
-                    <div key={key} className="flex items-center gap-3">
-                      <label className="text-sm text-gray-600 w-24 flex-shrink-0">{label}</label>
-                      <input type="text" inputMode="numeric" {...cardNumF(key)}
-                        className="flex-1 px-3 py-2 border border-gray-200 rounded-lg text-sm text-right focus:outline-none focus:border-yellow-400" />
-                      <span className="text-xs text-gray-400 w-4">원</span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-              {/* 공제항목 */}
-              <div className="border-t border-gray-100 pt-4">
-                <div className="flex items-center justify-between mb-3">
-                  <p className="text-xs font-semibold text-gray-700">공제 항목</p>
-                  <div className="flex items-center gap-2">
-                    <label className="text-xs text-gray-500">부양가족</label>
-                    <select value={cardDependents} onChange={e => setCardDependents(Number(e.target.value))}
-                      className="text-xs px-2 py-1 border border-gray-200 rounded-lg focus:outline-none focus:border-yellow-400 bg-white">
-                      {[0,1,2,3,4,5].map(n => (
-                        <option key={n} value={n}>{n}명{n === 0 ? ' (본인만)' : ''}</option>
-                      ))}
-                    </select>
-                    <button type="button"
-                      onClick={() => {
-                        const { pension, health, employment, incomeTax } = autoCalcDeductions(
-                          { ...EMPTY_FORM, ...cardForm } as typeof EMPTY_FORM, cardDependents
-                        )
-                        setCardForm(f => ({ ...f, national_pension: pension, health_insurance: health, employment_insurance: employment, income_tax: incomeTax }))
-                      }}
-                      className="text-xs px-3 py-1 rounded-lg font-semibold hover:opacity-80 transition-all"
-                      style={{ backgroundColor: '#FFCE00', color: '#121212' }}>자동계산</button>
-                  </div>
-                </div>
-                <div className="space-y-2.5">
-                  {([
-                    { label: '국민연금', key: 'national_pension' as const },
-                    { label: '건강보험', key: 'health_insurance' as const },
-                    { label: '고용보험', key: 'employment_insurance' as const },
-                    { label: '소득세', key: 'income_tax' as const },
-                  ]).map(({ label, key }) => (
-                    <div key={key} className="flex items-center gap-3">
-                      <label className="text-sm text-gray-600 w-24 flex-shrink-0">{label}</label>
-                      <input type="text" inputMode="numeric" {...cardNumF(key)}
-                        className="flex-1 px-3 py-2 border border-gray-200 rounded-lg text-sm text-right focus:outline-none focus:border-yellow-400" />
-                      <span className="text-xs text-gray-400 w-4">원</span>
-                    </div>
-                  ))}
-                </div>
-                {/* 실수령 미리보기 */}
-                {cardForm.base_salary > 0 && (() => {
-                  const gross = cardForm.base_salary + cardForm.meal_allowance + cardForm.mileage_allowance + cardForm.allowances + cardForm.fixed_bonus
-                  const ded = cardForm.national_pension + cardForm.health_insurance + cardForm.employment_insurance + cardForm.income_tax
-                  return (
-                    <div className="mt-3 bg-gray-50 rounded-lg px-4 py-2.5 flex items-center justify-between">
-                      <span className="text-xs text-gray-500">월 실수령 예상</span>
-                      <span className="text-sm font-bold text-green-600">{fmt(gross - ded)}원</span>
-                    </div>
-                  )
-                })()}
-              </div>
-              {/* 시급 */}
-              <div className="border-t border-gray-100 pt-4">
-                <div className="flex items-center gap-3">
-                  <label className="text-sm text-gray-600 w-24 flex-shrink-0">기준 시급</label>
-                  <input type="text" inputMode="numeric" {...cardNumF('hourly_rate')}
-                    placeholder="0"
-                    className="w-36 px-3 py-2 border border-gray-200 rounded-lg text-sm text-right focus:outline-none focus:border-yellow-400" />
-                  <span className="text-xs text-gray-400">원</span>
-                  {cardForm.hourly_rate > 0 && (
-                    <span className="text-xs text-blue-500 ml-1">
-                      추가수당 {fmt(Math.round(cardForm.hourly_rate * 1.5))}원/시간
-                    </span>
-                  )}
-                </div>
-              </div>
-
-              {/* 계좌·주민번호 */}
-              <div className="border-t border-gray-100 pt-4 space-y-2.5">
-                <div className="flex items-center gap-3">
-                  <label className="text-sm text-gray-600 w-24 flex-shrink-0">계좌번호</label>
-                  <input value={cardForm.bank_info}
-                    onChange={e => setCardForm(f => ({ ...f, bank_info: e.target.value }))}
-                    placeholder="은행 계좌번호"
-                    className="flex-1 px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-yellow-400" />
-                </div>
-                <div className="flex items-center gap-3">
-                  <label className="text-sm text-gray-600 w-24 flex-shrink-0">주민번호</label>
-                  <input value={cardForm.resident_id}
-                    onChange={e => setCardForm(f => ({ ...f, resident_id: e.target.value }))}
-                    placeholder="000000-0000000"
-                    className="flex-1 px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-yellow-400 font-mono" />
-                </div>
-                <div className="flex items-center gap-3">
-                  <label className="text-sm text-gray-600 w-24 flex-shrink-0">메모</label>
-                  <input value={cardForm.memo}
-                    onChange={e => setCardForm(f => ({ ...f, memo: e.target.value }))}
-                    className="flex-1 px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-yellow-400" />
-                </div>
-              </div>
-              <label className="flex items-center gap-2 cursor-pointer">
-                <input type="checkbox" checked={cardForm.is_active}
-                  onChange={e => setCardForm(f => ({ ...f, is_active: e.target.checked }))} className="rounded" />
-                <span className="text-sm text-gray-700">활성 (급여 생성 시 포함)</span>
-              </label>
-            </div>
-            <div className="px-6 py-4 border-t border-gray-100 flex gap-2">
-              <button onClick={handleCardSave} disabled={cardSaving}
-                className="flex-1 py-2.5 rounded-xl text-sm font-semibold disabled:opacity-50 hover:opacity-80 transition-all"
-                style={{ backgroundColor: '#FFCE00', color: '#121212' }}>
-                {cardSaving ? '저장 중...' : '저장'}
-              </button>
-              <button onClick={() => setShowCardModal(false)}
-                className="px-5 py-2.5 rounded-xl text-sm border border-gray-200 text-gray-500 hover:bg-gray-50 transition-colors">취소</button>
-            </div>
           </div>
         </div>
       )}

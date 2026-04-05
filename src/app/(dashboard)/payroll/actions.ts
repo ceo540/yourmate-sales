@@ -117,12 +117,14 @@ export async function upsertEmployeeCard(data: {
     await supabase.from('employee_cards').insert(data)
   }
   revalidatePath('/payroll')
+  revalidatePath('/admin')
 }
 
 export async function deleteEmployeeCard(id: string) {
   const supabase = await createClient()
   await supabase.from('employee_cards').delete().eq('id', id)
   revalidatePath('/payroll')
+  revalidatePath('/admin')
 }
 
 export async function generateMonthlyFromCards(year: number, month: number) {

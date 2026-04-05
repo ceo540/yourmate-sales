@@ -6,7 +6,7 @@ import { revalidatePath } from 'next/cache'
 
 export async function upsertDailyReport(
   reportDate: string,
-  data: { tasks_done?: string; issues?: string; tomorrow_plan?: string; status?: string }
+  data: { tasks_done?: string; issues?: string; tomorrow_plan?: string; status?: string; linked_task_ids?: string[] }
 ) {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()

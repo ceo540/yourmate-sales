@@ -108,13 +108,21 @@ export default async function DashboardPage() {
     .eq('week_start', thisWeek.start)
     .maybeSingle()
 
+  const dailyReportQuery = admin
+    .from('daily_reports')
+    .select('id, status')
+    .eq('user_id', user.id)
+    .eq('report_date', today)
+    .maybeSingle()
+
   const [
     { data: myTasks },
     { data: mySalesRaw },
     { data: myRentals },
     { data: leadsReminder },
     { data: myWeeklyReport },
-  ] = await Promise.all([tasksQuery, salesQuery, rentalsQuery, leadsReminderQuery, weeklyReportQuery])
+    { data: myDailyReport },
+  ] = await Promise.all([tasksQuery, salesQuery, rentalsQuery, leadsReminderQuery, weeklyReportQuery, dailyReportQuery])
 
   // task의 project_id → sale 이름 조인
   const projectIds = [...new Set((myTasks ?? []).map(t => t.project_id).filter(Boolean))]
@@ -138,7 +146,7 @@ export default async function DashboardPage() {
       </div>
 
       {/* 요약 카드 */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-6">
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3 mb-6">
         <div className={`rounded-xl border p-4 ${urgentTasks.length > 0 ? 'bg-red-50 border-red-100' : 'bg-white border-gray-100'}`}>
           <p className="text-xs text-gray-400 mb-1">긴급 업무</p>
           <p className={`text-2xl font-bold ${urgentTasks.length > 0 ? 'text-red-500' : 'text-gray-300'}`}>
@@ -173,6 +181,20 @@ export default async function DashboardPage() {
              myWeeklyReport ? '임시저장' : '미작성'}
           </p>
           <p className="text-xs text-gray-400 mt-1">{getWeekLabel(thisWeek.start, thisWeek.end)}</p>
+        </Link>
+        <Link href="/daily-report" className={`rounded-xl border p-4 hover:opacity-90 transition-opacity ${
+          myDailyReport?.status === 'submitted' ? 'bg-green-50 border-green-100' :
+          myDailyReport ? 'bg-yellow-50 border-yellow-100' : 'bg-white border-gray-100'
+        }`}>
+          <p className="text-xs text-gray-400 mb-1">오늘 일일업무표</p>
+          <p className={`text-sm font-bold mt-1 ${
+            myDailyReport?.status === 'submitted' ? 'text-green-600' :
+            myDailyReport ? 'text-yellow-600' : 'text-gray-300'
+          }`}>
+            {myDailyReport?.status === 'submitted' ? '제출완료 ✓' :
+             myDailyReport ? '임시저장' : '미작성'}
+          </p>
+          <p className="text-xs text-gray-400 mt-1">{now.toLocaleDateString('ko-KR', { month: 'short', day: 'numeric' })}</p>
         </Link>
       </div>
 
