@@ -1,5 +1,5 @@
 // 사용자
-export type UserRole = 'admin' | 'member'
+export type UserRole = 'admin' | 'manager' | 'member'
 
 export interface User {
   id: string

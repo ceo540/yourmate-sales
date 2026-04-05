@@ -587,13 +587,16 @@ async function processWithClaude(chatKey: string, userMessage: string) {
 export async function POST(req: NextRequest) {
   const body = await req.text()
 
-  // 서명 검증 (선택적 — 키가 없으면 스킵)
+  // 서명 검증 (secret 설정 시 fail-closed)
   const secret = process.env.CHANNELTALK_ACCESS_SECRET
-  const signature = req.headers.get('x-channel-signature') || req.headers.get('x-signature') || ''
-  if (secret && signature) {
+  if (secret) {
+    const signature = req.headers.get('x-channel-signature') || req.headers.get('x-signature') || ''
+    if (!signature) {
+      return NextResponse.json({ error: 'missing signature' }, { status: 401 })
+    }
     const expected = crypto.createHmac('sha256', secret).update(body).digest('hex')
     if (signature !== expected && signature !== `sha256=${expected}`) {
-      console.warn('ChannelTalk signature mismatch (proceeding anyway):', { received: signature })
+      return NextResponse.json({ error: 'invalid signature' }, { status: 401 })
     }
   }
 
@@ -604,8 +607,8 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'invalid json' }, { status: 400 })
   }
 
-  // 디버깅용 로그 — 전체 페이로드
-  console.log('[ChannelTalk FULL]', JSON.stringify(payload))
+  // 디버깅용 로그 — 민감정보 제외
+  console.log('[ChannelTalk] event received, entity type:', (payload.entity as any)?.type)
 
   const entity = payload.entity as Record<string, unknown> | undefined
 

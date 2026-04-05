@@ -15,8 +15,9 @@ export default async function LeadsPage() {
   const { data: profile } = await admin.from('profiles').select('id, role').eq('id', user.id).single()
   const role = profile?.role || 'member'
 
+  const leadsQuery = admin.from('leads').select('*').order('inflow_date', { ascending: false })
   const [{ data: leadsRaw }, { data: profilesRaw }] = await Promise.all([
-    admin.from('leads').select('*').order('inflow_date', { ascending: false }),
+    role === 'member' ? leadsQuery.eq('assignee_id', user.id) : leadsQuery,
     admin.from('profiles').select('id, name').order('name'),
   ])
 

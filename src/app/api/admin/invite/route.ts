@@ -34,9 +34,10 @@ export async function POST(request: NextRequest) {
   try {
     const admin = createAdminClient()
 
+    const origin = process.env.NEXT_PUBLIC_APP_URL ?? request.nextUrl.origin
     const { data, error } = await admin.auth.admin.inviteUserByEmail(email, {
       data: { name },
-      redirectTo: 'https://yourmate-system.vercel.app/auth/callback?type=invite',
+      redirectTo: `${origin}/auth/callback?type=invite`,
     })
 
     if (error) {
