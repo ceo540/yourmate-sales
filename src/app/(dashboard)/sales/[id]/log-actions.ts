@@ -20,6 +20,7 @@ export async function createLog(saleId: string, content: string, logType: string
 
   if (error) throw new Error(error.message)
   revalidatePath(`/sales/${saleId}`)
+  revalidatePath('/departments', 'layout')
 }
 
 export async function deleteLog(logId: string, saleId: string) {
