@@ -2,6 +2,8 @@
 import { useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
 import { upsertPayroll, deletePayroll, upsertBusinessEntity, deleteBusinessEntity, upsertBonusItem, deleteBonusItem, upsertEmployeeCard, deleteEmployeeCard, generateMonthlyFromCards } from './actions'
+import CsvImportTab from './CsvImportTab'
+import TaxReportTab from './TaxReportTab'
 
 interface PayrollRecord {
   id: string
@@ -74,12 +76,12 @@ interface Props {
   employeeCards: EmployeeCard[]
 }
 
-type TabType = 'cards' | 'employee' | 'freelancer' | 'bonus_detail'
+type TabType = 'cards' | 'employee' | 'freelancer' | 'bonus_detail' | 'csv_import' | 'tax_report'
 
 const CURRENT_YEAR = new Date().getFullYear()
 const YEARS = [CURRENT_YEAR, CURRENT_YEAR - 1, CURRENT_YEAR - 2]
 const MONTHS = Array.from({ length: 12 }, (_, i) => i + 1)
-const TAB_LABELS: Record<TabType, string> = { cards: '직원 카드', employee: '직원 급여', freelancer: '프리랜서', bonus_detail: '상여 세부내역' }
+const TAB_LABELS: Record<TabType, string> = { cards: '직원 카드', employee: '직원 급여', freelancer: '프리랜서', bonus_detail: '상여 세부내역', csv_import: 'CSV 임포트', tax_report: '세금 리포트' }
 
 const EMPTY_CARD = {
   id: '', employee_name: '', business_entity: '', profile_id: null as string | null,
@@ -243,13 +245,13 @@ export default function PayrollClient({ payroll, profiles, businessEntities, bon
   const normalizeType = (t: string): TabType =>
     t === 'freelancer' ? 'freelancer' : 'employee'
 
-  const filtered = payroll.filter(r => {
+  const filtered = (['employee', 'freelancer'] as TabType[]).includes(tab) ? payroll.filter(r => {
     if (normalizeType(r.employee_type) !== tab) return false
     if (filterBiz !== 'all' && r.business_entity !== filterBiz) return false
     if (r.year !== filterYear) return false
     if (filterMonth !== 'all' && r.month !== filterMonth) return false
     return true
-  })
+  }) : []
 
   const filteredBonusItems = bonusItems.filter(b => {
     if (filterBiz !== 'all' && b.business_entity !== filterBiz) return false
@@ -550,7 +552,7 @@ export default function PayrollClient({ payroll, profiles, businessEntities, bon
 
       {/* 탭 */}
       <div className="flex gap-1 mb-5 bg-gray-100 p-1 rounded-lg w-fit flex-wrap">
-        {(['cards', 'employee', 'freelancer', 'bonus_detail'] as TabType[]).map(t => (
+        {(['cards', 'employee', 'freelancer', 'bonus_detail', 'csv_import', 'tax_report'] as TabType[]).map(t => (
           <button key={t} onClick={() => setTab(t)}
             className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${tab === t ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}>
             {TAB_LABELS[t]}
@@ -558,15 +560,25 @@ export default function PayrollClient({ payroll, profiles, businessEntities, bon
         ))}
       </div>
 
-      {/* 요약 카드 */}
-      <div className="grid grid-cols-3 gap-3 md:gap-4 mb-5">
-        {summary.map(item => (
-          <div key={item.label} className="bg-white rounded-xl border border-gray-200 p-4 md:p-5">
-            <p className="text-xs text-gray-500 mb-1.5">{item.label}</p>
-            <p className={`text-lg md:text-xl font-bold ${item.color}`}>{fmt(item.value)}</p>
-          </div>
-        ))}
-      </div>
+      {/* ── CSV 임포트 탭 ── */}
+      {tab === 'csv_import' && <CsvImportTab />}
+
+      {/* ── 세금 리포트 탭 ── */}
+      {tab === 'tax_report' && (
+        <TaxReportTab payroll={payroll} businessEntities={businessEntities} />
+      )}
+
+      {/* 요약 카드 (CSV/세금 탭 제외) */}
+      {!['csv_import', 'tax_report'].includes(tab) && (
+        <div className="grid grid-cols-3 gap-3 md:gap-4 mb-5">
+          {summary.map(item => (
+            <div key={item.label} className="bg-white rounded-xl border border-gray-200 p-4 md:p-5">
+              <p className="text-xs text-gray-500 mb-1.5">{item.label}</p>
+              <p className={`text-lg md:text-xl font-bold ${item.color}`}>{fmt(item.value)}</p>
+            </div>
+          ))}
+        </div>
+      )}
 
       {/* ── 직원 카드 탭 ── */}
       {tab === 'cards' && (
