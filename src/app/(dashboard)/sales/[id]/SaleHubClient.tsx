@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useTransition, useEffect, useCallback } from 'react'
-import { createLog, deleteLog } from './log-actions'
+import { createLog, deleteLog, getSaleLogs } from './log-actions'
 import { updateMemo } from './memo-action'
 import { updateSaleDetail } from './contract-action'
 import { createTask, updateTaskStatus, deleteTask } from '../tasks/actions'
@@ -95,9 +95,12 @@ export default function SaleHubClient({ sale, tasks: initialTasks, logs, profile
   const [newTaskPriority, setNewTaskPriority] = useState('보통')
 
   // 소통 내역
+  const [localLogs, setLocalLogs] = useState(logs)
   const [newLog, setNewLog] = useState('')
   const [newLogType, setNewLogType] = useState('통화')
   const [logContactedAt, setLogContactedAt] = useState(() => new Date().toISOString().slice(0, 16))
+
+  useEffect(() => { setLocalLogs(logs) }, [logs])
 
   const pendingTasks = tasks.filter(t => t.status !== '완료' && t.status !== '보류')
   const completedTasks = tasks.filter(t => t.status === '완료')
@@ -125,13 +128,15 @@ export default function SaleHubClient({ sale, tasks: initialTasks, logs, profile
       await createLog(sale.id, newLog, type, logContactedAt ? new Date(logContactedAt).toISOString() : undefined)
       setNewLog('')
       setLogContactedAt(new Date().toISOString().slice(0, 16))
+      const updated = await getSaleLogs(sale.id)
+      setLocalLogs(updated)
     })
   }
 
   const TABS = [
     { key: 'overview' as const, label: '개요' },
     { key: 'tasks'    as const, label: `업무 ${pendingTasks.length > 0 ? `(${pendingTasks.length}건 진행중)` : `(${tasks.length})`}` },
-    { key: 'logs'     as const, label: `소통 내역 (${logs.length})` },
+    { key: 'logs'     as const, label: `소통 내역 (${localLogs.length})` },
     { key: 'notes'    as const, label: '자유 노트' },
     { key: 'contract' as const, label: '계약 정보' },
   ]
@@ -150,7 +155,7 @@ export default function SaleHubClient({ sale, tasks: initialTasks, logs, profile
 
       {/* ── 개요 탭 ── */}
       {tab === 'overview' && (
-        <OverviewTab sale={sale} tasks={tasks} logs={logs} notes={sale.notes ?? ''} initialOverview={sale.project_overview ?? ''} />
+        <OverviewTab sale={sale} tasks={tasks} logs={localLogs} notes={sale.notes ?? ''} initialOverview={sale.project_overview ?? ''} />
       )}
 
       {/* ── 업무 탭 ── */}
@@ -249,18 +254,18 @@ export default function SaleHubClient({ sale, tasks: initialTasks, logs, profile
               ))}
             </div>
           </div>
-          {logs.length === 0 ? (
+          {localLogs.length === 0 ? (
             <div className="text-center py-10 text-gray-400 text-sm">소통 내역이 없습니다</div>
           ) : (
             <div className="space-y-2">
-              {logs.map(log => (
+              {localLogs.map(log => (
                 <div key={log.id} className="bg-white border border-gray-100 rounded-xl px-4 py-3 group">
                   <div className="flex items-center gap-2 mb-2">
                     <span className={`text-[11px] px-2 py-0.5 rounded-full font-medium ${LOG_TYPE_COLORS[log.log_type] ?? 'bg-gray-100 text-gray-500'}`}>{log.log_type}</span>
                     <span className="text-xs text-gray-400">{new Date(log.contacted_at || log.created_at).toLocaleDateString('ko-KR', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</span>
                     <span className="text-xs text-gray-400 ml-auto">{log.author?.name ?? '-'}</span>
                     {isAdmin && (
-                      <button onClick={() => startTransition(() => deleteLog(log.id, sale.id))}
+                      <button onClick={() => startTransition(async () => { await deleteLog(log.id, sale.id); const updated = await getSaleLogs(sale.id); setLocalLogs(updated) })}
                         className="opacity-0 group-hover:opacity-100 text-xs text-gray-300 hover:text-red-400 transition-all">✕</button>
                     )}
                   </div>
@@ -279,7 +284,7 @@ export default function SaleHubClient({ sale, tasks: initialTasks, logs, profile
           saleName={sale.name}
           initialNotes={sale.notes ?? ''}
           tasks={tasks}
-          logs={logs}
+          logs={localLogs}
         />
       )}
 

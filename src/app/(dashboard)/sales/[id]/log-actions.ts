@@ -27,6 +27,18 @@ export async function deleteLog(logId: string, saleId: string) {
   const admin = createAdminClient()
   await admin.from('project_logs').delete().eq('id', logId)
   revalidatePath(`/sales/${saleId}`)
+  revalidatePath('/departments', 'layout')
+}
+
+export async function getSaleLogs(saleId: string) {
+  const admin = createAdminClient()
+  const { data } = await admin
+    .from('project_logs')
+    .select('id, content, log_type, contacted_at, created_at, author:author_id(name)')
+    .eq('sale_id', saleId)
+    .order('contacted_at', { ascending: false })
+    .limit(50)
+  return (data ?? []).map((l: any) => ({ ...l, author: l.author ?? null }))
 }
 
 export async function createLeadLog(leadId: string, content: string, logType: string, contactedAt?: string) {
