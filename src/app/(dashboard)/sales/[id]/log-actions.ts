@@ -10,12 +10,13 @@ export async function createLog(saleId: string, content: string, logType: string
   if (!user) throw new Error('Unauthorized')
 
   const admin = createAdminClient()
-  const { error } = await admin.from('project_logs').insert({
-    sale_id: saleId,
-    content,
-    log_type: logType,
-    author_id: user.id,
-    contacted_at: contactedAt || new Date().toISOString(),
+  const { error } = await admin.rpc('insert_project_log', {
+    p_sale_id: saleId,
+    p_lead_id: null,
+    p_content: content,
+    p_log_type: logType,
+    p_author_id: user.id,
+    p_contacted_at: contactedAt || new Date().toISOString(),
   })
 
   if (error) throw new Error(error.message)
