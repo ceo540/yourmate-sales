@@ -141,6 +141,26 @@ export async function removeRentalItem(itemId: string, rentalId: string) {
   return { success: true }
 }
 
+export async function updateRentalChecklist(id: string, checklist: Record<string, boolean>) {
+  const supabase = await createClient()
+  const updates: Record<string, unknown> = { checklist, updated_at: new Date().toISOString() }
+
+  // 검수 완료 + 보증금 환급 모두 체크 시 자동으로 완료 처리
+  if (checklist.final_inspection && checklist.deposit_returned) {
+    updates.status = '완료'
+    const { data: rental } = await supabase.from('rentals').select('sale_id').eq('id', id).single()
+    if (rental?.sale_id) {
+      await supabase.from('sales').update({ payment_status: '완납' }).eq('id', rental.sale_id)
+    }
+  }
+
+  const { error } = await supabase.from('rentals').update(updates).eq('id', id)
+  if (error) return { error: error.message }
+  revalidatePath('/rentals')
+  revalidatePath(`/rentals/${id}`)
+  return { success: true }
+}
+
 // 소통 이력 추가 (contact_1 → contact_2 → contact_3 순서로 채움)
 export async function addRentalContact(rentalId: string, text: string) {
   const supabase = await createClient()

@@ -2,34 +2,108 @@
 import { useState, useTransition, useEffect } from 'react'
 import {
   createRental, updateRental, updateRentalStatus, deleteRental,
-  addRentalItem, removeRentalItem, addRentalContact,
+  addRentalItem, removeRentalItem, addRentalContact, updateRentalChecklist,
 } from './actions'
 
-// ─── 상태 스타일 ──────────────────────────────────────────────────
-export const RENTAL_STATUSES = ['전체','유입','상담','견적발송','확정','계약서서명','진행중','반납','완료','취소'] as const
+// ─── 상태 ────────────────────────────────────────────────────────
+export const RENTAL_STATUSES = ['전체','유입','견적/조율','렌탈확정','배송완료','진행중','수거완료','완료','취소','보류'] as const
 export type RentalStatus = Exclude<typeof RENTAL_STATUSES[number], '전체'>
 
 const STATUS_BADGE: Record<string, string> = {
   유입:       'bg-gray-100 text-gray-500',
-  상담:       'bg-purple-100 text-purple-700',
-  견적발송:   'bg-blue-100 text-blue-700',
-  확정:       'bg-yellow-100 text-yellow-700',
-  계약서서명: 'bg-orange-100 text-orange-700',
+  '견적/조율': 'bg-purple-100 text-purple-700',
+  렌탈확정:   'bg-yellow-100 text-yellow-700',
+  배송완료:   'bg-blue-100 text-blue-700',
   진행중:     'bg-green-100 text-green-700',
-  반납:       'bg-teal-100 text-teal-700',
+  수거완료:   'bg-teal-100 text-teal-700',
   완료:       'bg-gray-100 text-gray-400',
   취소:       'bg-red-100 text-red-400',
+  보류:       'bg-orange-100 text-orange-700',
 }
 const STATUS_BAR: Record<string, string> = {
-  유입:'bg-gray-300', 상담:'bg-purple-400', 견적발송:'bg-blue-400',
-  확정:'bg-yellow-400', 계약서서명:'bg-orange-400', 진행중:'bg-green-500',
-  반납:'bg-teal-400', 완료:'bg-gray-200', 취소:'bg-red-300',
+  유입:       'bg-gray-300',
+  '견적/조율': 'bg-purple-400',
+  렌탈확정:   'bg-yellow-400',
+  배송완료:   'bg-blue-400',
+  진행중:     'bg-green-500',
+  수거완료:   'bg-teal-400',
+  완료:       'bg-gray-200',
+  취소:       'bg-red-300',
+  보류:       'bg-orange-300',
 }
 const NEXT_STATUS: Record<string, string> = {
-  유입:'상담', 상담:'견적발송', 견적발송:'확정',
-  확정:'계약서서명', 계약서서명:'진행중', 진행중:'반납', 반납:'완료',
+  유입:       '견적/조율',
+  '견적/조율': '렌탈확정',
+  렌탈확정:   '배송완료',
+  배송완료:   '진행중',
+  진행중:     '수거완료',
+  수거완료:   '완료',
+}
+const STATUS_FLOW = ['유입','견적/조율','렌탈확정','배송완료','진행중','수거완료','완료']
+function statusAtLeast(current: string, target: string) {
+  const ci = STATUS_FLOW.indexOf(current)
+  const ti = STATUS_FLOW.indexOf(target)
+  return ci >= 0 && ti >= 0 && ci >= ti
 }
 
+// ─── 부가 상태 ────────────────────────────────────────────────────
+const PAYMENT_STATUSES   = ['미결제','부분결제','결제완료','환불완료']
+const DEPOSIT_STATUSES   = ['없음','보유중','환급완료']
+const INSPECTION_STATUSES = ['검수전','정상','이슈발생']
+
+const PAYMENT_BADGE: Record<string, string> = {
+  미결제:   'bg-red-50 text-red-500',
+  부분결제: 'bg-yellow-50 text-yellow-700',
+  결제완료: 'bg-green-50 text-green-700',
+  환불완료: 'bg-gray-100 text-gray-500',
+}
+const DEPOSIT_BADGE: Record<string, string> = {
+  없음:     'bg-gray-100 text-gray-400',
+  보유중:   'bg-blue-50 text-blue-600',
+  환급완료: 'bg-green-50 text-green-600',
+}
+const INSPECTION_BADGE: Record<string, string> = {
+  검수전:   'bg-gray-100 text-gray-400',
+  정상:     'bg-green-50 text-green-600',
+  이슈발생: 'bg-red-50 text-red-500',
+}
+
+// ─── 체크리스트 ───────────────────────────────────────────────────
+const CHECKLIST_GROUPS = [
+  {
+    label: '계약', color: 'text-purple-600',
+    items: [
+      { key: 'contract_sent',   label: '견적서 발송' },
+      { key: 'contract_signed', label: '계약서 서명' },
+      { key: 'docs_received',   label: '서류 수령' },
+    ],
+  },
+  {
+    label: '배송', color: 'text-blue-600',
+    items: [
+      { key: 'pre_inspection', label: '검수 완료' },
+      { key: 'packed',         label: '포장 완료' },
+      { key: 'shipped',        label: '발송 완료' },
+      { key: 'tracking_sent',  label: '송장 전달' },
+    ],
+  },
+  {
+    label: '반납', color: 'text-teal-600',
+    items: [
+      { key: 'return_notified', label: '반납 안내' },
+      { key: 'returned',        label: '수거 완료' },
+    ],
+  },
+  {
+    label: '검수/정산', color: 'text-green-700',
+    items: [
+      { key: 'final_inspection', label: '검수 완료' },
+      { key: 'deposit_returned', label: '보증금 환급' },
+    ],
+  },
+]
+
+// ─── 기타 상수 ────────────────────────────────────────────────────
 const DELIVERY_METHODS = ['착불택배','선불택배','업체배송수거','퀵','방문수령반납']
 const INFLOW_SOURCES   = ['네이버','인스타','유튜브','지인','기존고객','채널톡','기타']
 const CUSTOMER_TYPES   = ['기관','개인']
@@ -49,6 +123,11 @@ interface Rental {
   notes: string | null; content: string | null; dropbox_url: string | null
   contact_1: string | null; contact_2: string | null; contact_3: string | null
   items: RentalItem[]
+  payment_status: string | null
+  deposit_status: string | null
+  inspection_status: string | null
+  is_exception: boolean | null
+  checklist: Record<string, boolean> | null
 }
 interface Props {
   rentals: Rental[]
@@ -72,8 +151,8 @@ function getDDay(dateStr: string | null) {
   return       { label:`D-${d}`,                    cls:'bg-gray-100 text-gray-400',             row:'' }
 }
 function getDisplayDDay(r: Rental) {
-  if (['확정','계약서서명'].includes(r.status)) return getDDay(r.rental_start)
-  if (['진행중','반납'].includes(r.status))     return getDDay(r.rental_end)
+  if (r.status === '렌탈확정') return getDDay(r.rental_start)
+  if (['배송완료','진행중'].includes(r.status)) return getDDay(r.rental_end)
   return null
 }
 function parseContact(text: string) {
@@ -81,14 +160,24 @@ function parseContact(text: string) {
   return m ? { date: m[1], body: m[2] } : { date: null, body: text }
 }
 
-// ─── 보기 탭 ─────────────────────────────────────────────────────
+// ─── 보기 탭 ────────────────────────────────────────────────────
 const VIEWS = [
-  { key:'전체',     label:'전체',        filter:(r:Rental)=>!['완료','취소'].includes(r.status),              sort:(a:Rental,b:Rental)=>(a.rental_end??'9')<(b.rental_end??'9')?-1:1 },
-  { key:'배송 예정', label:'배송 예정',  filter:(r:Rental)=>['확정','계약서서명'].includes(r.status),         sort:(a:Rental,b:Rental)=>(a.rental_start??'9')<(b.rental_start??'9')?-1:1 },
-  { key:'수거 예정', label:'수거 예정',  filter:(r:Rental)=>['진행중','반납'].includes(r.status),             sort:(a:Rental,b:Rental)=>(a.rental_end??'9')<(b.rental_end??'9')?-1:1 },
-  { key:'진행 전',  label:'진행 전',     filter:(r:Rental)=>['유입','상담','견적발송'].includes(r.status),    sort:(_a:Rental,_b:Rental)=>0 },
-  { key:'완료 체크', label:'완료 체크',  filter:(r:Rental)=>['완료','취소'].includes(r.status),               sort:(a:Rental,b:Rental)=>(a.rental_end??'')>(b.rental_end??'')?-1:1 },
-] as const
+  { key:'전체' as const,     label:'전체',
+    filter:(r:Rental)=>!['완료','취소','보류'].includes(r.status),
+    sort:(a:Rental,b:Rental)=>(a.rental_end??'9')<(b.rental_end??'9')?-1:1 },
+  { key:'배송 예정' as const, label:'배송 예정',
+    filter:(r:Rental)=>r.status==='렌탈확정',
+    sort:(a:Rental,b:Rental)=>(a.rental_start??'9')<(b.rental_start??'9')?-1:1 },
+  { key:'수거 예정' as const, label:'수거 예정',
+    filter:(r:Rental)=>['배송완료','진행중'].includes(r.status),
+    sort:(a:Rental,b:Rental)=>(a.rental_end??'9')<(b.rental_end??'9')?-1:1 },
+  { key:'진행 전' as const,  label:'진행 전',
+    filter:(r:Rental)=>['유입','견적/조율'].includes(r.status),
+    sort:(_a:Rental,_b:Rental)=>0 },
+  { key:'완료 체크' as const, label:'완료 체크',
+    filter:(r:Rental)=>['완료','취소','보류'].includes(r.status),
+    sort:(a:Rental,b:Rental)=>(a.rental_end??'')>(b.rental_end??'')?-1:1 },
+]
 type ViewKey = typeof VIEWS[number]['key']
 
 // ─── 메인 컴포넌트 ───────────────────────────────────────────────
@@ -97,7 +186,6 @@ export default function RentalsClient({ rentals, profiles, customers }: Props) {
   const [selected, setSelected]       = useState<Rental | null>(null)
   const [isPending, startTransition]  = useTransition()
 
-  // 신규 등록 폼
   const [showNew, setShowNew] = useState(false)
   const [newForm, setNewForm] = useState({
     customer_id:'', customer_name:'', contact_name:'', phone:'', customer_type:'기관',
@@ -110,19 +198,15 @@ export default function RentalsClient({ rentals, profiles, customers }: Props) {
     ? customers.filter(c => c.name.toLowerCase().includes(customerSearch.toLowerCase())).slice(0, 8)
     : customers.slice(0, 8)
 
-  // 수정 모달
   const [editMode, setEditMode] = useState(false)
   const [editForm, setEditForm] = useState<Record<string,string>>({})
 
-  // 소통 이력
   const [showAddContact, setShowAddContact] = useState(false)
   const [contactText, setContactText]       = useState('')
 
-  // 품목 추가
   const [showAddItem, setShowAddItem] = useState(false)
   const [itemForm, setItemForm] = useState({ item_name:'', model_code:'', quantity:'1', months:'1', unit_price:'' })
 
-  // rentals 변경 시 selected 동기화
   useEffect(() => {
     if (!selected) return
     const updated = rentals.find(r => r.id === selected.id)
@@ -133,32 +217,32 @@ export default function RentalsClient({ rentals, profiles, customers }: Props) {
   const rows = [...rentals].filter(view.filter).sort(view.sort)
 
   const stats = [
-    { label:'전체 진행', value:rentals.filter(r=>!['완료','취소'].includes(r.status)).length, color:'text-gray-800' },
-    { label:'배송 예정', value:rentals.filter(r=>['확정','계약서서명'].includes(r.status)).length, color:'text-yellow-600' },
+    { label:'전체 진행', value:rentals.filter(r=>!['완료','취소','보류'].includes(r.status)).length, color:'text-gray-800' },
+    { label:'배송 예정', value:rentals.filter(r=>r.status==='렌탈확정').length, color:'text-yellow-600' },
     { label:'렌탈중',    value:rentals.filter(r=>r.status==='진행중').length, color:'text-green-600' },
-    { label:'수거 임박', value:rentals.filter(r=>r.rental_end&&['진행중','반납'].includes(r.status)&&daysFrom(r.rental_end)>=0&&daysFrom(r.rental_end)<=7).length, color:'text-red-600' },
+    { label:'수거 임박', value:rentals.filter(r=>r.rental_end&&['배송완료','진행중'].includes(r.status)&&daysFrom(r.rental_end)>=0&&daysFrom(r.rental_end)<=7).length, color:'text-red-600' },
   ]
 
   const contacts = selected ? [selected.contact_1, selected.contact_2, selected.contact_3]
     .filter(Boolean).map(c => parseContact(c!)) : []
   const itemsTotal = (selected?.items ?? []).reduce((s, i) => s + (i.total_price || 0), 0)
 
-  // ── 핸들러 ─────────────────────────────────────────────────────
+  // ── 핸들러 ──────────────────────────────────────────────────────
   async function handleCreate() {
     if (!newForm.customer_name) return
     const result = await createRental({
-      customer_id:   newForm.customer_id || undefined,
-      customer_name: newForm.customer_name,
-      contact_name:  newForm.contact_name || undefined,
-      phone:         newForm.phone || undefined,
-      customer_type: newForm.customer_type,
-      assignee_id:   newForm.assignee_id || undefined,
-      rental_start:  newForm.rental_start || undefined,
-      rental_end:    newForm.rental_end || undefined,
+      customer_id:     newForm.customer_id || undefined,
+      customer_name:   newForm.customer_name,
+      contact_name:    newForm.contact_name || undefined,
+      phone:           newForm.phone || undefined,
+      customer_type:   newForm.customer_type,
+      assignee_id:     newForm.assignee_id || undefined,
+      rental_start:    newForm.rental_start || undefined,
+      rental_end:      newForm.rental_end || undefined,
       delivery_method: newForm.delivery_method || undefined,
-      inflow_source: newForm.inflow_source || undefined,
-      total_amount:  newForm.total_amount ? parseInt(newForm.total_amount) : undefined,
-      deposit:       newForm.deposit ? parseInt(newForm.deposit) : undefined,
+      inflow_source:   newForm.inflow_source || undefined,
+      total_amount:    newForm.total_amount ? parseInt(newForm.total_amount) : undefined,
+      deposit:         newForm.deposit ? parseInt(newForm.deposit) : undefined,
     })
     if (result?.error) { alert(result.error); return }
     setShowNew(false)
@@ -245,6 +329,24 @@ export default function RentalsClient({ rentals, profiles, customers }: Props) {
     setSelected(null)
   }
 
+  async function handleChecklistToggle(key: string, checked: boolean) {
+    if (!selected) return
+    const newChecklist = { ...(selected.checklist ?? {}), [key]: checked }
+    setSelected(prev => prev ? { ...prev, checklist: newChecklist } : null)
+    await updateRentalChecklist(selected.id, newChecklist)
+  }
+
+  async function handleMetaUpdate(field: string, value: string | boolean) {
+    if (!selected) return
+    setSelected(prev => prev ? { ...prev, [field]: value } : null)
+    await updateRental(selected.id, { [field]: value })
+  }
+
+  function handleMilestone(targetStatus: string) {
+    if (!selected || statusAtLeast(selected.status, targetStatus)) return
+    startTransition(() => { void updateRentalStatus(selected.id, targetStatus) })
+  }
+
   const inputCls = 'w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-yellow-300'
   const labelCls = 'block text-xs font-medium text-gray-500 mb-1'
 
@@ -306,13 +408,16 @@ export default function RentalsClient({ rentals, profiles, customers }: Props) {
                   return (
                     <tr key={r.id} onClick={() => { setSelected(isSel ? null : r); setShowAddContact(false); setShowAddItem(false) }}
                       className={`border-t border-gray-50 cursor-pointer transition-colors ${isSel ? 'bg-yellow-50 ring-1 ring-inset ring-yellow-200' : dday?.row ? `${dday.row} hover:brightness-95` : 'hover:bg-gray-50'}`}>
-                      <td className="p-0"><div className={`w-1 min-h-[52px] ${STATUS_BAR[r.status]}`} /></td>
+                      <td className="p-0"><div className={`w-1 min-h-[52px] ${STATUS_BAR[r.status] ?? 'bg-gray-200'}`} /></td>
                       <td className="px-3 py-3 whitespace-nowrap">
                         {dday ? <span className={`text-xs px-2 py-0.5 rounded-full ${dday.cls}`}>{dday.label}</span>
                                : <span className="text-gray-300 text-xs">—</span>}
                       </td>
                       <td className="px-3 py-3">
-                        <p className="font-semibold text-gray-900 text-sm leading-tight">{r.customer_name}</p>
+                        <p className="font-semibold text-gray-900 text-sm leading-tight">
+                          {r.customer_name}
+                          {r.is_exception && <span className="ml-1 text-[10px] text-orange-500">⚠</span>}
+                        </p>
                         <p className="text-xs text-gray-400 mt-0.5">{r.contact_name ?? r.customer_type}</p>
                       </td>
                       <td className="hidden sm:table-cell px-3 py-3 whitespace-nowrap">
@@ -323,7 +428,10 @@ export default function RentalsClient({ rentals, profiles, customers }: Props) {
                         {r.assignee_name ?? <span className="text-gray-300">—</span>}
                       </td>
                       <td className="px-3 py-3">
-                        <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${STATUS_BADGE[r.status]}`}>{r.status}</span>
+                        <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${STATUS_BADGE[r.status] ?? 'bg-gray-100 text-gray-400'}`}>{r.status}</span>
+                        {r.payment_status && r.payment_status !== '미결제' && (
+                          <span className={`ml-1 text-[10px] px-1.5 py-0.5 rounded-full ${PAYMENT_BADGE[r.payment_status] ?? 'bg-gray-100 text-gray-400'}`}>{r.payment_status}</span>
+                        )}
                         {r.items.length > 0 && <p className="text-[10px] text-gray-400 mt-0.5">{r.items.length}종</p>}
                         {r.total_amount > 0 && <p className="text-[10px] font-semibold text-gray-600 mt-0.5">{fmt(r.total_amount)}원</p>}
                       </td>
@@ -348,15 +456,44 @@ export default function RentalsClient({ rentals, profiles, customers }: Props) {
               <div className="px-5 py-4 border-b border-gray-100 bg-white shrink-0">
                 <button onClick={() => setSelected(null)} className="md:hidden flex items-center gap-1 text-xs text-gray-400 mb-2">← 목록으로</button>
                 <div className="flex items-start justify-between">
-                  <div>
+                  <div className="flex-1 min-w-0">
                     <h2 className="text-base font-bold text-gray-900">{selected.customer_name}</h2>
                     {selected.contact_name && (
                       <p className="text-xs text-gray-500 mt-0.5">{selected.contact_name}{selected.phone && ` · ${selected.phone}`}</p>
                     )}
-                    <div className="flex flex-wrap gap-1.5 mt-2">
-                      <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${STATUS_BADGE[selected.status]}`}>{selected.status}</span>
-                      <span className="text-xs px-2 py-0.5 bg-gray-100 text-gray-500 rounded-full">{selected.customer_type}</span>
-                      {(() => { const d = getDisplayDDay(selected); return d ? <span className={`text-xs px-2 py-0.5 rounded-full ${d.cls}`}>{d.label}</span> : null })()}
+                    {/* 상태 한 줄 */}
+                    <div className="flex flex-wrap items-center gap-1.5 mt-2">
+                      <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${STATUS_BADGE[selected.status] ?? 'bg-gray-100 text-gray-400'}`}>{selected.status}</span>
+                      <span className="text-gray-300 text-[10px]">/</span>
+                      {/* 결제상태 */}
+                      <select
+                        value={selected.payment_status ?? '미결제'}
+                        onChange={e => handleMetaUpdate('payment_status', e.target.value)}
+                        className={`text-xs px-2 py-0.5 rounded-full border-0 font-medium cursor-pointer focus:outline-none appearance-none ${PAYMENT_BADGE[selected.payment_status ?? '미결제'] ?? 'bg-gray-100 text-gray-400'}`}>
+                        {PAYMENT_STATUSES.map(s => <option key={s}>{s}</option>)}
+                      </select>
+                      {/* 보증금상태 */}
+                      <select
+                        value={selected.deposit_status ?? '없음'}
+                        onChange={e => handleMetaUpdate('deposit_status', e.target.value)}
+                        className={`text-xs px-2 py-0.5 rounded-full border-0 font-medium cursor-pointer focus:outline-none appearance-none ${DEPOSIT_BADGE[selected.deposit_status ?? '없음'] ?? 'bg-gray-100 text-gray-400'}`}>
+                        {DEPOSIT_STATUSES.map(s => <option key={s}>{s}</option>)}
+                      </select>
+                      {/* 검수상태 */}
+                      <select
+                        value={selected.inspection_status ?? '검수전'}
+                        onChange={e => handleMetaUpdate('inspection_status', e.target.value)}
+                        className={`text-xs px-2 py-0.5 rounded-full border-0 font-medium cursor-pointer focus:outline-none appearance-none ${INSPECTION_BADGE[selected.inspection_status ?? '검수전'] ?? 'bg-gray-100 text-gray-400'}`}>
+                        {INSPECTION_STATUSES.map(s => <option key={s}>{s}</option>)}
+                      </select>
+                      {/* 예외진행 */}
+                      <label className="flex items-center gap-1 cursor-pointer">
+                        <input type="checkbox"
+                          checked={selected.is_exception ?? false}
+                          onChange={e => handleMetaUpdate('is_exception', e.target.checked)}
+                          className="w-3 h-3 rounded accent-orange-400" />
+                        <span className={`text-xs font-medium ${selected.is_exception ? 'text-orange-500' : 'text-gray-400'}`}>예외</span>
+                      </label>
                       {selected.dropbox_url && (
                         <a href={selected.dropbox_url} target="_blank" rel="noopener noreferrer"
                           className="text-xs px-2 py-0.5 bg-blue-50 text-blue-600 rounded-full hover:bg-blue-100 transition-colors">
@@ -364,8 +501,11 @@ export default function RentalsClient({ rentals, profiles, customers }: Props) {
                         </a>
                       )}
                     </div>
+                    {selected.is_exception && (
+                      <p className="mt-1.5 text-xs text-orange-500 font-medium">⚠ 계약 미완료 상태로 진행중</p>
+                    )}
                   </div>
-                  <div className="flex gap-1.5 shrink-0">
+                  <div className="flex gap-1.5 shrink-0 ml-2">
                     <button onClick={openEdit} className="text-xs px-3 py-1.5 border border-gray-200 rounded-lg hover:bg-gray-50 text-gray-600">수정</button>
                     <button onClick={handleDelete} className="text-xs px-3 py-1.5 border border-red-100 text-red-400 rounded-lg hover:bg-red-50">삭제</button>
                   </div>
@@ -373,32 +513,75 @@ export default function RentalsClient({ rentals, profiles, customers }: Props) {
               </div>
 
               <div className="overflow-y-auto flex-1 px-5 py-4 space-y-5">
-                {/* 상태 진행바 */}
-                <div className="bg-gray-50 rounded-xl p-3">
-                  <div className="flex items-center gap-1 flex-wrap mb-3">
-                    {['유입','상담','견적발송','확정','계약서서명','진행중','반납','완료'].map((s, i, arr) => (
-                      <div key={s} className="flex items-center gap-1">
-                        <span className={`text-[10px] px-1.5 py-0.5 rounded font-medium ${selected.status === s ? STATUS_BADGE[s] + ' ring-1 ring-offset-1 ring-gray-300' : 'text-gray-300'}`}>{s}</span>
-                        {i < arr.length - 1 && <span className="text-gray-200 text-[10px]">›</span>}
+
+                {/* ── 상태 관리 ── */}
+                <div className="bg-gray-50 rounded-xl p-4 space-y-3">
+                  {/* 상태 흐름 */}
+                  <div className="flex items-center gap-1 flex-wrap">
+                    {STATUS_FLOW.map((s, i) => (
+                      <div key={s} className="flex items-center gap-0.5">
+                        <span className={`text-[10px] px-1.5 py-0.5 rounded font-medium transition-colors ${
+                          selected.status === s
+                            ? (STATUS_BADGE[s] ?? '') + ' ring-1 ring-offset-1 ring-gray-300'
+                            : statusAtLeast(selected.status, s)
+                              ? 'text-gray-300'
+                              : 'text-gray-200'
+                        }`}>{s}</span>
+                        {i < STATUS_FLOW.length - 1 && <span className="text-gray-200 text-[10px]">›</span>}
                       </div>
                     ))}
                   </div>
+
+                  {/* 마일스톤 요약 체크박스 */}
+                  <div className="flex items-center gap-4 py-1">
+                    {([
+                      { label:'계약완료', target:'렌탈확정' },
+                      { label:'배송완료', target:'배송완료' },
+                      { label:'수거완료', target:'수거완료' },
+                    ]).map(({ label, target }) => {
+                      const checked = statusAtLeast(selected.status, target)
+                      return (
+                        <label key={label} className="flex items-center gap-1.5 cursor-pointer">
+                          <input type="checkbox" checked={checked}
+                            onChange={() => { if (!checked) handleMilestone(target) }}
+                            className="w-3.5 h-3.5 rounded accent-yellow-400" />
+                          <span className={`text-xs font-medium ${checked ? 'text-gray-700' : 'text-gray-400'}`}>{label}</span>
+                        </label>
+                      )
+                    })}
+                  </div>
+
+                  {/* 버튼 */}
                   <div className="flex gap-2 flex-wrap">
                     {NEXT_STATUS[selected.status] && (
                       <button onClick={() => startTransition(() => { void updateRentalStatus(selected.id, NEXT_STATUS[selected.status]) })}
                         disabled={isPending}
                         className="px-3 py-1.5 bg-gray-900 text-white text-xs rounded-lg font-medium hover:bg-gray-800 disabled:opacity-50">
-                        → {NEXT_STATUS[selected.status]}으로 변경
+                        다음 단계 → {NEXT_STATUS[selected.status]}
                       </button>
                     )}
-                    {!['취소','완료'].includes(selected.status) && (
+                    {!['취소','완료','보류'].includes(selected.status) && (
+                      <button onClick={() => startTransition(() => { void updateRentalStatus(selected.id, '완료') })}
+                        disabled={isPending}
+                        className="px-3 py-1.5 border border-gray-300 text-gray-600 text-xs rounded-lg hover:bg-gray-100 disabled:opacity-50">
+                        완료 처리
+                      </button>
+                    )}
+                    {!['취소','완료','보류'].includes(selected.status) && (
+                      <button onClick={() => startTransition(() => { void updateRentalStatus(selected.id, '보류') })}
+                        disabled={isPending}
+                        className="px-3 py-1.5 border border-orange-100 text-orange-400 text-xs rounded-lg hover:bg-orange-50 disabled:opacity-50">
+                        보류
+                      </button>
+                    )}
+                    {!['취소','완료','보류'].includes(selected.status) && (
                       <button onClick={() => startTransition(() => { void updateRentalStatus(selected.id, '취소') })}
                         disabled={isPending}
                         className="px-3 py-1.5 border border-red-100 text-red-400 text-xs rounded-lg hover:bg-red-50 disabled:opacity-50">
-                        취소 처리
+                        취소
                       </button>
                     )}
-                    {selected.status === '취소' && (
+                    {['취소','보류'].includes(selected.status) && (
                       <button onClick={() => startTransition(() => { void updateRentalStatus(selected.id, '유입') })}
                         disabled={isPending}
                         className="px-3 py-1.5 border border-gray-200 text-gray-500 text-xs rounded-lg hover:bg-gray-50 disabled:opacity-50">
@@ -408,7 +591,41 @@ export default function RentalsClient({ rentals, profiles, customers }: Props) {
                   </div>
                 </div>
 
-                {/* 기본 정보 */}
+                {/* ── 단계별 체크리스트 ── */}
+                <div>
+                  <p className="text-xs font-semibold text-gray-400 mb-3">단계별 체크리스트</p>
+                  <div className="grid grid-cols-2 gap-3">
+                    {CHECKLIST_GROUPS.map(group => {
+                      const checkedCount = group.items.filter(i => selected.checklist?.[i.key]).length
+                      const allDone = checkedCount === group.items.length
+                      return (
+                        <div key={group.label} className={`rounded-xl p-3 border ${allDone ? 'bg-green-50/50 border-green-100' : 'bg-gray-50 border-transparent'}`}>
+                          <div className="flex items-center justify-between mb-2">
+                            <p className={`text-xs font-semibold ${group.color}`}>{group.label}</p>
+                            <span className={`text-[10px] font-medium ${allDone ? 'text-green-600' : 'text-gray-400'}`}>{checkedCount}/{group.items.length}</span>
+                          </div>
+                          <div className="space-y-1.5">
+                            {group.items.map(item => {
+                              const checked = selected.checklist?.[item.key] ?? false
+                              return (
+                                <label key={item.key} className="flex items-center gap-2 cursor-pointer group">
+                                  <input type="checkbox" checked={checked}
+                                    onChange={e => handleChecklistToggle(item.key, e.target.checked)}
+                                    className="w-3.5 h-3.5 rounded accent-yellow-400 shrink-0" />
+                                  <span className={`text-xs transition-colors ${checked ? 'text-gray-300 line-through' : 'text-gray-600 group-hover:text-gray-900'}`}>
+                                    {item.label}
+                                  </span>
+                                </label>
+                              )
+                            })}
+                          </div>
+                        </div>
+                      )
+                    })}
+                  </div>
+                </div>
+
+                {/* ── 기본 정보 ── */}
                 <div>
                   <p className="text-xs font-semibold text-gray-400 mb-2.5">기본 정보</p>
                   <div className="grid grid-cols-2 gap-x-6 gap-y-3 text-sm">
@@ -431,7 +648,7 @@ export default function RentalsClient({ rentals, profiles, customers }: Props) {
                   </div>
                 </div>
 
-                {/* 소통 이력 */}
+                {/* ── 소통 이력 ── */}
                 <div>
                   <div className="flex items-center justify-between mb-2.5">
                     <p className="text-xs font-semibold text-gray-400">소통 이력</p>
@@ -475,7 +692,7 @@ export default function RentalsClient({ rentals, profiles, customers }: Props) {
                   )}
                 </div>
 
-                {/* 대여 품목 */}
+                {/* ── 대여 품목 ── */}
                 <div>
                   <div className="flex items-center justify-between mb-2.5">
                     <p className="text-xs font-semibold text-gray-400">대여 품목</p>
@@ -565,28 +782,7 @@ export default function RentalsClient({ rentals, profiles, customers }: Props) {
                   ) : null}
                 </div>
 
-                {/* 체크리스트 */}
-                {['확정','계약서서명','진행중','반납'].includes(selected.status) && (
-                  <div>
-                    <p className="text-xs font-semibold text-gray-400 mb-2.5">
-                      {['확정','계약서서명'].includes(selected.status) ? '배송 체크리스트' : '수거 체크리스트'}
-                    </p>
-                    <div className="space-y-2">
-                      {(['확정','계약서서명'].includes(selected.status) ? [
-                        '계약서 서명 완료', '착수금 입금 확인', '품목 수량 점검', '송장 번호 등록', '배송 완료 고객 알림',
-                      ] : [
-                        '수거 일정 고객 확인', '택배/퀵 접수', '반납 품목 수량 점검', '손상 여부 확인', '보증금 환불 처리',
-                      ]).map(item => (
-                        <label key={item} className="flex items-center gap-2.5 cursor-pointer group">
-                          <input type="checkbox" className="w-3.5 h-3.5 rounded accent-yellow-400 shrink-0" />
-                          <span className="text-xs text-gray-600 group-hover:text-gray-900">{item}</span>
-                        </label>
-                      ))}
-                    </div>
-                  </div>
-                )}
-
-                {/* 파일 · 드롭박스 */}
+                {/* ── 파일 · 드롭박스 ── */}
                 <div>
                   <div className="flex items-center justify-between mb-2.5">
                     <p className="text-xs font-semibold text-gray-400">파일 · 드롭박스</p>
@@ -610,7 +806,7 @@ export default function RentalsClient({ rentals, profiles, customers }: Props) {
                   )}
                 </div>
 
-                {/* 메모 */}
+                {/* ── 메모 ── */}
                 <div className="pb-2">
                   <p className="text-xs font-semibold text-gray-400 mb-2">상담 메모</p>
                   <ContentMemo rentalId={selected.id} initialContent={selected.content ?? ''} />
@@ -630,7 +826,6 @@ export default function RentalsClient({ rentals, profiles, customers }: Props) {
               <button onClick={() => setShowNew(false)} className="text-gray-400 hover:text-gray-600 text-xl">×</button>
             </div>
             <div className="space-y-3">
-              {/* 고객 DB 검색 */}
               <div>
                 <label className={labelCls}>고객 검색 (고객 DB) *</label>
                 <div className="relative">
@@ -661,7 +856,7 @@ export default function RentalsClient({ rentals, profiles, customers }: Props) {
                       <button type="button"
                         onClick={() => { setNewForm(f=>({...f, customer_id:'', customer_name:customerSearch})); setShowCustomerDropdown(false) }}
                         className="w-full text-left px-4 py-2.5 hover:bg-yellow-50 text-sm text-yellow-700 border-t border-gray-100">
-                        + "{customerSearch}" 새 고객으로 등록
+                        + &quot;{customerSearch}&quot; 새 고객으로 등록
                       </button>
                     </div>
                   )}
@@ -772,18 +967,12 @@ export default function RentalsClient({ rentals, profiles, customers }: Props) {
                   {INFLOW_SOURCES.map(s=><option key={s}>{s}</option>)}</select></div>
               <div><label className={labelCls}>메모</label>
                 <textarea value={editForm.notes} onChange={e=>setEditForm(f=>({...f,notes:e.target.value}))} className={inputCls} rows={2} /></div>
-              <div>
-                <label className={labelCls}>소통 이력 1</label>
-                <textarea value={editForm.contact_1} onChange={e=>setEditForm(f=>({...f,contact_1:e.target.value}))} className={inputCls} rows={2} placeholder="[YYYY-MM-DD] 내용" />
-              </div>
-              <div>
-                <label className={labelCls}>소통 이력 2</label>
-                <textarea value={editForm.contact_2} onChange={e=>setEditForm(f=>({...f,contact_2:e.target.value}))} className={inputCls} rows={2} placeholder="[YYYY-MM-DD] 내용" />
-              </div>
-              <div>
-                <label className={labelCls}>소통 이력 3</label>
-                <textarea value={editForm.contact_3} onChange={e=>setEditForm(f=>({...f,contact_3:e.target.value}))} className={inputCls} rows={2} placeholder="[YYYY-MM-DD] 내용" />
-              </div>
+              <div><label className={labelCls}>소통 이력 1</label>
+                <textarea value={editForm.contact_1} onChange={e=>setEditForm(f=>({...f,contact_1:e.target.value}))} className={inputCls} rows={2} placeholder="[YYYY-MM-DD] 내용" /></div>
+              <div><label className={labelCls}>소통 이력 2</label>
+                <textarea value={editForm.contact_2} onChange={e=>setEditForm(f=>({...f,contact_2:e.target.value}))} className={inputCls} rows={2} placeholder="[YYYY-MM-DD] 내용" /></div>
+              <div><label className={labelCls}>소통 이력 3</label>
+                <textarea value={editForm.contact_3} onChange={e=>setEditForm(f=>({...f,contact_3:e.target.value}))} className={inputCls} rows={2} placeholder="[YYYY-MM-DD] 내용" /></div>
             </div>
             <div className="flex gap-2 mt-5">
               <button onClick={() => setEditMode(false)} className="flex-1 py-2.5 border border-gray-200 rounded-xl text-sm text-gray-600 hover:bg-gray-50">취소</button>
