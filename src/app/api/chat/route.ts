@@ -678,30 +678,38 @@ async function executeTool(name: string, input: Record<string, unknown>, userRol
 
     if (!folderPath) return { error: 'sale_search 또는 path가 필요해.' }
 
-    // 폴더 내 PDF 목록 조회 (재귀)
-    const listRes = await fetch('https://api.dropboxapi.com/2/files/list_folder', {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${token}`,
-        'Content-Type': 'application/json',
-        'Dropbox-API-Path-Root': pathRootHeader,
-      },
-      body: JSON.stringify({ path: folderPath, recursive: true }),
-    })
-    const listData = await listRes.json()
-    if (listData.error_summary) return { error: `폴더 조회 실패: ${listData.error_summary}` }
+    // trailing slash 제거 (Dropbox API 요구사항)
+    folderPath = folderPath.replace(/\/$/, '')
 
-    type DropboxEntry = { '.tag': string; name: string; path_display: string }
-    const pdfs = ((listData.entries || []) as DropboxEntry[]).filter(
-      e => e['.tag'] === 'file' && e.name.toLowerCase().endsWith('.pdf')
-    )
-    if (pdfs.length === 0) return { error: `"${folderPath}" 폴더에 PDF 파일이 없어.` }
-
-    // 가장 최근 또는 첫 번째 PDF 다운로드
-    const pdfFile = pdfs[pdfs.length - 1]
-    // 한글 경로 → ASCII-safe 유니코드 이스케이프 (HTTP 헤더 제약)
     const toAsciiSafe = (obj: object) =>
       JSON.stringify(obj).replace(/[^\x00-\x7F]/g, c => `\\u${c.charCodeAt(0).toString(16).padStart(4, '0')}`)
+
+    // 직접 파일 경로인 경우 (확장자로 판단)
+    let pdfFile: { name: string; path_display: string }
+    if (folderPath.toLowerCase().endsWith('.pdf')) {
+      pdfFile = { name: folderPath.split('/').pop() ?? 'file.pdf', path_display: folderPath }
+    } else {
+      // 폴더 내 PDF 목록 조회 (재귀)
+      const listRes = await fetch('https://api.dropboxapi.com/2/files/list_folder', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json',
+          'Dropbox-API-Path-Root': pathRootHeader,
+        },
+        body: JSON.stringify({ path: folderPath, recursive: true }),
+      })
+      const listData = await listRes.json()
+      if (listData.error_summary) return { error: `폴더 조회 실패: ${listData.error_summary}` }
+
+      type DropboxEntry = { '.tag': string; name: string; path_display: string }
+      const pdfs = ((listData.entries || []) as DropboxEntry[]).filter(
+        e => e['.tag'] === 'file' && e.name.toLowerCase().endsWith('.pdf')
+      )
+      if (pdfs.length === 0) return { error: `"${folderPath}" 폴더에 PDF 파일이 없어.` }
+      if (pdfs.length > 1) return { error: `폴더에 PDF가 ${pdfs.length}개 있어: ${pdfs.map(p => p.name).join(', ')}\n어떤 파일 읽을지 알려줘.` }
+      pdfFile = pdfs[0]
+    }
     const dlRes = await fetch('https://content.dropboxapi.com/2/files/download', {
       method: 'POST',
       headers: {
