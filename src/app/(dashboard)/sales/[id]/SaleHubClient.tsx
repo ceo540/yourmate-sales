@@ -102,7 +102,7 @@ export default function SaleHubClient({ sale, tasks: initialTasks, logs, profile
   const [logContactedAt, setLogContactedAt] = useState(() => new Date().toISOString().slice(0, 16))
   const [logError, setLogError] = useState<string | null>(null)
 
-  useEffect(() => { setLocalLogs(logs) }, [logs])
+  // 의도적으로 logs prop sync useEffect 제거 — getSaleLogs()로 직접 갱신하므로 서버 재렌더 prop이 localLogs를 덮어쓰지 않도록
 
   const pendingTasks = tasks.filter(t => t.status !== '완료' && t.status !== '보류')
   const completedTasks = tasks.filter(t => t.status === '완료')

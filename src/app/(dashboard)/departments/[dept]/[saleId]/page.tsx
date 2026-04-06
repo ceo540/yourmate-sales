@@ -36,7 +36,7 @@ export default async function DeptSalePage({
     admin.from('business_entities').select('id, name').order('name'),
     admin.from('customers').select('id, name, contact_name, type').order('name'),
     admin.from('tasks').select('*').eq('project_id', saleId).order('created_at'),
-    admin.from('project_logs').select('*, profiles:author_id(name)').eq('sale_id', saleId).order('created_at', { ascending: false }).limit(50),
+    admin.from('project_logs').select('id, content, log_type, contacted_at, created_at, author_id').eq('sale_id', saleId).order('created_at', { ascending: false }).limit(50),
   ])
 
   const profileMap = Object.fromEntries((profiles ?? []).map(p => [p.id, p]))
@@ -48,7 +48,8 @@ export default async function DeptSalePage({
 
   const logs = (logsResult.data ?? []).map((l: any) => ({
     ...l,
-    author: l.profiles ?? null,
+    contacted_at: l.contacted_at ?? l.created_at,
+    author: l.author_id ? { name: profileMap[l.author_id]?.name ?? null } : null,
   }))
 
   const deptLabel = (DEPARTMENT_LABELS as any)[dept] ?? dept
