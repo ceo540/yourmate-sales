@@ -1,8 +1,8 @@
 'use client'
 
 import { useState, useTransition, useEffect, useCallback } from 'react'
-import { useRouter } from 'next/navigation'
-import { createLog, deleteLog } from './log-actions'
+import { createLog, deleteLog, getSaleLogs } from './log-actions'
+// useRouter intentionally removed — using getSaleLogs for log refresh to avoid startTransition rollback
 import { updateMemo } from './memo-action'
 import { updateSaleDetail } from './contract-action'
 import { createTask, updateTaskStatus, deleteTask } from '../tasks/actions'
@@ -80,7 +80,6 @@ function formatDue(d: string | null) {
 }
 
 export default function SaleHubClient({ sale, tasks: initialTasks, logs, profiles, entities, customers, isAdmin, currentUserId }: Props) {
-  const router = useRouter()
   const [tab, setTab] = useState<'overview' | 'tasks' | 'logs' | 'notes' | 'contract'>('overview')
   const [tasks, setTasks] = useState(initialTasks)
   const [selectedTask, setSelectedTask] = useState<Task | null>(null)
@@ -133,7 +132,8 @@ export default function SaleHubClient({ sale, tasks: initialTasks, logs, profile
         await createLog(sale.id, newLog, type, logContactedAt ? new Date(logContactedAt).toISOString() : undefined)
         setNewLog('')
         setLogContactedAt(new Date().toISOString().slice(0, 16))
-        router.refresh()
+        const updated = await getSaleLogs(sale.id)
+        setLocalLogs(updated)
       } catch (e: any) {
         setLogError('저장 실패: ' + (e?.message ?? String(e)))
       }
@@ -275,7 +275,7 @@ export default function SaleHubClient({ sale, tasks: initialTasks, logs, profile
                     <span className="text-xs text-gray-400">{new Date(log.contacted_at || log.created_at).toLocaleDateString('ko-KR', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</span>
                     <span className="text-xs text-gray-400 ml-auto">{log.author?.name ?? '-'}</span>
                     {isAdmin && (
-                      <button onClick={() => startTransition(async () => { await deleteLog(log.id, sale.id); router.refresh() })}
+                      <button onClick={() => startTransition(async () => { await deleteLog(log.id, sale.id); const updated = await getSaleLogs(sale.id); setLocalLogs(updated) })}
                         className="opacity-0 group-hover:opacity-100 text-xs text-gray-300 hover:text-red-400 transition-all">✕</button>
                     )}
                   </div>
