@@ -185,7 +185,10 @@ export default function LeadsClient({ leads, profiles, currentUserId, isAdmin }:
   const [loadingLogs, setLoadingLogs] = useState(false)
   const [newLeadLog, setNewLeadLog] = useState('')
   const [newLeadLogType, setNewLeadLogType] = useState('통화')
-  const [leadLogContactedAt, setLeadLogContactedAt] = useState(() => new Date().toISOString().slice(0, 16))
+  const [leadLogContactedAt, setLeadLogContactedAt] = useState(() => {
+    const d = new Date(); const pad = (n: number) => String(n).padStart(2, '0')
+    return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`
+  })
   const [leadLogError, setLeadLogError] = useState<string | null>(null)
 
   // leads 업데이트 시 선택된 리드 동기화
@@ -297,7 +300,8 @@ export default function LeadsClient({ leads, profiles, currentUserId, isAdmin }:
           leadLogContactedAt ? new Date(leadLogContactedAt).toISOString() : undefined,
         )
         setNewLeadLog('')
-        setLeadLogContactedAt(new Date().toISOString().slice(0, 16))
+        const now = new Date(); const pad = (n: number) => String(n).padStart(2, '0')
+        setLeadLogContactedAt(`${now.getFullYear()}-${pad(now.getMonth()+1)}-${pad(now.getDate())}T${pad(now.getHours())}:${pad(now.getMinutes())}`)
         await refreshLeadLogs(selectedLead.id)
       } catch (e: any) {
         setLeadLogError('저장 실패: ' + (e?.message ?? String(e)))

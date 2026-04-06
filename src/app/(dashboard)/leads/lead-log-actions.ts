@@ -9,24 +9,18 @@ export async function createLeadLog(leadId: string, content: string, logType: st
   if (!user) throw new Error('Unauthorized')
 
   const admin = createAdminClient()
-  const { error: rpcError } = await admin.rpc('insert_project_log', {
-    p_sale_id: null,
-    p_lead_id: leadId,
-    p_content: content,
-    p_log_type: logType,
-    p_author_id: user.id,
-    p_contacted_at: contactedAt || new Date().toISOString(),
+  const { error } = await admin.from('project_logs').insert({
+    sale_id: null,
+    lead_id: leadId,
+    content,
+    log_type: logType,
+    author_id: user.id,
+    contacted_at: contactedAt || new Date().toISOString(),
   })
 
-  if (rpcError) {
-    const { error: fallbackError } = await admin.from('project_logs').insert({
-      lead_id: leadId,
-      content,
-      log_type: logType,
-      author_id: user.id,
-      contacted_at: contactedAt || new Date().toISOString(),
-    })
-    if (fallbackError) throw new Error(fallbackError.message)
+  if (error) {
+    console.error('[createLeadLog] insert error:', error.message, error.code, error.details)
+    throw new Error(error.message)
   }
 }
 
