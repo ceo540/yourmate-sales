@@ -43,11 +43,11 @@ export async function getSaleLogs(saleId: string) {
   const admin = createAdminClient()
   const { data } = await admin
     .from('project_logs')
-    .select('id, content, log_type, contacted_at, created_at, author:author_id(name)')
+    .select('*, profiles:author_id(name)')
     .eq('sale_id', saleId)
-    .order('contacted_at', { ascending: false })
+    .order('created_at', { ascending: false })
     .limit(50)
-  return (data ?? []).map((l: any) => ({ ...l, author: l.author ?? null }))
+  return (data ?? []).map((l: any) => ({ ...l, author: l.profiles ?? null }))
 }
 
 export async function createLeadLog(leadId: string, content: string, logType: string, contactedAt?: string) {
