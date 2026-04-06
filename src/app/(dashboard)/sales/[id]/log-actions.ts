@@ -50,13 +50,24 @@ export async function getSaleLogs(saleId: string) {
   const admin = createAdminClient()
   const { data, error } = await admin
     .from('project_logs')
-    .select('*, profiles:author_id(name)')
+    .select('id, content, log_type, created_at, author_id')
     .eq('sale_id', saleId)
     .order('created_at', { ascending: false })
     .limit(50)
-  if (error) console.error('[getSaleLogs] error:', error.message, '| code:', error.code)
-  console.log('[getSaleLogs] rows:', data?.length ?? 'null')
-  return (data ?? []).map((l: any) => ({ ...l, author: l.profiles ?? null }))
+  if (error || !data) return []
+
+  const authorIds = [...new Set(data.map((l: any) => l.author_id).filter(Boolean))]
+  let profileMap: Record<string, string> = {}
+  if (authorIds.length > 0) {
+    const { data: profiles } = await admin.from('profiles').select('id, name').in('id', authorIds)
+    profileMap = Object.fromEntries((profiles ?? []).map((p: any) => [p.id, p.name]))
+  }
+
+  return data.map((l: any) => ({
+    ...l,
+    contacted_at: l.created_at,
+    author: l.author_id ? { name: profileMap[l.author_id] ?? null } : null,
+  }))
 }
 
 export async function createLeadLog(leadId: string, content: string, logType: string, contactedAt?: string) {
