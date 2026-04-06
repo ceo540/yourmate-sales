@@ -20,13 +20,20 @@ export async function createLog(saleId: string, content: string, logType: string
   })
 
   if (rpcError) {
+    console.error('[createLog] RPC error:', rpcError.message)
     const { error: fallbackError } = await admin.from('project_logs').insert({
       sale_id: saleId,
       content,
       log_type: logType,
       author_id: user.id,
     })
-    if (fallbackError) throw new Error(fallbackError.message)
+    if (fallbackError) {
+      console.error('[createLog] fallback error:', fallbackError.message)
+      throw new Error(fallbackError.message)
+    }
+    console.log('[createLog] fallback insert success')
+  } else {
+    console.log('[createLog] RPC success')
   }
   revalidatePath(`/sales/${saleId}`)
   revalidatePath('/departments', 'layout')
@@ -41,12 +48,14 @@ export async function deleteLog(logId: string, saleId: string) {
 
 export async function getSaleLogs(saleId: string) {
   const admin = createAdminClient()
-  const { data } = await admin
+  const { data, error } = await admin
     .from('project_logs')
     .select('*, profiles:author_id(name)')
     .eq('sale_id', saleId)
     .order('created_at', { ascending: false })
     .limit(50)
+  if (error) console.error('[getSaleLogs] error:', error.message, '| code:', error.code)
+  console.log('[getSaleLogs] rows:', data?.length ?? 'null')
   return (data ?? []).map((l: any) => ({ ...l, author: l.profiles ?? null }))
 }
 
