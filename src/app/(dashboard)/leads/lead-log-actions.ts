@@ -24,6 +24,7 @@ export async function createLeadLog(leadId: string, content: string, logType: st
       content,
       log_type: logType,
       author_id: user.id,
+      contacted_at: contactedAt || new Date().toISOString(),
     })
     if (fallbackError) throw new Error(fallbackError.message)
   }
