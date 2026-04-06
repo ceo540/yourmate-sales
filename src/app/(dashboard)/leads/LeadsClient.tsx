@@ -4,6 +4,96 @@ import { Lead, LeadStatus, LEAD_STATUSES, LEAD_CHANNELS, LEAD_SOURCES } from '@/
 import { createLead, updateLead, deleteLead, convertLeadToSale } from './actions'
 import { createLeadLog, getLeadLogs, deleteLeadLog } from './lead-log-actions'
 
+const LABEL_CLS = 'block text-xs font-medium text-gray-500 mb-1'
+const INPUT_CLS = 'w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-yellow-300'
+
+interface LeadFormProps {
+  form: FormState
+  setForm: React.Dispatch<React.SetStateAction<FormState>>
+  onSubmit: (e: React.FormEvent) => void
+  onCancel: () => void
+  isPending: boolean
+  isAdmin: boolean
+  profiles: { id: string; name: string }[]
+}
+
+function LeadForm({ form, setForm, onSubmit, onCancel, isPending, isAdmin, profiles }: LeadFormProps) {
+  return (
+    <form onSubmit={onSubmit} className="space-y-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+        <div><label className={LABEL_CLS}>기관명 *</label>
+          <input className={INPUT_CLS} value={form.client_org} onChange={e => setForm(f => ({ ...f, client_org: e.target.value }))} required /></div>
+        <div><label className={LABEL_CLS}>담당자명 / 직급</label>
+          <input className={INPUT_CLS} value={form.contact_name} onChange={e => setForm(f => ({ ...f, contact_name: e.target.value }))} /></div>
+      </div>
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+        <div><label className={LABEL_CLS}>휴대폰</label>
+          <input className={INPUT_CLS} value={form.phone} onChange={e => setForm(f => ({ ...f, phone: e.target.value }))} /></div>
+        <div><label className={LABEL_CLS}>이메일</label>
+          <input className={INPUT_CLS} type="email" value={form.email} onChange={e => setForm(f => ({ ...f, email: e.target.value }))} /></div>
+      </div>
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+        <div><label className={LABEL_CLS}>서비스 분류</label>
+          <select className={INPUT_CLS} value={form.service_type} onChange={e => setForm(f => ({ ...f, service_type: e.target.value }))}>
+            <option value="">선택</option>
+            {SERVICE_TYPES.map(s => <option key={s} value={s}>{s}</option>)}
+          </select></div>
+        <div><label className={LABEL_CLS}>상태</label>
+          <select className={INPUT_CLS} value={form.status} onChange={e => setForm(f => ({ ...f, status: e.target.value as LeadStatus }))}>
+            {LEAD_STATUSES.map(s => <option key={s} value={s}>{s}</option>)}
+          </select></div>
+      </div>
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+        <div><label className={LABEL_CLS}>최초 유입일</label>
+          <input className={INPUT_CLS} type="date" value={form.inflow_date} onChange={e => setForm(f => ({ ...f, inflow_date: e.target.value }))} /></div>
+        <div><label className={LABEL_CLS}>리마인드 날짜</label>
+          <input className={INPUT_CLS} type="date" value={form.remind_date} onChange={e => setForm(f => ({ ...f, remind_date: e.target.value }))} /></div>
+      </div>
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+        <div><label className={LABEL_CLS}>소통 경로</label>
+          <select className={INPUT_CLS} value={form.channel} onChange={e => setForm(f => ({ ...f, channel: e.target.value }))}>
+            <option value="">선택</option>
+            {LEAD_CHANNELS.map(c => <option key={c} value={c}>{c}</option>)}
+          </select></div>
+        <div><label className={LABEL_CLS}>유입 경로</label>
+          <select className={INPUT_CLS} value={form.inflow_source} onChange={e => setForm(f => ({ ...f, inflow_source: e.target.value }))}>
+            <option value="">선택</option>
+            {LEAD_SOURCES.map(s => <option key={s} value={s}>{s}</option>)}
+          </select></div>
+      </div>
+      {isAdmin && (
+        <div><label className={LABEL_CLS}>담당자</label>
+          <select className={INPUT_CLS} value={form.assignee_id} onChange={e => setForm(f => ({ ...f, assignee_id: e.target.value }))}>
+            <option value="">미지정</option>
+            {profiles.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+          </select></div>
+      )}
+      <div><label className={LABEL_CLS}>최초 유입 내용</label>
+        <textarea className={INPUT_CLS} rows={2} value={form.initial_content} onChange={e => setForm(f => ({ ...f, initial_content: e.target.value }))} /></div>
+      <div><label className={LABEL_CLS}>메모</label>
+        <textarea className={INPUT_CLS} rows={2} value={form.notes} onChange={e => setForm(f => ({ ...f, notes: e.target.value }))} /></div>
+      <div className="flex justify-end gap-2 pt-2">
+        <button type="button" onClick={onCancel}
+          className="px-4 py-2 text-sm text-gray-600 border border-gray-200 rounded-lg hover:bg-gray-50">취소</button>
+        <button type="submit" disabled={isPending}
+          className="px-4 py-2 text-sm font-semibold rounded-lg disabled:opacity-50"
+          style={{ backgroundColor: '#FFCE00', color: '#121212' }}>
+          {isPending ? '저장 중...' : '저장'}
+        </button>
+      </div>
+    </form>
+  )
+}
+
+// FormState 타입 (LeadForm props에서 참조)
+type FormState = {
+  inflow_date: string; remind_date: string; service_type: string
+  contact_name: string; client_org: string; phone: string
+  office_phone: string; email: string; initial_content: string
+  assignee_id: string; status: LeadStatus; channel: string
+  inflow_source: string; notes: string
+}
+
 const SERVICE_TYPES = [
   'SOS', '교육프로그램', '납품설치', '유지보수', '교구대여', '제작인쇄',
   '콘텐츠제작', '행사운영', '행사대여', '프로젝트', '002ENT',
@@ -70,14 +160,6 @@ interface Props {
   profiles: { id: string; name: string }[]
   currentUserId: string
   isAdmin: boolean
-}
-
-type FormState = {
-  inflow_date: string; remind_date: string; service_type: string
-  contact_name: string; client_org: string; phone: string
-  office_phone: string; email: string; initial_content: string
-  assignee_id: string; status: LeadStatus; channel: string
-  inflow_source: string; notes: string
 }
 
 const EMPTY_FORM: FormState = {
@@ -223,77 +305,6 @@ export default function LeadsClient({ leads, profiles, currentUserId, isAdmin }:
       await deleteLeadLog(logId)
       await refreshLeadLogs(selectedLead.id)
     })
-  }
-
-  const labelCls = 'block text-xs font-medium text-gray-500 mb-1'
-  const inputCls = 'w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-yellow-300'
-
-  function LeadForm({ onSubmit }: { onSubmit: (e: React.FormEvent) => void }) {
-    return (
-      <form onSubmit={onSubmit} className="space-y-4">
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-          <div><label className={labelCls}>기관명 *</label>
-            <input className={inputCls} value={form.client_org} onChange={e => setForm(f => ({ ...f, client_org: e.target.value }))} required /></div>
-          <div><label className={labelCls}>담당자명 / 직급</label>
-            <input className={inputCls} value={form.contact_name} onChange={e => setForm(f => ({ ...f, contact_name: e.target.value }))} /></div>
-        </div>
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-          <div><label className={labelCls}>휴대폰</label>
-            <input className={inputCls} value={form.phone} onChange={e => setForm(f => ({ ...f, phone: e.target.value }))} /></div>
-          <div><label className={labelCls}>이메일</label>
-            <input className={inputCls} type="email" value={form.email} onChange={e => setForm(f => ({ ...f, email: e.target.value }))} /></div>
-        </div>
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-          <div><label className={labelCls}>서비스 분류</label>
-            <select className={inputCls} value={form.service_type} onChange={e => setForm(f => ({ ...f, service_type: e.target.value }))}>
-              <option value="">선택</option>
-              {SERVICE_TYPES.map(s => <option key={s} value={s}>{s}</option>)}
-            </select></div>
-          <div><label className={labelCls}>상태</label>
-            <select className={inputCls} value={form.status} onChange={e => setForm(f => ({ ...f, status: e.target.value as LeadStatus }))}>
-              {LEAD_STATUSES.map(s => <option key={s} value={s}>{s}</option>)}
-            </select></div>
-        </div>
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-          <div><label className={labelCls}>최초 유입일</label>
-            <input className={inputCls} type="date" value={form.inflow_date} onChange={e => setForm(f => ({ ...f, inflow_date: e.target.value }))} /></div>
-          <div><label className={labelCls}>리마인드 날짜</label>
-            <input className={inputCls} type="date" value={form.remind_date} onChange={e => setForm(f => ({ ...f, remind_date: e.target.value }))} /></div>
-        </div>
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-          <div><label className={labelCls}>소통 경로</label>
-            <select className={inputCls} value={form.channel} onChange={e => setForm(f => ({ ...f, channel: e.target.value }))}>
-              <option value="">선택</option>
-              {LEAD_CHANNELS.map(c => <option key={c} value={c}>{c}</option>)}
-            </select></div>
-          <div><label className={labelCls}>유입 경로</label>
-            <select className={inputCls} value={form.inflow_source} onChange={e => setForm(f => ({ ...f, inflow_source: e.target.value }))}>
-              <option value="">선택</option>
-              {LEAD_SOURCES.map(s => <option key={s} value={s}>{s}</option>)}
-            </select></div>
-        </div>
-        {isAdmin && (
-          <div><label className={labelCls}>담당자</label>
-            <select className={inputCls} value={form.assignee_id} onChange={e => setForm(f => ({ ...f, assignee_id: e.target.value }))}>
-              <option value="">미지정</option>
-              {profiles.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
-            </select></div>
-        )}
-        <div><label className={labelCls}>최초 유입 내용</label>
-          <textarea className={inputCls} rows={2} value={form.initial_content} onChange={e => setForm(f => ({ ...f, initial_content: e.target.value }))} /></div>
-        <div><label className={labelCls}>메모</label>
-          <textarea className={inputCls} rows={2} value={form.notes} onChange={e => setForm(f => ({ ...f, notes: e.target.value }))} /></div>
-        <div className="flex justify-end gap-2 pt-2">
-          <button type="button" onClick={() => { setShowCreateModal(false); setEditMode(false) }}
-            className="px-4 py-2 text-sm text-gray-600 border border-gray-200 rounded-lg hover:bg-gray-50">취소</button>
-          <button type="submit" disabled={isPending}
-            className="px-4 py-2 text-sm font-semibold rounded-lg disabled:opacity-50"
-            style={{ backgroundColor: '#FFCE00', color: '#121212' }}>
-            {isPending ? '저장 중...' : '저장'}
-          </button>
-        </div>
-      </form>
-    )
   }
 
   return (
@@ -568,7 +579,7 @@ export default function LeadsClient({ leads, profiles, currentUserId, isAdmin }:
           <div className="absolute inset-0 bg-black/40" onClick={() => setEditMode(false)} />
           <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto p-6">
             <h2 className="text-lg font-bold text-gray-900 mb-4">리드 수정</h2>
-            <LeadForm onSubmit={handleUpdate} />
+            <LeadForm form={form} setForm={setForm} onSubmit={handleUpdate} onCancel={() => setEditMode(false)} isPending={isPending} isAdmin={isAdmin} profiles={profiles} />
           </div>
         </div>
       )}
@@ -579,7 +590,7 @@ export default function LeadsClient({ leads, profiles, currentUserId, isAdmin }:
           <div className="absolute inset-0 bg-black/40" onClick={() => setShowCreateModal(false)} />
           <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto p-6">
             <h2 className="text-lg font-bold text-gray-900 mb-4">새 리드 등록</h2>
-            <LeadForm onSubmit={handleCreate} />
+            <LeadForm form={form} setForm={setForm} onSubmit={handleCreate} onCancel={() => setShowCreateModal(false)} isPending={isPending} isAdmin={isAdmin} profiles={profiles} />
           </div>
         </div>
       )}
