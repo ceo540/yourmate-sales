@@ -186,6 +186,7 @@ export default function LeadsClient({ leads, profiles, currentUserId, isAdmin }:
   const [newLeadLog, setNewLeadLog] = useState('')
   const [newLeadLogType, setNewLeadLogType] = useState('통화')
   const [leadLogContactedAt, setLeadLogContactedAt] = useState(() => new Date().toISOString().slice(0, 16))
+  const [leadLogError, setLeadLogError] = useState<string | null>(null)
 
   // leads 업데이트 시 선택된 리드 동기화
   useEffect(() => {
@@ -286,16 +287,21 @@ export default function LeadsClient({ leads, profiles, currentUserId, isAdmin }:
   function handleAddLeadLog(type: string) {
     if (!newLeadLog.trim() || !selectedLead) return
     setNewLeadLogType(type)
+    setLeadLogError(null)
     startTransition(async () => {
-      await createLeadLog(
-        selectedLead.id,
-        newLeadLog,
-        type,
-        leadLogContactedAt ? new Date(leadLogContactedAt).toISOString() : undefined,
-      )
-      setNewLeadLog('')
-      setLeadLogContactedAt(new Date().toISOString().slice(0, 16))
-      await refreshLeadLogs(selectedLead.id)
+      try {
+        await createLeadLog(
+          selectedLead.id,
+          newLeadLog,
+          type,
+          leadLogContactedAt ? new Date(leadLogContactedAt).toISOString() : undefined,
+        )
+        setNewLeadLog('')
+        setLeadLogContactedAt(new Date().toISOString().slice(0, 16))
+        await refreshLeadLogs(selectedLead.id)
+      } catch (e: any) {
+        setLeadLogError('저장 실패: ' + (e?.message ?? String(e)))
+      }
     })
   }
 
@@ -507,6 +513,9 @@ export default function LeadsClient({ leads, profiles, currentUserId, isAdmin }:
                           }`}>{type}로 저장</button>
                       ))}
                     </div>
+                    {leadLogError && (
+                      <p className="text-xs text-red-500 mt-1">{leadLogError}</p>
+                    )}
                   </div>
 
                   {/* 로그 목록 */}

@@ -31,12 +31,24 @@ export async function createLeadLog(leadId: string, content: string, logType: st
 
 export async function getLeadLogs(leadId: string) {
   const admin = createAdminClient()
-  const { data } = await admin
+  const { data, error } = await admin
     .from('project_logs')
-    .select('id, content, log_type, contacted_at, created_at, author:author_id(name)')
+    .select('id, content, log_type, contacted_at, created_at, author_id')
     .eq('lead_id', leadId)
     .order('contacted_at', { ascending: false })
-  return data ?? []
+  if (error || !data) return []
+
+  const authorIds = [...new Set(data.map((l: any) => l.author_id).filter(Boolean))]
+  let profileMap: Record<string, string> = {}
+  if (authorIds.length > 0) {
+    const { data: profiles } = await admin.from('profiles').select('id, name').in('id', authorIds)
+    profileMap = Object.fromEntries((profiles ?? []).map((p: any) => [p.id, p.name]))
+  }
+
+  return data.map((l: any) => ({
+    ...l,
+    author: l.author_id ? { name: profileMap[l.author_id] ?? null } : null,
+  }))
 }
 
 export async function deleteLeadLog(logId: string) {
