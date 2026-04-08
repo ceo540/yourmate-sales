@@ -14,6 +14,7 @@ export async function updateSaleDetail(formData: FormData) {
     name: formData.get('name') as string,
     department,
     assignee_id: (formData.get('assignee_id') as string) || null,
+    contract_assignee_id: (formData.get('contract_assignee_id') as string) || null,
     entity_id: (formData.get('entity_id') as string) || null,
     client_org: (formData.get('client_org') as string) || null,
     service_type,

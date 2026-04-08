@@ -3,6 +3,15 @@
 import { createClient } from '@/lib/supabase/server'
 import { revalidatePath } from 'next/cache'
 
+async function requireAdmin() {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) throw new Error('Unauthorized')
+  const { data: profile } = await supabase.from('profiles').select('role').eq('id', user.id).single()
+  if (profile?.role !== 'admin') throw new Error('Forbidden')
+  return supabase
+}
+
 export async function upsertFixedCost(data: {
   id?: string
   name: string
@@ -14,7 +23,7 @@ export async function upsertFixedCost(data: {
   memo?: string | null
   is_active: boolean
 }) {
-  const supabase = await createClient()
+  const supabase = await requireAdmin()
   if (data.id) {
     const { id, ...rest } = data
     await supabase.from('fixed_costs').update(rest).eq('id', id)
@@ -25,7 +34,7 @@ export async function upsertFixedCost(data: {
 }
 
 export async function deleteFixedCost(id: string) {
-  const supabase = await createClient()
+  const supabase = await requireAdmin()
   await supabase.from('fixed_costs').delete().eq('id', id)
   revalidatePath('/fixed-costs')
 }

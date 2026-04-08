@@ -37,6 +37,12 @@ export async function importBankTransactions(rows: BankTxRow[]) {
 }
 
 export async function autoMatchTransactions(year: number, month: number, importBatch: string) {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) throw new Error('Unauthorized')
+  const { data: profile } = await supabase.from('profiles').select('role').eq('id', user.id).single()
+  if (profile?.role !== 'admin') throw new Error('Forbidden')
+
   const admin = createAdminClient()
 
   const { data: payrollEntries } = await admin
@@ -78,6 +84,12 @@ export async function autoMatchTransactions(year: number, month: number, importB
 }
 
 export async function manualConfirmPayment(payrollId: string, paymentDate: string) {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) throw new Error('Unauthorized')
+  const { data: profile } = await supabase.from('profiles').select('role').eq('id', user.id).single()
+  if (profile?.role !== 'admin') throw new Error('Forbidden')
+
   const admin = createAdminClient()
   await admin.from('payroll').update({
     payment_confirmed: true,

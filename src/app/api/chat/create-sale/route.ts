@@ -1,4 +1,4 @@
-import Anthropic from '@anthropic-ai/sdk'
+import OpenAI from 'openai'
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { SERVICE_TO_DEPT } from '@/types'
@@ -6,7 +6,6 @@ import { createSaleFolder } from '@/lib/dropbox'
 import { logApiUsage } from '@/lib/api-usage'
 
 const NOTION_DB_ID = '6401e402-25e9-4941-a89e-6e3107df5f74'
-const anthropic = new Anthropic()
 
 // department → 사업별 DB 페이지 ID
 const DEPT_TO_NOTION_PAGE: Record<string, string> = {
@@ -56,13 +55,14 @@ JSON 형식으로만 답변:
 }`
 
   try {
-    const res = await anthropic.messages.create({
-      model: 'claude-haiku-4-5-20251001',
+    const openai = new OpenAI()
+    const res = await openai.chat.completions.create({
+      model: 'gpt-4o-mini',
       max_tokens: 800,
       messages: [{ role: 'user', content: prompt }],
     })
-    logApiUsage({ model: 'claude-haiku-4-5-20251001', endpoint: 'create-sale', userId: params.userId, inputTokens: res.usage.input_tokens, outputTokens: res.usage.output_tokens }).catch(() => {})
-    const text = res.content[0].type === 'text' ? res.content[0].text : ''
+    logApiUsage({ model: 'gpt-4o-mini', endpoint: 'create-sale', userId: params.userId, inputTokens: res.usage?.prompt_tokens ?? 0, outputTokens: res.usage?.completion_tokens ?? 0 }).catch(() => {})
+    const text = res.choices[0].message.content || ''
     const json = text.match(/\{[\s\S]*\}/)
     if (json) return JSON.parse(json[0]) as ProjectProposal
   } catch { /* 실패 시 기본값 사용 */ }

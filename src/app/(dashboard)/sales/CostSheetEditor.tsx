@@ -34,6 +34,7 @@ interface Props {
   revenue: number
   initialItems: CostItem[]
   vendors: Vendor[]
+  showInternalCosts?: boolean
   onItemsChange: (items: CostItem[]) => void
 }
 
@@ -480,7 +481,7 @@ function SectionTable({
 }
 
 // ── 메인 컴포넌트 ─────────────────────────────────────────
-export default function CostSheetEditor({ saleId, revenue, initialItems, vendors: initVendors, onItemsChange }: Props) {
+export default function CostSheetEditor({ saleId, revenue, initialItems, vendors: initVendors, showInternalCosts = true, onItemsChange }: Props) {
   const [vendorsList, setVendorsList] = useState<Vendor[]>(initVendors)
 
   const toSheetRows = (items: CostItem[]): SheetRow[] => {
@@ -688,13 +689,15 @@ export default function CostSheetEditor({ saleId, revenue, initialItems, vendors
         />
       )}
 
-      <SectionTable
-        title="내부원가" rows={intRows} section="int"
-        vendors={vendorsList} revenue={revenue} showPresets showVendor={false}
-        deletedIds={deletedIds} setDeletedIds={setDeletedIds}
-        setRows={setIntRows} setSavedAt={() => setSavedAt(null)}
-        onKeyDown={handleKeyDown} onFocusCell={focusCell}
-      />
+      {showInternalCosts && (
+        <SectionTable
+          title="내부원가" rows={intRows} section="int"
+          vendors={vendorsList} revenue={revenue} showPresets showVendor={false}
+          deletedIds={deletedIds} setDeletedIds={setDeletedIds}
+          setRows={setIntRows} setSavedAt={() => setSavedAt(null)}
+          onKeyDown={handleKeyDown} onFocusCell={focusCell}
+        />
+      )}
 
       {/* 합계 + 저장 */}
       <div className="border-t-2 border-gray-200 bg-gray-50/50 px-3 py-2.5 flex items-center gap-4 flex-wrap">

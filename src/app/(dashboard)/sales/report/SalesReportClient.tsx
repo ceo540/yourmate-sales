@@ -19,6 +19,7 @@ interface Sale {
   name: string
   department: string | null
   client_org: string | null
+  client_dept: string | null
   customer_id: string | null
   service_type: string | null
   revenue: number | null

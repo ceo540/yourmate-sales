@@ -1,18 +1,21 @@
+// ROOT_NAMESPACE는 ★ DB 폴더 자체의 네임스페이스
+// → API 경로는 ★ DB 기준 상대경로, 웹 URL에만 DB_BASE 사용
 const DB_BASE = '/방 준영/1. 가업/★ DB'
 const ROOT_NAMESPACE = process.env.DROPBOX_ROOT_NAMESPACE ?? '3265523555'
 
-// 서비스 타입 → Dropbox 상위 폴더 경로
+// 서비스 타입 → Dropbox 상위 폴더 경로 (★ DB 기준 상대경로)
 const SERVICE_PATHS: Record<string, string> = {
-  'SOS':        `${DB_BASE}/2 SOS/2 프로젝트`,
-  '교육프로그램': `${DB_BASE}/1 아트키움/2 프로젝트`,
-  '납품설치':    `${DB_BASE}/3 학교상점/1 납품 설치`,
-  '유지보수':    `${DB_BASE}/3 학교상점/1 유지보수`,
-  '교구대여':    `${DB_BASE}/3 학교상점/1 교구대여`,
-  '제작인쇄':    `${DB_BASE}/3 학교상점/1 제작인쇄`,
-  '콘텐츠제작':  `${DB_BASE}/4 002Creative(영상,디자인,행사)/2 콘텐츠제작`,
-  '행사운영':    `${DB_BASE}/4 002Creative(영상,디자인,행사)/2 행사운영`,
-  '행사대여':    `${DB_BASE}/4 002Creative(영상,디자인,행사)/2 행사대여`,
-  '프로젝트':    `${DB_BASE}/4 002Creative(영상,디자인,행사)/2 프로젝트`,
+  'SOS':        '/2 SOS/2 프로젝트',
+  '교육프로그램': '/1 아트키움/2 프로젝트',
+  '납품설치':    '/3 학교상점/1 납품 설치',
+  '유지보수':    '/3 학교상점/1 유지보수',
+  '교구대여':    '/3 학교상점/1 교구대여',
+  '제작인쇄':    '/3 학교상점/1 제작인쇄',
+  '콘텐츠제작':  '/4 002Creative(영상,디자인,행사)/2 콘텐츠제작',
+  '행사운영':    '/4 002Creative(영상,디자인,행사)/2 행사운영',
+  '행사대여':    '/4 002Creative(영상,디자인,행사)/2 행사대여',
+  '프로젝트':    '/4 002Creative(영상,디자인,행사)/2 프로젝트',
+  '002ENT':     '/5 002ent',
 }
 
 // 리프레시 토큰으로 액세스 토큰 발급
@@ -37,8 +40,9 @@ export async function getDropboxToken(): Promise<string | null> {
   return data.access_token ?? null
 }
 
-async function createFolder(path: string, token: string): Promise<void> {
-  await fetch('https://api.dropboxapi.com/2/files/create_folder_v2', {
+// 성공/이미존재: null 반환 / 실패: 에러 문자열 반환
+async function createFolder(path: string, token: string): Promise<string | null> {
+  const res = await fetch('https://api.dropboxapi.com/2/files/create_folder_v2', {
     method: 'POST',
     headers: {
       'Authorization': `Bearer ${token}`,
@@ -47,7 +51,65 @@ async function createFolder(path: string, token: string): Promise<void> {
     },
     body: JSON.stringify({ path, autorename: false }),
   })
-  // 폴더가 이미 존재해도 무시
+  if (res.ok) return null
+  const err = await res.json().catch(() => ({}))
+  // 이미 존재하는 폴더는 성공으로 간주
+  const tag = err?.error_summary ?? err?.error?.['.tag'] ?? ''
+  if (tag.includes('conflict')) return null
+  return JSON.stringify(err)
+}
+
+// 드롭박스에서 파일/폴더 검색 (★ DB 네임스페이스 기준)
+export async function searchDropbox(query: string): Promise<{ name: string; path: string; type: 'file' | 'folder' }[]> {
+  const token = await getDropboxToken()
+  if (!token) return []
+
+  const res = await fetch('https://api.dropboxapi.com/2/files/search_v2', {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${token}`,
+      'Content-Type': 'application/json',
+      'Dropbox-API-Path-Root': JSON.stringify({ '.tag': 'root', 'root': ROOT_NAMESPACE }),
+    },
+    body: JSON.stringify({
+      query,
+      options: { max_results: 20, file_status: 'active' },
+    }),
+  })
+  const data = await res.json()
+  if (!data.matches) return []
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  return data.matches.map((m: any) => ({
+    name: m.metadata?.metadata?.name || '',
+    path: m.metadata?.metadata?.path_display || '',
+    type: m.metadata?.metadata?.['.tag'] === 'folder' ? 'folder' : 'file',
+  }))
+}
+
+// 드롭박스 폴더 내용 조회 (★ DB 기준 상대경로)
+export async function listDropboxFolder(relativePath: string): Promise<{ name: string; path: string; type: 'file' | 'folder' }[]> {
+  const token = await getDropboxToken()
+  if (!token) return []
+
+  const res = await fetch('https://api.dropboxapi.com/2/files/list_folder', {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${token}`,
+      'Content-Type': 'application/json',
+      'Dropbox-API-Path-Root': JSON.stringify({ '.tag': 'root', 'root': ROOT_NAMESPACE }),
+    },
+    body: JSON.stringify({ path: relativePath, limit: 50 }),
+  })
+  const data = await res.json()
+  if (!data.entries) return []
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  return data.entries.map((e: any) => ({
+    name: e.name,
+    path: e.path_display,
+    type: e['.tag'] === 'folder' ? 'folder' : 'file',
+  }))
 }
 
 export async function createSaleFolder(params: {
@@ -71,15 +133,67 @@ export async function createSaleFolder(params: {
   const folderName = `${datePrefix} ${name}`
   const folderPath = `${parentPath}/${folderName}`
 
-  await createFolder(folderPath, token)
-  await createFolder(`${folderPath}/0 행정`, token)
+  // API 경로: 네임스페이스 루트 기준 전체 경로 (DB_BASE 포함)
+  const apiPath = `${DB_BASE}${folderPath}`
 
+  // 메인 폴더 생성 실패 시 에러 throw (URL 저장 방지)
+  const mainErr = await createFolder(apiPath, token)
+  if (mainErr) throw new Error(`Dropbox API 오류 (경로: ${apiPath}): ${mainErr}`)
+
+  // 하위 폴더는 실패해도 무시 (메인 폴더가 있으면 충분)
+  await createFolder(`${apiPath}/0 행정`, token)
+  await createFolder(`${apiPath}/0 행정/원가`, token)
   if (service_type === '제작인쇄') {
-    await createFolder(`${folderPath}/9 목업`, token)
+    await createFolder(`${apiPath}/9 목업`, token)
   } else {
-    await createFolder(`${folderPath}/99 사진,영상`, token)
+    await createFolder(`${apiPath}/99 사진,영상`, token)
   }
 
   // Dropbox 웹 링크
-  return encodeURI(`https://www.dropbox.com/home${folderPath}`)
+  return `https://www.dropbox.com/home${DB_BASE}${folderPath}`
+}
+
+// 드롭박스 파일 다운로드 후 텍스트 추출 (PDF → 텍스트, 기타 → 미지원)
+export async function readDropboxFile(relativePath: string): Promise<{ text: string; truncated: boolean } | { error: string }> {
+  const token = await getDropboxToken()
+  if (!token) return { error: '드롭박스 토큰 없음' }
+
+  // 파일 다운로드
+  const res = await fetch('https://content.dropboxapi.com/2/files/download', {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${token}`,
+      'Dropbox-API-Arg': JSON.stringify({ path: relativePath }),
+      'Dropbox-API-Path-Root': JSON.stringify({ '.tag': 'root', 'root': ROOT_NAMESPACE }),
+    },
+  })
+
+  if (!res.ok) {
+    const err = await res.text()
+    return { error: `다운로드 실패: ${err.slice(0, 100)}` }
+  }
+
+  const ext = relativePath.split('.').pop()?.toLowerCase()
+
+  if (ext === 'pdf') {
+    const buffer = Buffer.from(await res.arrayBuffer())
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const pdfParse = require('pdf-parse') as (buffer: Buffer) => Promise<{ text: string }>
+    const parsed = await pdfParse(buffer)
+    const text = parsed.text.trim()
+    const MAX = 4000
+    if (text.length > MAX) {
+      return { text: text.slice(0, MAX), truncated: true }
+    }
+    return { text, truncated: false }
+  }
+
+  // txt / csv 등 텍스트 파일
+  if (['txt', 'csv', 'md'].includes(ext ?? '')) {
+    const text = await res.text()
+    const MAX = 4000
+    return { text: text.slice(0, MAX), truncated: text.length > MAX }
+  }
+
+  return { error: `지원하지 않는 파일 형식: ${ext}. PDF, txt, csv만 읽을 수 있어.` }
 }

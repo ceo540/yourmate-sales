@@ -7,13 +7,18 @@ import { updateMemo } from './memo-action'
 import { updateSaleDetail } from './contract-action'
 import { createTask, updateTaskStatus, deleteTask } from '../tasks/actions'
 import { saveNotes, saveProjectOverview, generateProjectOverview, chatInNotes, generateDocument } from './notes-action'
-import { DEPARTMENT_LABELS } from '@/types'
+import { updateProgressStatus } from '../actions'
+import dynamic from 'next/dynamic'
+import { DEPARTMENT_LABELS, PROGRESS_STATUSES, ProgressStatus } from '@/types'
 import TaskDetailPanel from './TaskDetailPanel'
-import TiptapEditor from './TiptapEditor'
+const TiptapEditor = dynamic(() => import('./TiptapEditor'), { ssr: false, loading: () => <div className="h-32 bg-gray-50 rounded-lg animate-pulse" /> })
+import CostSheetEditor from '../CostSheetEditor'
 
 interface Profile { id: string; name: string }
 interface BusinessEntity { id: string; name: string }
 interface Customer { id: string; name: string; contact_name: string | null; type: string | null }
+interface CostItem { id: string; item: string; amount: number; unit_price?: number | null; quantity?: number | null; unit?: string | null; category: string; vendor_id?: string | null; memo?: string | null }
+interface Vendor { id: string; name: string; type: string }
 interface ChecklistItem { id: string; text: string; done: boolean }
 interface Task {
   id: string; title: string; status: string; priority: string | null
@@ -29,12 +34,13 @@ interface Log {
 }
 interface Sale {
   id: string; name: string; memo: string | null
-  payment_status: string | null; service_type: string | null
+  payment_status: string | null; progress_status: string | null; service_type: string | null
   department: string | null; dropbox_url: string | null
   client_org: string | null; customer_id: string | null
   revenue: number | null; inflow_date: string | null
   payment_date: string | null; contract_type: string | null
   entity_id: string | null; assignee_id: string | null
+  contract_assignee_id: string | null
   notes: string | null; project_overview: string | null
 }
 
@@ -45,6 +51,10 @@ interface Props {
   profiles: Profile[]
   entities: BusinessEntity[]
   customers: Customer[]
+  costs: CostItem[]
+  vendors: Vendor[]
+  showInternalCosts: boolean
+  viewMode: 'full' | 'project' | 'contract'
   isAdmin: boolean
   currentUserId: string
 }
@@ -79,14 +89,16 @@ function formatDue(d: string | null) {
   return { label: `D-${diff}`, color: 'text-gray-400' }
 }
 
-export default function SaleHubClient({ sale, tasks: initialTasks, logs, profiles, entities, customers, isAdmin, currentUserId }: Props) {
-  const [tab, setTab] = useState<'overview' | 'tasks' | 'logs' | 'notes' | 'contract'>('overview')
+export default function SaleHubClient({ sale, tasks: initialTasks, logs, profiles, entities, customers, costs: initialCosts, vendors, showInternalCosts, viewMode, isAdmin, currentUserId }: Props) {
+  const [tab, setTab] = useState<'overview' | 'tasks' | 'logs' | 'notes' | 'contract' | '원가'>('overview')
   const [tasks, setTasks] = useState(initialTasks)
   const [selectedTask, setSelectedTask] = useState<Task | null>(null)
   const [isPending, startTransition] = useTransition()
 
   // 태스크가 외부에서 바뀌면 동기화
   useEffect(() => { setTasks(initialTasks) }, [initialTasks])
+
+  const [localCosts, setLocalCosts] = useState<CostItem[]>(initialCosts)
 
   // 업무 추가
   const [showTaskForm, setShowTaskForm] = useState(false)
@@ -140,13 +152,15 @@ export default function SaleHubClient({ sale, tasks: initialTasks, logs, profile
     })
   }
 
-  const TABS = [
-    { key: 'overview' as const, label: '개요' },
-    { key: 'tasks'    as const, label: `업무 ${pendingTasks.length > 0 ? `(${pendingTasks.length}건 진행중)` : `(${tasks.length})`}` },
-    { key: 'logs'     as const, label: `소통 내역 (${localLogs.length})` },
-    { key: 'notes'    as const, label: '자유 노트' },
-    { key: 'contract' as const, label: '계약 정보' },
+  const ALL_TABS = [
+    { key: 'overview' as const, label: '개요',       modes: ['full', 'project', 'contract'] },
+    { key: 'tasks'    as const, label: `업무 ${pendingTasks.length > 0 ? `(${pendingTasks.length}건 진행중)` : `(${tasks.length})`}`, modes: ['full', 'project'] },
+    { key: 'logs'     as const, label: `소통 내역 (${localLogs.length})`, modes: ['full', 'project', 'contract'] },
+    { key: 'notes'    as const, label: '자유 노트',  modes: ['full', 'project'] },
+    { key: 'contract' as const, label: '계약 정보',  modes: ['full', 'contract'] },
+    { key: '원가'      as const, label: `원가 (${localCosts.length})`, modes: ['full', 'contract'] },
   ]
+  const TABS = ALL_TABS.filter(t => t.modes.includes(viewMode))
 
   return (
     <div>
@@ -301,6 +315,18 @@ export default function SaleHubClient({ sale, tasks: initialTasks, logs, profile
       {/* ── 계약 정보 탭 ── */}
       {tab === 'contract' && (
         <ContractTab sale={sale} profiles={profiles} entities={entities} customers={customers} />
+      )}
+
+      {/* ── 원가 탭 ── */}
+      {tab === '원가' && (
+        <CostSheetEditor
+          saleId={sale.id}
+          revenue={sale.revenue ?? 0}
+          initialItems={localCosts}
+          vendors={vendors}
+          showInternalCosts={showInternalCosts}
+          onItemsChange={items => setLocalCosts(items as CostItem[])}
+        />
       )}
 
       {/* ── 태스크 상세 패널 ── */}
@@ -722,6 +748,14 @@ function ContractTab({ sale, profiles, entities, customers }: {
   const stageIdx = PAYMENT_STATUS_STAGE[sale.payment_status ?? '계약전'] ?? 0
   const [saved, setSaved] = useState(false)
   const [isPending, startTransition] = useTransition()
+  const [progressStatus, setProgressStatus] = useState<ProgressStatus>((sale.progress_status as ProgressStatus) ?? '착수전')
+
+  function handleProgressChange(status: ProgressStatus) {
+    setProgressStatus(status)
+    startTransition(async () => {
+      await updateProgressStatus(sale.id, status)
+    })
+  }
   const [customerSearch, setCustomerSearch] = useState('')
   const [showCustomerDropdown, setShowCustomerDropdown] = useState(false)
   const [selectedCustomerId, setSelectedCustomerId] = useState(sale.customer_id ?? '')
@@ -765,6 +799,24 @@ function ContractTab({ sale, profiles, entities, customers }: {
               </div>
             )
           })}
+        </div>
+      </div>
+
+      {/* 운영 진행 트랙 */}
+      <div className="bg-white border border-gray-100 rounded-xl p-4">
+        <p className="text-xs font-medium text-gray-500 mb-3">운영 진행</p>
+        <div className="flex gap-2">
+          {PROGRESS_STATUSES.map(status => (
+            <button key={status} type="button"
+              onClick={() => handleProgressChange(status)}
+              className={`flex-1 py-2 text-sm font-medium rounded-lg border transition-all ${
+                progressStatus === status
+                  ? status === '완수'   ? 'bg-teal-500 text-white border-teal-500'
+                  : status === '착수중' ? 'bg-blue-500 text-white border-blue-500'
+                  : 'bg-gray-800 text-white border-gray-800'
+                  : 'bg-white text-gray-400 border-gray-200 hover:border-gray-400'
+              }`}>{status}</button>
+          ))}
         </div>
       </div>
 
@@ -840,13 +892,22 @@ function ContractTab({ sale, profiles, entities, customers }: {
               </select>
             </div>
             <div>
-              <label className="block text-xs font-medium text-gray-600 mb-1">담당자</label>
+              <label className="block text-xs font-medium text-gray-600 mb-1">업무 실무자</label>
               <select name="assignee_id" defaultValue={sale.assignee_id ?? ''}
                 className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm bg-white focus:outline-none focus:border-yellow-400">
                 <option value="">선택 안함</option>
                 {profiles.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
               </select>
             </div>
+          </div>
+
+          <div>
+            <label className="block text-xs font-medium text-gray-600 mb-1">계약 실무자</label>
+            <select name="contract_assignee_id" defaultValue={sale.contract_assignee_id ?? ''}
+              className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm bg-white focus:outline-none focus:border-yellow-400">
+              <option value="">선택 안함</option>
+              {profiles.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+            </select>
           </div>
 
           <div className="grid grid-cols-2 gap-3">

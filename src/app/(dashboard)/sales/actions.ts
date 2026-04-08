@@ -2,7 +2,7 @@
 import { createClient } from '@/lib/supabase/server'
 import { revalidatePath } from 'next/cache'
 import { redirect } from 'next/navigation'
-import { SERVICE_TO_DEPT } from '@/types'
+import { SERVICE_TO_DEPT, ProgressStatus } from '@/types'
 import { createSaleFolder } from '@/lib/dropbox'
 
 export async function createSale(formData: FormData) {
@@ -115,12 +115,22 @@ export async function updateEntityType(entityId: string, entityType: string) {
   revalidatePath('/sales/report')
 }
 
+export async function updateProgressStatus(saleId: string, status: ProgressStatus): Promise<void> {
+  const supabase = await createClient()
+  await supabase.from('sales').update({ progress_status: status, updated_at: new Date().toISOString() }).eq('id', saleId)
+  revalidatePath('/sales/report')
+  revalidatePath('/sales')
+  revalidatePath(`/sales/${saleId}`)
+  revalidatePath('/pipeline')
+}
+
 export async function updateSaleInline(id: string, data: {
   name: string
   department: string | null
   assignee_id: string | null
   entity_id: string | null
   client_org: string | null
+  client_dept: string | null
   customer_id: string | null
   service_type: string | null
   revenue: number

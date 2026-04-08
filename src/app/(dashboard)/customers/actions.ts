@@ -1,18 +1,30 @@
 'use server'
-import { createClient } from '@/lib/supabase/server'
+import { createAdminClient } from '@/lib/supabase/admin'
 import { revalidatePath } from 'next/cache'
 
 /* ── 기관 ── */
+// 모달 내 빠른 기관 등록 (이름만 필수, ID 반환)
+export async function quickCreateCustomer(name: string): Promise<{ id: string } | { error: string }> {
+  const supabase = createAdminClient()
+  const { data, error } = await supabase
+    .from('customers')
+    .insert({ name, type: '기타', status: '활성' })
+    .select('id')
+    .single()
+  if (error) return { error: error.message }
+  revalidatePath('/customers')
+  return { id: data.id }
+}
+
 export async function createCustomer(fd: FormData) {
-  const supabase = await createClient()
+  const supabase = createAdminClient()
   const { error } = await supabase.from('customers').insert({
-    name:     fd.get('name') as string,
-    type:     fd.get('type') as string || null,
-    region:   fd.get('region') as string || null,
-    phone:    fd.get('phone') as string || null,
-    email:    fd.get('email') as string || null,
-    homepage: fd.get('homepage') as string || null,
-    notes:    fd.get('notes') as string || null,
+    name:   fd.get('name') as string,
+    type:   (fd.get('type') as string) || '기타',
+    status: '활성',
+    region: (fd.get('region') as string) || null,
+    phone:  (fd.get('phone') as string) || null,
+    notes:  (fd.get('notes') as string) || null,
   })
   if (error) return { error: error.message }
   revalidatePath('/customers')
@@ -21,17 +33,20 @@ export async function createCustomer(fd: FormData) {
 
 export async function updateCustomer(id: string, data: {
   name?: string; type?: string | null; region?: string | null
-  phone?: string | null; email?: string | null; homepage?: string | null; notes?: string | null
-}) {
-  const supabase = await createClient()
-  const { error } = await supabase.from('customers').update({ ...data, updated_at: new Date().toISOString() }).eq('id', id)
+  phone?: string | null; notes?: string | null
+}): Promise<{ error?: string }> {
+  const supabase = createAdminClient()
+  const { error } = await supabase.from('customers').update(data).eq('id', id)
   if (error) return { error: error.message }
   revalidatePath('/customers')
   return {}
 }
 
-export async function deleteCustomer(id: string) {
-  const supabase = await createClient()
+export async function deleteCustomer(id: string): Promise<{ error?: string }> {
+  const supabase = createAdminClient()
+  // FK 제약 해제: 소속 관계 먼저 삭제, 매출건은 customer_id null 처리
+  await supabase.from('person_org_relations').delete().eq('customer_id', id)
+  await supabase.from('sales').update({ customer_id: null }).eq('customer_id', id)
   const { error } = await supabase.from('customers').delete().eq('id', id)
   if (error) return { error: error.message }
   revalidatePath('/customers')
@@ -40,16 +55,15 @@ export async function deleteCustomer(id: string) {
 
 /* ── 담당자 ── */
 export async function createPerson(fd: FormData) {
-  const supabase = await createClient()
+  const supabase = createAdminClient()
   const { data: person, error } = await supabase.from('persons').insert({
     name:  fd.get('name') as string,
-    phone: fd.get('phone') as string || null,
-    email: fd.get('email') as string || null,
-    notes: fd.get('notes') as string || null,
+    phone: (fd.get('phone') as string) || null,
+    email: (fd.get('email') as string) || null,
+    notes: (fd.get('notes') as string) || null,
   }).select().single()
   if (error) return { error: error.message }
 
-  // 소속 기관 바로 연결 (선택적)
   const customerId = fd.get('customer_id') as string
   const dept       = fd.get('dept') as string
   const title      = fd.get('title') as string
@@ -67,16 +81,17 @@ export async function createPerson(fd: FormData) {
 
 export async function updatePerson(id: string, data: {
   name?: string; phone?: string | null; email?: string | null; notes?: string | null
-}) {
-  const supabase = await createClient()
-  const { error } = await supabase.from('persons').update({ ...data, updated_at: new Date().toISOString() }).eq('id', id)
+}): Promise<{ error?: string }> {
+  const supabase = createAdminClient()
+  const { error } = await supabase.from('persons').update(data).eq('id', id)
   if (error) return { error: error.message }
   revalidatePath('/customers')
   return {}
 }
 
-export async function deletePerson(id: string) {
-  const supabase = await createClient()
+export async function deletePerson(id: string): Promise<{ error?: string }> {
+  const supabase = createAdminClient()
+  await supabase.from('person_org_relations').delete().eq('person_id', id)
   const { error } = await supabase.from('persons').delete().eq('id', id)
   if (error) return { error: error.message }
   revalidatePath('/customers')
@@ -88,8 +103,7 @@ export async function addRelation(data: {
   person_id: string; customer_id: string
   dept?: string; title?: string; started_at?: string
 }) {
-  const supabase = await createClient()
-  // 기존 현재 소속 종료
+  const supabase = createAdminClient()
   if (data.started_at) {
     await supabase.from('person_org_relations')
       .update({ is_current: false, ended_at: data.started_at })
@@ -110,9 +124,28 @@ export async function addRelation(data: {
 }
 
 export async function endRelation(id: string, endedAt: string) {
-  const supabase = await createClient()
+  const supabase = createAdminClient()
   const { error } = await supabase.from('person_org_relations')
     .update({ is_current: false, ended_at: endedAt }).eq('id', id)
+  if (error) return { error: error.message }
+  revalidatePath('/customers')
+  return {}
+}
+
+export async function deleteRelation(id: string): Promise<{ error?: string }> {
+  const supabase = createAdminClient()
+  const { error } = await supabase.from('person_org_relations').delete().eq('id', id)
+  if (error) return { error: error.message }
+  revalidatePath('/customers')
+  return {}
+}
+
+export async function updateRelation(id: string, data: {
+  dept?: string | null; title?: string | null
+  started_at?: string | null; ended_at?: string | null
+}) {
+  const supabase = createAdminClient()
+  const { error } = await supabase.from('person_org_relations').update(data).eq('id', id)
   if (error) return { error: error.message }
   revalidatePath('/customers')
   return {}

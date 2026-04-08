@@ -29,9 +29,10 @@ const NAV_GROUPS: Record<string, NavItem[]> = {
     { href: '/departments/002_entertainment', label: '002 ENT',          icon: '🎤', pageKey: 'departments' },
     { href: '/tasks',                         label: '업무 관리',        icon: '✅', pageKey: 'tasks' },
     { href: '/rentals',                       label: '렌탈 관리',        icon: '🎸', pageKey: 'rentals' },
+    { href: '/sos-demo',                       label: 'SOS 공연',         icon: '🎤', pageKey: 'sos', demo: true },
   ],
   영업: [
-    { href: '/pipeline-demo', label: '파이프라인', icon: '🔄', pageKey: 'pipeline', demo: true },
+    { href: '/pipeline', label: '파이프라인', icon: '🔄', pageKey: 'pipeline' },
     { href: '/sales',        label: '매출 현황', icon: '💰', pageKey: 'sales' },
     { href: '/sales/report', label: '계약 목록', icon: '📄', pageKey: 'sales_report' },
     { href: '/leads',        label: '리드 관리', icon: '📥', pageKey: 'leads' },

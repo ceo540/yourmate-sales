@@ -28,15 +28,27 @@ export default async function DeptSalePage({
   const { data: profile } = await admin.from('profiles').select('id, role, name').eq('id', user.id).single()
   const isAdmin = profile?.role === 'admin' || profile?.role === 'manager'
 
+  const { data: costPerm } = profile?.role !== 'admin'
+    ? await admin.from('role_permissions').select('access_level').eq('role', profile?.role ?? 'member').eq('page_key', 'cost_internal').single()
+    : { data: null }
+  const showInternalCosts = profile?.role === 'admin' || (costPerm?.access_level ?? 'full') !== 'off'
+
   const { data: sale } = await admin.from('sales').select('*, notes, project_overview').eq('id', saleId).single()
   if (!sale) notFound()
 
-  const [{ data: profiles }, { data: entities }, { data: customers }, { data: rawTasks }, logsResult] = await Promise.all([
+  const uid = profile?.id
+  const isProjectAssignee = sale.assignee_id === uid
+  const isContractAssignee = (sale as any).contract_assignee_id === uid
+  const viewMode = 'full' as const
+
+  const [{ data: profiles }, { data: entities }, { data: customers }, { data: rawTasks }, logsResult, { data: costs }, { data: vendors }] = await Promise.all([
     admin.from('profiles').select('id, name').order('name'),
     admin.from('business_entities').select('id, name').order('name'),
     admin.from('customers').select('id, name, contact_name, type').order('name'),
     admin.from('tasks').select('*').eq('project_id', saleId).order('created_at'),
     admin.from('project_logs').select('id, content, log_type, contacted_at, created_at, author_id').eq('sale_id', saleId).order('created_at', { ascending: false }).limit(50),
+    admin.from('sale_costs').select('*').eq('sale_id', saleId).order('created_at'),
+    admin.from('vendors').select('id, name, type').order('name'),
   ])
 
   const profileMap = Object.fromEntries((profiles ?? []).map(p => [p.id, p]))
@@ -85,6 +97,7 @@ export default async function DeptSalePage({
           name: sale.name,
           memo: sale.memo,
           payment_status: sale.payment_status,
+          progress_status: sale.progress_status ?? null,
           service_type: sale.service_type,
           department: sale.department,
           dropbox_url: sale.dropbox_url,
@@ -95,6 +108,7 @@ export default async function DeptSalePage({
           contract_type: sale.contract_type,
           entity_id: sale.entity_id,
           assignee_id: sale.assignee_id,
+          contract_assignee_id: (sale as any).contract_assignee_id ?? null,
           customer_id: sale.customer_id ?? null,
           notes: sale.notes ?? null,
           project_overview: sale.project_overview ?? null,
@@ -104,6 +118,10 @@ export default async function DeptSalePage({
         profiles={profiles ?? []}
         entities={entities ?? []}
         customers={customers ?? []}
+        costs={costs ?? []}
+        vendors={vendors ?? []}
+        showInternalCosts={showInternalCosts}
+        viewMode={viewMode}
         isAdmin={isAdmin}
         currentUserId={user.id}
       />

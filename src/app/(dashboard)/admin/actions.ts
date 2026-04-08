@@ -15,6 +15,16 @@ export async function createEntity(formData: FormData) {
   await supabase.from('business_entities').insert({
     name: formData.get('name') as string,
     business_number: (formData.get('business_number') as string) || null,
+    representative_name: (formData.get('representative_name') as string) || null,
+    business_type: (formData.get('business_type') as string) || null,
+    business_item: (formData.get('business_item') as string) || null,
+    address: (formData.get('address') as string) || null,
+    email: (formData.get('email') as string) || null,
+    phone: (formData.get('phone') as string) || null,
+    corporate_number: (formData.get('corporate_number') as string) || null,
+    bank_name: (formData.get('bank_name') as string) || null,
+    account_number: (formData.get('account_number') as string) || null,
+    account_holder: (formData.get('account_holder') as string) || null,
   })
   revalidatePath('/admin')
 }
@@ -25,6 +35,16 @@ export async function updateEntity(formData: FormData) {
   await supabase.from('business_entities').update({
     name: formData.get('name') as string,
     business_number: (formData.get('business_number') as string) || null,
+    representative_name: (formData.get('representative_name') as string) || null,
+    business_type: (formData.get('business_type') as string) || null,
+    business_item: (formData.get('business_item') as string) || null,
+    address: (formData.get('address') as string) || null,
+    email: (formData.get('email') as string) || null,
+    phone: (formData.get('phone') as string) || null,
+    corporate_number: (formData.get('corporate_number') as string) || null,
+    bank_name: (formData.get('bank_name') as string) || null,
+    account_number: (formData.get('account_number') as string) || null,
+    account_holder: (formData.get('account_holder') as string) || null,
   }).eq('id', id)
   revalidatePath('/admin')
 }
@@ -237,4 +257,11 @@ export async function reorderDepartments(ids: string[]) {
   const admin = createAdminClient()
   await Promise.all(ids.map((id, i) => admin.from('departments').update({ sort_order: i }).eq('id', id)))
   revalidatePath('/admin')
+}
+
+export async function linkEmployeeCard(cardId: string, profileId: string) {
+  const admin = createAdminClient()
+  await admin.from('employee_cards').update({ profile_id: profileId }).eq('id', cardId)
+  revalidatePath('/admin')
+  revalidatePath('/payroll')
 }

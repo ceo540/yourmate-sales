@@ -244,7 +244,7 @@ export default async function DashboardPage() {
               {pendingTasks.map(t => {
                 const due = formatDue(t.due_date)
                 return (
-                  <Link key={t.id} href="/tasks" className="flex items-center gap-3 px-5 py-3 hover:bg-gray-50 transition-colors">
+                  <Link key={t.id} href={t.project_id ? `/sales/${t.project_id}` : '/tasks'} className="flex items-center gap-3 px-5 py-3 hover:bg-gray-50 transition-colors">
                     <div className="flex-1 min-w-0">
                       <p className="text-sm font-medium text-gray-800 truncate">{t.title}</p>
                       {t.project_id && saleMetaMap[t.project_id] && (

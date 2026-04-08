@@ -84,6 +84,11 @@ export async function deleteExpense(id: string) {
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return { error: '로그인 필요' }
 
+  const { data: expense } = await supabase.from('expenses').select('employee_id').eq('id', id).single()
+  const { data: profile } = await supabase.from('profiles').select('role').eq('id', user.id).single()
+  const isAdminOrManager = ['admin', 'manager'].includes(profile?.role)
+  if (!isAdminOrManager && expense?.employee_id !== user.id) return { error: '권한 없음' }
+
   const { error } = await supabase.from('expenses').delete().eq('id', id)
   if (error) return { error: error.message }
   revalidatePath('/expenses')

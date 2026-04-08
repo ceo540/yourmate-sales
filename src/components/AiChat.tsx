@@ -191,9 +191,10 @@ export default function AiChat() {
         }),
       })
       const data = await res.json()
+      const content = data.text || data.error || (data.leadData ? '리드 정보 추출 완료!' : data.saleData ? '계약 정보 추출 완료!' : '오류가 발생했어요.')
       setMessages(prev => [...prev, {
         role: 'assistant',
-        content: data.text || data.error || '오류가 발생했어요.',
+        content,
         saleData: data.saleData ?? null,
         leadData: data.leadData ?? null,
       }])

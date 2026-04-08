@@ -29,6 +29,7 @@ export async function createLead(formData: FormData) {
 
   await supabase.from('leads').insert({
     lead_id,
+    person_id: (formData.get('person_id') as string) || null,
     inflow_date: (formData.get('inflow_date') as string) || new Date().toISOString().slice(0, 10),
     remind_date: (formData.get('remind_date') as string) || null,
     service_type: (formData.get('service_type') as string) || null,
@@ -59,6 +60,7 @@ export async function createLead(formData: FormData) {
 }
 
 export async function updateLead(id: string, data: Partial<{
+  person_id: string | null
   inflow_date: string | null
   remind_date: string | null
   service_type: string | null
@@ -125,6 +127,7 @@ export async function convertLeadToSale(leadId: string) {
     payment_status: '계약전',
     memo: lead.initial_content,
     inflow_date: lead.inflow_date || new Date().toISOString().slice(0, 10),
+    lead_id: leadId,
   }).select('id').single()
 
   if (error) return { error: error.message }
@@ -141,15 +144,109 @@ export async function convertLeadToSale(leadId: string) {
     }
   }
 
-  // 리드에 converted_sale_id 업데이트
+  // 리드에 converted_sale_id 업데이트 + 상태를 '진행중'으로 (완료 아님 — 추가 계약 가능)
   await supabase.from('leads').update({
     converted_sale_id: sale!.id,
-    status: '완료',
+    status: '진행중',
     updated_at: new Date().toISOString(),
   }).eq('id', leadId)
 
   revalidatePath('/leads')
   revalidatePath('/sales/report')
+  revalidatePath('/pipeline')
 
   return { success: true, sale_id: sale!.id }
+}
+
+export async function addSaleToLead(leadId: string, data: {
+  name: string
+  service_type: string | null
+  revenue: number
+  memo: string | null
+}): Promise<{ sale_id: string } | { error: string }> {
+  const supabase = await createClient()
+
+  const { data: lead } = await supabase.from('leads').select('*').eq('id', leadId).single()
+  if (!lead) return { error: '리드를 찾을 수 없습니다.' }
+
+  const serviceType = data.service_type || (lead.service_type as string | null)
+  const department = (serviceType && SERVICE_TO_DEPT[serviceType]) || null
+
+  const { data: sale, error } = await supabase.from('sales').insert({
+    name: data.name,
+    client_org: lead.client_org,
+    service_type: serviceType,
+    department,
+    assignee_id: lead.assignee_id,
+    revenue: data.revenue,
+    payment_status: '계약전',
+    memo: data.memo,
+    inflow_date: lead.inflow_date || new Date().toISOString().slice(0, 10),
+    lead_id: leadId,
+  }).select('id').single()
+
+  if (error) return { error: error.message }
+
+  // Dropbox 폴더 자동 생성
+  if (sale && serviceType) {
+    const dropboxUrl = await createSaleFolder({
+      service_type: serviceType,
+      name: lead.client_org || data.name,
+      inflow_date: lead.inflow_date,
+    })
+    if (dropboxUrl) {
+      await supabase.from('sales').update({ dropbox_url: dropboxUrl }).eq('id', sale.id)
+    }
+  }
+
+  // converted_sale_id가 없으면 이 건을 대표 계약건으로 설정 + 상태 '진행중'으로
+  const leadUpdates: Record<string, unknown> = {}
+  if (!lead.converted_sale_id) leadUpdates.converted_sale_id = sale!.id
+  if (!['진행중', '완료', '취소'].includes(lead.status as string)) leadUpdates.status = '진행중'
+  if (Object.keys(leadUpdates).length > 0) {
+    await supabase.from('leads').update({ ...leadUpdates, updated_at: new Date().toISOString() }).eq('id', leadId)
+  }
+
+  revalidatePath('/leads')
+  revalidatePath('/sales/report')
+  revalidatePath('/pipeline')
+
+  return { sale_id: sale!.id }
+}
+
+export async function createLeadFolder(leadId: string): Promise<{ url: string | null; error?: string }> {
+  const admin = createAdminClient()
+  const { data: lead } = await admin.from('leads').select('*').eq('id', leadId).single()
+  if (!lead) return { url: null, error: '리드를 찾을 수 없습니다.' }
+
+  if (!lead.service_type) {
+    return { url: null, error: '서비스 타입이 없어서 폴더를 만들 수 없어요. URL을 직접 입력해주세요.' }
+  }
+
+  let url: string | null
+  try {
+    url = await createSaleFolder({
+      service_type: lead.service_type as string,
+      name: lead.client_org || '(리드)',
+      inflow_date: lead.inflow_date,
+    })
+  } catch (e: any) {
+    return { url: null, error: e?.message ?? '드롭박스 폴더 생성 실패' }
+  }
+
+  if (!url) {
+    return { url: null, error: `드롭박스 폴더 생성에 실패했습니다. (서비스: ${lead.service_type})` }
+  }
+
+  const { error: dbErr } = await admin.from('leads').update({ dropbox_url: url, updated_at: new Date().toISOString() }).eq('id', leadId)
+  if (dbErr) return { url: null, error: 'DB 저장 실패: ' + dbErr.message }
+  revalidatePath('/leads')
+
+  return { url }
+}
+
+export async function updateLeadDropboxUrl(leadId: string, url: string): Promise<void> {
+  const supabase = await createClient()
+  await supabase.from('leads').update({ dropbox_url: url, updated_at: new Date().toISOString() }).eq('id', leadId)
+  revalidatePath('/leads')
 }

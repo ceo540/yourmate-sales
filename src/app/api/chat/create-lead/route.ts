@@ -59,7 +59,7 @@ export async function POST(req: NextRequest) {
       inflow_source: inflow_source || null,
       remind_date: remind_date || null,
       inflow_date: today,
-      status: '신규',
+      status: '유입',
       assignee_id: user.id,
     }).select('id, lead_id').single()
 

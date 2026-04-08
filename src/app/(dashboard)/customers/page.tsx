@@ -59,8 +59,7 @@ export default async function CustomersPage() {
     const lastSale = orgSales.sort((a: any, b: any) => b.created_at?.localeCompare(a.created_at))[0]
     return {
       id: c.id, name: c.name, type: c.type || '기타',
-      region: c.region || '', phone: c.phone || '', email: c.email || '',
-      homepage: c.homepage || '', notes: c.notes || '',
+      region: c.region || '', phone: c.phone || '', notes: c.notes || '',
       created_at: c.created_at,
       total_sales: totalSales,
       sales_count: orgSales.length,
@@ -72,6 +71,20 @@ export default async function CustomersPage() {
       })),
     }
   })
+
+  // 담당자별 리드 이력 조회
+  const personIds = (personsRaw ?? []).map((p: any) => p.id)
+  const { data: personLeadsRaw } = personIds.length > 0
+    ? await supabase.from('leads').select('id, lead_id, client_org, service_type, status, inflow_date, converted_sale_id, person_id').in('person_id', personIds).order('inflow_date', { ascending: false })
+    : { data: [] }
+
+  const leadsByPerson: Record<string, any[]> = {}
+  for (const l of (personLeadsRaw ?? [])) {
+    if (l.person_id) {
+      if (!leadsByPerson[l.person_id]) leadsByPerson[l.person_id] = []
+      leadsByPerson[l.person_id].push(l)
+    }
+  }
 
   // 담당자 데이터 가공
   const persons = (personsRaw ?? []).map((p: any) => {
@@ -90,8 +103,10 @@ export default async function CustomersPage() {
     return {
       id: p.id, name: p.name, phone: p.phone || '',
       email: p.email || '', notes: p.notes || '',
+      channeltalk_user_id: p.channeltalk_user_id || null,
       created_at: p.created_at,
       job_history,
+      leads: leadsByPerson[p.id] ?? [],
     }
   })
 

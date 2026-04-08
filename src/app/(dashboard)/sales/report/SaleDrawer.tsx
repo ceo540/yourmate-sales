@@ -18,6 +18,7 @@ interface Sale {
   name: string
   department: string | null
   client_org: string | null
+  client_dept: string | null
   customer_id: string | null
   service_type: string | null
   revenue: number | null
@@ -60,6 +61,7 @@ export default function SaleDrawer({ sale, entities, vendors, profiles, customer
   const [name, setName] = useState(sale.name)
   const [serviceType, setServiceType] = useState(sale.service_type ?? '')
   const [clientOrg, setClientOrg] = useState(sale.client_org ?? '')
+  const [clientDept, setClientDept] = useState(sale.client_dept ?? '')
   const [customerId, setCustomerId] = useState(sale.customer_id ?? '')
   const [entityId, setEntityId] = useState(sale.entity?.id ?? '')
   const [contractType, setContractType] = useState(sale.contract_type ?? '')
@@ -85,6 +87,7 @@ export default function SaleDrawer({ sale, entities, vendors, profiles, customer
         name: name.trim(),
         department: derivedDept,
         client_org: clientOrg || null,
+        client_dept: clientDept || null,
         customer_id: customerId || null,
         service_type: serviceType || null,
         assignee_id: assigneeId || null,
@@ -108,6 +111,7 @@ export default function SaleDrawer({ sale, entities, vendors, profiles, customer
       name: name.trim(),
       department: derivedDept,
       client_org: clientOrg || null,
+      client_dept: clientDept || null,
       customer_id: customerId || null,
       service_type: serviceType || null,
       assignee: profiles.find(p => p.id === assigneeId) ?? null,

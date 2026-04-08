@@ -3,6 +3,15 @@
 import { createClient } from '@/lib/supabase/server'
 import { revalidatePath } from 'next/cache'
 
+async function requireAdmin() {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) throw new Error('Unauthorized')
+  const { data: profile } = await supabase.from('profiles').select('role').eq('id', user.id).single()
+  if (profile?.role !== 'admin') throw new Error('Forbidden')
+  return supabase
+}
+
 export async function upsertPayroll(data: {
   id?: string
   year: number
@@ -29,7 +38,7 @@ export async function upsertPayroll(data: {
   memo?: string | null
   description?: string | null
 }) {
-  const supabase = await createClient()
+  const supabase = await requireAdmin()
   if (data.id) {
     const { id, ...rest } = data
     await supabase.from('payroll').update(rest).eq('id', id)
@@ -40,13 +49,13 @@ export async function upsertPayroll(data: {
 }
 
 export async function deletePayroll(id: string) {
-  const supabase = await createClient()
+  const supabase = await requireAdmin()
   await supabase.from('payroll').delete().eq('id', id)
   revalidatePath('/payroll')
 }
 
 export async function upsertBusinessEntity(data: { id?: string; name: string }) {
-  const supabase = await createClient()
+  const supabase = await requireAdmin()
   if (data.id) {
     await supabase.from('business_entities').update({ name: data.name }).eq('id', data.id)
   } else {
@@ -56,7 +65,7 @@ export async function upsertBusinessEntity(data: { id?: string; name: string }) 
 }
 
 export async function deleteBusinessEntity(id: string) {
-  const supabase = await createClient()
+  const supabase = await requireAdmin()
   await supabase.from('business_entities').delete().eq('id', id)
   revalidatePath('/payroll')
 }
@@ -72,7 +81,7 @@ export async function upsertBonusItem(data: {
   detail?: string | null
   amount: number
 }) {
-  const supabase = await createClient()
+  const supabase = await requireAdmin()
   if (data.id) {
     const { id, ...rest } = data
     await supabase.from('employee_bonus_items').update(rest).eq('id', id)
@@ -83,7 +92,7 @@ export async function upsertBonusItem(data: {
 }
 
 export async function deleteBonusItem(id: string) {
-  const supabase = await createClient()
+  const supabase = await requireAdmin()
   await supabase.from('employee_bonus_items').delete().eq('id', id)
   revalidatePath('/payroll')
 }
@@ -109,7 +118,7 @@ export async function upsertEmployeeCard(data: {
   memo?: string | null
   is_active: boolean
 }) {
-  const supabase = await createClient()
+  const supabase = await requireAdmin()
   if (data.id) {
     const { id, ...rest } = data
     await supabase.from('employee_cards').update(rest).eq('id', id)
@@ -121,14 +130,14 @@ export async function upsertEmployeeCard(data: {
 }
 
 export async function deleteEmployeeCard(id: string) {
-  const supabase = await createClient()
+  const supabase = await requireAdmin()
   await supabase.from('employee_cards').delete().eq('id', id)
   revalidatePath('/payroll')
   revalidatePath('/admin')
 }
 
 export async function generateMonthlyFromCards(year: number, month: number) {
-  const supabase = await createClient()
+  const supabase = await requireAdmin()
   const { data: cards } = await supabase.from('employee_cards').select('*').eq('is_active', true)
   if (!cards || cards.length === 0) return { created: 0 }
 

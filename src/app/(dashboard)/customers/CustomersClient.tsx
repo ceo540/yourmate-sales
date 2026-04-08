@@ -1,10 +1,12 @@
 'use client'
-import { useState, useTransition } from 'react'
+import { useState, useTransition, useCallback, useEffect } from 'react'
+import { useRouter } from 'next/navigation'
 import {
-  createCustomer, updateCustomer, deleteCustomer,
+  createCustomer, updateCustomer, deleteCustomer, quickCreateCustomer,
   createPerson, updatePerson, deletePerson,
-  addRelation, endRelation,
+  addRelation, endRelation, updateRelation, deleteRelation,
 } from './actions'
+import { getCustomerLogs, createCustomerLog, deleteCustomerLog } from './customer-log-actions'
 
 /* ── 타입 ── */
 interface OrgContact {
@@ -15,7 +17,7 @@ interface OrgContact {
 interface OrgSale { id: string; title: string; amount: number; service_type: string; date: string }
 interface Customer {
   id: string; name: string; type: string; region: string
-  phone: string; email: string; homepage: string; notes: string
+  phone: string; notes: string
   total_sales: number; sales_count: number; last_deal_date: string | null
   contacts: OrgContact[]; sales: OrgSale[]
 }
@@ -23,16 +25,19 @@ interface JobHistory {
   id: string; customer_id: string; customer_name: string
   dept: string; title: string; started_at: string; ended_at: string | null; is_current: boolean
 }
+interface PersonLead { id: string; lead_id: string; client_org: string | null; service_type: string | null; status: string; inflow_date: string | null; converted_sale_id: string | null }
 interface Person {
-  id: string; name: string; phone: string; email: string; notes: string; job_history: JobHistory[]
+  id: string; name: string; phone: string; email: string; notes: string
+  channeltalk_user_id?: string | null
+  job_history: JobHistory[]; leads: PersonLead[]
 }
 interface Props { customers: Customer[]; persons: Person[]; isAdmin: boolean }
 
 /* ── 디자인 토큰 ── */
 const TYPE_COL: Record<string,{bg:string;text:string}> = {
-  '학교':{bg:'bg-blue-100',text:'text-blue-700'},'공공기관':{bg:'bg-green-100',text:'text-green-700'},
-  '기업':{bg:'bg-purple-100',text:'text-purple-700'},'개인':{bg:'bg-gray-100',text:'text-gray-600'},
-  '기타':{bg:'bg-gray-100',text:'text-gray-500'},
+  '학교':{bg:'bg-blue-100',text:'text-blue-700'},'교육청':{bg:'bg-sky-100',text:'text-sky-700'},
+  '공공기관':{bg:'bg-green-100',text:'text-green-700'},'기업':{bg:'bg-purple-100',text:'text-purple-700'},
+  '개인':{bg:'bg-gray-100',text:'text-gray-600'},'기타':{bg:'bg-gray-100',text:'text-gray-500'},
 }
 const TIER_COL = {
   vip:    {dot:'bg-yellow-400',hdr:'bg-yellow-50',txt:'text-yellow-700',emoji:'⭐',label:'VIP'},
@@ -43,9 +48,26 @@ function getTier(c: Customer) { return c.total_sales>=10000000?'vip':c.total_sal
 function fmt(n:number){ if(n>=1e8) return `${(n/1e8).toFixed(1)}억`; if(n>=1e4) return `${Math.round(n/1e4)}만`; return n.toLocaleString() }
 const lbl = 'block text-xs font-medium text-gray-500 mb-1'
 const inp = 'w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-yellow-300'
-const ORG_TYPES = ['학교','공공기관','기업','개인','기타']
+const ORG_TYPES = ['학교','교육청','공공기관','기업','개인','기타']
+const LOG_TYPES = ['통화','방문','미팅','이메일','메모','기타']
+const LOG_TYPE_COLORS: Record<string,string> = {
+  통화:'bg-blue-100 text-blue-700', 방문:'bg-green-100 text-green-700',
+  미팅:'bg-purple-100 text-purple-700', 이메일:'bg-yellow-100 text-yellow-700',
+  메모:'bg-gray-100 text-gray-600', 기타:'bg-gray-100 text-gray-400',
+}
+function nowDatetime() {
+  const d=new Date(), pad=(n:number)=>String(n).padStart(2,'0')
+  return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`
+}
+function downloadCSV(headers: string[], rows: (string|number)[][], filename: string) {
+  const csv=[headers,...rows].map(r=>r.map(v=>`"${String(v??'').replace(/"/g,'""')}"`).join(',')).join('\n')
+  const blob=new Blob(['\uFEFF'+csv],{type:'text/csv;charset=utf-8'})
+  const url=URL.createObjectURL(blob), a=document.createElement('a')
+  a.href=url; a.download=filename; a.click(); URL.revokeObjectURL(url)
+}
 
 export default function CustomersClient({ customers, persons, isAdmin }: Props) {
+  const router = useRouter()
   const [listView,    setListView]    = useState<'org'|'person'>('org')
   const [detailType,  setDetailType]  = useState<'org'|'person'>('org')
   const [detailId,    setDetailId]    = useState<string|null>(customers[0]?.id ?? null)
@@ -56,12 +78,31 @@ export default function CustomersClient({ customers, persons, isAdmin }: Props) 
   const [showNewOrg,  setShowNewOrg]  = useState(false)
   const [showNewPerson, setShowNewPerson] = useState(false)
   const [showAddRel,  setShowAddRel]  = useState(false)
+  const [filterMoved, setFilterMoved] = useState(false)
   const [isPending,   startTransition] = useTransition()
 
   // 폼 상태
   const [orgForm, setOrgForm] = useState<Record<string,string>>({})
   const [perForm, setPerForm] = useState<Record<string,string>>({})
   const [relForm, setRelForm] = useState<Record<string,string>>({})
+  const [editingRelId, setEditingRelId] = useState<string | null>(null)
+  const [relEditForm, setRelEditForm] = useState({dept:'', title:'', started_at:'', ended_at:''})
+  // 기관 검색 (addRel 모달용 / newPerson 모달용)
+  const [relOrgSearch, setRelOrgSearch] = useState('')
+  const [showRelOrgDrop, setShowRelOrgDrop] = useState(false)
+  const [perOrgSearch, setPerOrgSearch] = useState('')
+  const [showPerOrgDrop, setShowPerOrgDrop] = useState(false)
+  // 활동 로그
+  const [activityLogs, setActivityLogs] = useState<any[]>([])
+  const [loadingLogs, setLoadingLogs] = useState(false)
+  const [newLogContent, setNewLogContent] = useState('')
+  const [newLogType, setNewLogType] = useState('통화')
+  const [newLogDate, setNewLogDate] = useState(nowDatetime)
+  // 채널톡
+  const [syncing, setSyncing] = useState(false)
+  const [syncResult, setSyncResult] = useState<string|null>(null)
+  const [ctConversations, setCtConversations] = useState<any[]>([])
+  const [loadingConvs, setLoadingConvs] = useState(false)
 
   /* 네비게이션 */
   function goToOrg(id: string) {
@@ -80,54 +121,187 @@ export default function CustomersClient({ customers, persons, isAdmin }: Props) 
   function handleSaveOrg(e: React.FormEvent) {
     e.preventDefault()
     startTransition(async () => {
-      if (currentOrg && editingInfo) {
-        await updateCustomer(currentOrg.id, {
-          name: orgForm.name||currentOrg.name, type: orgForm.type||currentOrg.type,
+      if (editingInfo && !showNewOrg) {
+        // 인라인 수정 모드
+        const res = await updateCustomer(currentOrg!.id, {
+          name: orgForm.name||currentOrg!.name, type: orgForm.type||currentOrg!.type,
           region: orgForm.region||null, phone: orgForm.phone||null,
-          email: orgForm.email||null, homepage: orgForm.homepage||null, notes: orgForm.notes||null,
+          notes: orgForm.notes||null,
         })
+        if (res?.error) { alert('저장 실패: ' + res.error); return }
         setEditingInfo(false)
       } else {
+        // 새 기관 등록 모달
         const fd = new FormData()
         Object.entries(orgForm).forEach(([k,v])=>{ if(v) fd.set(k,v) })
-        await createCustomer(fd)
+        const res = await createCustomer(fd)
+        if (res?.error) { alert('등록 실패: ' + res.error); return }
         setShowNewOrg(false)
       }
+      router.refresh()
     })
   }
 
   /* 담당자 CRUD */
   function handleSavePerson(e: React.FormEvent) {
     e.preventDefault()
+    // 신규 등록 시 이름 중복 체크
+    if (!editingInfo || showNewPerson) {
+      const nameToCheck = perForm.name?.trim()
+      if (nameToCheck) {
+        const dup = persons.find(p => p.name === nameToCheck)
+        if (dup && !confirm(`'${nameToCheck}' 이름의 담당자가 이미 있어요.\n그래도 등록할까요?`)) return
+      }
+    }
     startTransition(async () => {
-      if (currentPerson && editingInfo) {
-        await updatePerson(currentPerson.id, {
-          name: perForm.name||currentPerson.name, phone: perForm.phone||null,
+      if (editingInfo && !showNewPerson) {
+        // 인라인 수정 모드
+        const res = await updatePerson(currentPerson!.id, {
+          name: perForm.name||currentPerson!.name, phone: perForm.phone||null,
           email: perForm.email||null, notes: perForm.notes||null,
         })
+        if (res?.error) { alert('저장 실패: ' + res.error); return }
         setEditingInfo(false)
       } else {
+        // 새 담당자 등록 모달
         const fd = new FormData()
         Object.entries(perForm).forEach(([k,v])=>{ if(v) fd.set(k,v) })
-        await createPerson(fd)
-        setShowNewPerson(false)
+        const res = await createPerson(fd)
+        if (res?.error) { alert('등록 실패: ' + res.error); return }
+        setShowNewPerson(false); setPerOrgSearch('')
       }
+      router.refresh()
     })
   }
 
   /* 소속 관계 추가 */
   function handleAddRelation(e: React.FormEvent) {
     e.preventDefault()
+    if (!relForm.customer_id) { alert('기관을 선택해 주세요.'); return }
+    if (!relForm.person_id)   { alert('담당자를 선택해 주세요.'); return }
     startTransition(async () => {
-      await addRelation({
+      const res = await addRelation({
         person_id:   relForm.person_id,
         customer_id: relForm.customer_id,
         dept:        relForm.dept || undefined,
         title:       relForm.title || undefined,
         started_at:  relForm.started_at || undefined,
       })
-      setShowAddRel(false); setRelForm({})
+      if (res?.error) { alert('연결 실패: ' + res.error); return }
+      setShowAddRel(false); setRelForm({}); setRelOrgSearch('')
+      router.refresh()
     })
+  }
+
+  function handleSaveRelEdit(relId: string) {
+    startTransition(async () => {
+      const res = await updateRelation(relId, {
+        dept:       relEditForm.dept || null,
+        title:      relEditForm.title || null,
+        started_at: relEditForm.started_at || null,
+        ended_at:   relEditForm.ended_at || null,
+      })
+      if (res?.error) { alert('저장 실패: ' + res.error); return }
+      setEditingRelId(null)
+      router.refresh()
+    })
+  }
+
+  async function handleQuickCreateOrg(name: string, target: 'rel' | 'per') {
+    const result = await quickCreateCustomer(name.trim())
+    if ('error' in result) { alert('기관 등록 실패: ' + result.error); return }
+    if (target === 'rel') {
+      setRelForm(f => ({...f, customer_id: result.id}))
+      setRelOrgSearch(name.trim())
+      setShowRelOrgDrop(false)
+    } else {
+      setPerForm(f => ({...f, customer_id: result.id}))
+      setPerOrgSearch(name.trim())
+      setShowPerOrgDrop(false)
+    }
+  }
+
+  /* 활동 로그 */
+  const refreshLogs = useCallback(async (type: 'customer'|'person', id: string) => {
+    setLoadingLogs(true)
+    const logs = await getCustomerLogs(type, id)
+    setActivityLogs(logs)
+    setLoadingLogs(false)
+  }, [])
+
+  useEffect(() => {
+    setCtConversations([])
+    if (!detailId) { setActivityLogs([]); return }
+    refreshLogs(detailType==='org'?'customer':'person', detailId)
+  }, [detailId, detailType, refreshLogs])
+
+  function handleAddLog() {
+    if (!newLogContent.trim() || !detailId) return
+    startTransition(async () => {
+      const res = await createCustomerLog({
+        log_type: newLogType,
+        content: newLogContent.trim(),
+        contacted_at: newLogDate ? new Date(newLogDate).toISOString() : new Date().toISOString(),
+        ...(detailType==='org' ? {customer_id:detailId, person_id:null} : {person_id:detailId, customer_id:null}),
+      })
+      if (res?.error) { alert('저장 실패: '+res.error); return }
+      setNewLogContent(''); setNewLogDate(nowDatetime())
+      refreshLogs(detailType==='org'?'customer':'person', detailId)
+    })
+  }
+
+  function handleDeleteLog(logId: string) {
+    if (!confirm('이 로그를 삭제할까요?')) return
+    startTransition(async () => {
+      const res = await deleteCustomerLog(logId)
+      if (res?.error) { alert('삭제 실패: '+res.error); return }
+      if (detailId) refreshLogs(detailType==='org'?'customer':'person', detailId)
+    })
+  }
+
+  /* 채널톡 동기화 */
+  async function handleSync() {
+    if (!confirm('채널톡에서 고객 정보를 가져올까요?\n데이터 양에 따라 시간이 걸릴 수 있어요.')) return
+    setSyncing(true); setSyncResult(null)
+    try {
+      const res = await fetch('/api/channeltalk/import', { method: 'POST' })
+      const json = await res.json()
+      if (json.error) { setSyncResult(`오류: ${json.error}`); return }
+      setSyncResult(`완료 — 조회 ${json.total}명 / 신규 ${json.created}명 / 업데이트 ${json.updated}명 / 건너뜀 ${json.skipped}명`)
+      router.refresh()
+    } catch (e: any) {
+      setSyncResult(`오류: ${e.message}`)
+    } finally {
+      setSyncing(false)
+    }
+  }
+
+  async function loadCtConversations(ctUserId: string) {
+    setLoadingConvs(true); setCtConversations([])
+    try {
+      const res = await fetch(`/api/channeltalk/conversations?userId=${encodeURIComponent(ctUserId)}`)
+      const json = await res.json()
+      setCtConversations(json.conversations ?? [])
+    } catch {
+      setCtConversations([])
+    } finally {
+      setLoadingConvs(false)
+    }
+  }
+
+  /* CSV 내보내기 */
+  function handleExportOrgs() {
+    const headers = ['기관명','유형','지역','전화','총매출(원)','계약건수','최근거래일','담당자수','메모']
+    const rows = customers.map(c=>[c.name,c.type,c.region,c.phone,c.total_sales,c.sales_count,c.last_deal_date||'',c.contacts.length,c.notes])
+    downloadCSV(headers, rows, `기관목록_${new Date().toISOString().slice(0,10)}.csv`)
+  }
+  function handleExportPersons() {
+    const headers = ['이름','전화','이메일','현재소속기관','직책','부서','이직횟수','메모']
+    const rows = persons.map(p=>{
+      const cur=p.job_history.find(j=>j.is_current)
+      return [p.name,p.phone,p.email,cur?.customer_name||'',cur?.title||'',cur?.dept||'',p.job_history.length>1?p.job_history.length-1:0,p.notes]
+    })
+    downloadCSV(headers, rows, `담당자목록_${new Date().toISOString().slice(0,10)}.csv`)
   }
 
   /* 티어 그룹 */
@@ -136,7 +310,9 @@ export default function CustomersClient({ customers, persons, isAdmin }: Props) 
     tier:t, orgs:filteredOrgs.filter(o=>getTier(o)===t)
   })).filter(g=>g.orgs.length>0)
 
-  const filteredPersons = persons.filter(p=>!pSearch||p.name.includes(pSearch))
+  const filteredPersons = persons
+    .filter(p=>!pSearch||p.name.includes(pSearch))
+    .filter(p=>!filterMoved||p.job_history.length>1)
 
   /* 요약 */
   const totalRevenue = customers.reduce((s,c)=>s+c.total_sales,0)
@@ -158,6 +334,17 @@ export default function CustomersClient({ customers, persons, isAdmin }: Props) 
           </div>
         ))}
       </div>
+
+      {/* 채널톡 동기화 */}
+      {isAdmin && (
+        <div className="flex items-center gap-3 flex-wrap">
+          <button onClick={handleSync} disabled={syncing}
+            className="px-3 py-1.5 text-xs font-semibold rounded-lg border border-gray-200 hover:border-blue-300 hover:text-blue-600 disabled:opacity-50 flex items-center gap-1.5 bg-white">
+            {syncing ? '⏳ 동기화 중...' : '📡 채널톡 동기화'}
+          </button>
+          {syncResult && <p className="text-xs text-gray-500">{syncResult}</p>}
+        </div>
+      )}
 
       {/* 스플릿 뷰 */}
       <div className="flex flex-col md:flex-row gap-4 md:h-[calc(100vh-320px)] md:min-h-[540px]">
@@ -181,12 +368,24 @@ export default function CustomersClient({ customers, persons, isAdmin }: Props) 
                 :<input type="text" placeholder="담당자명 검색..." value={pSearch} onChange={e=>setPSearch(e.target.value)} className={`flex-1 ${inp} py-1.5`}/>}
               {isAdmin && (
                 <button
-                  onClick={()=>{ listView==='org'?(setShowNewOrg(true)):(setShowNewPerson(true)) }}
+                  onClick={()=>{ if(listView==='org'){setOrgForm({});setShowNewOrg(true)}else{setPerForm({});setPerOrgSearch('');setShowNewPerson(true)} }}
                   className="px-3 py-1.5 text-xs font-semibold rounded-lg shrink-0"
                   style={{backgroundColor:'#FFCE00',color:'#121212'}}>
                   + 추가
                 </button>
               )}
+            </div>
+            <div className="flex items-center justify-between">
+              {listView==='person' ? (
+                <button onClick={()=>setFilterMoved(f=>!f)}
+                  className={`text-xs px-2.5 py-1 rounded-full border transition-colors ${filterMoved?'bg-orange-100 text-orange-700 border-orange-200 font-medium':'border-gray-200 text-gray-400 hover:border-gray-300'}`}>
+                  이직자만 보기 {filterMoved&&`(${filteredPersons.length}명)`}
+                </button>
+              ) : <span/>}
+              <button onClick={listView==='org'?handleExportOrgs:handleExportPersons}
+                className="text-xs text-gray-400 hover:text-gray-600 flex items-center gap-0.5">
+                ↓ CSV
+              </button>
             </div>
           </div>
 
@@ -325,7 +524,7 @@ export default function CustomersClient({ customers, persons, isAdmin }: Props) 
                     <div className="flex items-center justify-between mb-2">
                       <p className="text-xs text-gray-400">기본 정보</p>
                       {isAdmin&&(!editingInfo
-                        ?<button onClick={()=>{setOrgForm({name:o.name,type:o.type,region:o.region,phone:o.phone,email:o.email,homepage:o.homepage,notes:o.notes});setEditingInfo(true)}}
+                        ?<button onClick={()=>{setOrgForm({name:o.name,type:o.type,region:o.region,phone:o.phone,notes:o.notes});setEditingInfo(true)}}
                            className="text-xs text-gray-400 hover:text-gray-700 border border-gray-200 rounded px-2 py-0.5">수정</button>
                         :<div className="flex gap-1.5">
                            <button onClick={()=>setEditingInfo(false)} className="text-xs text-gray-400 border border-gray-200 rounded px-2 py-0.5">취소</button>
@@ -339,15 +538,18 @@ export default function CustomersClient({ customers, persons, isAdmin }: Props) 
                           <div><label className={lbl}>유형</label><select className={inp} value={orgForm.type||''} onChange={e=>setOrgForm(f=>({...f,type:e.target.value}))}>{ORG_TYPES.map(t=><option key={t}>{t}</option>)}</select></div>
                           <div><label className={lbl}>지역</label><input className={inp} value={orgForm.region||''} onChange={e=>setOrgForm(f=>({...f,region:e.target.value}))}/></div>
                           <div><label className={lbl}>대표 전화</label><input className={inp} value={orgForm.phone||''} onChange={e=>setOrgForm(f=>({...f,phone:e.target.value}))}/></div>
-                          <div><label className={lbl}>이메일</label><input className={inp} value={orgForm.email||''} onChange={e=>setOrgForm(f=>({...f,email:e.target.value}))}/></div>
-                          <div><label className={lbl}>홈페이지</label><input className={inp} value={orgForm.homepage||''} onChange={e=>setOrgForm(f=>({...f,homepage:e.target.value}))}/></div>
                         </div>
                         <div><label className={lbl}>메모</label><textarea className={inp} rows={2} value={orgForm.notes||''} onChange={e=>setOrgForm(f=>({...f,notes:e.target.value}))}/></div>
                       </div>
                     ):(
                       <div className="grid grid-cols-2 gap-y-2 gap-x-4">
-                        {[['전화',o.phone],['이메일',o.email||'-'],['지역',o.region||'-'],['홈페이지',o.homepage||'-'],['최근거래',o.last_deal_date||'-']].map(([k,v])=>(
-                          <div key={k as string}><span className="text-xs text-gray-400">{k}</span><p className="text-sm font-medium text-gray-800">{v as string}</p></div>
+                        {[['전화',o.phone||'-'],['지역',o.region||'-'],['최근거래',o.last_deal_date||'-']].map(([k,v])=>(
+                          <div key={k as string}>
+                            <span className="text-xs text-gray-400">{k}</span>
+                            {k==='전화'&&v!=='-'
+                              ?<a href={`tel:${v}`} className="block text-sm font-medium text-blue-600 hover:underline">{v as string}</a>
+                              :<p className="text-sm font-medium text-gray-800">{v as string}</p>}
+                          </div>
                         ))}
                         {o.notes&&<div className="col-span-2"><span className="text-xs text-gray-400">메모</span><p className="text-sm text-gray-600 whitespace-pre-wrap">{o.notes}</p></div>}
                       </div>
@@ -362,27 +564,55 @@ export default function CustomersClient({ customers, persons, isAdmin }: Props) 
                     </div>
                     {o.contacts.length===0
                       ?<p className="text-xs text-gray-300 italic">연결된 담당자가 없어요.</p>
-                      :o.contacts.map((c,i)=>{
-                        const hasMoved=personMap[c.person_id]?.job_history.length>1
-                        const curJob=personMap[c.person_id]?.job_history.find(j=>j.is_current)
-                        const movedTo=!c.is_current&&curJob&&curJob.customer_id!==o.id?curJob:null
-                        return (
-                          <div key={i} className={`flex items-center gap-3 rounded-lg px-3 py-2.5 mb-2 border ${c.is_current?'border-green-200 bg-green-50':'border-gray-100 bg-gray-50'}`}>
-                            <div className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold shrink-0 ${c.is_current?'bg-green-200 text-green-700':'bg-gray-200 text-gray-500'}`}>{c.person_name?.[0]}</div>
-                            <div className="flex-1">
-                              <div className="flex items-center gap-1.5 flex-wrap">
-                                <button onClick={()=>c.person_id&&goToPerson(c.person_id)} className="text-sm font-semibold text-blue-600 hover:text-blue-800 underline">{c.person_name}</button>
-                                {c.title&&<span className="text-xs text-gray-400">{c.title}</span>}
-                                {c.dept&&<span className="text-xs text-gray-400">· {c.dept}</span>}
-                                {c.is_current?<span className="text-xs px-1.5 py-0.5 bg-green-100 text-green-700 rounded-full">재직중</span>:<span className="text-xs px-1.5 py-0.5 bg-gray-200 text-gray-500 rounded-full">이직</span>}
-                                {hasMoved&&!c.is_current&&<span className="text-xs px-1.5 py-0.5 bg-orange-100 text-orange-600 rounded-full">이직이력</span>}
-                              </div>
-                              <p className="text-xs text-gray-400">{c.started_at} ~ {c.ended_at||'현재'}</p>
-                              {movedTo&&<p className="text-xs text-blue-500 mt-0.5">현재: {movedTo.customer_name} {movedTo.dept}</p>}
+                      :(()=>{
+                        // 부서별 그룹핑 (dept 없으면 '기타' 그룹)
+                        const deptGroups: Record<string, OrgContact[]> = {}
+                        for (const c of o.contacts) {
+                          const key = c.dept || '기타'
+                          if (!deptGroups[key]) deptGroups[key] = []
+                          deptGroups[key].push(c)
+                        }
+                        const sortedDepts = Object.keys(deptGroups).sort((a,b)=>{
+                          // 현재 재직자 있는 부서 우선, 기타 맨 뒤
+                          const aHasCur = deptGroups[a].some(c=>c.is_current)
+                          const bHasCur = deptGroups[b].some(c=>c.is_current)
+                          if (aHasCur !== bHasCur) return aHasCur ? -1 : 1
+                          if (a==='기타') return 1
+                          if (b==='기타') return -1
+                          return a.localeCompare(b, 'ko')
+                        })
+                        return sortedDepts.map(dept=>(
+                          <div key={dept} className="mb-3">
+                            <div className="flex items-center gap-2 mb-1.5">
+                              <span className="text-xs font-semibold text-gray-500 bg-gray-100 px-2 py-0.5 rounded">{dept}</span>
+                              <span className="text-xs text-gray-300">{deptGroups[dept].length}명</span>
                             </div>
+                            {deptGroups[dept].map((c,i)=>{
+                              const hasMoved=personMap[c.person_id]?.job_history.length>1
+                              const curJob=personMap[c.person_id]?.job_history.find(j=>j.is_current)
+                              const movedTo=!c.is_current&&curJob&&curJob.customer_id!==o.id?curJob:null
+                              return (
+                                <div key={i} className={`flex items-center gap-3 rounded-lg px-3 py-2.5 mb-1.5 border ${c.is_current?'border-green-200 bg-green-50':'border-gray-100 bg-gray-50'}`}>
+                                  <div className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold shrink-0 ${c.is_current?'bg-green-200 text-green-700':'bg-gray-200 text-gray-500'}`}>{c.person_name?.[0]}</div>
+                                  <div className="flex-1">
+                                    <div className="flex items-center gap-1.5 flex-wrap">
+                                      <button onClick={()=>c.person_id&&goToPerson(c.person_id)} className="text-sm font-semibold text-blue-600 hover:text-blue-800 underline">{c.person_name}</button>
+                                      {c.title&&<span className="text-xs text-gray-400">{c.title}</span>}
+                                      {c.is_current?<span className="text-xs px-1.5 py-0.5 bg-green-100 text-green-700 rounded-full">재직중</span>:<span className="text-xs px-1.5 py-0.5 bg-gray-200 text-gray-500 rounded-full">이직</span>}
+                                      {hasMoved&&!c.is_current&&<span className="text-xs px-1.5 py-0.5 bg-orange-100 text-orange-600 rounded-full">이직이력</span>}
+                                    </div>
+                                    <div className="flex items-center gap-2 flex-wrap mt-0.5">
+                                      <span className="text-xs text-gray-400">{c.started_at} ~ {c.ended_at||'현재'}</span>
+                                      {c.person_phone&&<a href={`tel:${c.person_phone}`} className="text-xs text-blue-500 hover:underline">📞 {c.person_phone}</a>}
+                                    </div>
+                                    {movedTo&&<p className="text-xs text-blue-500 mt-0.5">현재: {movedTo.customer_name} {movedTo.dept}</p>}
+                                  </div>
+                                </div>
+                              )
+                            })}
                           </div>
-                        )
-                      })}
+                        ))
+                      })()}
                   </div>
 
                   {/* 매출 이력 */}
@@ -401,11 +631,52 @@ export default function CustomersClient({ customers, persons, isAdmin }: Props) 
                       </div>
                     </div>
                   )}
+
+                  {/* 활동 로그 */}
+                  <div>
+                    <p className="text-xs text-gray-400 mb-2">활동 로그</p>
+                    <div className="bg-gray-50 rounded-lg p-3 mb-3 space-y-2">
+                      <div className="flex gap-2">
+                        <select value={newLogType} onChange={e=>setNewLogType(e.target.value)} className="text-xs border border-gray-200 rounded px-2 py-1.5 bg-white shrink-0">
+                          {LOG_TYPES.map(t=><option key={t}>{t}</option>)}
+                        </select>
+                        <input type="datetime-local" value={newLogDate} onChange={e=>setNewLogDate(e.target.value)}
+                          className="text-xs border border-gray-200 rounded px-2 py-1.5 flex-1 min-w-0" style={{appearance:'auto'} as React.CSSProperties}/>
+                      </div>
+                      <textarea value={newLogContent} onChange={e=>setNewLogContent(e.target.value)}
+                        placeholder="통화 내용, 방문 결과, 미팅 요약..." rows={2}
+                        className="w-full text-xs border border-gray-200 rounded px-2 py-1.5 resize-none focus:outline-none focus:ring-1 focus:ring-yellow-300"/>
+                      <button onClick={handleAddLog} disabled={!newLogContent.trim()||isPending}
+                        className="w-full py-1.5 text-xs font-semibold rounded disabled:opacity-50"
+                        style={{backgroundColor:'#FFCE00',color:'#121212'}}>{isPending?'저장중...':'로그 저장'}</button>
+                    </div>
+                    {loadingLogs ? (
+                      <p className="text-xs text-gray-300 text-center py-2">로딩 중...</p>
+                    ) : activityLogs.length===0 ? (
+                      <p className="text-xs text-gray-300 italic">아직 활동 기록이 없어요.</p>
+                    ) : (
+                      <div className="space-y-2">
+                        {activityLogs.map((log:any)=>(
+                          <div key={log.id} className="border border-gray-100 rounded-lg px-3 py-2">
+                            <div className="flex items-center justify-between mb-1">
+                              <div className="flex items-center gap-1.5 flex-wrap">
+                                <span className={`text-xs px-1.5 py-0.5 rounded-full ${LOG_TYPE_COLORS[log.log_type]||'bg-gray-100 text-gray-500'}`}>{log.log_type}</span>
+                                <span className="text-xs text-gray-400">{log.contacted_at?.slice(0,16).replace('T',' ')}</span>
+                                {log.author?.name&&<span className="text-xs text-gray-300">· {log.author.name}</span>}
+                              </div>
+                              {isAdmin&&<button onClick={()=>handleDeleteLog(log.id)} className="text-xs text-red-300 hover:text-red-500 ml-2 shrink-0">삭제</button>}
+                            </div>
+                            <p className="text-xs text-gray-700 whitespace-pre-wrap">{log.content}</p>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
                 </div>
 
                 <div className="px-5 py-3 border-t border-gray-100 flex gap-2 shrink-0">
-                  {isAdmin&&<button onClick={()=>{if(confirm('이 기관을 삭제할까요?'))startTransition(async()=>{await deleteCustomer(o.id)})}} className="px-3 py-2 text-xs text-red-400 border border-red-100 rounded-lg hover:bg-red-50">삭제</button>}
-                  <button className="flex-1 px-3 py-2 text-sm font-semibold rounded-lg" style={{backgroundColor:'#FFCE00',color:'#121212'}}>이 기관으로 리드 등록</button>
+                  {isAdmin&&<button onClick={()=>{if(confirm('이 기관을 삭제할까요?\n소속 관계가 모두 삭제됩니다.'))startTransition(async()=>{const r=await deleteCustomer(o.id);if(r?.error){alert('삭제 실패: '+r.error);return}setDetailId(null);router.refresh()})}} className="px-3 py-2 text-xs text-red-400 border border-red-100 rounded-lg hover:bg-red-50">삭제</button>}
+                  <button onClick={()=>router.push(`/leads?new=1&client_org=${encodeURIComponent(o.name)}`)} className="flex-1 px-3 py-2 text-sm font-semibold rounded-lg" style={{backgroundColor:'#FFCE00',color:'#121212'}}>이 기관으로 리드 등록</button>
                 </div>
               </>
             )
@@ -471,7 +742,12 @@ export default function CustomersClient({ customers, persons, isAdmin }: Props) 
                     ):(
                       <div className="grid grid-cols-2 gap-y-2 gap-x-4">
                         {[['전화',p.phone||'-'],['이메일',p.email||'-']].map(([k,v])=>(
-                          <div key={k as string}><span className="text-xs text-gray-400">{k}</span><p className="text-sm font-medium text-gray-800">{v as string}</p></div>
+                          <div key={k as string}>
+                            <span className="text-xs text-gray-400">{k}</span>
+                            {k==='전화'&&v!=='-'
+                              ?<a href={`tel:${v}`} className="block text-sm font-medium text-blue-600 hover:underline">{v as string}</a>
+                              :<p className="text-sm font-medium text-gray-800">{v as string}</p>}
+                          </div>
                         ))}
                         {p.notes&&<div className="col-span-2"><span className="text-xs text-gray-400">메모</span><p className="text-sm text-gray-600 whitespace-pre-wrap">{p.notes}</p></div>}
                       </div>
@@ -482,7 +758,6 @@ export default function CustomersClient({ customers, persons, isAdmin }: Props) 
                   <div>
                     <div className="flex items-center justify-between mb-3">
                       <p className="text-xs text-gray-400">소속 이력</p>
-                      {isAdmin&&<button onClick={()=>{setRelForm({person_id:p.id});setShowAddRel(true)}} className="text-xs text-gray-400 hover:text-gray-700 border border-gray-200 rounded px-2 py-0.5">+ 이직 추가</button>}
                     </div>
                     {p.job_history.length===0
                       ?<p className="text-xs text-gray-300 italic">소속 이력이 없어요.</p>
@@ -492,22 +767,176 @@ export default function CustomersClient({ customers, persons, isAdmin }: Props) 
                           <div key={i} className="relative flex gap-3 mb-3">
                             <div className={`absolute -left-[13px] top-1.5 w-3 h-3 rounded-full border-2 border-white shadow-sm ${j.is_current?'bg-green-400':'bg-gray-300'}`}/>
                             <div className="flex-1 bg-gray-50 rounded-lg p-2.5">
-                              <div className="flex items-center justify-between">
-                                <button onClick={()=>j.customer_id&&goToOrg(j.customer_id)} className="text-sm font-semibold text-blue-600 hover:text-blue-800 underline">{j.customer_name}</button>
-                                {j.is_current?<span className="text-xs bg-green-100 text-green-700 px-1.5 py-0.5 rounded-full">현재</span>:null}
-                              </div>
-                              {(j.dept||j.title)&&<p className="text-xs text-gray-500 mt-0.5">{[j.dept,j.title].filter(Boolean).join(' · ')}</p>}
-                              <p className="text-xs text-gray-400">{j.started_at||'?'} ~ {j.ended_at||'현재'}</p>
+                              {editingRelId===j.id ? (
+                                <div className="space-y-2">
+                                  <p className="text-xs font-semibold text-gray-700">{j.customer_name}</p>
+                                  <div className="grid grid-cols-2 gap-2">
+                                    <div>
+                                      <label className={lbl}>부서</label>
+                                      <input className={inp} placeholder="예: 지역교육과" value={relEditForm.dept} onChange={e=>setRelEditForm(f=>({...f,dept:e.target.value}))}/>
+                                    </div>
+                                    <div>
+                                      <label className={lbl}>직책</label>
+                                      <input className={inp} list="title-options" placeholder="예: 장학사" value={relEditForm.title} onChange={e=>setRelEditForm(f=>({...f,title:e.target.value}))}/>
+                                      <datalist id="title-options">
+                                        {['장학사','교사','주무관','주사','팀장','과장','부장','대리','사원','담당자','기타'].map(t=><option key={t} value={t}/>)}
+                                      </datalist>
+                                    </div>
+                                    <div>
+                                      <label className={lbl}>시작일</label>
+                                      <input type="date" className={inp} value={relEditForm.started_at} onChange={e=>setRelEditForm(f=>({...f,started_at:e.target.value}))} style={{appearance:'auto'} as React.CSSProperties}/>
+                                    </div>
+                                    <div>
+                                      <label className={lbl}>종료일</label>
+                                      <input type="date" className={inp} value={relEditForm.ended_at} onChange={e=>setRelEditForm(f=>({...f,ended_at:e.target.value}))} style={{appearance:'auto'} as React.CSSProperties}/>
+                                    </div>
+                                  </div>
+                                  <div className="flex gap-1.5 pt-1">
+                                    <button disabled={isPending} onClick={()=>handleSaveRelEdit(j.id)} className="px-3 py-1 text-xs font-semibold rounded disabled:opacity-50" style={{backgroundColor:'#FFCE00',color:'#121212'}}>{isPending?'저장중...':'저장'}</button>
+                                    <button onClick={()=>setEditingRelId(null)} className="px-3 py-1 text-xs border border-gray-200 rounded hover:bg-white">취소</button>
+                                  </div>
+                                </div>
+                              ) : (
+                                <>
+                                  <div className="flex items-center justify-between">
+                                    <button onClick={()=>j.customer_id&&goToOrg(j.customer_id)} className="text-sm font-semibold text-blue-600 hover:text-blue-800 underline">{j.customer_name}</button>
+                                    <div className="flex items-center gap-1.5">
+                                      {j.is_current&&<span className="text-xs bg-green-100 text-green-700 px-1.5 py-0.5 rounded-full">현재</span>}
+                                      {isAdmin&&<button onClick={()=>{setEditingRelId(j.id);setRelEditForm({dept:j.dept||'',title:j.title||'',started_at:j.started_at||'',ended_at:j.ended_at||''})}} className="text-xs text-gray-400 hover:text-gray-700 border border-gray-200 rounded px-1.5 py-0.5">수정</button>}
+                                      {isAdmin&&<button onClick={()=>{if(confirm('이 소속 이력을 삭제할까요?'))startTransition(async()=>{const r=await deleteRelation(j.id);if(r?.error){alert('삭제 실패: '+r.error);return}router.refresh()})}} className="text-xs text-red-400 hover:text-red-600 border border-red-100 rounded px-1.5 py-0.5">삭제</button>}
+                                    </div>
+                                  </div>
+                                  {(j.dept||j.title)
+                                    ?<p className="text-xs text-gray-500 mt-0.5">{[j.dept,j.title].filter(Boolean).join(' · ')}</p>
+                                    :<p className="text-xs text-gray-300 italic mt-0.5">부서·직책 미입력</p>}
+                                  <p className="text-xs text-gray-400">{j.started_at||'?'} ~ {j.ended_at||'현재'}</p>
+                                </>
+                              )}
                             </div>
                           </div>
                         ))}
                       </div>}
+                    {isAdmin&&(
+                      <button onClick={()=>{setRelForm({person_id:p.id});setShowAddRel(true)}} className="mt-2 w-full py-2 text-sm font-medium border-2 border-dashed border-gray-200 rounded-lg text-gray-400 hover:border-yellow-300 hover:text-yellow-600 transition-colors">
+                        + 소속 / 이직 추가
+                      </button>
+                    )}
                   </div>
+
+                  {/* 리드 & 계약 이력 */}
+                  <div>
+                    <p className="text-xs text-gray-400 mb-2">리드 & 계약 이력 ({p.leads.length}건)</p>
+                    {p.leads.length === 0 ? (
+                      <p className="text-xs text-gray-300 italic">아직 연결된 리드가 없어요.</p>
+                    ) : (
+                      <div className="space-y-1.5">
+                        {p.leads.map((l) => (
+                          <a key={l.id} href={`/leads`}
+                            className="flex items-center justify-between border border-gray-100 rounded-xl px-3 py-2 hover:border-yellow-300 hover:bg-yellow-50 transition-colors group">
+                            <div className="min-w-0">
+                              <p className="text-xs font-medium text-gray-700 group-hover:text-yellow-800 truncate">{l.client_org || '기관 미입력'}</p>
+                              <p className="text-[11px] text-gray-400">{l.inflow_date} · {l.service_type || '서비스 미지정'}</p>
+                            </div>
+                            <span className={`text-[10px] px-1.5 py-0.5 rounded-full ml-2 shrink-0 ${
+                              l.status === '계약' ? 'bg-teal-100 text-teal-700' :
+                              l.status === '취소' ? 'bg-red-100 text-red-400' :
+                              l.status === '진행중' ? 'bg-green-100 text-green-700' :
+                              'bg-blue-100 text-blue-700'
+                            }`}>{l.status}</span>
+                          </a>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* 활동 로그 */}
+                  <div>
+                    <p className="text-xs text-gray-400 mb-2">활동 로그</p>
+                    <div className="bg-gray-50 rounded-lg p-3 mb-3 space-y-2">
+                      <div className="flex gap-2">
+                        <select value={newLogType} onChange={e=>setNewLogType(e.target.value)} className="text-xs border border-gray-200 rounded px-2 py-1.5 bg-white shrink-0">
+                          {LOG_TYPES.map(t=><option key={t}>{t}</option>)}
+                        </select>
+                        <input type="datetime-local" value={newLogDate} onChange={e=>setNewLogDate(e.target.value)}
+                          className="text-xs border border-gray-200 rounded px-2 py-1.5 flex-1 min-w-0" style={{appearance:'auto'} as React.CSSProperties}/>
+                      </div>
+                      <textarea value={newLogContent} onChange={e=>setNewLogContent(e.target.value)}
+                        placeholder="통화 내용, 방문 결과, 미팅 요약..." rows={2}
+                        className="w-full text-xs border border-gray-200 rounded px-2 py-1.5 resize-none focus:outline-none focus:ring-1 focus:ring-yellow-300"/>
+                      <button onClick={handleAddLog} disabled={!newLogContent.trim()||isPending}
+                        className="w-full py-1.5 text-xs font-semibold rounded disabled:opacity-50"
+                        style={{backgroundColor:'#FFCE00',color:'#121212'}}>{isPending?'저장중...':'로그 저장'}</button>
+                    </div>
+                    {loadingLogs ? (
+                      <p className="text-xs text-gray-300 text-center py-2">로딩 중...</p>
+                    ) : activityLogs.length===0 ? (
+                      <p className="text-xs text-gray-300 italic">아직 활동 기록이 없어요.</p>
+                    ) : (
+                      <div className="space-y-2">
+                        {activityLogs.map((log:any)=>(
+                          <div key={log.id} className="border border-gray-100 rounded-lg px-3 py-2">
+                            <div className="flex items-center justify-between mb-1">
+                              <div className="flex items-center gap-1.5 flex-wrap">
+                                <span className={`text-xs px-1.5 py-0.5 rounded-full ${LOG_TYPE_COLORS[log.log_type]||'bg-gray-100 text-gray-500'}`}>{log.log_type}</span>
+                                <span className="text-xs text-gray-400">{log.contacted_at?.slice(0,16).replace('T',' ')}</span>
+                                {log.author?.name&&<span className="text-xs text-gray-300">· {log.author.name}</span>}
+                              </div>
+                              {isAdmin&&<button onClick={()=>handleDeleteLog(log.id)} className="text-xs text-red-300 hover:text-red-500 ml-2 shrink-0">삭제</button>}
+                            </div>
+                            <p className="text-xs text-gray-700 whitespace-pre-wrap">{log.content}</p>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* 채널톡 대화 이력 */}
+                  {p.channeltalk_user_id && (
+                    <div>
+                      <div className="flex items-center justify-between mb-2">
+                        <p className="text-xs text-gray-400">채널톡 대화 이력</p>
+                        <button onClick={()=>loadCtConversations(p.channeltalk_user_id!)}
+                          disabled={loadingConvs}
+                          className="text-xs text-blue-500 hover:text-blue-700 border border-blue-100 rounded px-2 py-0.5 disabled:opacity-50">
+                          {loadingConvs ? '불러오는 중...' : '불러오기'}
+                        </button>
+                      </div>
+                      {loadingConvs ? (
+                        <p className="text-xs text-gray-300 text-center py-2">로딩 중...</p>
+                      ) : ctConversations.length === 0 ? (
+                        <p className="text-xs text-gray-300 italic">버튼을 눌러 채팅 내역을 불러오세요.</p>
+                      ) : (
+                        <div className="space-y-3">
+                          {ctConversations.map((conv: any) => (
+                            <div key={conv.id} className="border border-blue-100 rounded-lg p-3 bg-blue-50/30">
+                              <div className="flex items-center justify-between mb-2">
+                                <span className={`text-xs px-1.5 py-0.5 rounded-full font-medium ${conv.state==='opened'?'bg-green-100 text-green-700':'bg-gray-100 text-gray-500'}`}>
+                                  {conv.state==='opened'?'진행중':'종료'}
+                                </span>
+                                <span className="text-xs text-gray-400">{conv.createdAt?.slice(0,10)}</span>
+                              </div>
+                              <div className="space-y-1.5 max-h-40 overflow-y-auto">
+                                {conv.messages.length === 0
+                                  ? <p className="text-xs text-gray-300 italic">메시지 없음</p>
+                                  : conv.messages.map((m: any) => (
+                                  <div key={m.id} className={`flex ${m.personType==='user'?'justify-start':'justify-end'}`}>
+                                    <div className={`text-xs px-2.5 py-1.5 rounded-xl max-w-[80%] leading-relaxed ${m.personType==='user'?'bg-white border border-gray-200 text-gray-700':'bg-blue-500 text-white'}`}>
+                                      {m.text}
+                                    </div>
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  )}
                 </div>
 
                 <div className="px-5 py-3 border-t border-gray-100 flex gap-2 shrink-0">
-                  {isAdmin&&<button onClick={()=>{if(confirm('이 담당자를 삭제할까요?'))startTransition(async()=>{await deletePerson(p.id)})}} className="px-3 py-2 text-xs text-red-400 border border-red-100 rounded-lg hover:bg-red-50">삭제</button>}
-                  <button className="flex-1 px-3 py-2 text-sm font-semibold rounded-lg" style={{backgroundColor:'#FFCE00',color:'#121212'}}>이 담당자로 리드 등록</button>
+                  {isAdmin&&<button onClick={()=>{if(confirm('이 담당자를 삭제할까요?\n소속 관계가 모두 삭제됩니다.'))startTransition(async()=>{const r=await deletePerson(p.id);if(r?.error){alert('삭제 실패: '+r.error);return}setDetailId(null);router.refresh()})}} className="px-3 py-2 text-xs text-red-400 border border-red-100 rounded-lg hover:bg-red-50">삭제</button>}
+                  <button onClick={()=>router.push('/leads')} className="flex-1 px-3 py-2 text-sm font-semibold rounded-lg text-center" style={{backgroundColor:'#FFCE00',color:'#121212'}}>이 담당자 리드 보기</button>
                 </div>
               </>
             )
@@ -526,8 +955,6 @@ export default function CustomersClient({ customers, persons, isAdmin }: Props) 
               <div><label className={lbl}>유형</label><select className={inp} value={orgForm.type||'기타'} onChange={e=>setOrgForm(f=>({...f,type:e.target.value}))}>{ORG_TYPES.map(t=><option key={t}>{t}</option>)}</select></div>
               <div><label className={lbl}>지역</label><input className={inp} value={orgForm.region||''} onChange={e=>setOrgForm(f=>({...f,region:e.target.value}))}/></div>
               <div><label className={lbl}>대표 전화</label><input className={inp} value={orgForm.phone||''} onChange={e=>setOrgForm(f=>({...f,phone:e.target.value}))}/></div>
-              <div><label className={lbl}>이메일</label><input className={inp} value={orgForm.email||''} onChange={e=>setOrgForm(f=>({...f,email:e.target.value}))}/></div>
-              <div><label className={lbl}>홈페이지</label><input className={inp} value={orgForm.homepage||''} onChange={e=>setOrgForm(f=>({...f,homepage:e.target.value}))}/></div>
             </div>
             <div><label className={lbl}>메모</label><textarea className={inp} rows={2} value={orgForm.notes||''} onChange={e=>setOrgForm(f=>({...f,notes:e.target.value}))}/></div>
             <div className="flex justify-end gap-2 pt-1">
@@ -546,19 +973,59 @@ export default function CustomersClient({ customers, persons, isAdmin }: Props) 
             <h2 className="text-lg font-bold text-gray-900 mb-2">새 담당자 등록</h2>
             <div className="grid grid-cols-2 gap-3">
               <div><label className={lbl}>이름 *</label><input className={inp} required value={perForm.name||''} onChange={e=>setPerForm(f=>({...f,name:e.target.value}))}/></div>
-              <div><label className={lbl}>직함</label><input className={inp} value={perForm.title||''} onChange={e=>setPerForm(f=>({...f,title:e.target.value}))}/></div>
+              <div>
+                <label className={lbl}>직책</label>
+                <input className={inp} list="per-title-options" placeholder="예: 장학사" value={perForm.title||''} onChange={e=>setPerForm(f=>({...f,title:e.target.value}))}/>
+                <datalist id="per-title-options">
+                  {['장학사','교사','주무관','주사','팀장','과장','부장','대리','사원','담당자','기타'].map(t=><option key={t} value={t}/>)}
+                </datalist>
+              </div>
               <div><label className={lbl}>휴대폰</label><input className={inp} value={perForm.phone||''} onChange={e=>setPerForm(f=>({...f,phone:e.target.value}))}/></div>
               <div><label className={lbl}>이메일</label><input className={inp} value={perForm.email||''} onChange={e=>setPerForm(f=>({...f,email:e.target.value}))}/></div>
             </div>
-            <div><label className={lbl}>소속 기관 (선택)</label>
-              <select className={inp} value={perForm.customer_id||''} onChange={e=>setPerForm(f=>({...f,customer_id:e.target.value}))}>
-                <option value="">선택 안함</option>
-                {customers.map(c=><option key={c.id} value={c.id}>{c.name}</option>)}
-              </select>
+            <div>
+              <label className={lbl}>소속 기관 (선택)</label>
+              {!perForm.customer_id ? (
+                <div className="relative">
+                  <input
+                    className={inp}
+                    placeholder="기관명 검색 또는 직접 입력..."
+                    value={perOrgSearch}
+                    onChange={e=>{setPerOrgSearch(e.target.value);setShowPerOrgDrop(true)}}
+                    onFocus={()=>setShowPerOrgDrop(true)}
+                    onBlur={()=>setTimeout(()=>setShowPerOrgDrop(false),150)}
+                    autoComplete="off"
+                  />
+                  {showPerOrgDrop&&(
+                    <div className="absolute z-10 w-full mt-1 bg-white border border-gray-200 rounded-lg shadow-lg max-h-48 overflow-y-auto">
+                      {customers.filter(c=>!perOrgSearch||c.name.toLowerCase().includes(perOrgSearch.toLowerCase())).slice(0,8).map(c=>(
+                        <button key={c.id} type="button" onMouseDown={()=>{setPerForm(f=>({...f,customer_id:c.id}));setPerOrgSearch(c.name);setShowPerOrgDrop(false)}}
+                          className="w-full text-left px-3 py-2 text-sm hover:bg-yellow-50 hover:text-yellow-800">
+                          {c.name}
+                        </button>
+                      ))}
+                      {perOrgSearch.trim()&&!customers.find(c=>c.name.toLowerCase()===perOrgSearch.toLowerCase())&&(
+                        <button type="button" onMouseDown={()=>handleQuickCreateOrg(perOrgSearch,'per')}
+                          className="w-full text-left px-3 py-2 text-sm text-blue-600 hover:bg-blue-50 border-t border-gray-100 font-medium">
+                          + &ldquo;{perOrgSearch}&rdquo; 새 기관으로 등록
+                        </button>
+                      )}
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <div className="flex items-center justify-between bg-blue-50 border border-blue-100 rounded-lg px-3 py-2">
+                  <div>
+                    <span className="text-xs text-blue-400">선택된 기관</span>
+                    <p className="text-sm font-semibold text-blue-800">{customers.find(c=>c.id===perForm.customer_id)?.name||perOrgSearch}</p>
+                  </div>
+                  <button type="button" onClick={()=>{setPerForm(f=>({...f,customer_id:''}));setPerOrgSearch('')}} className="text-xs text-blue-400 hover:text-blue-600">변경</button>
+                </div>
+              )}
             </div>
             {perForm.customer_id&&(
               <div className="grid grid-cols-2 gap-3">
-                <div><label className={lbl}>부서</label><input className={inp} value={perForm.dept||''} onChange={e=>setPerForm(f=>({...f,dept:e.target.value}))}/></div>
+                <div><label className={lbl}>부서</label><input className={inp} placeholder="예: 지역교육과" value={perForm.dept||''} onChange={e=>setPerForm(f=>({...f,dept:e.target.value}))}/></div>
                 <div><label className={lbl}>소속 시작일</label><input type="date" className={inp} value={perForm.started_at||''} onChange={e=>setPerForm(f=>({...f,started_at:e.target.value}))}/></div>
               </div>
             )}
@@ -585,25 +1052,64 @@ export default function CustomersClient({ customers, persons, isAdmin }: Props) 
                 </select>
               </div>
             )}
-            {!relForm.customer_id&&(
-              <div><label className={lbl}>기관 *</label>
-                <select className={inp} required value={relForm.customer_id||''} onChange={e=>setRelForm(f=>({...f,customer_id:e.target.value}))}>
-                  <option value="">선택</option>
-                  {customers.map(c=><option key={c.id} value={c.id}>{c.name}</option>)}
-                </select>
+            {!relForm.customer_id ? (
+              <div>
+                <label className={lbl}>기관 *</label>
+                <div className="relative">
+                  <input
+                    className={inp}
+                    placeholder="기관명 검색 또는 직접 입력..."
+                    value={relOrgSearch}
+                    onChange={e=>{setRelOrgSearch(e.target.value);setShowRelOrgDrop(true)}}
+                    onFocus={()=>setShowRelOrgDrop(true)}
+                    onBlur={()=>setTimeout(()=>setShowRelOrgDrop(false),150)}
+                    autoComplete="off"
+                  />
+                  {showRelOrgDrop&&(
+                    <div className="absolute z-10 w-full mt-1 bg-white border border-gray-200 rounded-lg shadow-lg max-h-52 overflow-y-auto">
+                      {customers.filter(c=>!relOrgSearch||c.name.toLowerCase().includes(relOrgSearch.toLowerCase())).slice(0,8).map(c=>(
+                        <button key={c.id} type="button" onMouseDown={()=>{setRelForm(f=>({...f,customer_id:c.id}));setRelOrgSearch(c.name);setShowRelOrgDrop(false)}}
+                          className="w-full text-left px-3 py-2 text-sm hover:bg-yellow-50 hover:text-yellow-800">
+                          {c.name}
+                        </button>
+                      ))}
+                      {relOrgSearch.trim()&&!customers.find(c=>c.name.toLowerCase()===relOrgSearch.toLowerCase())&&(
+                        <button type="button" onMouseDown={()=>handleQuickCreateOrg(relOrgSearch,'rel')}
+                          className="w-full text-left px-3 py-2 text-sm text-blue-600 hover:bg-blue-50 border-t border-gray-100 font-medium">
+                          + &ldquo;{relOrgSearch}&rdquo; 새 기관으로 등록
+                        </button>
+                      )}
+                      {!relOrgSearch&&customers.length===0&&(
+                        <p className="px-3 py-2 text-xs text-gray-400">등록된 기관이 없어요</p>
+                      )}
+                    </div>
+                  )}
+                </div>
+              </div>
+            ) : (
+              <div className="flex items-center justify-between bg-blue-50 border border-blue-100 rounded-lg px-3 py-2">
+                <div>
+                  <span className="text-xs text-blue-400">기관</span>
+                  <p className="text-sm font-semibold text-blue-800">{orgMap[relForm.customer_id]?.name || relOrgSearch}</p>
+                </div>
+                <button type="button" onClick={()=>{setRelForm(f=>({...f,customer_id:''}));setRelOrgSearch('')}} className="text-xs text-blue-400 hover:text-blue-600">변경</button>
               </div>
             )}
-            {(relForm.person_id||relForm.customer_id)&&(
-              <>
-                {!relForm.person_id&&null}
-                {!relForm.customer_id&&null}
-                <div><label className={lbl}>담당자</label><p className="text-sm font-medium text-gray-700">{relForm.person_id?personMap[relForm.person_id]?.name:'—'}</p></div>
-                <div><label className={lbl}>기관</label><p className="text-sm font-medium text-gray-700">{relForm.customer_id?orgMap[relForm.customer_id]?.name:'—'}</p></div>
-              </>
+            {relForm.person_id&&(
+              <div className="bg-gray-50 border border-gray-100 rounded-lg px-3 py-2">
+                <span className="text-xs text-gray-400">담당자</span>
+                <p className="text-sm font-semibold text-gray-800">{personMap[relForm.person_id]?.name}</p>
+              </div>
             )}
             <div className="grid grid-cols-2 gap-3">
-              <div><label className={lbl}>부서</label><input className={inp} value={relForm.dept||''} onChange={e=>setRelForm(f=>({...f,dept:e.target.value}))}/></div>
-              <div><label className={lbl}>직함</label><input className={inp} value={relForm.title||''} onChange={e=>setRelForm(f=>({...f,title:e.target.value}))}/></div>
+              <div><label className={lbl}>부서</label><input className={inp} placeholder="예: 지역교육과" value={relForm.dept||''} onChange={e=>setRelForm(f=>({...f,dept:e.target.value}))}/></div>
+              <div>
+                <label className={lbl}>직책</label>
+                <input className={inp} list="rel-title-options" placeholder="예: 장학사" value={relForm.title||''} onChange={e=>setRelForm(f=>({...f,title:e.target.value}))}/>
+                <datalist id="rel-title-options">
+                  {['장학사','교사','주무관','주사','팀장','과장','부장','대리','사원','담당자','기타'].map(t=><option key={t} value={t}/>)}
+                </datalist>
+              </div>
               <div><label className={lbl}>시작일</label><input type="date" className={inp} value={relForm.started_at||''} onChange={e=>setRelForm(f=>({...f,started_at:e.target.value}))}/></div>
             </div>
             <div className="flex justify-end gap-2 pt-1">

@@ -1,11 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { waitUntil } from '@vercel/functions'
-import Anthropic from '@anthropic-ai/sdk'
+import OpenAI from 'openai'
 import { createAdminClient } from '@/lib/supabase/admin'
 import crypto from 'crypto'
 import { logApiUsage } from '@/lib/api-usage'
+import { searchDropbox, listDropboxFolder, readDropboxFile } from '@/lib/dropbox'
 
-const anthropic = new Anthropic()
+const openai = new OpenAI()
 
 const SYSTEM_PROMPT = `너는 유어메이트(yourmate) 사내 시스템 "빵빵이"야.
 채널톡 내부 그룹채팅에서 팀원들 업무를 돕고 있어.
@@ -29,180 +30,261 @@ const SYSTEM_PROMPT = `너는 유어메이트(yourmate) 사내 시스템 "빵빵
 데이터 관련 질문 오면 무조건 도구 써서 실제 데이터로 답변해.
 상태 변경 요청 시: 어떤 건인지 조회해서 확인 후 변경. 변경 완료되면 전/후 상태 알려줘.`
 
-const TOOLS: Anthropic.Tool[] = [
+const TOOLS: OpenAI.ChatCompletionTool[] = [
   {
-    name: 'get_sales',
-    description: '계약 목록을 조회합니다.',
-    input_schema: {
-      type: 'object' as const,
-      properties: {
-        search: { type: 'string', description: '건명 또는 발주처 검색어' },
-        payment_status: { type: 'string', description: '계약전 | 계약완료 | 선금수령 | 중도금수령 | 완납' },
-        service_type: { type: 'string', description: '서비스 타입 필터' },
-        year_month: { type: 'string', description: '월별 조회 (예: 2026-04)' },
-        limit: { type: 'number', description: '최대 조회 건수 (기본 20)' },
+    type: 'function',
+    function: {
+      name: 'get_sales',
+      description: '계약 목록을 조회합니다.',
+      parameters: {
+        type: 'object',
+        properties: {
+          search: { type: 'string', description: '건명 또는 발주처 검색어' },
+          payment_status: { type: 'string', description: '계약전 | 계약완료 | 선금수령 | 중도금수령 | 완납' },
+          service_type: { type: 'string', description: '서비스 타입 필터' },
+          year_month: { type: 'string', description: '월별 조회 (예: 2026-04)' },
+          limit: { type: 'number', description: '최대 조회 건수 (기본 20)' },
+        },
       },
     },
   },
   {
-    name: 'get_monthly_summary',
-    description: '월별 매출 요약을 조회합니다.',
-    input_schema: {
-      type: 'object' as const,
-      properties: {
-        year: { type: 'number', description: '연도 (예: 2026)' },
+    type: 'function',
+    function: {
+      name: 'get_monthly_summary',
+      description: '월별 매출 요약을 조회합니다.',
+      parameters: {
+        type: 'object',
+        properties: {
+          year: { type: 'number', description: '연도 (예: 2026)' },
+        },
       },
     },
   },
   {
-    name: 'get_receivables',
-    description: '미수금 현황을 조회합니다.',
-    input_schema: {
-      type: 'object' as const,
-      properties: {},
+    type: 'function',
+    function: {
+      name: 'get_receivables',
+      description: '미수금 현황을 조회합니다.',
+      parameters: { type: 'object', properties: {} },
     },
   },
   {
-    name: 'get_sale_detail',
-    description: '특정 계약의 상세 정보를 조회합니다.',
-    input_schema: {
-      type: 'object' as const,
-      properties: {
-        search: { type: 'string', description: '건명 또는 발주처 검색어' },
-      },
-      required: ['search'],
-    },
-  },
-  {
-    name: 'create_sale',
-    description: '새 계약건을 등록합니다.',
-    input_schema: {
-      type: 'object' as const,
-      properties: {
-        name: { type: 'string', description: '건명 (필수)' },
-        client_org: { type: 'string', description: '발주처' },
-        service_type: { type: 'string', description: '서비스 타입' },
-        revenue: { type: 'number', description: '매출액 (원 단위)' },
-        memo: { type: 'string', description: '메모' },
-        inflow_date: { type: 'string', description: '유입일 YYYY-MM-DD' },
-      },
-      required: ['name', 'service_type'],
-    },
-  },
-  {
-    name: 'update_sale_status',
-    description: '계약의 결제 상태를 변경합니다.',
-    input_schema: {
-      type: 'object' as const,
-      properties: {
-        search: { type: 'string', description: '건명 또는 발주처 검색어' },
-        payment_status: { type: 'string', description: '새 상태: 계약전 | 계약완료 | 선금수령 | 중도금수령 | 완납' },
-      },
-      required: ['search', 'payment_status'],
-    },
-  },
-  {
-    name: 'get_tasks',
-    description: '업무 목록을 조회합니다.',
-    input_schema: {
-      type: 'object' as const,
-      properties: {
-        search: { type: 'string', description: '업무명 또는 관련 건명 검색어' },
-        status: { type: 'string', description: '할 일 | 진행중 | 완료' },
-        assignee_name: { type: 'string', description: '담당자 이름' },
-        limit: { type: 'number', description: '최대 조회 건수 (기본 15)' },
+    type: 'function',
+    function: {
+      name: 'get_sale_detail',
+      description: '특정 계약의 상세 정보를 조회합니다.',
+      parameters: {
+        type: 'object',
+        properties: {
+          search: { type: 'string', description: '건명 또는 발주처 검색어' },
+        },
+        required: ['search'],
       },
     },
   },
   {
-    name: 'create_task',
-    description: '새 업무를 등록합니다.',
-    input_schema: {
-      type: 'object' as const,
-      properties: {
-        title: { type: 'string', description: '업무명 (필수)' },
-        sale_search: { type: 'string', description: '연결할 계약건 검색어 (없으면 내부 업무)' },
-        assignee_name: { type: 'string', description: '담당자 이름' },
-        due_date: { type: 'string', description: '마감일 YYYY-MM-DD' },
-        priority: { type: 'string', description: '낮음 | 보통 | 높음' },
-        description: { type: 'string', description: '업무 메모' },
-      },
-      required: ['title'],
-    },
-  },
-  {
-    name: 'search_leads',
-    description: '리드(잠재 고객) 목록을 검색합니다.',
-    input_schema: {
-      type: 'object' as const,
-      properties: {
-        search: { type: 'string', description: '기관명 또는 담당자명 검색어' },
-        status: { type: 'string', description: '유입 | 회신대기 | 견적발송 | 조율중 | 진행중 | 완료 | 취소' },
+    type: 'function',
+    function: {
+      name: 'create_sale',
+      description: '새 계약건을 등록합니다.',
+      parameters: {
+        type: 'object',
+        properties: {
+          name: { type: 'string', description: '건명 (필수)' },
+          client_org: { type: 'string', description: '발주처' },
+          service_type: { type: 'string', description: '서비스 타입' },
+          revenue: { type: 'number', description: '매출액 (원 단위)' },
+          memo: { type: 'string', description: '메모' },
+          inflow_date: { type: 'string', description: '유입일 YYYY-MM-DD' },
+        },
+        required: ['name', 'service_type'],
       },
     },
   },
   {
-    name: 'create_lead',
-    description: '새 리드를 등록합니다.',
-    input_schema: {
-      type: 'object' as const,
-      properties: {
-        client_org: { type: 'string', description: '기관명 (필수)' },
-        contact_name: { type: 'string', description: '담당자 이름' },
-        phone: { type: 'string', description: '연락처' },
-        service_type: { type: 'string', description: '서비스 분류' },
-        initial_content: { type: 'string', description: '문의 내용 요약' },
-        remind_date: { type: 'string', description: '리마인드 날짜 YYYY-MM-DD' },
-        channel: { type: 'string', description: '전화/이메일/카카오/채널톡/기타' },
-        assignee_name: { type: 'string', description: '담당 직원 이름' },
-      },
-      required: ['client_org'],
-    },
-  },
-  {
-    name: 'update_lead',
-    description: '리드의 상태, 소통 내용 등을 업데이트합니다.',
-    input_schema: {
-      type: 'object' as const,
-      properties: {
-        search: { type: 'string', description: '기관명 또는 담당자명 검색어 (필수)' },
-        status: { type: 'string', description: '유입 | 회신대기 | 견적발송 | 조율중 | 진행중 | 완료 | 취소' },
-        remind_date: { type: 'string', description: '리마인드 날짜 YYYY-MM-DD' },
-        contact_log: { type: 'string', description: '새 소통 내용' },
-        notes: { type: 'string', description: '메모' },
-      },
-      required: ['search'],
-    },
-  },
-  {
-    name: 'convert_lead_to_sale',
-    description: '리드를 매출건으로 전환합니다.',
-    input_schema: {
-      type: 'object' as const,
-      properties: {
-        search: { type: 'string', description: '기관명 검색어 (필수)' },
-      },
-      required: ['search'],
-    },
-  },
-  {
-    name: 'search_customers',
-    description: '고객 DB를 검색합니다.',
-    input_schema: {
-      type: 'object' as const,
-      properties: {
-        query: { type: 'string', description: '기관명 또는 담당자명' },
+    type: 'function',
+    function: {
+      name: 'update_sale_status',
+      description: '계약의 결제 상태를 변경합니다.',
+      parameters: {
+        type: 'object',
+        properties: {
+          search: { type: 'string', description: '건명 또는 발주처 검색어' },
+          payment_status: { type: 'string', description: '새 상태: 계약전 | 계약완료 | 선금수령 | 중도금수령 | 완납' },
+        },
+        required: ['search', 'payment_status'],
       },
     },
   },
   {
-    name: 'search_notion_projects',
-    description: '노션 프로젝트를 검색합니다.',
-    input_schema: {
-      type: 'object' as const,
-      properties: {
-        search: { type: 'string', description: '프로젝트명 검색어' },
-        status: { type: 'string', description: '진행 전 | 진행 중 | 완료 | 보류' },
+    type: 'function',
+    function: {
+      name: 'get_tasks',
+      description: '업무 목록을 조회합니다.',
+      parameters: {
+        type: 'object',
+        properties: {
+          search: { type: 'string', description: '업무명 또는 관련 건명 검색어' },
+          status: { type: 'string', description: '할 일 | 진행중 | 완료' },
+          assignee_name: { type: 'string', description: '담당자 이름' },
+          limit: { type: 'number', description: '최대 조회 건수 (기본 15)' },
+        },
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'create_task',
+      description: '새 업무를 등록합니다.',
+      parameters: {
+        type: 'object',
+        properties: {
+          title: { type: 'string', description: '업무명 (필수)' },
+          sale_search: { type: 'string', description: '연결할 계약건 검색어 (없으면 내부 업무)' },
+          assignee_name: { type: 'string', description: '담당자 이름' },
+          due_date: { type: 'string', description: '마감일 YYYY-MM-DD' },
+          priority: { type: 'string', description: '낮음 | 보통 | 높음' },
+          description: { type: 'string', description: '업무 메모' },
+        },
+        required: ['title'],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'search_leads',
+      description: '리드(잠재 고객) 목록을 검색합니다.',
+      parameters: {
+        type: 'object',
+        properties: {
+          search: { type: 'string', description: '기관명 또는 담당자명 검색어' },
+          status: { type: 'string', description: '유입 | 회신대기 | 견적발송 | 조율중 | 진행중 | 완료 | 취소' },
+        },
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'create_lead',
+      description: '새 리드를 등록합니다.',
+      parameters: {
+        type: 'object',
+        properties: {
+          client_org: { type: 'string', description: '기관명 (필수)' },
+          contact_name: { type: 'string', description: '담당자 이름' },
+          phone: { type: 'string', description: '연락처' },
+          service_type: { type: 'string', description: '서비스 분류' },
+          initial_content: { type: 'string', description: '문의 내용 요약' },
+          remind_date: { type: 'string', description: '리마인드 날짜 YYYY-MM-DD' },
+          channel: { type: 'string', description: '전화/이메일/카카오/채널톡/기타' },
+          assignee_name: { type: 'string', description: '담당 직원 이름' },
+        },
+        required: ['client_org'],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'update_lead',
+      description: '리드의 상태, 소통 내용 등을 업데이트합니다.',
+      parameters: {
+        type: 'object',
+        properties: {
+          search: { type: 'string', description: '기관명 또는 담당자명 검색어 (필수)' },
+          status: { type: 'string', description: '유입 | 회신대기 | 견적발송 | 조율중 | 진행중 | 완료 | 취소' },
+          remind_date: { type: 'string', description: '리마인드 날짜 YYYY-MM-DD' },
+          contact_log: { type: 'string', description: '새 소통 내용' },
+          notes: { type: 'string', description: '메모' },
+        },
+        required: ['search'],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'convert_lead_to_sale',
+      description: '리드를 매출건으로 전환합니다.',
+      parameters: {
+        type: 'object',
+        properties: {
+          search: { type: 'string', description: '기관명 검색어 (필수)' },
+        },
+        required: ['search'],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'search_customers',
+      description: '고객 DB를 검색합니다.',
+      parameters: {
+        type: 'object',
+        properties: {
+          query: { type: 'string', description: '기관명 또는 담당자명' },
+        },
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'search_dropbox',
+      description: '드롭박스에서 프로젝트 폴더나 파일을 검색합니다. 건명이나 기관명으로 관련 폴더/파일을 찾을 때 사용.',
+      parameters: {
+        type: 'object',
+        properties: {
+          query: { type: 'string', description: '검색어 (프로젝트명, 기관명 등)' },
+        },
+        required: ['query'],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'list_dropbox_folder',
+      description: '드롭박스 폴더 안의 파일 목록을 조회합니다. search_dropbox로 폴더 경로를 찾은 뒤 사용.',
+      parameters: {
+        type: 'object',
+        properties: {
+          path: { type: 'string', description: '★ DB 기준 상대경로 (예: /3 학교상점/1 납품 설치/260223 광교청소년수련관)' },
+        },
+        required: ['path'],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'read_dropbox_file',
+      description: '드롭박스 파일 내용을 읽습니다. PDF 견적서, 계약서 등의 텍스트를 추출할 때 사용. list_dropbox_folder로 파일 경로를 먼저 확인 후 사용.',
+      parameters: {
+        type: 'object',
+        properties: {
+          path: { type: 'string', description: '★ DB 기준 상대경로 (예: /3 학교상점/1 납품 설치/260223 광교청소년수련관/0 행정/견적서.pdf)' },
+        },
+        required: ['path'],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'search_notion_projects',
+      description: '노션 프로젝트를 검색합니다.',
+      parameters: {
+        type: 'object',
+        properties: {
+          search: { type: 'string', description: '프로젝트명 검색어' },
+          status: { type: 'string', description: '진행 전 | 진행 중 | 완료 | 보류' },
+        },
       },
     },
   },
@@ -475,6 +557,23 @@ async function executeTool(name: string, input: Record<string, unknown>): Promis
     return { organizations: orgs ?? [], persons: persons ?? [] }
   }
 
+  if (name === 'search_dropbox') {
+    const results = await searchDropbox(input.query as string)
+    if (results.length === 0) return { message: '드롭박스에서 찾을 수 없어.', results: [] }
+    return { count: results.length, results }
+  }
+
+  if (name === 'list_dropbox_folder') {
+    const results = await listDropboxFolder(input.path as string)
+    if (results.length === 0) return { message: '폴더가 비어있거나 경로가 잘못됐어.', results: [] }
+    return { count: results.length, results }
+  }
+
+  if (name === 'read_dropbox_file') {
+    const result = await readDropboxFile(input.path as string)
+    return result
+  }
+
   if (name === 'search_notion_projects') {
     const token = process.env.NOTION_TOKEN
     if (!token) return { error: 'NOTION_TOKEN not set' }
@@ -541,43 +640,47 @@ async function sendGroupMessage(chatKey: string, text: string) {
   return data
 }
 
-async function processWithClaude(chatKey: string, userMessage: string) {
+async function processWithGPT(chatKey: string, userMessage: string) {
   const today = new Date().toLocaleDateString('ko-KR', { year: 'numeric', month: 'long', day: 'numeric', timeZone: 'Asia/Seoul' })
-  const system = `오늘 날짜: ${today}\n${SYSTEM_PROMPT}`
 
-  const messages: Anthropic.MessageParam[] = [
+  const messages: OpenAI.ChatCompletionMessageParam[] = [
+    { role: 'system', content: `오늘 날짜: ${today}\n${SYSTEM_PROMPT}` },
     { role: 'user', content: userMessage },
   ]
 
   let maxRounds = 6
   while (maxRounds-- > 0) {
-    const response = await anthropic.messages.create({
-      model: 'claude-sonnet-4-6',
+    const response = await openai.chat.completions.create({
+      model: 'gpt-4o-mini',
       max_tokens: 800,
-      system,
       tools: TOOLS,
       messages,
     })
-    logApiUsage({ model: 'claude-sonnet-4-6', endpoint: 'channeltalk', userId: null, inputTokens: response.usage.input_tokens, outputTokens: response.usage.output_tokens }).catch(() => {})
+    logApiUsage({ model: 'gpt-4o-mini', endpoint: 'channeltalk', userId: null, inputTokens: response.usage?.prompt_tokens ?? 0, outputTokens: response.usage?.completion_tokens ?? 0 }).catch(() => {})
 
-    if (response.stop_reason === 'end_turn') {
-      const textBlock = response.content.find(c => c.type === 'text')
-      if (textBlock && textBlock.type === 'text' && textBlock.text.trim()) {
-        await sendGroupMessage(chatKey, textBlock.text.trim())
-      }
+    const choice = response.choices[0]
+    if (!choice) break
+
+    if (choice.finish_reason === 'stop') {
+      const text = choice.message.content?.trim()
+      if (text) await sendGroupMessage(chatKey, text)
       break
     }
 
-    if (response.stop_reason === 'tool_use') {
-      messages.push({ role: 'assistant', content: response.content })
-      const toolResults: Anthropic.ToolResultBlockParam[] = []
-      for (const block of response.content) {
-        if (block.type === 'tool_use') {
-          const result = await executeTool(block.name, block.input as Record<string, unknown>)
-          toolResults.push({ type: 'tool_result', tool_use_id: block.id, content: JSON.stringify(result) })
-        }
+    if (choice.finish_reason === 'tool_calls') {
+      messages.push(choice.message)
+      const toolCalls = choice.message.tool_calls ?? []
+      for (const toolCall of toolCalls) {
+        if (toolCall.type !== 'function') continue
+        let input: Record<string, unknown> = {}
+        try { input = JSON.parse(toolCall.function.arguments) } catch { /* empty args */ }
+        const result = await executeTool(toolCall.function.name, input)
+        messages.push({
+          role: 'tool',
+          tool_call_id: toolCall.id,
+          content: JSON.stringify(result),
+        })
       }
-      messages.push({ role: 'user', content: toolResults })
     } else {
       break
     }
@@ -660,7 +763,7 @@ export async function POST(req: NextRequest) {
 
   // waitUntil: 200 먼저 반환하고 Claude 처리 완료까지 함수 유지
   waitUntil(
-    processWithClaude(chatKey, messageText).catch(async (err) => {
+    processWithGPT(chatKey, messageText).catch(async (err) => {
       console.error('[ChannelTalk bot error]', err)
       await sendGroupMessage(chatKey, '오류 발생했어. 잠시 후 다시 해봐.').catch(console.error)
     })

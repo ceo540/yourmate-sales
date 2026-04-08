@@ -19,6 +19,7 @@ interface Sale {
   name: string
   department: string | null
   client_org: string | null
+  client_dept: string | null
   customer_id: string | null
   service_type: string | null
   revenue: number | null
@@ -63,6 +64,7 @@ export default function SaleExpandEditor({ sale, colSpan, entities, vendors, pro
   const [name, setName] = useState(sale.name)
   const [serviceType, setServiceType] = useState(sale.service_type ?? '')
   const [clientOrg, setClientOrg] = useState(sale.client_org ?? '')
+  const [clientDept, setClientDept] = useState(sale.client_dept ?? '')
   const [customerId, setCustomerId] = useState(sale.customer_id ?? '')
   const [entityId, setEntityId] = useState(sale.entity?.id ?? '')
   const [contractType, setContractType] = useState(sale.contract_type ?? '')
@@ -91,6 +93,7 @@ export default function SaleExpandEditor({ sale, colSpan, entities, vendors, pro
         name: name.trim(),
         department: derivedDept,
         client_org: clientOrg || null,
+        client_dept: clientDept || null,
         customer_id: customerId || null,
         service_type: serviceType || null,
         assignee_id: assigneeId || null,
@@ -114,6 +117,7 @@ export default function SaleExpandEditor({ sale, colSpan, entities, vendors, pro
       name: name.trim(),
       department: derivedDept,
       client_org: clientOrg || null,
+      client_dept: clientDept || null,
       customer_id: customerId || null,
       service_type: serviceType || null,
       assignee: profiles.find(p => p.id === assigneeId) ?? null,
@@ -199,6 +203,17 @@ export default function SaleExpandEditor({ sale, colSpan, entities, vendors, pro
                 value={clientOrg}
                 onChange={e => setClientOrg(e.target.value)}
                 placeholder="예: 용인교육지원청 지역교육과"
+                className={inputCls}
+              />
+            </div>
+
+            {/* 부서 */}
+            <div>
+              <label className={labelCls}>발주 부서</label>
+              <input
+                value={clientDept}
+                onChange={e => setClientDept(e.target.value)}
+                placeholder="예: 지역교육과"
                 className={inputCls}
               />
             </div>

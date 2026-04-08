@@ -23,6 +23,7 @@ interface Sale {
   payment_date: string | null
   dropbox_url: string | null
   client_org?: string | null
+  client_dept?: string | null
   created_at: string
   assignee: { id: string; name: string } | null
   entity: { id: string; name: string } | null
@@ -172,17 +173,20 @@ export default function SalesClient({ sales, entities, isAdmin }: Props) {
 
   const limitYear = filterYear ?? CURRENT_YEAR
   const limitRows = useMemo(() => {
-    const map = new Map<string, { entityId: string; entityName: string; clientOrg: string; total: number }>()
+    const map = new Map<string, { entityId: string; entityName: string; clientOrg: string; clientDept: string; total: number }>()
     for (const s of sales) {
       if (!s.client_org || !s.entity || !s.inflow_date) continue
       if (new Date(s.inflow_date).getFullYear() !== limitYear) continue
-      const key = `${s.entity.id}||${s.client_org}`
+      const dept = s.client_dept ?? ''
+      const key = `${s.entity.id}||${s.client_org}||${dept}`
       const existing = map.get(key)
       if (existing) { existing.total += s.revenue ?? 0 }
-      else map.set(key, { entityId: s.entity.id, entityName: s.entity.name, clientOrg: s.client_org, total: s.revenue ?? 0 })
+      else map.set(key, { entityId: s.entity.id, entityName: s.entity.name, clientOrg: s.client_org, clientDept: dept, total: s.revenue ?? 0 })
     }
     return Array.from(map.values()).sort((a, b) =>
-      a.entityName !== b.entityName ? a.entityName.localeCompare(b.entityName) : b.total - a.total
+      a.entityName !== b.entityName ? a.entityName.localeCompare(b.entityName) :
+      a.clientOrg !== b.clientOrg ? a.clientOrg.localeCompare(b.clientOrg) :
+      a.clientDept !== b.clientDept ? a.clientDept.localeCompare(b.clientDept) : b.total - a.total
     )
   }, [sales, limitYear])
 
@@ -364,6 +368,7 @@ export default function SalesClient({ sales, entities, isAdmin }: Props) {
                 <tr className="border-b border-gray-100 bg-gray-50">
                   <th className="text-left text-xs font-semibold text-gray-500 px-4 py-3">계약 사업자</th>
                   <th className="text-left text-xs font-semibold text-gray-500 px-4 py-3">발주처</th>
+                  <th className="text-left text-xs font-semibold text-gray-500 px-4 py-3">부서</th>
                   <th className="text-left text-xs font-semibold text-gray-500 px-4 py-3">구분</th>
                   <th className="text-right text-xs font-semibold text-gray-500 px-4 py-3">계약 총액</th>
                   <th className="text-right text-xs font-semibold text-gray-500 px-4 py-3">한도</th>
@@ -380,9 +385,10 @@ export default function SalesClient({ sales, entities, isAdmin }: Props) {
                   const barColor = pct >= 100 ? 'bg-red-500' : pct >= 80 ? 'bg-orange-400' : pct >= 50 ? 'bg-yellow-400' : 'bg-green-400'
                   const amtColor = pct >= 100 ? 'text-red-600 font-bold' : pct >= 80 ? 'text-orange-500 font-semibold' : 'text-gray-900 font-medium'
                   return (
-                    <tr key={`${row.entityId}-${row.clientOrg}`} className="hover:bg-gray-50">
+                    <tr key={`${row.entityId}-${row.clientOrg}-${row.clientDept}`} className="hover:bg-gray-50">
                       <td className="px-4 py-3 text-sm text-gray-900">{row.entityName}</td>
                       <td className="px-4 py-3 text-sm text-gray-700">{row.clientOrg}</td>
+                      <td className="px-4 py-3 text-sm text-gray-500">{row.clientDept || <span className="text-gray-300">—</span>}</td>
                       <td className="px-4 py-3">
                         {isAdmin ? (
                           <select
