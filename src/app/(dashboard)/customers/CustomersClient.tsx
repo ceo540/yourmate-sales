@@ -267,7 +267,7 @@ export default function CustomersClient({ customers, persons, isAdmin }: Props) 
       const res = await fetch('/api/channeltalk/import', { method: 'POST' })
       const json = await res.json()
       if (json.error) { setSyncResult(`오류: ${json.error}`); return }
-      setSyncResult(`완료 — 조회 ${json.total}명 / 신규 ${json.created}명 / 업데이트 ${json.updated}명 / 건너뜀 ${json.skipped}명`)
+      setSyncResult(`완료 — 신규 ${json.created}명 / 업데이트 ${json.updated}명 / 기관연결 ${json.linked}건 / 건너뜀 ${json.skipped}명`)
       router.refresh()
     } catch (e: any) {
       setSyncResult(`오류: ${e.message}`)

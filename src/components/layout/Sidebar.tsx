@@ -29,7 +29,7 @@ const NAV_GROUPS: Record<string, NavItem[]> = {
     { href: '/departments/002_entertainment', label: '002 ENT',          icon: '🎤', pageKey: 'departments' },
     { href: '/tasks',                         label: '업무 관리',        icon: '✅', pageKey: 'tasks' },
     { href: '/rentals',                       label: '렌탈 관리',        icon: '🎸', pageKey: 'rentals' },
-    { href: '/sos-demo',                       label: 'SOS 공연',         icon: '🎤', pageKey: 'sos', demo: true },
+    { href: '/sos',                            label: 'SOS 공연',         icon: '🎤', pageKey: 'sos' },
   ],
   영업: [
     { href: '/pipeline', label: '파이프라인', icon: '🔄', pageKey: 'pipeline' },

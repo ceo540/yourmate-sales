@@ -212,6 +212,7 @@ export interface Lead {
   inflow_date: string | null
   remind_date: string | null
   service_type: string | null
+  project_name: string | null
   contact_name: string | null
   client_org: string | null
   phone: string | null

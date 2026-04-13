@@ -2,7 +2,7 @@
 import { useState, useTransition, useEffect, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import { Lead, LeadStatus, LEAD_STATUSES, LEAD_CHANNELS, LEAD_SOURCES } from '@/types'
-import { createLead, updateLead, deleteLead, convertLeadToSale, addSaleToLead, createLeadFolder, updateLeadDropboxUrl } from './actions'
+import { createLead, updateLead, deleteLead, convertLeadToSale, addSaleToLead, createLeadFolder, updateLeadDropboxUrl, createPerson } from './actions'
 import { createLeadLog, getLeadLogs, deleteLeadLog } from './lead-log-actions'
 
 const LABEL_CLS = 'block text-xs font-medium text-gray-500 mb-1'
@@ -24,9 +24,15 @@ interface LeadFormProps {
 function LeadForm({ form, setForm, onSubmit, onCancel, isPending, isAdmin, profiles, persons }: LeadFormProps) {
   const [personSearch, setPersonSearch] = useState(form.contact_name)
   const [showPersonDrop, setShowPersonDrop] = useState(false)
+  const [localPersons, setLocalPersons] = useState<PersonOption[]>([])
+  const [showAddForm, setShowAddForm] = useState(false)
+  const [newPhone, setNewPhone] = useState('')
+  const [newEmail, setNewEmail] = useState('')
+  const [isAddingPerson, setIsAddingPerson] = useState(false)
 
-  const selectedPerson = form.person_id ? persons.find(p => p.id === form.person_id) : null
-  const matchingPersons = persons
+  const allPersons = [...persons, ...localPersons]
+  const selectedPerson = form.person_id ? allPersons.find(p => p.id === form.person_id) : null
+  const matchingPersons = allPersons
     .filter(p => !personSearch || p.name.includes(personSearch) || p.currentOrg.includes(personSearch))
     .slice(0, 6)
 
@@ -40,11 +46,29 @@ function LeadForm({ form, setForm, onSubmit, onCancel, isPending, isAdmin, profi
     }))
     setPersonSearch(p.name)
     setShowPersonDrop(false)
+    setShowAddForm(false)
   }
 
   function clearPerson() {
     setForm(f => ({ ...f, person_id: '' }))
     setPersonSearch('')
+    setShowAddForm(false)
+  }
+
+  async function handleAddPerson() {
+    if (!personSearch.trim()) return
+    setIsAddingPerson(true)
+    try {
+      const result = await createPerson({ name: personSearch.trim(), phone: newPhone || undefined, email: newEmail || undefined })
+      if ('error' in result) { alert('추가 실패: ' + result.error); return }
+      const newP: PersonOption = { id: result.id, name: result.name, phone: result.phone, email: result.email, currentOrg: '', title: '' }
+      setLocalPersons(prev => [...prev, newP])
+      selectPerson(newP)
+      setNewPhone('')
+      setNewEmail('')
+    } finally {
+      setIsAddingPerson(false)
+    }
   }
 
   return (
@@ -64,14 +88,14 @@ function LeadForm({ form, setForm, onSubmit, onCancel, isPending, isAdmin, profi
           <div className="relative">
             <input
               value={personSearch}
-              onChange={e => { setPersonSearch(e.target.value); setShowPersonDrop(true); setForm(f => ({ ...f, contact_name: e.target.value, person_id: '' })) }}
+              onChange={e => { setPersonSearch(e.target.value); setShowPersonDrop(true); setShowAddForm(false); setForm(f => ({ ...f, contact_name: e.target.value, person_id: '' })) }}
               onFocus={() => setShowPersonDrop(true)}
               onBlur={() => setTimeout(() => setShowPersonDrop(false), 150)}
               placeholder="이름으로 검색하거나 직접 입력..."
               className={INPUT_CLS}
             />
-            {showPersonDrop && matchingPersons.length > 0 && (
-              <div className="absolute z-50 top-full left-0 right-0 bg-white border border-gray-200 rounded-lg shadow-lg mt-1 max-h-48 overflow-y-auto">
+            {showPersonDrop && (
+              <div className="absolute z-50 top-full left-0 right-0 bg-white border border-gray-200 rounded-lg shadow-lg mt-1 max-h-64 overflow-y-auto">
                 {matchingPersons.map(p => (
                   <button key={p.id} type="button" onMouseDown={() => selectPerson(p)}
                     className="w-full px-3 py-2 text-left hover:bg-yellow-50 border-b border-gray-50 last:border-0">
@@ -79,23 +103,79 @@ function LeadForm({ form, setForm, onSubmit, onCancel, isPending, isAdmin, profi
                     <p className="text-xs text-gray-400">{p.currentOrg}{p.title ? ` · ${p.title}` : ''}</p>
                   </button>
                 ))}
+                {personSearch.trim() && (
+                  <button type="button" onMouseDown={() => { setShowAddForm(true); setShowPersonDrop(false) }}
+                    className="w-full px-3 py-2.5 text-left text-sm text-blue-600 hover:bg-blue-50 font-medium border-t border-gray-100">
+                    + &quot;{personSearch.trim()}&quot; 새 담당자로 추가
+                  </button>
+                )}
               </div>
             )}
           </div>
         )}
+        {showAddForm && !selectedPerson && (
+          <div className="mt-2 p-3 border border-blue-200 rounded-lg bg-blue-50 space-y-2">
+            <p className="text-xs font-semibold text-blue-700">새 담당자 추가 — {personSearch.trim()}</p>
+            <div className="grid grid-cols-2 gap-2">
+              <input value={newPhone} onChange={e => setNewPhone(e.target.value)} placeholder="휴대폰 (선택)" className={INPUT_CLS + ' text-xs'} />
+              <input value={newEmail} onChange={e => setNewEmail(e.target.value)} placeholder="이메일 (선택)" className={INPUT_CLS + ' text-xs'} />
+            </div>
+            <div className="flex gap-2">
+              <button type="button" onClick={handleAddPerson} disabled={isAddingPerson}
+                className="px-3 py-1.5 text-xs font-semibold rounded-lg disabled:opacity-50"
+                style={{ backgroundColor: '#FFCE00', color: '#121212' }}>
+                {isAddingPerson ? '추가 중...' : '추가하기'}
+              </button>
+              <button type="button" onClick={() => setShowAddForm(false)} className="px-3 py-1.5 text-xs text-gray-500 hover:text-gray-700">취소</button>
+            </div>
+          </div>
+        )}
       </div>
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-        <div><label className={LABEL_CLS}>기관명 *</label>
-          <input className={INPUT_CLS} value={form.client_org} onChange={e => setForm(f => ({ ...f, client_org: e.target.value }))} required /></div>
-        <div><label className={LABEL_CLS}>담당자명 / 직급</label>
-          <input className={INPUT_CLS} value={form.contact_name} onChange={e => setForm(f => ({ ...f, contact_name: e.target.value }))} /></div>
+      <div>
+        <label className={LABEL_CLS}>프로젝트명</label>
+        <input className={INPUT_CLS} value={form.project_name} onChange={e => setForm(f => ({ ...f, project_name: e.target.value }))}
+          placeholder="예: 2026 용인중학교 악기렌탈" />
+        <p className="text-xs text-gray-400 mt-1">입력 시 목록·드롭박스 폴더명으로 사용됩니다. 없으면 기관명 사용.</p>
       </div>
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-        <div><label className={LABEL_CLS}>휴대폰</label>
-          <input className={INPUT_CLS} value={form.phone} onChange={e => setForm(f => ({ ...f, phone: e.target.value }))} /></div>
-        <div><label className={LABEL_CLS}>이메일</label>
-          <input className={INPUT_CLS} type="email" value={form.email} onChange={e => setForm(f => ({ ...f, email: e.target.value }))} /></div>
+        <div><label className={LABEL_CLS}>기관명</label>
+          <input className={INPUT_CLS} value={form.client_org} onChange={e => setForm(f => ({ ...f, client_org: e.target.value }))} /></div>
+        <div>
+          <label className={LABEL_CLS}>담당자명 / 직급</label>
+          {selectedPerson ? (
+            <div className={INPUT_CLS + ' bg-gray-50 text-gray-500 cursor-default'}>
+              {selectedPerson.name}{selectedPerson.title ? ` · ${selectedPerson.title}` : ''}
+              <span className="ml-2 text-xs text-blue-400">DB 연결됨</span>
+            </div>
+          ) : (
+            <input className={INPUT_CLS} value={form.contact_name} onChange={e => setForm(f => ({ ...f, contact_name: e.target.value }))} />
+          )}
+        </div>
+      </div>
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+        <div>
+          <label className={LABEL_CLS}>휴대폰</label>
+          {selectedPerson ? (
+            <div className={INPUT_CLS + ' bg-gray-50 text-gray-500 cursor-default'}>
+              {selectedPerson.phone || '미등록'}
+              <span className="ml-2 text-xs text-blue-400">DB 연결됨</span>
+            </div>
+          ) : (
+            <input className={INPUT_CLS} value={form.phone} onChange={e => setForm(f => ({ ...f, phone: e.target.value }))} />
+          )}
+        </div>
+        <div>
+          <label className={LABEL_CLS}>이메일</label>
+          {selectedPerson ? (
+            <div className={INPUT_CLS + ' bg-gray-50 text-gray-500 cursor-default'}>
+              {selectedPerson.email || '미등록'}
+              <span className="ml-2 text-xs text-blue-400">DB 연결됨</span>
+            </div>
+          ) : (
+            <input className={INPUT_CLS} type="email" value={form.email} onChange={e => setForm(f => ({ ...f, email: e.target.value }))} />
+          )}
+        </div>
       </div>
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <div><label className={LABEL_CLS}>서비스 분류</label>
@@ -153,7 +233,7 @@ function LeadForm({ form, setForm, onSubmit, onCancel, isPending, isAdmin, profi
 // FormState 타입 (LeadForm props에서 참조)
 type FormState = {
   person_id: string; inflow_date: string; remind_date: string; service_type: string
-  contact_name: string; client_org: string; phone: string
+  project_name: string; contact_name: string; client_org: string; phone: string
   office_phone: string; email: string; initial_content: string
   assignee_id: string; status: LeadStatus; channel: string
   inflow_source: string; notes: string
@@ -231,7 +311,7 @@ interface Props {
 
 const EMPTY_FORM: FormState = {
   person_id: '', inflow_date: new Date().toISOString().slice(0, 10),
-  remind_date: '', service_type: '', contact_name: '', client_org: '',
+  remind_date: '', service_type: '', project_name: '', contact_name: '', client_org: '',
   phone: '', office_phone: '', email: '', initial_content: '',
   assignee_id: '', status: '유입', channel: '', inflow_source: '',
   notes: '',
@@ -310,7 +390,7 @@ export default function LeadsClient({ leads, profiles, persons, currentUserId, i
         body: JSON.stringify({
           leadId: selectedLead.id,
           quoteType,
-          clientName: selectedLead.client_org || '기관명 없음',
+          clientName: selectedLead.project_name || selectedLead.client_org || '기관명 없음',
           issueDate: quoteDate,
           items: quoteItems.filter(i => i.name.trim()),
           contactPerson: selectedLead.contact_name,
@@ -363,7 +443,7 @@ export default function LeadsClient({ leads, profiles, persons, currentUserId, i
   const filtered = leads
     .filter(l => {
       const matchStatus = statusFilter === '전체' || l.status === statusFilter
-      const matchSearch = !searchTerm || [l.client_org, l.contact_name, l.lead_id]
+      const matchSearch = !searchTerm || [l.project_name, l.client_org, l.contact_name, l.lead_id]
         .some(v => v?.toLowerCase().includes(searchTerm.toLowerCase()))
       return matchStatus && matchSearch
     })
@@ -388,9 +468,9 @@ export default function LeadsClient({ leads, profiles, persons, currentUserId, i
     setForm({
       person_id: lead.person_id || '',
       inflow_date: lead.inflow_date || '', remind_date: lead.remind_date || '',
-      service_type: lead.service_type || '', contact_name: lead.contact_name || '',
-      client_org: lead.client_org || '', phone: lead.phone || '',
-      office_phone: lead.office_phone || '', email: lead.email || '',
+      service_type: lead.service_type || '', project_name: lead.project_name || '',
+      contact_name: lead.contact_name || '', client_org: lead.client_org || '',
+      phone: lead.phone || '', office_phone: lead.office_phone || '', email: lead.email || '',
       initial_content: lead.initial_content || '', assignee_id: lead.assignee_id || '',
       status: (lead.status || '유입') as LeadStatus, channel: lead.channel || '',
       inflow_source: lead.inflow_source || '', notes: lead.notes || '',
@@ -412,12 +492,13 @@ export default function LeadsClient({ leads, profiles, persons, currentUserId, i
       await updateLead(selectedLead.id, {
         person_id: form.person_id || null,
         inflow_date: form.inflow_date || null, remind_date: form.remind_date || null,
-        service_type: form.service_type || null, contact_name: form.contact_name || null,
-        client_org: form.client_org || null, phone: form.phone || null,
-        office_phone: form.office_phone || null, email: form.email || null,
-        initial_content: form.initial_content || null, assignee_id: form.assignee_id || null,
-        status: form.status, channel: form.channel || null,
-        inflow_source: form.inflow_source || null, notes: form.notes || null,
+        service_type: form.service_type || null, project_name: form.project_name || null,
+        contact_name: form.contact_name || null, client_org: form.client_org || null,
+        phone: form.phone || null, office_phone: form.office_phone || null,
+        email: form.email || null, initial_content: form.initial_content || null,
+        assignee_id: form.assignee_id || null, status: form.status,
+        channel: form.channel || null, inflow_source: form.inflow_source || null,
+        notes: form.notes || null,
       })
       setEditMode(false)
     })
@@ -532,7 +613,7 @@ export default function LeadsClient({ leads, profiles, persons, currentUserId, i
           ))}
         </div>
         <div className="flex gap-2 ml-auto">
-          <input type="text" placeholder="기관명, 담당자, ID 검색..."
+          <input type="text" placeholder="프로젝트명, 기관명, 담당자 검색..."
             value={searchTerm} onChange={e => setSearchTerm(e.target.value)}
             className="border border-gray-200 rounded-lg px-3 py-1.5 text-sm w-full sm:w-52 focus:outline-none focus:ring-2 focus:ring-yellow-300" />
           {isAdmin && (
@@ -556,7 +637,7 @@ export default function LeadsClient({ leads, profiles, persons, currentUserId, i
                 <tr className="border-b border-gray-100">
                   <th className="w-1 p-0" />
                   <th className="text-left px-3 py-3 text-xs font-semibold text-gray-500 w-24 whitespace-nowrap">D-day</th>
-                  <th className="text-left px-3 py-3 text-xs font-semibold text-gray-500">기관명</th>
+                  <th className="text-left px-3 py-3 text-xs font-semibold text-gray-500">프로젝트명</th>
                   <th className="hidden sm:table-cell text-left px-3 py-3 text-xs font-semibold text-gray-500">서비스</th>
                   <th className="hidden sm:table-cell text-left px-3 py-3 text-xs font-semibold text-gray-500">담당</th>
                   <th className="text-left px-3 py-3 text-xs font-semibold text-gray-500">상태</th>
@@ -586,8 +667,8 @@ export default function LeadsClient({ leads, profiles, persons, currentUserId, i
                           : <span className="text-gray-300 text-xs">-</span>}
                       </td>
                       <td className="px-3 py-3">
-                        <div className="font-medium text-gray-900 text-sm leading-tight">{lead.client_org || '-'}</div>
-                        <div className="text-xs text-gray-400 mt-0.5">{lead.contact_name || ''}</div>
+                        <div className="font-medium text-gray-900 text-sm leading-tight">{lead.project_name || lead.client_org || '-'}</div>
+                        <div className="text-xs text-gray-400 mt-0.5">{lead.client_org || ''}</div>
                       </td>
                       <td className="hidden sm:table-cell px-3 py-3">
                         {lead.service_type
@@ -623,7 +704,10 @@ export default function LeadsClient({ leads, profiles, persons, currentUserId, i
                   ← 목록으로
                 </button>
                 <p className="text-xs text-gray-400">{selectedLead.lead_id}</p>
-                <h2 className="text-base font-bold text-gray-900 leading-tight">{selectedLead.client_org || '기관명 없음'}</h2>
+                <h2 className="text-base font-bold text-gray-900 leading-tight">{selectedLead.project_name || selectedLead.client_org || '프로젝트명 없음'}</h2>
+                {selectedLead.project_name && selectedLead.client_org && (
+                  <p className="text-xs text-gray-400 mt-0.5">{selectedLead.client_org}</p>
+                )}
                 <div className="flex items-center gap-1.5 mt-1.5 flex-wrap">
                   <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${STATUS_BADGE[selectedLead.status] || ''}`}>
                     {selectedLead.status}

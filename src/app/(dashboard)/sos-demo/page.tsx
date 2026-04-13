@@ -264,6 +264,51 @@ function SearchTagInput({ selected, onChange, options, placeholder }: {
   )
 }
 
+// ─── 선생님 검색 ──────────────────────────────────────────────────
+const ALL_TEACHERS = Object.entries(MOCK_TEACHERS).flatMap(([school, list]) =>
+  list.map(t => ({ ...t, school }))
+)
+
+function TeacherCombo({ school, name, phone, onSelect }: {
+  school: string; name: string; phone: string
+  onSelect: (name: string, phone: string) => void
+}) {
+  const [openName, setOpenName] = useState(false)
+  const pool = school && MOCK_TEACHERS[school] ? MOCK_TEACHERS[school] : ALL_TEACHERS
+  const filtered = name ? pool.filter(t => t.name.includes(name)) : pool
+  const noExactMatch = name.trim() !== '' && !pool.some(t => t.name === name.trim())
+
+  return (
+    <div className="grid grid-cols-2 gap-3">
+      <div className="relative">
+        <input value={name}
+          onChange={e => { onSelect(e.target.value, phone); setOpenName(true) }}
+          onFocus={() => setOpenName(true)} onBlur={() => setTimeout(() => setOpenName(false), 150)}
+          placeholder="성함 검색 또는 직접 입력" className={BASE_INP} />
+        {openName && (filtered.length > 0 || noExactMatch) && (
+          <div className="absolute z-30 left-0 right-0 top-full mt-1 bg-white border border-gray-200 rounded-xl shadow-lg max-h-40 overflow-y-auto">
+            {filtered.map(t => (
+              <button key={t.name} type="button" onMouseDown={() => onSelect(t.name, t.phone)}
+                className="w-full text-left px-3 py-2 text-sm hover:bg-blue-50 flex items-center justify-between">
+                <span>{t.name}</span>
+                <span className="text-[10px] text-gray-400">{t.phone}</span>
+              </button>
+            ))}
+            {noExactMatch && (
+              <button type="button" onMouseDown={() => onSelect(name.trim(), phone)}
+                className="w-full text-left px-3 py-2 text-sm text-blue-600 hover:bg-blue-50 border-t border-gray-100 flex items-center gap-1.5">
+                <span className="font-semibold">+</span> &ldquo;{name.trim()}&rdquo; 새로 추가
+              </button>
+            )}
+          </div>
+        )}
+      </div>
+      <input value={phone} onChange={e => onSelect(name, e.target.value)}
+        placeholder="연락처" className={BASE_INP} />
+    </div>
+  )
+}
+
 // ─── 모달 ─────────────────────────────────────────────────────────
 function ConcertModal({ concert, onClose, onSave }: {
   concert?: Concert; onClose: () => void
@@ -289,7 +334,6 @@ function ConcertModal({ concert, onClose, onSave }: {
   const setI = (k: keyof EventInfo, v: any) => setForm(f => ({ ...f, event_info: { ...f.event_info, [k]: v } }))
 
   const runtime = calcRuntime(form.event_info.start_time, form.event_info.end_time)
-  const teachers = MOCK_TEACHERS[form.school] ?? []
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40" onClick={onClose}>
@@ -428,32 +472,14 @@ function ConcertModal({ concert, onClose, onSave }: {
               {/* 담당 선생님 — 고객 DB 연결 */}
               <div>
                 <label className={lbl}>
-                  담당 선생님{' '}
-                  <span className="text-blue-400 text-[10px]">고객 DB</span>
+                  담당 선생님 <span className="text-blue-400 text-[10px]">고객 DB</span>
                 </label>
-                {teachers.length > 0 ? (
-                  <div className="flex flex-wrap gap-2 mb-2">
-                    {teachers.map(t => (
-                      <button key={t.name} type="button"
-                        onClick={() => { setI('teacher_name', t.name); setI('teacher_phone', t.phone) }}
-                        className={`px-3 py-1.5 rounded-full text-xs border transition-colors ${
-                          form.event_info.teacher_name === t.name
-                            ? 'bg-blue-100 border-blue-300 text-blue-700'
-                            : 'border-gray-200 text-gray-500 hover:border-blue-300'
-                        }`}>
-                        {t.name} {t.phone}
-                      </button>
-                    ))}
-                  </div>
-                ) : (
-                  <p className="text-xs text-gray-400 mb-2">
-                    {form.school ? `"${form.school}" 등록된 선생님 없음 — 직접 입력` : '학교명 입력 후 선생님 선택 가능'}
-                  </p>
-                )}
-                <div className="grid grid-cols-2 gap-3">
-                  <input value={form.event_info.teacher_name ?? ''} onChange={e => setI('teacher_name', e.target.value)} placeholder="성함" className={inp} />
-                  <input value={form.event_info.teacher_phone ?? ''} onChange={e => setI('teacher_phone', e.target.value)} placeholder="번호" className={inp} />
-                </div>
+                <TeacherCombo
+                  school={form.school}
+                  name={form.event_info.teacher_name ?? ''}
+                  phone={form.event_info.teacher_phone ?? ''}
+                  onSelect={(name, phone) => { setI('teacher_name', name); setI('teacher_phone', phone) }}
+                />
               </div>
 
               {/* 그 외 */}

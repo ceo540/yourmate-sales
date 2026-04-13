@@ -33,6 +33,7 @@ export async function createLead(formData: FormData) {
     inflow_date: (formData.get('inflow_date') as string) || new Date().toISOString().slice(0, 10),
     remind_date: (formData.get('remind_date') as string) || null,
     service_type: (formData.get('service_type') as string) || null,
+    project_name: (formData.get('project_name') as string) || null,
     contact_name: (formData.get('contact_name') as string) || null,
     client_org: (formData.get('client_org') as string) || null,
     phone: (formData.get('phone') as string) || null,
@@ -64,6 +65,7 @@ export async function updateLead(id: string, data: Partial<{
   inflow_date: string | null
   remind_date: string | null
   service_type: string | null
+  project_name: string | null
   contact_name: string | null
   client_org: string | null
   phone: string | null
@@ -116,8 +118,9 @@ export async function convertLeadToSale(leadId: string) {
     customerId = cust?.id ?? null
   }
 
+  const displayName = (lead.project_name || lead.client_org) as string | null
   const { data: sale, error } = await supabase.from('sales').insert({
-    name: lead.client_org ? `${lead.client_org} (리드전환)` : '(리드전환)',
+    name: displayName ? `${displayName} (리드전환)` : '(리드전환)',
     client_org: lead.client_org,
     customer_id: customerId,
     service_type: serviceType,
@@ -136,7 +139,7 @@ export async function convertLeadToSale(leadId: string) {
   if (sale && serviceType) {
     const dropboxUrl = await createSaleFolder({
       service_type: serviceType,
-      name: lead.client_org || '(리드전환)',
+      name: displayName || '(리드전환)',
       inflow_date: lead.inflow_date,
     })
     if (dropboxUrl) {
@@ -227,7 +230,7 @@ export async function createLeadFolder(leadId: string): Promise<{ url: string | 
   try {
     url = await createSaleFolder({
       service_type: lead.service_type as string,
-      name: lead.client_org || '(리드)',
+      name: (lead.project_name || lead.client_org) as string || '(리드)',
       inflow_date: lead.inflow_date,
     })
   } catch (e: any) {
@@ -243,6 +246,26 @@ export async function createLeadFolder(leadId: string): Promise<{ url: string | 
   revalidatePath('/leads')
 
   return { url }
+}
+
+export async function createPerson(data: {
+  name: string
+  phone?: string
+  email?: string
+}): Promise<{ id: string; name: string; phone: string; email: string } | { error: string }> {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return { error: 'Unauthorized' }
+
+  const { data: person, error } = await supabase
+    .from('persons')
+    .insert({ name: data.name, phone: data.phone || null, email: data.email || null })
+    .select('id, name, phone, email')
+    .single()
+
+  if (error) return { error: error.message }
+  revalidatePath('/leads')
+  return { id: person.id, name: person.name, phone: person.phone || '', email: person.email || '' }
 }
 
 export async function updateLeadDropboxUrl(leadId: string, url: string): Promise<void> {
