@@ -315,6 +315,11 @@ export default function LeadsDemoV5() {
   const [logInput, setLogInput] = useState('')
   const [aiLoading, setAiLoading] = useState(false)
   const [showAi, setShowAi] = useState(false)
+  // 인라인 빠른 편집
+  const [inlineEdit, setInlineEdit] = useState<'status'|'service'|'remind'|null>(null)
+  // 드롭박스 동기화 상태
+  const [syncState, setSyncState] = useState<Record<string,'idle'|'syncing'|'done'>>({})
+
 
   const filtered = leads.filter(l => {
     if (!showClosed && (l.status==='완료'||l.status==='취소')) return false
@@ -488,24 +493,124 @@ export default function LeadsDemoV5() {
               {/* 타이틀 */}
               <div className="flex items-start justify-between gap-4 mb-4">
                 <div className="min-w-0 flex-1">
+
+                  {/* 클릭 수정 배지 행 */}
                   <div className="flex items-center gap-2 flex-wrap mb-1.5">
-                    {(() => { const d=getDday(selected.remind_date); return d!==null?<DdayBlock d={d} />:null })()}
-                    <span className={`text-xs px-2.5 py-1 rounded-full font-semibold ${STATUS_CFG[selected.status]?.badge}`}>{selected.status}</span>
-                    <span className={`text-xs px-2 py-1 rounded border font-medium ${SVC_CLR[selected.service_type]||'bg-gray-50 text-gray-400 border-gray-200'}`}>{selected.service_type}</span>
+
+                    {/* D-day → 클릭 시 날짜 선택 */}
+                    <div className="relative">
+                      <button
+                        onClick={() => setInlineEdit(inlineEdit==='remind' ? null : 'remind')}
+                        title="리마인드 날짜 수정"
+                        className="transition-opacity hover:opacity-70">
+                        {(() => { const d=getDday(selected.remind_date); return d!==null ? <DdayBlock d={d} /> : <span className="text-xs text-gray-300 border border-dashed border-gray-200 px-2 py-1 rounded-lg">D-day 없음</span> })()}
+                      </button>
+                      {inlineEdit==='remind' && (
+                        <div className="absolute z-20 top-full mt-1 left-0 bg-white border border-gray-200 rounded-xl shadow-lg p-3 min-w-[200px]">
+                          <p className="text-xs text-gray-500 mb-2 font-medium">리마인드 날짜</p>
+                          <input type="date" className={INP}
+                            value={selected.remind_date}
+                            onChange={e => {
+                              setLeads(ls => ls.map(l => l.id===selected.id ? {...l, remind_date: e.target.value} : l))
+                              setInlineEdit(null)
+                            }} />
+                          {selected.remind_date && (
+                            <button onClick={() => { setLeads(ls => ls.map(l => l.id===selected.id ? {...l, remind_date:''} : l)); setInlineEdit(null) }}
+                              className="mt-2 w-full text-xs text-red-400 hover:text-red-600">삭제</button>
+                          )}
+                        </div>
+                      )}
+                    </div>
+
+                    {/* 상태 → 클릭 시 드롭다운 */}
+                    <div className="relative">
+                      <button
+                        onClick={() => setInlineEdit(inlineEdit==='status' ? null : 'status')}
+                        title="상태 변경"
+                        className={`text-xs px-2.5 py-1 rounded-full font-semibold transition-opacity hover:opacity-70 ${STATUS_CFG[selected.status]?.badge}`}>
+                        {selected.status} ▾
+                      </button>
+                      {inlineEdit==='status' && (
+                        <div className="absolute z-20 top-full mt-1 left-0 bg-white border border-gray-200 rounded-xl shadow-lg overflow-hidden min-w-[100px]">
+                          {STATUSES.map(s => (
+                            <button key={s} onClick={() => { setLeads(ls => ls.map(l => l.id===selected.id ? {...l, status:s} : l)); setInlineEdit(null) }}
+                              className={`w-full text-left px-3 py-2 text-xs font-medium hover:bg-gray-50 flex items-center gap-2 ${s===selected.status?'bg-gray-50':''}`}>
+                              <span className={`w-2 h-2 rounded-full flex-shrink-0 ${STATUS_CFG[s]?.dot||'bg-gray-400'}`} />
+                              {s}
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+
+                    {/* 서비스 → 클릭 시 드롭다운 */}
+                    <div className="relative">
+                      <button
+                        onClick={() => setInlineEdit(inlineEdit==='service' ? null : 'service')}
+                        title="서비스 변경"
+                        className={`text-xs px-2 py-1 rounded border font-medium transition-opacity hover:opacity-70 ${SVC_CLR[selected.service_type]||'bg-gray-50 text-gray-400 border-gray-200'}`}>
+                        {selected.service_type} ▾
+                      </button>
+                      {inlineEdit==='service' && (
+                        <div className="absolute z-20 top-full mt-1 left-0 bg-white border border-gray-200 rounded-xl shadow-lg overflow-hidden min-w-[130px]">
+                          {SERVICES.map(s => (
+                            <button key={s} onClick={() => { setLeads(ls => ls.map(l => l.id===selected.id ? {...l, service_type:s} : l)); setInlineEdit(null) }}
+                              className={`w-full text-left px-3 py-2 text-xs font-medium hover:bg-gray-50 ${s===selected.service_type?'bg-gray-50 font-bold':''}`}>
+                              {s}
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+
+                    {/* 다른 곳 클릭 시 팝오버 닫기 */}
+                    {inlineEdit && (
+                      <div className="fixed inset-0 z-10" onClick={() => setInlineEdit(null)} />
+                    )}
                   </div>
+
                   <h2 className="text-xl font-bold text-gray-900">{selected.project_name||'(프로젝트명 없음)'}</h2>
                   <p className="text-sm text-gray-500 mt-0.5">{selected.contact_name} · {selected.client_org}</p>
                 </div>
-                {/* 버튼: 드롭박스 + 계약전환 */}
+
+                {/* 버튼: 드롭박스 + 동기화 + 계약전환 */}
                 <div className="flex gap-2 flex-shrink-0">
                   {selected.dropbox_url ? (
-                    <a href={selected.dropbox_url} target="_blank" rel="noreferrer"
-                      className="flex items-center gap-1.5 text-sm border border-gray-200 hover:border-blue-300 hover:bg-blue-50 text-gray-600 hover:text-blue-600 px-3 py-1.5 rounded-xl transition-colors">
-                      <span>📁</span><span>드롭박스</span>
-                    </a>
+                    <div className="flex items-center gap-1">
+                      <a href={selected.dropbox_url} target="_blank" rel="noreferrer"
+                        className="flex items-center gap-1.5 text-sm border border-gray-200 hover:border-blue-300 hover:bg-blue-50 text-gray-600 hover:text-blue-600 px-3 py-1.5 rounded-xl transition-colors">
+                        <span>📁</span><span>드롭박스</span>
+                      </a>
+                      {/* 폴더명 동기화 버튼 */}
+                      <button
+                        title="폴더명을 현재 프로젝트명으로 동기화"
+                        onClick={() => {
+                          if (!selected.project_name) return
+                          setSyncState(s => ({...s, [selected.id]:'syncing'}))
+                          setTimeout(() => {
+                            // URL 마지막 경로명을 현재 프로젝트명으로 교체
+                            const url = selected.dropbox_url
+                            const lastSlash = url.lastIndexOf('/')
+                            const parent = url.substring(0, lastSlash)
+                            const oldFolder = url.substring(lastSlash+1)
+                            const datePrefix = oldFolder.match(/^(\d{6})\s/) ? oldFolder.match(/^(\d{6})\s/)![1]+' ' : ''
+                            const newUrl = `${parent}/${datePrefix}${selected.project_name}`
+                            setLeads(ls => ls.map(l => l.id===selected.id ? {...l, dropbox_url:newUrl} : l))
+                            setSyncState(s => ({...s, [selected.id]:'done'}))
+                            setTimeout(() => setSyncState(s => ({...s, [selected.id]:'idle'})), 2000)
+                          }, 900)
+                        }}
+                        className={`p-1.5 rounded-lg border transition-all text-sm ${
+                          syncState[selected.id]==='syncing' ? 'border-gray-200 text-gray-400 animate-spin' :
+                          syncState[selected.id]==='done'    ? 'border-emerald-200 bg-emerald-50 text-emerald-600' :
+                          'border-gray-200 hover:border-gray-300 text-gray-400 hover:text-gray-600'
+                        }`}>
+                        {syncState[selected.id]==='done' ? '✓' : '🔄'}
+                      </button>
+                    </div>
                   ) : (
                     <button
-                      onClick={() => setLeads(ls => ls.map(l => l.id===selected.id ? {...l, dropbox_url:'https://www.dropbox.com/home/★ADMIN/SOS/260416 '+selected.project_name} : l))}
+                      onClick={() => setLeads(ls => ls.map(l => l.id===selected.id ? {...l, dropbox_url:'https://www.dropbox.com/home/★ADMIN/SOS/260416 '+(selected.project_name||'리드')} : l))}
                       className="flex items-center gap-1.5 text-sm border border-dashed border-gray-300 hover:border-gray-400 text-gray-400 hover:text-gray-600 px-3 py-1.5 rounded-xl transition-colors">
                       <span>📁</span><span>폴더 연결</span>
                     </button>
