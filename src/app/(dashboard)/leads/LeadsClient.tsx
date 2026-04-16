@@ -2,13 +2,17 @@
 import { useState, useTransition, useEffect, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import { Lead, LeadStatus, LEAD_STATUSES, LEAD_CHANNELS, LEAD_SOURCES } from '@/types'
-import { createLead, updateLead, deleteLead, convertLeadToSale, addSaleToLead, createLeadFolder, updateLeadDropboxUrl, createPerson } from './actions'
+import { createLead, updateLead, deleteLead, convertLeadToSale, addSaleToLead, createLeadFolder, updateLeadDropboxUrl, createPerson, updateLeadPersonAndCustomer } from './actions'
 import { createLeadLog, getLeadLogs, deleteLeadLog } from './lead-log-actions'
 
 const LABEL_CLS = 'block text-xs font-medium text-gray-500 mb-1'
 const INPUT_CLS = 'w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-yellow-300'
 
-type PersonOption = { id: string; name: string; phone: string; email: string; currentOrg: string; title: string }
+type PersonOption = {
+  id: string; name: string; phone: string; email: string
+  currentOrg: string; title: string; dept: string
+  customerId: string | null; customerRegion: string; customerType: string; relationId: string | null
+}
 
 interface LeadFormProps {
   form: FormState
@@ -43,6 +47,7 @@ function LeadForm({ form, setForm, onSubmit, onCancel, isPending, isAdmin, profi
       contact_name: p.name,
       phone: f.phone || p.phone,
       email: f.email || p.email,
+      client_org: f.client_org || p.currentOrg,
     }))
     setPersonSearch(p.name)
     setShowPersonDrop(false)
@@ -61,7 +66,7 @@ function LeadForm({ form, setForm, onSubmit, onCancel, isPending, isAdmin, profi
     try {
       const result = await createPerson({ name: personSearch.trim(), phone: newPhone || undefined, email: newEmail || undefined })
       if ('error' in result) { alert('추가 실패: ' + result.error); return }
-      const newP: PersonOption = { id: result.id, name: result.name, phone: result.phone, email: result.email, currentOrg: '', title: '' }
+      const newP: PersonOption = { id: result.id, name: result.name, phone: result.phone, email: result.email, currentOrg: '', title: '', dept: '', customerId: null, customerRegion: '', customerType: '', relationId: null }
       setLocalPersons(prev => [...prev, newP])
       selectPerson(newP)
       setNewPhone('')
@@ -77,12 +82,29 @@ function LeadForm({ form, setForm, onSubmit, onCancel, isPending, isAdmin, profi
       <div>
         <label className={LABEL_CLS}>담당자 (고객 DB 연결)</label>
         {selectedPerson ? (
-          <div className="flex items-center justify-between bg-blue-50 border border-blue-200 rounded-lg px-3 py-2.5">
-            <div>
-              <p className="text-sm font-semibold text-gray-900">{selectedPerson.name}</p>
-              <p className="text-xs text-gray-500">{selectedPerson.currentOrg}{selectedPerson.title ? ` · ${selectedPerson.title}` : ''}</p>
+          <div className="bg-blue-50 border border-blue-200 rounded-lg px-3 py-2.5">
+            <div className="flex items-start justify-between">
+              <div className="space-y-0.5">
+                <p className="text-sm font-semibold text-gray-900">
+                  {selectedPerson.name}
+                  {selectedPerson.title ? <span className="ml-1 text-xs text-gray-500">· {selectedPerson.title}</span> : ''}
+                  {selectedPerson.dept ? <span className="ml-1 text-xs text-gray-400">({selectedPerson.dept})</span> : ''}
+                </p>
+                {selectedPerson.currentOrg && (
+                  <p className="text-xs text-gray-600">
+                    {selectedPerson.currentOrg}
+                    {selectedPerson.customerRegion ? ` · ${selectedPerson.customerRegion}` : ''}
+                    {selectedPerson.customerType ? ` [${selectedPerson.customerType}]` : ''}
+                  </p>
+                )}
+                {(selectedPerson.phone || selectedPerson.email) && (
+                  <p className="text-xs text-gray-400">
+                    {selectedPerson.phone}{selectedPerson.phone && selectedPerson.email ? ' · ' : ''}{selectedPerson.email}
+                  </p>
+                )}
+              </div>
+              <button type="button" onClick={clearPerson} className="text-xs text-gray-400 hover:text-red-400 ml-2 mt-0.5">✕</button>
             </div>
-            <button type="button" onClick={clearPerson} className="text-xs text-gray-400 hover:text-red-400 ml-2">✕</button>
           </div>
         ) : (
           <div className="relative">
@@ -99,8 +121,14 @@ function LeadForm({ form, setForm, onSubmit, onCancel, isPending, isAdmin, profi
                 {matchingPersons.map(p => (
                   <button key={p.id} type="button" onMouseDown={() => selectPerson(p)}
                     className="w-full px-3 py-2 text-left hover:bg-yellow-50 border-b border-gray-50 last:border-0">
-                    <p className="text-sm font-medium text-gray-800">{p.name}</p>
-                    <p className="text-xs text-gray-400">{p.currentOrg}{p.title ? ` · ${p.title}` : ''}</p>
+                    <p className="text-sm font-medium text-gray-800">
+                      {p.name}
+                      {p.title ? <span className="text-gray-400 font-normal"> · {p.title}</span> : ''}
+                    </p>
+                    <p className="text-xs text-gray-400">
+                      {p.currentOrg || '소속 없음'}
+                      {p.phone ? ` · ${p.phone}` : ''}
+                    </p>
                   </button>
                 ))}
                 {personSearch.trim() && (
@@ -248,6 +276,7 @@ const LOG_TYPE_COLORS: Record<string, string> = {
   통화: 'bg-blue-50 text-blue-600', 이메일: 'bg-purple-50 text-purple-600',
   방문: 'bg-green-50 text-green-600', 메모: 'bg-yellow-50 text-yellow-700',
   내부회의: 'bg-orange-50 text-orange-600', 기타: 'bg-gray-100 text-gray-500',
+  최초유입: 'bg-teal-50 text-teal-600',
 }
 
 interface LeadLog {
@@ -319,7 +348,7 @@ const EMPTY_FORM: FormState = {
 
 export default function LeadsClient({ leads, profiles, persons, currentUserId, isAdmin, initialClientOrg }: Props) {
   const router = useRouter()
-  const [statusFilter, setStatusFilter] = useState<string>('전체')
+  const [statusFilter, setStatusFilter] = useState<string>('활성')
   const [searchTerm, setSearchTerm] = useState('')
   const [selectedLead, setSelectedLead] = useState<Lead | null>(null)
   const [showCreateModal, setShowCreateModal] = useState(!!initialClientOrg)
@@ -409,6 +438,9 @@ export default function LeadsClient({ leads, profiles, persons, currentUserId, i
   // 소통 로그 (project_logs)
   const [leadLogs, setLeadLogs] = useState<LeadLog[]>([])
   const [loadingLogs, setLoadingLogs] = useState(false)
+  const [leadSummary, setLeadSummary] = useState<string | null>(null)
+  const [loadingSummary, setLoadingSummary] = useState(false)
+  const [logsCollapsed, setLogsCollapsed] = useState(true)
   const [newLeadLog, setNewLeadLog] = useState('')
   const [newLeadLogType, setNewLeadLogType] = useState('통화')
   const [leadLogContactedAt, setLeadLogContactedAt] = useState(() => {
@@ -416,6 +448,18 @@ export default function LeadsClient({ leads, profiles, persons, currentUserId, i
     return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`
   })
   const [leadLogError, setLeadLogError] = useState<string | null>(null)
+  const [inlineStatusOpen, setInlineStatusOpen] = useState(false)
+  const [editingTitle, setEditingTitle] = useState(false)
+  const [titleInput, setTitleInput] = useState('')
+  const [editingPerson, setEditingPerson] = useState(false)
+  const [personEditForm, setPersonEditForm] = useState({ name: '', phone: '', email: '', title: '', dept: '', orgName: '', orgRegion: '', orgType: '' })
+  const [savingPerson, setSavingPerson] = useState(false)
+  const [showPersonLink, setShowPersonLink] = useState(false)
+  const [personLinkSearch, setPersonLinkSearch] = useState('')
+
+  // 미연결 리드 연락처 인라인 편집 draft
+  const [contactDraft, setContactDraft] = useState<{ contact_name: string; phone: string; office_phone: string; email: string; client_org: string } | null>(null)
+  const [savingContact, setSavingContact] = useState(false)
 
   // leads 업데이트 시 선택된 리드 동기화
   useEffect(() => {
@@ -423,6 +467,21 @@ export default function LeadsClient({ leads, profiles, persons, currentUserId, i
     const updated = leads.find(l => l.id === selectedLead.id)
     if (updated) setSelectedLead(updated)
   }, [leads])
+
+  // 미연결 리드 선택 시 contactDraft 초기화
+  useEffect(() => {
+    if (selectedLead && !selectedLead.person) {
+      setContactDraft({
+        contact_name: selectedLead.contact_name || '',
+        phone: selectedLead.phone || '',
+        office_phone: selectedLead.office_phone || '',
+        email: selectedLead.email || '',
+        client_org: selectedLead.client_org || '',
+      })
+    } else {
+      setContactDraft(null)
+    }
+  }, [selectedLead?.id, selectedLead?.person])
 
   // 리드 선택 시 소통 로그 로드
   const refreshLeadLogs = useCallback(async (leadId: string) => {
@@ -432,17 +491,48 @@ export default function LeadsClient({ leads, profiles, persons, currentUserId, i
     setLoadingLogs(false)
   }, [])
 
+  // AI 요약 자동 갱신 (최초유입 외 로그가 있을 때)
   useEffect(() => {
-    if (!selectedLead) { setLeadLogs([]); return }
+    if (!selectedLead) return
+    const nonInitial = leadLogs.filter(l => l.log_type !== '최초유입')
+    if (nonInitial.length === 0) { setLeadSummary(null); return }
+
+    let cancelled = false
+    setLoadingSummary(true)
+    fetch('/api/lead-summary', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        initial_content: selectedLead.initial_content ?? null,
+        logs: nonInitial.map(l => ({ content: l.content, log_type: l.log_type, contacted_at: l.contacted_at })),
+      }),
+    })
+      .then(r => r.json())
+      .then(d => { if (!cancelled) setLeadSummary(d.summary ?? null) })
+      .catch(() => {})
+      .finally(() => { if (!cancelled) setLoadingSummary(false) })
+
+    return () => { cancelled = true }
+  }, [leadLogs, selectedLead?.id])
+
+  useEffect(() => {
+    if (!selectedLead) { setLeadLogs([]); setLeadSummary(null); setLogsCollapsed(true); return }
     refreshLeadLogs(selectedLead.id)
     setShowAddSaleForm(false)
     setShowDropboxInput(false)
     setDropboxInput('')
+    setInlineStatusOpen(false)
+    setEditingTitle(false)
+    setEditingPerson(false)
+    setShowPersonLink(false)
+    setPersonLinkSearch('')
+    setLeadSummary(null)
+    setLogsCollapsed(true)
   }, [selectedLead?.id])
 
   const filtered = leads
     .filter(l => {
-      const matchStatus = statusFilter === '전체' || l.status === statusFilter
+      const matchStatus = statusFilter === '전체' || (statusFilter === '활성' ? !['완료','취소'].includes(l.status) : l.status === statusFilter)
       const matchSearch = !searchTerm || [l.project_name, l.client_org, l.contact_name, l.lead_id]
         .some(v => v?.toLowerCase().includes(searchTerm.toLowerCase()))
       return matchStatus && matchSearch
@@ -502,6 +592,22 @@ export default function LeadsClient({ leads, profiles, persons, currentUserId, i
       })
       setEditMode(false)
     })
+  }
+
+  async function handleSavePersonAndCustomer() {
+    if (!selectedLead?.person) return
+    setSavingPerson(true)
+    const result = await updateLeadPersonAndCustomer(
+      selectedLead.id,
+      selectedLead.person.id,
+      { name: personEditForm.name, phone: personEditForm.phone || null, email: personEditForm.email || null },
+      selectedLead.person.customerId,
+      { name: personEditForm.orgName, region: personEditForm.orgRegion || null, type: personEditForm.orgType || null },
+      { id: selectedLead.person.relationId, title: personEditForm.title || null, dept: personEditForm.dept || null }
+    )
+    setSavingPerson(false)
+    if (result?.error) alert('저장 실패: ' + result.error)
+    else setEditingPerson(false)
   }
 
   function handleDelete(id: string) {
@@ -601,16 +707,21 @@ export default function LeadsClient({ leads, profiles, persons, currentUserId, i
       {/* 필터 + 검색 */}
       <div className="flex flex-col sm:flex-row gap-3">
         <div className="flex flex-wrap gap-1.5">
-          {['전체', ...LEAD_STATUSES].map(s => (
-            <button key={s} onClick={() => setStatusFilter(s)}
-              className={`px-3 py-1.5 rounded-full text-xs font-medium transition-colors ${
-                statusFilter === s ? 'text-gray-900' : 'bg-gray-100 text-gray-500 hover:bg-gray-200'
-              }`}
-              style={statusFilter === s ? { backgroundColor: '#FFCE00' } : {}}>
-              {s}
-              {s !== '전체' && <span className="ml-1 opacity-60">({leads.filter(l => l.status === s).length})</span>}
-            </button>
-          ))}
+          {(['전체', '활성', ...LEAD_STATUSES] as string[]).map(s => {
+            const count = s === '전체' ? leads.length
+              : s === '활성' ? leads.filter(l => !['완료','취소'].includes(l.status)).length
+              : leads.filter(l => l.status === s).length
+            return (
+              <button key={s} onClick={() => setStatusFilter(s)}
+                className={`px-3 py-1.5 rounded-full text-xs font-medium transition-colors ${
+                  statusFilter === s ? 'text-gray-900' : 'bg-gray-100 text-gray-500 hover:bg-gray-200'
+                }`}
+                style={statusFilter === s ? { backgroundColor: '#FFCE00' } : {}}>
+                {s}
+                <span className="ml-1 opacity-60">({count})</span>
+              </button>
+            )
+          })}
         </div>
         <div className="flex gap-2 ml-auto">
           <input type="text" placeholder="프로젝트명, 기관명, 담당자 검색..."
@@ -704,14 +815,55 @@ export default function LeadsClient({ leads, profiles, persons, currentUserId, i
                   ← 목록으로
                 </button>
                 <p className="text-xs text-gray-400">{selectedLead.lead_id}</p>
-                <h2 className="text-base font-bold text-gray-900 leading-tight">{selectedLead.project_name || selectedLead.client_org || '프로젝트명 없음'}</h2>
+                {editingTitle ? (
+                  <input
+                    autoFocus
+                    value={titleInput}
+                    onChange={e => setTitleInput(e.target.value)}
+                    onBlur={() => {
+                      const trimmed = titleInput.trim()
+                      if (trimmed && trimmed !== (selectedLead.project_name || selectedLead.client_org || '')) {
+                        startTransition(async () => { await updateLead(selectedLead.id, { project_name: trimmed }) })
+                      }
+                      setEditingTitle(false)
+                    }}
+                    onKeyDown={e => { if (e.key === 'Enter') e.currentTarget.blur(); if (e.key === 'Escape') setEditingTitle(false) }}
+                    className="text-base font-bold text-gray-900 border-b-2 border-yellow-400 bg-transparent focus:outline-none w-full leading-tight mt-0.5"
+                  />
+                ) : (
+                  <h2
+                    className="text-base font-bold text-gray-900 leading-tight cursor-pointer hover:text-yellow-700 group flex items-center gap-1"
+                    onClick={() => { setTitleInput(selectedLead.project_name || selectedLead.client_org || ''); setEditingTitle(true) }}>
+                    {selectedLead.project_name || selectedLead.client_org || '프로젝트명 없음'}
+                    <span className="text-xs text-gray-300 opacity-0 group-hover:opacity-100 font-normal">✏️</span>
+                  </h2>
+                )}
                 {selectedLead.project_name && selectedLead.client_org && (
                   <p className="text-xs text-gray-400 mt-0.5">{selectedLead.client_org}</p>
                 )}
                 <div className="flex items-center gap-1.5 mt-1.5 flex-wrap">
-                  <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${STATUS_BADGE[selectedLead.status] || ''}`}>
-                    {selectedLead.status}
-                  </span>
+                  {/* 상태 클릭 → 즉시 변경 드롭다운 */}
+                  <div className="relative">
+                    <button
+                      onClick={() => setInlineStatusOpen(o => !o)}
+                      className={`text-xs px-2 py-0.5 rounded-full font-medium cursor-pointer hover:opacity-80 transition-opacity ${STATUS_BADGE[selectedLead.status] || ''}`}>
+                      {selectedLead.status} ▾
+                    </button>
+                    {inlineStatusOpen && (
+                      <div className="absolute z-20 top-full left-0 mt-1 bg-white border border-gray-200 rounded-xl shadow-lg min-w-[110px] overflow-hidden">
+                        {LEAD_STATUSES.map(s => (
+                          <button key={s}
+                            className={`w-full text-left px-3 py-1.5 text-xs hover:bg-yellow-50 ${s === selectedLead.status ? 'font-semibold bg-yellow-50 text-yellow-700' : 'text-gray-700'}`}
+                            onClick={() => {
+                              startTransition(async () => { await updateLead(selectedLead.id, { status: s }) })
+                              setInlineStatusOpen(false)
+                            }}>
+                            {s}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
                   {selectedLead.service_type && (
                     <span className="text-xs px-2 py-0.5 bg-gray-100 text-gray-600 rounded-full">{selectedLead.service_type}</span>
                   )}
@@ -731,32 +883,245 @@ export default function LeadsClient({ leads, profiles, persons, currentUserId, i
                 {/* 담당자 카드 (고객 DB 연결 시) */}
                 {selectedLead.person && (
                   <div>
-                    <p className="text-xs text-gray-400 mb-1.5">담당자 (고객 DB 연결됨)</p>
-                    <a href={`/customers`} className="flex items-center gap-3 bg-blue-50 border border-blue-100 rounded-xl px-3 py-2.5 hover:border-blue-300 transition-colors group">
-                      <div className="w-8 h-8 rounded-full bg-blue-200 flex items-center justify-center text-blue-700 font-bold text-sm shrink-0">
-                        {selectedLead.person.name.charAt(0)}
+                    <div className="flex items-center justify-between mb-1.5">
+                      <p className="text-xs text-gray-400">고객 DB 연결됨</p>
+                      <div className="flex items-center gap-2">
+                        <a href="/customers" className="text-xs text-blue-400 hover:text-blue-600">거래처DB →</a>
+                        {isAdmin && !editingPerson && (
+                          <button
+                            onClick={() => {
+                              setPersonEditForm({
+                                name: selectedLead.person!.name,
+                                phone: selectedLead.person!.phone || '',
+                                email: selectedLead.person!.email || '',
+                                title: selectedLead.person!.title || '',
+                                dept: selectedLead.person!.dept || '',
+                                orgName: selectedLead.person!.currentOrg,
+                                orgRegion: selectedLead.person!.customerRegion,
+                                orgType: selectedLead.person!.customerType,
+                              })
+                              setEditingPerson(true)
+                            }}
+                            className="text-xs text-gray-400 hover:text-blue-600 border border-gray-200 rounded px-2 py-0.5 hover:border-blue-300">
+                            편집
+                          </button>
+                        )}
                       </div>
-                      <div className="flex-1 min-w-0">
-                        <p className="text-sm font-semibold text-gray-900 group-hover:text-blue-700">{selectedLead.person.name}</p>
-                        <p className="text-xs text-gray-500 truncate">{selectedLead.person.currentOrg}{selectedLead.person.title ? ` · ${selectedLead.person.title}` : ''}</p>
+                    </div>
+
+                    {editingPerson ? (
+                      <div className="border border-blue-200 rounded-xl p-3 space-y-3 bg-blue-50">
+                        <p className="text-xs font-semibold text-blue-700">담당자 정보 수정</p>
+                        <div className="grid grid-cols-2 gap-2">
+                          <div>
+                            <label className="text-xs text-gray-500 mb-0.5 block">이름</label>
+                            <input value={personEditForm.name} onChange={e => setPersonEditForm(f => ({ ...f, name: e.target.value }))}
+                              className="w-full text-xs border border-gray-200 rounded-lg px-2 py-1.5 focus:outline-none focus:border-blue-400" />
+                          </div>
+                          <div>
+                            <label className="text-xs text-gray-500 mb-0.5 block">휴대폰</label>
+                            <input value={personEditForm.phone} onChange={e => setPersonEditForm(f => ({ ...f, phone: e.target.value }))}
+                              className="w-full text-xs border border-gray-200 rounded-lg px-2 py-1.5 focus:outline-none focus:border-blue-400" />
+                          </div>
+                          <div className="col-span-2">
+                            <label className="text-xs text-gray-500 mb-0.5 block">이메일</label>
+                            <input value={personEditForm.email} onChange={e => setPersonEditForm(f => ({ ...f, email: e.target.value }))}
+                              type="email" className="w-full text-xs border border-gray-200 rounded-lg px-2 py-1.5 focus:outline-none focus:border-blue-400" />
+                          </div>
+                          <div>
+                            <label className="text-xs text-gray-500 mb-0.5 block">직급</label>
+                            <input value={personEditForm.title} onChange={e => setPersonEditForm(f => ({ ...f, title: e.target.value }))}
+                              placeholder="예: 팀장" className="w-full text-xs border border-gray-200 rounded-lg px-2 py-1.5 focus:outline-none focus:border-blue-400" />
+                          </div>
+                          <div>
+                            <label className="text-xs text-gray-500 mb-0.5 block">부서</label>
+                            <input value={personEditForm.dept} onChange={e => setPersonEditForm(f => ({ ...f, dept: e.target.value }))}
+                              placeholder="예: 교무부" className="w-full text-xs border border-gray-200 rounded-lg px-2 py-1.5 focus:outline-none focus:border-blue-400" />
+                          </div>
+                        </div>
+                        {selectedLead.person.customerId && (
+                          <>
+                            <p className="text-xs font-semibold text-blue-700 pt-1">기관 정보 수정</p>
+                            <div className="grid grid-cols-2 gap-2">
+                              <div className="col-span-2">
+                                <label className="text-xs text-gray-500 mb-0.5 block">기관명</label>
+                                <input value={personEditForm.orgName} onChange={e => setPersonEditForm(f => ({ ...f, orgName: e.target.value }))}
+                                  className="w-full text-xs border border-gray-200 rounded-lg px-2 py-1.5 focus:outline-none focus:border-blue-400" />
+                              </div>
+                              <div>
+                                <label className="text-xs text-gray-500 mb-0.5 block">지역</label>
+                                <input value={personEditForm.orgRegion} onChange={e => setPersonEditForm(f => ({ ...f, orgRegion: e.target.value }))}
+                                  placeholder="예: 경기" className="w-full text-xs border border-gray-200 rounded-lg px-2 py-1.5 focus:outline-none focus:border-blue-400" />
+                              </div>
+                              <div>
+                                <label className="text-xs text-gray-500 mb-0.5 block">유형</label>
+                                <select value={personEditForm.orgType} onChange={e => setPersonEditForm(f => ({ ...f, orgType: e.target.value }))}
+                                  className="w-full text-xs border border-gray-200 rounded-lg px-2 py-1.5 bg-white focus:outline-none focus:border-blue-400">
+                                  <option value="">선택</option>
+                                  {['학교', '공공기관', '기업', '단체', '기타'].map(t => <option key={t} value={t}>{t}</option>)}
+                                </select>
+                              </div>
+                            </div>
+                          </>
+                        )}
+                        <div className="flex gap-2 pt-1">
+                          <button onClick={handleSavePersonAndCustomer} disabled={savingPerson}
+                            className="flex-1 text-xs px-3 py-1.5 font-semibold rounded-lg disabled:opacity-50"
+                            style={{ backgroundColor: '#FFCE00', color: '#121212' }}>
+                            {savingPerson ? '저장 중...' : '저장'}
+                          </button>
+                          <button onClick={() => setEditingPerson(false)}
+                            className="text-xs px-3 py-1.5 border border-gray-200 rounded-lg text-gray-500 hover:bg-gray-50">
+                            취소
+                          </button>
+                        </div>
+                        <p className="text-xs text-gray-400">저장 시 고객 DB(거래처탭)에도 자동 반영됩니다.</p>
                       </div>
-                      <span className="text-xs text-blue-300 group-hover:text-blue-500">→</span>
-                    </a>
+                    ) : (
+                      <div className="bg-blue-50 border border-blue-100 rounded-xl px-3 py-2.5 space-y-2">
+                        <div className="flex items-center gap-3">
+                          <div className="w-8 h-8 rounded-full bg-blue-200 flex items-center justify-center text-blue-700 font-bold text-sm shrink-0">
+                            {selectedLead.person.name.charAt(0)}
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <p className="text-sm font-semibold text-gray-900">{selectedLead.person.name}</p>
+                            <p className="text-xs text-gray-500 truncate">
+                              {selectedLead.person.currentOrg}
+                              {selectedLead.person.dept ? ` · ${selectedLead.person.dept}` : ''}
+                              {selectedLead.person.title ? ` · ${selectedLead.person.title}` : ''}
+                            </p>
+                          </div>
+                        </div>
+                        <div className="grid grid-cols-2 gap-x-3 gap-y-1 text-xs pl-1 pt-0.5">
+                          {selectedLead.person.phone && (
+                            <div><span className="text-gray-400">휴대폰</span><p className="text-gray-700 font-medium">{selectedLead.person.phone}</p></div>
+                          )}
+                          {selectedLead.person.email && (
+                            <div><span className="text-gray-400">이메일</span><p className="text-gray-700 font-medium truncate">{selectedLead.person.email}</p></div>
+                          )}
+                          {selectedLead.person.customerRegion && (
+                            <div><span className="text-gray-400">지역</span><p className="text-gray-700 font-medium">{selectedLead.person.customerRegion}</p></div>
+                          )}
+                          {selectedLead.person.customerType && (
+                            <div><span className="text-gray-400">유형</span><p className="text-gray-700 font-medium">{selectedLead.person.customerType}</p></div>
+                          )}
+                        </div>
+                      </div>
+                    )}
                   </div>
                 )}
 
-                {/* 기본 정보 */}
+                {/* 미연결 리드 — 연락처 인라인 편집 + DB 연결 */}
+                {!selectedLead.person && (
+                  <div>
+                    <div className="flex items-center justify-between mb-1.5">
+                      <p className="text-xs text-gray-400">연락처 <span className="text-gray-300">(고객 DB 미연결)</span></p>
+                      <div className="relative">
+                        <button
+                          onClick={() => { setShowPersonLink(o => !o); setPersonLinkSearch('') }}
+                          className="text-xs border border-dashed border-blue-300 text-blue-500 rounded px-2 py-0.5 hover:bg-blue-50">
+                          고객 DB 연결
+                        </button>
+                        {showPersonLink && (
+                          <div className="absolute z-30 right-0 top-full mt-1 w-64 bg-white border border-gray-200 rounded-xl shadow-lg">
+                            <input
+                              autoFocus
+                              value={personLinkSearch}
+                              onChange={e => setPersonLinkSearch(e.target.value)}
+                              placeholder="담당자 이름으로 검색..."
+                              className="w-full px-3 py-2 text-xs border-b border-gray-100 focus:outline-none rounded-t-xl"
+                            />
+                            <div className="max-h-52 overflow-y-auto">
+                              {persons
+                                .filter(p => !personLinkSearch || p.name.includes(personLinkSearch) || p.currentOrg.includes(personLinkSearch))
+                                .slice(0, 8)
+                                .map(p => (
+                                  <button key={p.id}
+                                    className="w-full text-left px-3 py-2 hover:bg-yellow-50 border-b border-gray-50 last:border-0 text-xs"
+                                    onMouseDown={() => {
+                                      startTransition(async () => {
+                                        await updateLead(selectedLead.id, {
+                                          person_id: p.id,
+                                          contact_name: p.name,
+                                          phone: p.phone || selectedLead.phone,
+                                          email: p.email || selectedLead.email,
+                                        })
+                                      })
+                                      setShowPersonLink(false)
+                                    }}>
+                                    <p className="font-medium text-gray-800">{p.name}</p>
+                                    <p className="text-gray-400">{p.currentOrg}{p.title ? ` · ${p.title}` : ''}</p>
+                                  </button>
+                                ))}
+                              {persons.filter(p => !personLinkSearch || p.name.includes(personLinkSearch) || p.currentOrg.includes(personLinkSearch)).length === 0 && (
+                                <p className="px-3 py-3 text-xs text-gray-400 text-center">검색 결과 없음</p>
+                              )}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                    {contactDraft && (
+                      <>
+                        <div className="bg-gray-50 border border-gray-200 rounded-xl px-3 py-2.5 grid grid-cols-2 gap-x-3 gap-y-2">
+                          {([
+                            { label: '담당자명', field: 'contact_name' as const, col: 2 },
+                            { label: '휴대폰', field: 'phone' as const, col: 1 },
+                            { label: '사무실', field: 'office_phone' as const, col: 1 },
+                            { label: '이메일', field: 'email' as const, col: 2, type: 'email' },
+                            { label: '기관명', field: 'client_org' as const, col: 2 },
+                          ]).map(({ label, field, col, type }) => (
+                            <div key={field} className={col === 2 ? 'col-span-2' : ''}>
+                              <label className="text-xs text-gray-400 mb-0.5 block">{label}</label>
+                              <input
+                                type={type || 'text'}
+                                value={contactDraft[field]}
+                                onChange={e => setContactDraft(d => d ? { ...d, [field]: e.target.value } : d)}
+                                placeholder="-"
+                                className="w-full text-xs border border-gray-200 rounded-lg px-2 py-1.5 bg-white focus:outline-none focus:border-yellow-400"
+                              />
+                            </div>
+                          ))}
+                        </div>
+                        <button
+                          onClick={async () => {
+                            setSavingContact(true)
+                            await updateLead(selectedLead.id, {
+                              contact_name: contactDraft.contact_name || null,
+                              phone: contactDraft.phone || null,
+                              office_phone: contactDraft.office_phone || null,
+                              email: contactDraft.email || null,
+                              client_org: contactDraft.client_org || null,
+                            } as any)
+                            setSavingContact(false)
+                          }}
+                          disabled={savingContact}
+                          className="mt-1.5 w-full py-1.5 rounded-lg text-xs font-semibold bg-yellow-400 text-gray-900 hover:bg-yellow-500 disabled:opacity-50 transition-all"
+                        >
+                          {savingContact ? '저장 중...' : '저장'}
+                        </button>
+                      </>
+                    )}
+                  </div>
+                )}
+
+                {/* 기본 정보 (공통: 담당직원/유입정보 + 연결 시에만 사무실도) */}
                 <div className="grid grid-cols-2 gap-y-3 gap-x-4 text-sm">
-                  {[
-                    ['담당자', selectedLead.contact_name],
-                    ['담당 직원', (selectedLead.assignee as any)?.name],
-                    ['휴대폰', selectedLead.phone],
-                    ['사무실', selectedLead.office_phone],
-                    ['이메일', selectedLead.email],
-                    ['유입경로', selectedLead.inflow_source],
-                    ['소통경로', selectedLead.channel],
-                    ['유입일', selectedLead.inflow_date],
-                  ].map(([k, v]) => (
+                  {(selectedLead.person
+                    ? [
+                        ['담당 직원', (selectedLead.assignee as any)?.name],
+                        ['사무실', selectedLead.office_phone],
+                        ['유입경로', selectedLead.inflow_source],
+                        ['소통경로', selectedLead.channel],
+                        ['유입일', selectedLead.inflow_date],
+                      ]
+                    : [
+                        ['담당 직원', (selectedLead.assignee as any)?.name],
+                        ['유입경로', selectedLead.inflow_source],
+                        ['소통경로', selectedLead.channel],
+                        ['유입일', selectedLead.inflow_date],
+                      ]
+                  ).map(([k, v]) => (
                     <div key={k as string}>
                       <span className="text-gray-400 text-xs">{k}</span>
                       <p className="text-gray-800 text-sm font-medium">{(v as string) || '-'}</p>
@@ -886,6 +1251,21 @@ export default function LeadsClient({ leads, profiles, persons, currentUserId, i
                   </div>
                 )}
 
+                {/* AI 요약 */}
+                {(loadingSummary || leadSummary) && (
+                  <div className="bg-violet-50 border border-violet-100 rounded-xl p-3">
+                    <p className="text-[11px] font-semibold text-violet-500 mb-1.5">✦ AI 요약</p>
+                    {loadingSummary ? (
+                      <div className="space-y-1.5">
+                        <div className="h-3 bg-violet-100 rounded animate-pulse w-full" />
+                        <div className="h-3 bg-violet-100 rounded animate-pulse w-4/5" />
+                      </div>
+                    ) : (
+                      <p className="text-sm text-gray-700 leading-relaxed">{leadSummary}</p>
+                    )}
+                  </div>
+                )}
+
                 {/* 소통 내역 (project_logs 기반) */}
                 <div>
                   <p className="text-xs text-gray-400 mb-2">소통 내역 ({leadLogs.length}건)</p>
@@ -904,6 +1284,21 @@ export default function LeadsClient({ leads, profiles, persons, currentUserId, i
                       <input type="datetime-local" value={leadLogContactedAt}
                         onChange={e => setLeadLogContactedAt(e.target.value)}
                         className="text-xs border border-gray-200 rounded-lg px-2 py-1.5 bg-white focus:outline-none focus:border-yellow-400" />
+                    </div>
+                    <div className="flex items-center gap-2 mb-2">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const now = new Date(); const pad = (n: number) => String(n).padStart(2, '0')
+                          setLeadLogContactedAt(`${now.getFullYear()}-${pad(now.getMonth()+1)}-${pad(now.getDate())}T${pad(now.getHours())}:${pad(now.getMinutes())}`)
+                          if (newLeadLog.trim()) handleAddLeadLog('통화')
+                        }}
+                        disabled={isPending}
+                        className="px-3 py-1.5 text-xs font-semibold rounded-lg bg-blue-500 text-white hover:bg-blue-600 transition-all disabled:opacity-50"
+                      >
+                        📞 지금 통화
+                      </button>
+                      <span className="text-xs text-gray-400">내용 입력 후 클릭하면 바로 저장</span>
                     </div>
                     <div className="flex gap-1.5 flex-wrap">
                       {['통화','이메일','방문','내부회의','메모','기타'].map(type => (
@@ -926,24 +1321,33 @@ export default function LeadsClient({ leads, profiles, persons, currentUserId, i
                   ) : leadLogs.length === 0 ? (
                     <p className="text-xs text-gray-300 italic py-1">아직 소통 내역이 없어요.</p>
                   ) : (
-                    <div className="space-y-2">
-                      {leadLogs.map(log => (
-                        <div key={log.id} className="bg-white border border-gray-100 rounded-xl px-3 py-2.5 group">
-                          <div className="flex items-center gap-2 mb-1.5">
-                            <span className={`text-[11px] px-2 py-0.5 rounded-full font-medium ${LOG_TYPE_COLORS[log.log_type] ?? 'bg-gray-100 text-gray-500'}`}>{log.log_type}</span>
-                            <span className="text-xs text-gray-400">
-                              {new Date(log.contacted_at || log.created_at).toLocaleDateString('ko-KR', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
-                            </span>
-                            <span className="text-xs text-gray-400 ml-auto">{(log.author as any)?.name ?? '-'}</span>
-                            {isAdmin && (
-                              <button onClick={() => handleDeleteLeadLog(log.id)}
-                                className="opacity-0 group-hover:opacity-100 text-xs text-gray-300 hover:text-red-400 transition-all">✕</button>
-                            )}
+                    <>
+                      <div className="space-y-2">
+                        {(logsCollapsed && leadLogs.length > 3 ? leadLogs.slice(0, 3) : leadLogs).map(log => (
+                          <div key={log.id} className="bg-white border border-gray-100 rounded-xl px-3 py-2.5 group">
+                            <div className="flex items-center gap-2 mb-1.5">
+                              <span className={`text-[11px] px-2 py-0.5 rounded-full font-medium ${LOG_TYPE_COLORS[log.log_type] ?? 'bg-gray-100 text-gray-500'}`}>{log.log_type}</span>
+                              <span className="text-xs text-gray-400">
+                                {new Date(log.contacted_at || log.created_at).toLocaleDateString('ko-KR', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                              </span>
+                              <span className="text-xs text-gray-400 ml-auto">{(log.author as any)?.name ?? '-'}</span>
+                              {isAdmin && (
+                                <button onClick={() => handleDeleteLeadLog(log.id)}
+                                  className="opacity-0 group-hover:opacity-100 text-xs text-gray-300 hover:text-red-400 transition-all">✕</button>
+                              )}
+                            </div>
+                            <p className="text-sm text-gray-700 leading-relaxed whitespace-pre-wrap">{log.content}</p>
                           </div>
-                          <p className="text-sm text-gray-700 leading-relaxed whitespace-pre-wrap">{log.content}</p>
-                        </div>
-                      ))}
-                    </div>
+                        ))}
+                      </div>
+                      {leadLogs.length > 3 && (
+                        <button
+                          onClick={() => setLogsCollapsed(c => !c)}
+                          className="w-full mt-1.5 text-xs text-gray-400 hover:text-gray-600 py-1.5 border border-dashed border-gray-200 rounded-lg hover:border-gray-300 transition-colors">
+                          {logsCollapsed ? `이전 ${leadLogs.length - 3}건 더 보기 ▾` : '접기 ▴'}
+                        </button>
+                      )}
+                    </>
                   )}
                 </div>
 

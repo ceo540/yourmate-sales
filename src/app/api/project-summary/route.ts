@@ -1,9 +1,14 @@
 import Anthropic from '@anthropic-ai/sdk'
 import { logApiUsage } from '@/lib/api-usage'
+import { createClient } from '@/lib/supabase/server'
 
 const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
 
 export async function POST(req: Request) {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return Response.json({ error: 'Unauthorized' }, { status: 401 })
+
   const { sale, tasks, logs } = await req.json()
 
   const pendingTasks = tasks.filter((t: any) => t.status !== '완료' && t.status !== '보류')

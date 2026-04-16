@@ -24,6 +24,7 @@ function formatDue(d: string | null) {
   if (diff < 0) return { label: `D${diff}`, color: 'text-red-500 font-bold' }
   if (diff === 0) return { label: 'D-day', color: 'text-red-500 font-bold' }
   if (diff <= 3) return { label: `D-${diff}`, color: 'text-orange-500 font-semibold' }
+  if (diff <= 7) return { label: `D-${diff}`, color: 'text-yellow-600 font-medium' }
   return { label: `D-${diff}`, color: 'text-gray-400' }
 }
 
@@ -135,7 +136,7 @@ export default async function DashboardPage() {
   const urgentTasks = pendingTasks.filter(t => {
     if (!t.due_date) return false
     const diff = Math.ceil((new Date(t.due_date).getTime() - new Date().setHours(0,0,0,0)) / 86400000)
-    return diff <= 3
+    return diff <= 7
   })
 
   return (
@@ -152,7 +153,7 @@ export default async function DashboardPage() {
           <p className={`text-2xl font-bold ${urgentTasks.length > 0 ? 'text-red-500' : 'text-gray-300'}`}>
             {urgentTasks.length}<span className="text-sm font-normal ml-1">건</span>
           </p>
-          <p className="text-xs text-gray-400 mt-1">3일 이내 마감</p>
+          <p className="text-xs text-gray-400 mt-1">7일 이내 마감</p>
         </div>
         <div className="bg-white rounded-xl border border-gray-100 p-4">
           <p className="text-xs text-gray-400 mb-1">{isAdmin ? '전체 업무' : '내 업무'}</p>

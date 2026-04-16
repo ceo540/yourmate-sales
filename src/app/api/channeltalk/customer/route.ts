@@ -2,6 +2,7 @@
 // 채널톡 설정 → 연동 → 웹훅 → URL: https://yourmate.vercel.app/api/channeltalk/customer
 // 이벤트: userChat (새 고객 채팅 시작 시 자동 persons 등록)
 
+import crypto from 'crypto'
 import { NextRequest, NextResponse } from 'next/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 
@@ -11,9 +12,24 @@ function normalizePhone(raw: string): string {
 }
 
 export async function POST(req: NextRequest) {
+  const body = await req.text()
+
+  // 서명 검증 — CHANNELTALK_ACCESS_SECRET 설정 시 fail-closed
+  const secret = process.env.CHANNELTALK_ACCESS_SECRET
+  if (secret) {
+    const signature = req.headers.get('x-channel-signature') || req.headers.get('x-signature') || ''
+    if (!signature) {
+      return NextResponse.json({ error: 'missing signature' }, { status: 401 })
+    }
+    const expected = crypto.createHmac('sha256', secret).update(body).digest('hex')
+    if (signature !== expected && signature !== `sha256=${expected}`) {
+      return NextResponse.json({ error: 'invalid signature' }, { status: 401 })
+    }
+  }
+
   let payload: any
   try {
-    payload = await req.json()
+    payload = JSON.parse(body)
   } catch {
     return NextResponse.json({ error: 'invalid json' }, { status: 400 })
   }

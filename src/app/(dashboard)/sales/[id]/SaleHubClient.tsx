@@ -8,6 +8,7 @@ import { updateSaleDetail } from './contract-action'
 import { createTask, updateTaskStatus, deleteTask } from '../tasks/actions'
 import { saveNotes, saveProjectOverview, generateProjectOverview, chatInNotes, generateDocument } from './notes-action'
 import { updateProgressStatus } from '../actions'
+import { listSaleDropboxFiles } from './dropbox-action'
 import dynamic from 'next/dynamic'
 import { DEPARTMENT_LABELS, PROGRESS_STATUSES, ProgressStatus } from '@/types'
 import TaskDetailPanel from './TaskDetailPanel'
@@ -176,7 +177,7 @@ export default function SaleHubClient({ sale, tasks: initialTasks, logs, profile
 
       {/* ── 개요 탭 ── */}
       {tab === 'overview' && (
-        <OverviewTab sale={sale} tasks={tasks} logs={localLogs} notes={sale.notes ?? ''} initialOverview={sale.project_overview ?? ''} />
+        <OverviewTab sale={sale} tasks={tasks} logs={localLogs} notes={sale.notes ?? ''} initialOverview={sale.project_overview ?? ''} costs={localCosts} showInternalCosts={showInternalCosts} />
       )}
 
       {/* ── 업무 탭 ── */}
@@ -263,6 +264,20 @@ export default function SaleHubClient({ sale, tasks: initialTasks, logs, profile
               <input type="datetime-local" value={logContactedAt}
                 onChange={e => setLogContactedAt(e.target.value)}
                 className="text-xs border border-gray-200 rounded-lg px-2 py-1.5 focus:outline-none focus:border-yellow-400" />
+            </div>
+            <div className="flex items-center gap-2 mb-2">
+              <button
+                type="button"
+                onClick={() => {
+                  setLogContactedAt(new Date().toISOString().slice(0, 16))
+                  if (newLog.trim()) handleAddLog('통화')
+                }}
+                disabled={isPending}
+                className="px-3 py-1.5 text-xs font-semibold rounded-lg bg-blue-500 text-white hover:bg-blue-600 transition-all disabled:opacity-50"
+              >
+                📞 지금 통화
+              </button>
+              <span className="text-xs text-gray-400">내용 입력 후 클릭하면 바로 저장</span>
             </div>
             {logError && (
               <p className="text-xs text-red-500 mb-2">{logError}</p>
@@ -391,8 +406,9 @@ function TaskRow({ t, idx, total, showForm, sale, isAdmin, currentUserId, startT
 }
 
 // ── 개요 탭 (AI 자동 생성 + 사람이 수정) ─────────────────
-function OverviewTab({ sale, tasks, logs, notes, initialOverview }: {
+function OverviewTab({ sale, tasks, logs, notes, initialOverview, costs, showInternalCosts }: {
   sale: Sale; tasks: Task[]; logs: Log[]; notes: string; initialOverview: string
+  costs: CostItem[]; showInternalCosts: boolean
 }) {
   const [overview, setOverview] = useState(initialOverview)
   const [generating, setGenerating] = useState(false)
@@ -401,6 +417,19 @@ function OverviewTab({ sale, tasks, logs, notes, initialOverview }: {
   const [docTarget, setDocTarget] = useState<'client' | 'internal' | 'freelancer' | null>(null)
   const [docContent, setDocContent] = useState('')
   const [docGenerating, setDocGenerating] = useState(false)
+
+  // 드롭박스 파일 목록
+  const [dropboxFiles, setDropboxFiles] = useState<{ name: string; path: string; type: 'file' | 'folder' }[] | null>(null)
+  const [loadingDropbox, setLoadingDropbox] = useState(false)
+
+  useEffect(() => {
+    if (!sale.dropbox_url) return
+    setLoadingDropbox(true)
+    listSaleDropboxFiles(sale.dropbox_url)
+      .then(files => setDropboxFiles(files))
+      .catch(() => setDropboxFiles([]))
+      .finally(() => setLoadingDropbox(false))
+  }, [sale.dropbox_url])
 
   // 개요가 없으면 탭 진입 시 자동 생성
   useEffect(() => {
@@ -530,6 +559,40 @@ function OverviewTab({ sale, tasks, logs, notes, initialOverview }: {
         </div>
       </div>
 
+      {/* 수익성 (원가 있을 때, 내부 비용 볼 수 있는 경우만) */}
+      {showInternalCosts && costs.length > 0 && (() => {
+        const calcAmt = (r: CostItem) => (r.unit_price && r.quantity) ? Number(r.unit_price) * Number(r.quantity) : (Number(r.amount) || 0)
+        const totalCost = costs.reduce((s, r) => s + calcAmt(r), 0)
+        const revenue = sale.revenue ?? 0
+        const margin = revenue - totalCost
+        const marginRate = revenue > 0 ? Math.round((margin / revenue) * 100) : null
+        return (
+          <div className="bg-white border border-gray-100 rounded-xl px-5 py-4">
+            <p className="text-xs font-semibold text-gray-600 mb-3">수익성</p>
+            <div className="flex gap-6 flex-wrap">
+              <div>
+                <p className="text-xs text-gray-400 mb-0.5">매출</p>
+                <p className="text-base font-bold text-gray-700">{revenue > 0 ? `${Math.round(revenue/10000)}만원` : '-'}</p>
+              </div>
+              <div>
+                <p className="text-xs text-gray-400 mb-0.5">원가합계</p>
+                <p className="text-base font-bold text-gray-700">{Math.round(totalCost/10000)}만원</p>
+              </div>
+              <div>
+                <p className="text-xs text-gray-400 mb-0.5">마진</p>
+                <p className={`text-base font-bold ${margin >= 0 ? 'text-green-600' : 'text-red-500'}`}>{Math.round(margin/10000)}만원</p>
+              </div>
+              {marginRate !== null && (
+                <div>
+                  <p className="text-xs text-gray-400 mb-0.5">마진율</p>
+                  <p className={`text-base font-bold ${marginRate >= 30 ? 'text-green-600' : marginRate >= 10 ? 'text-yellow-600' : 'text-red-500'}`}>{marginRate}%</p>
+                </div>
+              )}
+            </div>
+          </div>
+        )
+      })()}
+
       {/* 프로젝트 개요 */}
       <div className="bg-white border border-gray-100 rounded-xl overflow-hidden">
         <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100">
@@ -620,6 +683,39 @@ function OverviewTab({ sale, tasks, logs, notes, initialOverview }: {
           </div>
         )}
       </div>
+
+      {/* 드롭박스 파일 목록 */}
+      {sale.dropbox_url && (
+        <div className="bg-white border border-gray-100 rounded-xl p-4">
+          <div className="flex items-center justify-between mb-3">
+            <p className="text-xs font-semibold text-gray-600">드롭박스 파일</p>
+            <a href={sale.dropbox_url} target="_blank" rel="noopener noreferrer"
+              className="text-xs text-blue-500 hover:text-blue-700">폴더 열기 →</a>
+          </div>
+          {loadingDropbox ? (
+            <div className="space-y-1.5 animate-pulse">
+              {[1,2,3].map(i => <div key={i} className="h-3 bg-gray-100 rounded w-3/4" />)}
+            </div>
+          ) : !dropboxFiles || dropboxFiles.length === 0 ? (
+            <p className="text-xs text-gray-400">파일이 없거나 불러올 수 없습니다.</p>
+          ) : (
+            <div className="space-y-1">
+              {dropboxFiles.map(f => (
+                <a
+                  key={f.path}
+                  href={`https://www.dropbox.com/home/방 준영/1. 가업/★ DB${f.path}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex items-center gap-2 px-2 py-1.5 rounded-lg hover:bg-gray-50 transition-colors group"
+                >
+                  <span className="text-sm">{f.type === 'folder' ? '📁' : '📄'}</span>
+                  <span className="text-xs text-gray-700 group-hover:text-blue-600 truncate">{f.name}</span>
+                </a>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
     </div>
   )
 }

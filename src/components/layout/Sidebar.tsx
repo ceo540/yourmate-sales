@@ -101,6 +101,7 @@ export default function Sidebar() {
     try { return JSON.parse(localStorage.getItem('ym_perms') ?? '{}') } catch { return {} }
   })
   const [mobileOpen, setMobileOpen] = useState(false)
+  const [badgeCounts, setBadgeCounts] = useState<Record<string, number>>({})
 
   // pathname 바뀌면 카테고리 자동 전환
   useEffect(() => {
@@ -114,7 +115,7 @@ export default function Sidebar() {
     supabase.auth.getUser().then(({ data: { user } }) => {
       if (!user) return
       supabase.from('profiles').select('role, name').eq('id', user.id).single()
-        .then(({ data }) => {
+        .then(async ({ data }) => {
           const role = data?.role ?? 'member'
           const admin = role === 'admin'
           setIsAdmin(admin)
@@ -133,6 +134,26 @@ export default function Sidebar() {
                 localStorage.setItem('ym_perms', JSON.stringify(map))
               })
           }
+
+          // 배지 카운트 조회
+          const today = new Date().toISOString().slice(0, 10)
+          const sevenDays = new Date(Date.now() + 7 * 86400000).toISOString().slice(0, 10)
+
+          let taskQ = supabase.from('tasks')
+            .select('id', { count: 'exact', head: true })
+            .not('status', 'in', '(완료,보류)')
+            .not('due_date', 'is', null)
+            .lte('due_date', sevenDays)
+          if (!admin) taskQ = taskQ.eq('assignee_id', user.id)
+
+          let leadQ = supabase.from('leads')
+            .select('id', { count: 'exact', head: true })
+            .lte('remind_date', today)
+            .not('status', 'in', '(완료,취소)')
+          if (!admin) leadQ = leadQ.eq('assignee_id', user.id)
+
+          const [{ count: taskCount }, { count: leadCount }] = await Promise.all([taskQ, leadQ])
+          setBadgeCounts({ tasks: taskCount ?? 0, leads: leadCount ?? 0 })
         })
     })
   }, [])
@@ -220,6 +241,7 @@ export default function Sidebar() {
         <nav className="flex-1 px-2 py-3 space-y-0.5 overflow-y-auto">
           {subItems.map(item => {
             const active = isItemActive(item, subItems)
+            const badge = badgeCounts[item.pageKey] ?? 0
             return (
               <Link
                 key={item.href}
@@ -232,6 +254,9 @@ export default function Sidebar() {
                 <span className="text-sm">{item.icon}</span>
                 <span>{item.label}</span>
                 {item.demo && <span className="ml-auto text-[9px] px-1 py-0.5 rounded bg-gray-100 text-gray-400 font-medium">데모</span>}
+                {!item.demo && badge > 0 && (
+                  <span className="ml-auto text-[10px] px-1.5 py-0.5 rounded-full bg-red-500 text-white font-bold min-w-[18px] text-center">{badge}</span>
+                )}
               </Link>
             )
           })}
@@ -291,6 +316,7 @@ export default function Sidebar() {
                     <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider px-2 mb-1">{cat}</p>
                     {items.map(item => {
                       const active = isItemActive(item, items)
+                      const badge = badgeCounts[item.pageKey] ?? 0
                       return (
                         <Link
                           key={item.href}
@@ -303,6 +329,9 @@ export default function Sidebar() {
                           <span>{item.icon}</span>
                           <span>{item.label}</span>
                           {item.demo && <span className="ml-auto text-[9px] px-1 py-0.5 rounded bg-gray-100 text-gray-400 font-medium">데모</span>}
+                          {!item.demo && badge > 0 && (
+                            <span className="ml-auto text-[10px] px-1.5 py-0.5 rounded-full bg-red-500 text-white font-bold min-w-[18px] text-center">{badge}</span>
+                          )}
                         </Link>
                       )
                     })}
