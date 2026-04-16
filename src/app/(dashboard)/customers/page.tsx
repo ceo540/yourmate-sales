@@ -86,6 +86,20 @@ export default async function CustomersPage() {
     }
   }
 
+  // 담당자 리드에 연결된 매출건 조회
+  const personLeadIds = (personLeadsRaw ?? []).map((l: any) => l.id)
+  const { data: personSalesRaw } = personLeadIds.length > 0
+    ? await supabase.from('sales').select('id, lead_id, name, revenue, payment_status, service_type').in('lead_id', personLeadIds)
+    : { data: [] }
+
+  const personSalesByLead: Record<string, any[]> = {}
+  for (const s of (personSalesRaw ?? [])) {
+    if (s.lead_id) {
+      if (!personSalesByLead[s.lead_id]) personSalesByLead[s.lead_id] = []
+      personSalesByLead[s.lead_id].push(s)
+    }
+  }
+
   // 담당자 데이터 가공
   const persons = (personsRaw ?? []).map((p: any) => {
     const job_history = (p.person_org_relations ?? [])
@@ -100,13 +114,18 @@ export default async function CustomersPage() {
         ended_at:     r.ended_at,
         is_current:   r.is_current,
       }))
+    const personLeads = leadsByPerson[p.id] ?? []
+    const personSales = personLeads.flatMap((l: any) => personSalesByLead[l.id] ?? [])
+    const totalSales = personSales.reduce((sum: number, s: any) => sum + (s.revenue || 0), 0)
     return {
       id: p.id, name: p.name, phone: p.phone || '',
       email: p.email || '', notes: p.notes || '',
       channeltalk_user_id: p.channeltalk_user_id || null,
       created_at: p.created_at,
       job_history,
-      leads: leadsByPerson[p.id] ?? [],
+      leads: personLeads,
+      sales: personSales.map((s: any) => ({ id: s.id, name: s.name, revenue: s.revenue || 0, payment_status: s.payment_status, service_type: s.service_type })),
+      total_sales: totalSales,
     }
   })
 

@@ -28,21 +28,13 @@ export async function POST(req: NextRequest) {
 
     if (!client_org) return NextResponse.json({ error: '기관명은 필수야.' }, { status: 400 })
 
-    // 중복 체크
+    // 기존 리드 참고용 조회 (차단 없음 — 같은 기관도 별도 건 허용)
     const { data: existing } = await supabase
       .from('leads')
-      .select('id, lead_id, status, client_org')
-      .ilike('client_org', `%${client_org}%`)
+      .select('lead_id, status, service_type')
+      .ilike('client_org', client_org)
       .neq('status', '취소')
-      .limit(1)
-
-    if (existing && existing.length > 0) {
-      return NextResponse.json({
-        duplicate: true,
-        existing_lead: existing[0],
-        message: `이미 "${existing[0].client_org}" 리드가 있어 (${existing[0].lead_id}, 상태: ${existing[0].status}).`,
-      })
-    }
+      .limit(5)
 
     const lead_id = await generateLeadId(supabase)
     const today = new Date().toISOString().slice(0, 10)
@@ -68,7 +60,10 @@ export async function POST(req: NextRequest) {
     // 고객 DB 자동 upsert (콜드메일 리스트용)
     await syncLeadToCustomerDB({ client_org, contact_name, phone, email })
 
-    return NextResponse.json({ id: data.id, lead_id: data.lead_id })
+    const note = existing && existing.length > 0
+      ? ` (참고: 동일 기관 기존 리드 ${existing.length}건 — ${existing.map((e: { lead_id: string; service_type: string | null; status: string }) => `${e.lead_id} ${e.service_type || ''} ${e.status}`).join(', ')})`
+      : ''
+    return NextResponse.json({ id: data.id, lead_id: data.lead_id, note })
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e)
     return NextResponse.json({ error: msg }, { status: 500 })

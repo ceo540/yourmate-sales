@@ -26,10 +26,12 @@ interface JobHistory {
   dept: string; title: string; started_at: string; ended_at: string | null; is_current: boolean
 }
 interface PersonLead { id: string; lead_id: string; client_org: string | null; service_type: string | null; status: string; inflow_date: string | null; converted_sale_id: string | null }
+interface PersonSale { id: string; name: string; revenue: number; payment_status: string; service_type: string | null }
 interface Person {
   id: string; name: string; phone: string; email: string; notes: string
   channeltalk_user_id?: string | null
   job_history: JobHistory[]; leads: PersonLead[]
+  sales: PersonSale[]; total_sales: number
 }
 interface Props { customers: Customer[]; persons: Person[]; isAdmin: boolean }
 
@@ -848,6 +850,29 @@ export default function CustomersClient({ customers, persons, isAdmin }: Props) 
                       </div>
                     )}
                   </div>
+
+                  {/* 매출 이력 */}
+                  {p.sales.length > 0 && (
+                    <div>
+                      <p className="text-xs text-gray-400 mb-2">매출 이력 ({p.sales.length}건)</p>
+                      {p.sales.map(s => (
+                        <div key={s.id} className="flex items-center justify-between border border-gray-100 rounded-lg px-3 py-2 mb-1.5">
+                          <div>
+                            <p className="text-sm font-medium text-gray-800">{s.name}</p>
+                            <p className="text-xs text-gray-400">
+                              {s.service_type && <span>{s.service_type} · </span>}
+                              <span className={s.payment_status === '완납' ? 'text-gray-400' : 'text-green-600'}>{s.payment_status}</span>
+                            </p>
+                          </div>
+                          <p className="text-sm font-bold text-gray-700 shrink-0">{fmt(s.revenue)}</p>
+                        </div>
+                      ))}
+                      <div className="flex justify-between px-3 py-2 bg-green-50 rounded-lg">
+                        <span className="text-xs font-semibold text-green-700">총 매출</span>
+                        <span className="text-sm font-bold text-green-700">{p.total_sales.toLocaleString()}원</span>
+                      </div>
+                    </div>
+                  )}
 
                   {/* 활동 로그 */}
                   <div>

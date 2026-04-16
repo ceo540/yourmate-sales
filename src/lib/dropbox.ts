@@ -40,23 +40,32 @@ export async function getDropboxToken(): Promise<string | null> {
   return data.access_token ?? null
 }
 
-// 성공/이미존재: null 반환 / 실패: 에러 문자열 반환
-async function createFolder(path: string, token: string): Promise<string | null> {
-  const res = await fetch('https://api.dropboxapi.com/2/files/create_folder_v2', {
-    method: 'POST',
-    headers: {
-      'Authorization': `Bearer ${token}`,
-      'Content-Type': 'application/json',
-      'Dropbox-API-Path-Root': JSON.stringify({ '.tag': 'root', 'root': ROOT_NAMESPACE }),
-    },
-    body: JSON.stringify({ path, autorename: false }),
-  })
-  if (res.ok) return null
-  const err = await res.json().catch(() => ({}))
-  // 이미 존재하는 폴더는 성공으로 간주
-  const tag = err?.error_summary ?? err?.error?.['.tag'] ?? ''
-  if (tag.includes('conflict')) return null
-  return JSON.stringify(err)
+// 성공/이미존재: null 반환 / 실패: 에러 문자열 반환 (too_many_write_operations 시 최대 3회 재시도)
+async function createFolder(path: string, token: string, retries = 3): Promise<string | null> {
+  for (let attempt = 0; attempt <= retries; attempt++) {
+    const res = await fetch('https://api.dropboxapi.com/2/files/create_folder_v2', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'Content-Type': 'application/json',
+        'Dropbox-API-Path-Root': JSON.stringify({ '.tag': 'root', 'root': ROOT_NAMESPACE }),
+      },
+      body: JSON.stringify({ path, autorename: false }),
+    })
+    if (res.ok) return null
+    const err = await res.json().catch(() => ({}))
+    const tag: string = err?.error_summary ?? err?.error?.['.tag'] ?? ''
+    // 이미 존재하는 폴더는 성공으로 간주
+    if (tag.includes('conflict')) return null
+    // 쓰기 속도 제한(rate limit): 지수 백오프 후 재시도
+    if (tag.includes('too_many_write_operations') && attempt < retries) {
+      const delay = Math.pow(2, attempt) * 1000 // 1s → 2s → 4s
+      await new Promise(r => setTimeout(r, delay))
+      continue
+    }
+    return JSON.stringify(err)
+  }
+  return 'too_many_write_operations: 재시도 횟수 초과'
 }
 
 // 드롭박스에서 파일/폴더 검색 (★ DB 네임스페이스 기준)

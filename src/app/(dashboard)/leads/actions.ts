@@ -25,9 +25,10 @@ async function generateLeadId(): Promise<string> {
 
 export async function createLead(formData: FormData) {
   const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
   const lead_id = await generateLeadId()
 
-  await supabase.from('leads').insert({
+  const { data: insertedLead } = await supabase.from('leads').insert({
     lead_id,
     person_id: (formData.get('person_id') as string) || null,
     inflow_date: (formData.get('inflow_date') as string) || new Date().toISOString().slice(0, 10),
@@ -48,7 +49,21 @@ export async function createLead(formData: FormData) {
     contact_1: (formData.get('contact_1') as string) || null,
     contact_2: (formData.get('contact_2') as string) || null,
     contact_3: (formData.get('contact_3') as string) || null,
-  })
+  }).select('id').single()
+
+  // 최초 유입 내용 → 소통내역 자동 등록
+  const initial_content = formData.get('initial_content') as string | null
+  if (insertedLead?.id && initial_content?.trim() && user) {
+    const admin = createAdminClient()
+    await admin.from('project_logs').insert({
+      lead_id: insertedLead.id,
+      sale_id: null,
+      content: initial_content.trim(),
+      log_type: '최초유입',
+      author_id: user.id,
+      contacted_at: new Date().toISOString(),
+    })
+  }
 
   // 고객 DB 자동 upsert (콜드메일 리스트용)
   const client_org = formData.get('client_org') as string | null
@@ -266,6 +281,52 @@ export async function createPerson(data: {
   if (error) return { error: error.message }
   revalidatePath('/leads')
   return { id: person.id, name: person.name, phone: person.phone || '', email: person.email || '' }
+}
+
+export async function updateLeadPersonAndCustomer(
+  leadId: string,
+  personId: string,
+  personData: { name: string; phone: string | null; email: string | null },
+  customerId: string | null,
+  customerData: { name: string; region?: string | null; type?: string | null },
+  relationData?: { id: string | null; title?: string | null; dept?: string | null }
+): Promise<{ error?: string }> {
+  const admin = createAdminClient()
+
+  // 1. persons 테이블 업데이트
+  const { error: personErr } = await admin.from('persons').update(personData).eq('id', personId)
+  if (personErr) return { error: personErr.message }
+
+  // 2. customers 테이블 업데이트 (customerId 있을 때만)
+  if (customerId && customerData.name) {
+    const { error: custErr } = await admin.from('customers').update({
+      name: customerData.name,
+      region: customerData.region ?? null,
+      type: customerData.type ?? null,
+    }).eq('id', customerId)
+    if (custErr) return { error: custErr.message }
+  }
+
+  // 3. person_org_relations 직급/부서 업데이트 (relationId 있을 때만)
+  if (relationData?.id) {
+    await admin.from('person_org_relations').update({
+      title: relationData.title ?? null,
+      dept: relationData.dept ?? null,
+    }).eq('id', relationData.id)
+  }
+
+  // 4. leads 테이블 동기화 (contact_name, phone, email, client_org)
+  await admin.from('leads').update({
+    contact_name: personData.name,
+    phone: personData.phone,
+    email: personData.email,
+    ...(customerId && customerData.name ? { client_org: customerData.name } : {}),
+    updated_at: new Date().toISOString(),
+  }).eq('id', leadId)
+
+  revalidatePath('/leads')
+  revalidatePath('/customers')
+  return {}
 }
 
 export async function updateLeadDropboxUrl(leadId: string, url: string): Promise<void> {

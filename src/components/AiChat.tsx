@@ -238,21 +238,12 @@ export default function AiChat() {
         body: JSON.stringify(leadData),
       })
       const data = await res.json()
-
-      if (data.duplicate) {
-        setMessages(prev => prev.map((m, i) => i === msgIdx ? { ...m, leadData: null } : m))
-        setMessages(prev => [...prev, {
-          role: 'assistant',
-          content: `⚠️ ${data.message}\n기존 건 업데이트할게?`,
-        }])
-        return
-      }
       if (data.error) throw new Error(data.error)
 
       setMessages(prev => prev.map((m, i) => i === msgIdx ? { ...m, leadData: null } : m))
       setMessages(prev => [...prev, {
         role: 'assistant',
-        content: `✅ 리드 등록 완료!\n• "${leadData.client_org}" (${data.lead_id})\n• /leads 페이지에서 확인해봐`,
+        content: `✅ 리드 등록 완료!\n• "${leadData.client_org}" (${data.lead_id})${data.note || ''}\n• /leads 페이지에서 확인해봐`,
       }])
       router.refresh()
     } catch (e) {
@@ -509,6 +500,7 @@ export default function AiChat() {
                 >×</button>
               </div>
             )}
+            <p className="text-[10px] text-gray-400 text-right -mb-1">Shift+Enter 줄바꿈</p>
             <div className="flex gap-2 items-end">
               {/* 숨겨진 파일 입력 — 모바일에서 카메라/갤러리 선택 가능 */}
               <input

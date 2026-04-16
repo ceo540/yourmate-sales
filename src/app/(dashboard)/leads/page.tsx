@@ -21,7 +21,7 @@ export default async function LeadsPage({ searchParams }: { searchParams: any })
   const [{ data: leadsRaw }, { data: profilesRaw }, { data: personsRaw }] = await Promise.all([
     role === 'member' ? leadsQuery.eq('assignee_id', user.id) : leadsQuery,
     admin.from('profiles').select('id, name').order('name'),
-    admin.from('persons').select('id, name, phone, email, person_org_relations(dept, title, is_current, customers(id, name))').order('name'),
+    admin.from('persons').select('id, name, phone, email, person_org_relations(id, dept, title, is_current, customers(id, name, region, type))').order('name'),
   ])
 
   const profileMap = Object.fromEntries((profilesRaw ?? []).map(p => [p.id, p]))
@@ -33,13 +33,18 @@ export default async function LeadsPage({ searchParams }: { searchParams: any })
       id: p.id, name: p.name, phone: p.phone || '', email: p.email || '',
       currentOrg: cur?.customers?.name || '',
       title: cur?.title || '',
+      dept: cur?.dept || '',
+      relationId: cur?.id || null,
+      customerId: cur?.customers?.id || null,
+      customerRegion: cur?.customers?.region || '',
+      customerType: cur?.customers?.type || '',
     }]
   }))
 
   // persons 선택용 목록 (폼에서 사용)
   const personOptions = (personsRaw ?? []).map((p: any) => {
     const cur = (p.person_org_relations ?? []).find((r: any) => r.is_current)
-    return { id: p.id, name: p.name, phone: p.phone || '', email: p.email || '', currentOrg: cur?.customers?.name || '', title: cur?.title || '' }
+    return { id: p.id, name: p.name, phone: p.phone || '', email: p.email || '', currentOrg: cur?.customers?.name || '', title: cur?.title || '', dept: cur?.dept || '', relationId: cur?.id || null, customerId: cur?.customers?.id || null, customerRegion: cur?.customers?.region || '', customerType: cur?.customers?.type || '' }
   })
 
   // 연관 매출건 조회 (lead_id 기반)

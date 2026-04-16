@@ -170,7 +170,7 @@ const TOOLS: OpenAI.ChatCompletionTool[] = [
     type: 'function',
     function: {
       name: 'create_lead',
-      description: '새 리드를 등록합니다.',
+      description: '새 리드를 등록합니다. 같은 기관/담당자도 서비스가 다르거나 별개 문의면 별도 건으로 등록 가능합니다.',
       parameters: {
         type: 'object',
         properties: {
@@ -191,17 +191,17 @@ const TOOLS: OpenAI.ChatCompletionTool[] = [
     type: 'function',
     function: {
       name: 'update_lead',
-      description: '리드의 상태, 소통 내용 등을 업데이트합니다.',
+      description: '리드의 상태, 소통 내용 등을 업데이트합니다. 같은 기관에 여러 건이 있을 수 있으므로, 복수 결과 반환 시 lead_id로 특정해서 재호출합니다.',
       parameters: {
         type: 'object',
         properties: {
-          search: { type: 'string', description: '기관명 또는 담당자명 검색어 (필수)' },
+          search: { type: 'string', description: '기관명 또는 담당자명 검색어 (lead_id 없을 때 필수)' },
+          lead_id: { type: 'string', description: '특정 리드 ID (예: LEAD20260413-0001). 같은 기관에 여러 건이 있을 때 명시.' },
           status: { type: 'string', description: '유입 | 회신대기 | 견적발송 | 조율중 | 진행중 | 완료 | 취소' },
           remind_date: { type: 'string', description: '리마인드 날짜 YYYY-MM-DD' },
           contact_log: { type: 'string', description: '새 소통 내용' },
           notes: { type: 'string', description: '메모' },
         },
-        required: ['search'],
       },
     },
   },
@@ -209,13 +209,13 @@ const TOOLS: OpenAI.ChatCompletionTool[] = [
     type: 'function',
     function: {
       name: 'convert_lead_to_sale',
-      description: '리드를 매출건으로 전환합니다.',
+      description: '리드를 매출건으로 전환합니다. 같은 기관에 여러 건이 있을 수 있으므로, 복수 결과 반환 시 lead_id로 특정해서 재호출합니다.',
       parameters: {
         type: 'object',
         properties: {
-          search: { type: 'string', description: '기관명 검색어 (필수)' },
+          search: { type: 'string', description: '기관명 검색어 (lead_id 없을 때 필수)' },
+          lead_id: { type: 'string', description: '특정 리드 ID (예: LEAD20260413-0001). 같은 기관에 여러 건이 있을 때 명시.' },
         },
-        required: ['search'],
       },
     },
   },
@@ -465,10 +465,8 @@ async function executeTool(name: string, input: Record<string, unknown>): Promis
   if (name === 'create_lead') {
     const clientOrg = ((input.client_org as string) || '').trim()
     if (!clientOrg) return { error: '기관명은 필수야.' }
-    const { data: existing } = await supabase.from('leads').select('id, lead_id, status, client_org').ilike('client_org', `%${clientOrg}%`).neq('status', '취소').limit(1)
-    if (existing && existing.length > 0) {
-      return { duplicate: true, existing_lead: existing[0], message: `이미 "${existing[0].client_org}" 리드 있어 (${existing[0].lead_id}, 상태: ${existing[0].status}). 업데이트할까?` }
-    }
+    // 기존 리드 참고용 조회 (차단 없음 — 같은 기관도 별도 건 허용)
+    const { data: existing } = await supabase.from('leads').select('lead_id, status, service_type').ilike('client_org', clientOrg).neq('status', '취소').limit(5)
     const today = new Date().toISOString().slice(0, 10).replace(/-/g, '')
     const prefix = `LEAD${today}-`
     const { data: lastId } = await supabase.from('leads').select('lead_id').ilike('lead_id', `${prefix}%`).order('lead_id', { ascending: false }).limit(1)
@@ -491,18 +489,42 @@ async function executeTool(name: string, input: Record<string, unknown>): Promis
       assignee_id, status: '유입',
     }).select('id, lead_id').single()
     if (error) return { error: error.message }
-    return { success: true, lead_id: lead.lead_id, message: `리드 등록 완료! (${lead.lead_id})` }
+    const note = existing && existing.length > 0
+      ? ` (참고: 동일 기관 기존 리드 ${existing.length}건 — ${existing.map(e => `${e.lead_id} ${e.service_type || ''} ${e.status}`).join(', ')})`
+      : ''
+    return { success: true, lead_id: lead.lead_id, message: `리드 등록 완료! (${lead.lead_id})${note}` }
   }
 
   if (name === 'update_lead') {
-    const { data: found, error: findErr } = await supabase
-      .from('leads')
-      .select('id, lead_id, client_org, status, contact_1, contact_2, contact_3')
-      .or(`client_org.ilike.%${input.search}%,contact_name.ilike.%${input.search}%`)
-      .limit(1)
-    if (findErr) return { error: findErr.message }
-    if (!found || found.length === 0) return { error: '해당 리드를 찾을 수 없어.' }
-    const lead = found[0]
+    // lead_id 직접 지정 시 우선 사용, 없으면 search로 조회
+    let lead: { id: string; lead_id: string; client_org: string; status: string; contact_1: string | null; contact_2: string | null; contact_3: string | null } | null = null
+    if (input.lead_id) {
+      const { data, error: e } = await supabase
+        .from('leads')
+        .select('id, lead_id, client_org, status, contact_1, contact_2, contact_3')
+        .eq('lead_id', input.lead_id as string)
+        .single()
+      if (e || !data) return { error: `리드 ID ${input.lead_id}를 찾을 수 없어.` }
+      lead = data
+    } else if (input.search) {
+      const { data: found, error: findErr } = await supabase
+        .from('leads')
+        .select('id, lead_id, client_org, status, contact_1, contact_2, contact_3')
+        .or(`client_org.ilike.%${input.search}%,contact_name.ilike.%${input.search}%`)
+        .limit(5)
+      if (findErr) return { error: findErr.message }
+      if (!found || found.length === 0) return { error: '해당 리드를 찾을 수 없어.' }
+      if (found.length > 1) {
+        return {
+          multiple: true,
+          message: `"${input.search}" 검색 결과 ${found.length}건. lead_id로 특정해줘.`,
+          leads: found.map(l => ({ lead_id: l.lead_id, client_org: l.client_org, status: l.status })),
+        }
+      }
+      lead = found[0]
+    } else {
+      return { error: 'search 또는 lead_id 중 하나는 필요해.' }
+    }
     const updates: Record<string, unknown> = { updated_at: new Date().toISOString() }
     if (input.status) updates.status = input.status
     if (input.remind_date) updates.remind_date = input.remind_date
@@ -518,31 +540,49 @@ async function executeTool(name: string, input: Record<string, unknown>): Promis
   }
 
   if (name === 'convert_lead_to_sale') {
-    const { data: found, error: findErr } = await supabase
-      .from('leads')
-      .select('*')
-      .or(`client_org.ilike.%${input.search}%,contact_name.ilike.%${input.search}%`)
-      .is('converted_sale_id', null)
-      .limit(1)
-    if (findErr) return { error: findErr.message }
-    if (!found || found.length === 0) return { error: '전환 가능한 리드를 찾을 수 없어.' }
-    const lead = found[0]
+    let lead: Record<string, unknown> | null = null
+    if (input.lead_id) {
+      const { data, error: e } = await supabase.from('leads').select('*').eq('lead_id', input.lead_id as string).single()
+      if (e || !data) return { error: `리드 ID ${input.lead_id}를 찾을 수 없어.` }
+      if (data.converted_sale_id) return { error: '이미 전환된 리드야.' }
+      lead = data
+    } else if (input.search) {
+      const { data: found, error: findErr } = await supabase
+        .from('leads')
+        .select('*')
+        .or(`client_org.ilike.%${input.search}%,contact_name.ilike.%${input.search}%`)
+        .is('converted_sale_id', null)
+        .limit(5)
+      if (findErr) return { error: findErr.message }
+      if (!found || found.length === 0) return { error: '전환 가능한 리드를 찾을 수 없어.' }
+      if (found.length > 1) {
+        return {
+          multiple: true,
+          message: `"${input.search}" 검색 결과 ${found.length}건. 어떤 건을 전환할지 lead_id로 특정해줘.`,
+          leads: found.map(l => ({ lead_id: l.lead_id, client_org: l.client_org, service_type: l.service_type, status: l.status })),
+        }
+      }
+      lead = found[0]
+    } else {
+      return { error: 'search 또는 lead_id 중 하나는 필요해.' }
+    }
+    const finalLead = lead!
     const DEPT_MAP: Record<string, string> = {
       'SOS': 'sound_of_school', '002ENT': '002_entertainment', '교육프로그램': 'artkiwoom',
       '납품설치': 'school_store', '유지보수': 'school_store', '교구대여': 'school_store', '제작인쇄': 'school_store',
       '콘텐츠제작': '002_creative', '행사운영': '002_creative', '행사대여': '002_creative', '프로젝트': '002_creative',
     }
-    const serviceType = lead.service_type as string | null
+    const serviceType = finalLead.service_type as string | null
     const { data: sale, error: saleErr } = await supabase.from('sales').insert({
-      name: `${lead.client_org || '(리드전환)'}`,
-      client_org: lead.client_org, service_type: serviceType,
+      name: `${finalLead.client_org || '(리드전환)'}`,
+      client_org: finalLead.client_org, service_type: serviceType,
       department: (serviceType && DEPT_MAP[serviceType]) || null,
-      assignee_id: lead.assignee_id, revenue: 0, payment_status: '계약전',
-      memo: lead.initial_content, inflow_date: lead.inflow_date || new Date().toISOString().slice(0, 10),
+      assignee_id: finalLead.assignee_id, revenue: 0, payment_status: '계약전',
+      memo: finalLead.initial_content, inflow_date: finalLead.inflow_date || new Date().toISOString().slice(0, 10),
     }).select('id').single()
     if (saleErr) return { error: saleErr.message }
-    await supabase.from('leads').update({ converted_sale_id: sale.id, status: '완료', updated_at: new Date().toISOString() }).eq('id', lead.id)
-    return { success: true, lead_id: lead.lead_id, client_org: lead.client_org, sale_id: sale.id }
+    await supabase.from('leads').update({ converted_sale_id: sale.id, status: '완료', updated_at: new Date().toISOString() }).eq('id', finalLead.id)
+    return { success: true, lead_id: finalLead.lead_id, client_org: finalLead.client_org, sale_id: sale.id }
   }
 
   if (name === 'search_customers') {
