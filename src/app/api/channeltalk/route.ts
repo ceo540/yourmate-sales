@@ -40,7 +40,7 @@ const TOOLS: OpenAI.ChatCompletionTool[] = [
         type: 'object',
         properties: {
           search: { type: 'string', description: '건명 또는 발주처 검색어' },
-          payment_status: { type: 'string', description: '계약전 | 계약완료 | 선금수령 | 중도금수령 | 완납' },
+          contract_stage: { type: 'string', description: '계약 | 착수 | 선금 | 중도금 | 완수 | 계산서발행 | 잔금' },
           service_type: { type: 'string', description: '서비스 타입 필터' },
           year_month: { type: 'string', description: '월별 조회 (예: 2026-04)' },
           limit: { type: 'number', description: '최대 조회 건수 (기본 20)' },
@@ -106,14 +106,14 @@ const TOOLS: OpenAI.ChatCompletionTool[] = [
     type: 'function',
     function: {
       name: 'update_sale_status',
-      description: '계약의 결제 상태를 변경합니다.',
+      description: '계약의 계약 단계를 변경합니다.',
       parameters: {
         type: 'object',
         properties: {
           search: { type: 'string', description: '건명 또는 발주처 검색어' },
-          payment_status: { type: 'string', description: '새 상태: 계약전 | 계약완료 | 선금수령 | 중도금수령 | 완납' },
+          contract_stage: { type: 'string', description: '새 단계: 계약 | 착수 | 선금 | 중도금 | 완수 | 계산서발행 | 잔금' },
         },
-        required: ['search', 'payment_status'],
+        required: ['search', 'contract_stage'],
       },
     },
   },
@@ -296,11 +296,11 @@ async function executeTool(name: string, input: Record<string, unknown>): Promis
   if (name === 'get_sales') {
     let query = supabase
       .from('sales')
-      .select('id, name, client_org, service_type, department, revenue, payment_status, inflow_date, memo')
+      .select('id, name, client_org, service_type, department, revenue, contract_stage, inflow_date, memo')
       .order('inflow_date', { ascending: false })
       .limit((input.limit as number) || 20)
     if (input.search) query = query.or(`name.ilike.%${input.search}%,client_org.ilike.%${input.search}%`)
-    if (input.payment_status) query = query.eq('payment_status', input.payment_status as string)
+    if (input.contract_stage) query = query.eq('contract_stage', input.contract_stage as string)
     if (input.service_type) query = query.eq('service_type', input.service_type as string)
     if (input.year_month) query = query.gte('inflow_date', `${input.year_month}-01`).lte('inflow_date', `${input.year_month}-31`)
     const { data, error } = await query
@@ -312,7 +312,7 @@ async function executeTool(name: string, input: Record<string, unknown>): Promis
     const year = (input.year as number) || new Date().getFullYear()
     const { data, error } = await supabase
       .from('sales')
-      .select('inflow_date, revenue, payment_status')
+      .select('inflow_date, revenue, contract_stage')
       .gte('inflow_date', `${year}-01-01`)
       .lte('inflow_date', `${year}-12-31`)
     if (error) return { error: error.message }
@@ -334,8 +334,8 @@ async function executeTool(name: string, input: Record<string, unknown>): Promis
   if (name === 'get_receivables') {
     const { data, error } = await supabase
       .from('sales')
-      .select('id, name, client_org, service_type, revenue, payment_status, inflow_date')
-      .in('payment_status', ['계약완료', '선금수령', '중도금수령'])
+      .select('id, name, client_org, service_type, revenue, contract_stage, inflow_date')
+      .in('contract_stage', ['착수', '선금', '중도금', '완수', '계산서발행'])
       .order('inflow_date', { ascending: false })
     if (error) return { error: error.message }
     return { count: data?.length, total_receivable: data?.reduce((sum, s) => sum + (s.revenue || 0), 0), sales: data }
@@ -368,7 +368,7 @@ async function executeTool(name: string, input: Record<string, unknown>): Promis
       service_type: serviceType,
       department,
       revenue: (input.revenue as number) || 0,
-      payment_status: '계약전',
+      contract_stage: '계약',
       memo: (input.memo as string | null) || null,
       inflow_date: (input.inflow_date as string) || new Date().toISOString().split('T')[0],
     }).select('id').single()
@@ -377,21 +377,21 @@ async function executeTool(name: string, input: Record<string, unknown>): Promis
   }
 
   if (name === 'update_sale_status') {
-    const validStatuses = ['계약전', '계약완료', '선금수령', '중도금수령', '완납']
-    if (!validStatuses.includes(input.payment_status as string)) {
-      return { error: `유효하지 않은 상태. 가능: ${validStatuses.join(', ')}` }
+    const validStatuses = ['계약', '착수', '선금', '중도금', '완수', '계산서발행', '잔금']
+    if (!validStatuses.includes(input.contract_stage as string)) {
+      return { error: `유효하지 않은 단계. 가능: ${validStatuses.join(', ')}` }
     }
     const { data: found, error: findErr } = await supabase
       .from('sales')
-      .select('id, name, payment_status')
+      .select('id, name, contract_stage')
       .or(`name.ilike.%${input.search}%,client_org.ilike.%${input.search}%`)
       .limit(1)
     if (findErr) return { error: findErr.message }
     if (!found || found.length === 0) return { error: '해당 건을 찾을 수 없어.' }
     const sale = found[0]
-    const { error: updateErr } = await supabase.from('sales').update({ payment_status: input.payment_status }).eq('id', sale.id)
+    const { error: updateErr } = await supabase.from('sales').update({ contract_stage: input.contract_stage }).eq('id', sale.id)
     if (updateErr) return { error: updateErr.message }
-    return { success: true, name: sale.name, prev_status: sale.payment_status, new_status: input.payment_status }
+    return { success: true, name: sale.name, prev_status: sale.contract_stage, new_status: input.contract_stage }
   }
 
   if (name === 'get_tasks') {
@@ -577,7 +577,7 @@ async function executeTool(name: string, input: Record<string, unknown>): Promis
       name: `${finalLead.client_org || '(리드전환)'}`,
       client_org: finalLead.client_org, service_type: serviceType,
       department: (serviceType && DEPT_MAP[serviceType]) || null,
-      assignee_id: finalLead.assignee_id, revenue: 0, payment_status: '계약전',
+      assignee_id: finalLead.assignee_id, revenue: 0, contract_stage: '계약',
       memo: finalLead.initial_content, inflow_date: finalLead.inflow_date || new Date().toISOString().slice(0, 10),
     }).select('id').single()
     if (saleErr) return { error: saleErr.message }

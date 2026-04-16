@@ -193,7 +193,21 @@ export interface Policy {
   updated_at: string
 }
 
-// 운영 진행 트랙 (수금 트랙 payment_status와 독립)
+// 계약 단계 (contract_stage)
+export const CONTRACT_STAGES = ['계약', '착수', '선금', '중도금', '완수', '계산서발행', '잔금'] as const
+export type ContractStage = typeof CONTRACT_STAGES[number]
+
+export const CONTRACT_STAGE_COLORS: Record<string, string> = {
+  '계약': 'bg-blue-50 text-blue-600',
+  '착수': 'bg-purple-50 text-purple-600',
+  '선금': 'bg-yellow-50 text-yellow-700',
+  '중도금': 'bg-orange-50 text-orange-600',
+  '완수': 'bg-teal-50 text-teal-600',
+  '계산서발행': 'bg-indigo-50 text-indigo-600',
+  '잔금': 'bg-green-50 text-green-600',
+}
+
+// 운영 진행 트랙 (계약 단계 contract_stage와 독립)
 export const PROGRESS_STATUSES = ['착수전', '착수중', '완수'] as const
 export type ProgressStatus = typeof PROGRESS_STATUSES[number]
 
@@ -239,7 +253,7 @@ export interface Lead {
 export interface RelatedSale {
   id: string
   name: string
-  payment_status: string
+  contract_stage: string
   progress_status: string | null
   revenue: number | null
   lead_id: string | null

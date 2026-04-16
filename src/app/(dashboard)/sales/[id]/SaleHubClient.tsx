@@ -35,7 +35,7 @@ interface Log {
 }
 interface Sale {
   id: string; name: string; memo: string | null
-  payment_status: string | null; progress_status: string | null; service_type: string | null
+  contract_stage: string | null; progress_status: string | null; service_type: string | null
   department: string | null; dropbox_url: string | null
   client_org: string | null; customer_id: string | null
   revenue: number | null; inflow_date: string | null
@@ -72,9 +72,9 @@ const LOG_TYPE_COLORS: Record<string, string> = {
   방문: 'bg-green-50 text-green-600', 메모: 'bg-yellow-50 text-yellow-700',
   내부회의: 'bg-orange-50 text-orange-600', 기타: 'bg-gray-100 text-gray-500',
 }
-const PAYMENT_STATUSES = ['계약전', '계약완료', '선금수령', '중도금수령', '완납'] as const
-const PAYMENT_STATUS_STAGE: Record<string, number> = {
-  '계약전': 0, '계약완료': 1, '선금수령': 2, '중도금수령': 3, '완납': 4,
+const CONTRACT_STAGES = ['계약', '착수', '선금', '중도금', '완수', '계산서발행', '잔금'] as const
+const CONTRACT_STAGE_MAP: Record<string, number> = {
+  '계약': 0, '착수': 1, '선금': 2, '중도금': 3, '완수': 4, '계산서발행': 5, '잔금': 6,
 }
 const PRIORITY_COLOR: Record<string, string> = {
   '긴급': 'text-red-500', '높음': 'text-orange-400', '보통': 'text-gray-300', '낮음': 'text-gray-200',
@@ -442,14 +442,14 @@ function OverviewTab({ sale, tasks, logs, notes, initialOverview, costs, showInt
   const pending = tasks.filter(t => t.status !== '완료' && t.status !== '보류')
   const completed = tasks.filter(t => t.status === '완료')
   const urgent = pending.filter(t => t.priority === '긴급' || t.priority === '높음')
-  const stageIdx = PAYMENT_STATUS_STAGE[sale.payment_status ?? '계약전'] ?? 0
+  const stageIdx = CONTRACT_STAGE_MAP[sale.contract_stage ?? '계약'] ?? 0
   const taskPct = tasks.length > 0 ? Math.round((completed.length / tasks.length) * 100) : 0
 
   async function handleGenerateOverview() {
     setGenerating(true)
     try {
       const html = await generateProjectOverview({
-        sale: { name: sale.name, client_org: sale.client_org, service_type: sale.service_type, revenue: sale.revenue, payment_status: sale.payment_status, memo: sale.memo },
+        sale: { name: sale.name, client_org: sale.client_org, service_type: sale.service_type, revenue: sale.revenue, contract_stage: sale.contract_stage, memo: sale.memo },
         tasks: tasks.map(t => ({ title: t.title, status: t.status, priority: t.priority, assignee: t.assignee?.name ?? null, due_date: t.due_date, description: t.description })),
         logs: logs.map(l => ({ content: l.content, log_type: l.log_type, created_at: l.created_at, author: l.author?.name ?? null })),
         notes,
@@ -540,7 +540,7 @@ function OverviewTab({ sale, tasks, logs, notes, initialOverview, costs, showInt
       <div className="bg-white border border-gray-100 rounded-xl p-4">
         <p className="text-xs font-semibold text-gray-600 mb-3">수금 단계</p>
         <div className="flex items-center">
-          {PAYMENT_STATUSES.map((status, i) => {
+          {CONTRACT_STAGES.map((status, i) => {
             const done = i < stageIdx; const current = i === stageIdx
             return (
               <div key={status} className="flex items-center flex-1 min-w-0">
@@ -552,7 +552,7 @@ function OverviewTab({ sale, tasks, logs, notes, initialOverview, costs, showInt
                   </div>
                   <span className={`text-[9px] mt-0.5 text-center px-0.5 ${current ? 'text-gray-900 font-semibold' : done ? 'text-green-600' : 'text-gray-400'}`}>{status}</span>
                 </div>
-                {i < PAYMENT_STATUSES.length - 1 && <div className={`h-0.5 flex-1 -mt-3.5 mx-0.5 ${done ? 'bg-green-400' : 'bg-gray-200'}`} />}
+                {i < CONTRACT_STAGES.length - 1 && <div className={`h-0.5 flex-1 -mt-3.5 mx-0.5 ${done ? 'bg-green-400' : 'bg-gray-200'}`} />}
               </div>
             )
           })}
@@ -841,7 +841,7 @@ function NotesTab({ saleId, saleName, initialNotes, tasks, logs }: {
 function ContractTab({ sale, profiles, entities, customers }: {
   sale: Sale; profiles: Profile[]; entities: BusinessEntity[]; customers: Customer[]
 }) {
-  const stageIdx = PAYMENT_STATUS_STAGE[sale.payment_status ?? '계약전'] ?? 0
+  const stageIdx = CONTRACT_STAGE_MAP[sale.contract_stage ?? '계약'] ?? 0
   const [saved, setSaved] = useState(false)
   const [isPending, startTransition] = useTransition()
   const [progressStatus, setProgressStatus] = useState<ProgressStatus>((sale.progress_status as ProgressStatus) ?? '착수전')
@@ -879,7 +879,7 @@ function ContractTab({ sale, profiles, entities, customers }: {
       <div className="bg-white border border-gray-100 rounded-xl p-4">
         <p className="text-xs font-medium text-gray-500 mb-3">수금 단계</p>
         <div className="flex items-center">
-          {PAYMENT_STATUSES.map((status, i) => {
+          {CONTRACT_STAGES.map((status, i) => {
             const done = i < stageIdx; const current = i === stageIdx
             return (
               <div key={status} className="flex items-center flex-1 min-w-0">
@@ -891,7 +891,7 @@ function ContractTab({ sale, profiles, entities, customers }: {
                   </div>
                   <span className={`text-[10px] mt-1 text-center px-0.5 ${current ? 'text-gray-900 font-semibold' : done ? 'text-green-600' : 'text-gray-400'}`}>{status}</span>
                 </div>
-                {i < PAYMENT_STATUSES.length - 1 && <div className={`h-0.5 flex-1 -mt-4 mx-0.5 ${done ? 'bg-green-400' : 'bg-gray-200'}`} />}
+                {i < CONTRACT_STAGES.length - 1 && <div className={`h-0.5 flex-1 -mt-4 mx-0.5 ${done ? 'bg-green-400' : 'bg-gray-200'}`} />}
               </div>
             )
           })}
@@ -1047,12 +1047,12 @@ function ContractTab({ sale, profiles, entities, customers }: {
           </div>
 
           <div>
-            <label className="block text-xs font-medium text-gray-600 mb-1">수금 상태</label>
+            <label className="block text-xs font-medium text-gray-600 mb-1">계약 단계</label>
             <div className="flex gap-2 flex-wrap">
-              {PAYMENT_STATUSES.map(status => (
+              {CONTRACT_STAGES.map(status => (
                 <label key={status} className="cursor-pointer">
-                  <input type="radio" name="payment_status" value={status}
-                    defaultChecked={(sale.payment_status ?? '계약전') === status} className="sr-only peer" />
+                  <input type="radio" name="contract_stage" value={status}
+                    defaultChecked={(sale.contract_stage ?? '계약') === status} className="sr-only peer" />
                   <span className="px-3 py-1.5 rounded-full text-sm border border-gray-200 text-gray-500 peer-checked:border-yellow-400 peer-checked:bg-yellow-50 peer-checked:text-yellow-800 peer-checked:font-medium transition-all cursor-pointer block">{status}</span>
                 </label>
               ))}

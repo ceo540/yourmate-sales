@@ -4,7 +4,7 @@ import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { DEPT_SERVICE_GROUPS } from '@/types'
 import SaleExpandEditor from './SaleExpandEditor'
-import { bulkDeleteSales, bulkUpdateSalesStatus } from '../actions'
+import { bulkDeleteSales, bulkUpdateSalesStage } from '../actions'
 
 interface CostItem {
   id: string
@@ -23,7 +23,7 @@ interface Sale {
   customer_id: string | null
   service_type: string | null
   revenue: number | null
-  payment_status: string | null
+  contract_stage: string | null
   memo: string | null
   inflow_date: string | null
   payment_date: string | null
@@ -69,12 +69,14 @@ function formatDate(d: string | null) {
   return new Date(d).toLocaleDateString('ko-KR', { month: 'short', day: 'numeric' })
 }
 
-const PAYMENT_STATUS_COLORS: Record<string, string> = {
-  '계약전': 'bg-gray-100 text-gray-500',
-  '계약완료': 'bg-blue-50 text-blue-600',
-  '선금수령': 'bg-yellow-50 text-yellow-700',
-  '중도금수령': 'bg-orange-50 text-orange-600',
-  '완납': 'bg-green-50 text-green-600',
+const CONTRACT_STAGE_COLORS: Record<string, string> = {
+  '계약': 'bg-blue-50 text-blue-600',
+  '착수': 'bg-purple-50 text-purple-600',
+  '선금': 'bg-yellow-50 text-yellow-700',
+  '중도금': 'bg-orange-50 text-orange-600',
+  '완수': 'bg-teal-50 text-teal-600',
+  '계산서발행': 'bg-indigo-50 text-indigo-600',
+  '잔금': 'bg-green-50 text-green-600',
 }
 
 const CONTRACT_BADGE_COLORS: Record<string, string> = {
@@ -127,9 +129,9 @@ function SortTh({ field, label, sortField, sortDir, onSort, className = '' }: {
 const CURRENT_YEAR = new Date().getFullYear()
 const YEARS = [CURRENT_YEAR, CURRENT_YEAR - 1, CURRENT_YEAR - 2]
 
-const PAYMENT_STATUS_ORDER = ['계약전', '계약완료', '선금수령', '중도금수령', '완납']
+const CONTRACT_STAGE_ORDER = ['계약', '착수', '선금', '중도금', '완수', '계산서발행', '잔금']
 
-type SortField = 'name' | 'service_type' | 'client_org' | 'entity' | 'assignee' | 'inflow_date' | 'payment_date' | 'revenue' | 'cost' | 'profit' | 'payment_status'
+type SortField = 'name' | 'service_type' | 'client_org' | 'entity' | 'assignee' | 'inflow_date' | 'payment_date' | 'revenue' | 'cost' | 'profit' | 'contract_stage'
 type SortDir = 'asc' | 'desc'
 
 // 선택적으로 숨길 수 있는 컬럼 목록
@@ -185,7 +187,7 @@ export default function SalesReportClient({ sales: initialSales, vendors, entiti
       return s.service_type === filterDept
     })
     .filter(s => filterEntity === 'all' ? true : (s.entity?.id ?? '') === filterEntity)
-    .filter(s => filterStatus === 'all' ? true : (s.payment_status ?? '계약전') === filterStatus)
+    .filter(s => filterStatus === 'all' ? true : (s.contract_stage ?? '계약') === filterStatus)
 
   const handleSort = (field: SortField) => {
     if (sortField === field) {
@@ -216,9 +218,9 @@ export default function SalesReportClient({ sales: initialSales, vendors, entiti
       case 'revenue': return dir * ((a.revenue ?? 0) - (b.revenue ?? 0))
       case 'cost': return dir * (getSaleValues(a).cost - getSaleValues(b).cost)
       case 'profit': return dir * (getSaleValues(a).profit - getSaleValues(b).profit)
-      case 'payment_status': {
-        const ai = PAYMENT_STATUS_ORDER.indexOf(a.payment_status ?? '계약전')
-        const bi = PAYMENT_STATUS_ORDER.indexOf(b.payment_status ?? '계약전')
+      case 'contract_stage': {
+        const ai = CONTRACT_STAGE_ORDER.indexOf(a.contract_stage ?? '계약')
+        const bi = CONTRACT_STAGE_ORDER.indexOf(b.contract_stage ?? '계약')
         return dir * (ai - bi)
       }
       default: return 0
@@ -259,8 +261,8 @@ export default function SalesReportClient({ sales: initialSales, vendors, entiti
   const handleBulkStatus = async (status: string) => {
     if (!status) return
     setBulkLoading(true)
-    await bulkUpdateSalesStatus([...selectedIds], status)
-    setSales(prev => prev.map(s => selectedIds.has(s.id) ? { ...s, payment_status: status } : s))
+    await bulkUpdateSalesStage([...selectedIds], status)
+    setSales(prev => prev.map(s => selectedIds.has(s.id) ? { ...s, contract_stage: status } : s))
     setBulkLoading(false)
     startTransition(() => router.refresh())
   }
@@ -330,8 +332,8 @@ export default function SalesReportClient({ sales: initialSales, vendors, entiti
           onChange={e => setFilterStatus(e.target.value)}
           className="px-3 py-2 rounded-lg border border-gray-200 text-sm bg-white focus:outline-none focus:border-yellow-400 text-gray-700"
         >
-          <option value="all">전체 수금상태</option>
-          {Object.keys(PAYMENT_STATUS_COLORS).map(s => <option key={s} value={s}>{s}</option>)}
+          <option value="all">전체 계약단계</option>
+          {Object.keys(CONTRACT_STAGE_COLORS).map(s => <option key={s} value={s}>{s}</option>)}
         </select>
         <span className="text-sm text-gray-400 ml-1">{sorted.length}건</span>
         {sortField && (
@@ -396,8 +398,8 @@ export default function SalesReportClient({ sales: initialSales, vendors, entiti
                 disabled={bulkLoading}
                 className="text-xs px-2.5 py-1.5 rounded-lg border border-gray-200 bg-white text-gray-700 focus:outline-none focus:border-yellow-400 disabled:opacity-50"
               >
-                <option value="" disabled>수금상태 일괄 변경</option>
-                {Object.keys(PAYMENT_STATUS_COLORS).map(s => <option key={s} value={s}>{s}</option>)}
+                <option value="" disabled>계약단계 일괄 변경</option>
+                {Object.keys(CONTRACT_STAGE_COLORS).map(s => <option key={s} value={s}>{s}</option>)}
               </select>
               {isAdmin && (
                 <button
@@ -434,7 +436,7 @@ export default function SalesReportClient({ sales: initialSales, vendors, entiti
                 <SortTh field="revenue" label="매출액" sortField={sortField} sortDir={sortDir} onSort={handleSort} className="text-right" />
                 <SortTh field="cost" label="원가" sortField={sortField} sortDir={sortDir} onSort={handleSort} className="text-right" />
                 <SortTh field="profit" label="이익" sortField={sortField} sortDir={sortDir} onSort={handleSort} className="text-right" />
-                <SortTh field="payment_status" label="수금상태" sortField={sortField} sortDir={sortDir} onSort={handleSort} />
+                <SortTh field="contract_stage" label="계약단계" sortField={sortField} sortDir={sortDir} onSort={handleSort} />
                 {show('메모') && <th className="text-left text-xs font-semibold text-gray-500 px-4 py-3.5 whitespace-nowrap">메모</th>}
               </tr>
             </thead>
@@ -453,7 +455,7 @@ export default function SalesReportClient({ sales: initialSales, vendors, entiti
                 const revenue = sale.revenue ?? 0
                 const cost = sale.sale_costs.reduce((s, c) => s + c.amount, 0) + (revenue > 0 ? Math.round(revenue * 0.1) : 0)
                 const profit = revenue - cost
-                const payStatus = sale.payment_status ?? '계약전'
+                const payStatus = sale.contract_stage ?? '계약'
                 const isExpanded = expandedSaleId === sale.id
                 const isHighlighted = isExpanded || selectedIds.has(sale.id)
                 const hasCosts = sale.sale_costs.length > 0
@@ -551,7 +553,7 @@ export default function SalesReportClient({ sales: initialSales, vendors, entiti
                           : <span className="text-gray-300 text-sm">-</span>}
                       </td>
                       <td className="px-4 py-3.5 whitespace-nowrap">
-                        <span className={`text-xs px-2.5 py-1 rounded-full font-medium ${PAYMENT_STATUS_COLORS[payStatus] ?? 'bg-gray-100 text-gray-500'}`}>
+                        <span className={`text-xs px-2.5 py-1 rounded-full font-medium ${CONTRACT_STAGE_COLORS[payStatus] ?? 'bg-gray-100 text-gray-500'}`}>
                           {payStatus}
                         </span>
                       </td>

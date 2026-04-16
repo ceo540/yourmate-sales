@@ -56,7 +56,7 @@ export async function generateProjectOverview(data: {
 - 발주처: ${data.sale.client_org ?? '미입력'}
 - 서비스: ${data.sale.service_type ?? '미입력'}
 - 매출: ${data.sale.revenue ? `${(data.sale.revenue / 10000).toFixed(0)}만원` : '미입력'}
-- 결제 상태: ${data.sale.payment_status ?? '계약전'}
+- 계약 단계: ${data.sale.contract_stage ?? '계약'}
 ${data.sale.memo ? `- 메모: ${data.sale.memo}` : ''}
 
 [업무 목록 (${data.tasks.length}개)]

@@ -23,7 +23,7 @@ interface Sale {
   customer_id: string | null
   service_type: string | null
   revenue: number | null
-  payment_status: string | null
+  contract_stage: string | null
   contract_type: string | null
   cost_confirmed?: boolean | null
   memo: string | null
@@ -54,7 +54,7 @@ interface Props {
   onDeleted: (id: string) => void
 }
 
-const PAYMENT_STATUSES = ['계약전', '계약완료', '선금수령', '중도금수령', '완납']
+const CONTRACT_STAGES = ['계약', '착수', '선금', '중도금', '완수', '계산서발행', '잔금']
 const CONTRACT_TYPES = ['나라장터', '세금계산서', '카드결제', '기타']
 
 export default function SaleExpandEditor({ sale, colSpan, entities, vendors, profiles, customers, isAdmin, onClose, onSaved, onDeleted }: Props) {
@@ -70,7 +70,7 @@ export default function SaleExpandEditor({ sale, colSpan, entities, vendors, pro
   const [contractType, setContractType] = useState(sale.contract_type ?? '')
   const [assigneeId, setAssigneeId] = useState(sale.assignee?.id ?? '')
   const [revenue, setRevenue] = useState(String(sale.revenue ?? ''))
-  const [paymentStatus, setPaymentStatus] = useState(sale.payment_status ?? '계약전')
+  const [contractStage, setPaymentStatus] = useState(sale.contract_stage ?? '계약')
   const [inflowDate, setInflowDate] = useState(sale.inflow_date ? sale.inflow_date.split('T')[0] : '')
   const [paymentDate, setPaymentDate] = useState(sale.payment_date ? sale.payment_date.split('T')[0] : '')
   const [dropboxUrl, setDropboxUrl] = useState(sale.dropbox_url ?? '')
@@ -99,7 +99,7 @@ export default function SaleExpandEditor({ sale, colSpan, entities, vendors, pro
         assignee_id: assigneeId || null,
         entity_id: entityId || null,
         revenue: rev,
-        payment_status: paymentStatus,
+        contract_stage: contractStage,
         contract_type: contractType || null,
         memo: memo || null,
         inflow_date: inflowDate || null,
@@ -123,7 +123,7 @@ export default function SaleExpandEditor({ sale, colSpan, entities, vendors, pro
       assignee: profiles.find(p => p.id === assigneeId) ?? null,
       entity: entities.find(e => e.id === entityId) ?? null,
       revenue: rev,
-      payment_status: paymentStatus,
+      contract_stage: contractStage,
       contract_type: contractType || null,
       cost_confirmed: costConfirmed,
       memo: memo || null,
@@ -269,12 +269,12 @@ export default function SaleExpandEditor({ sale, colSpan, entities, vendors, pro
 
             {/* 수금상태 */}
             <div className="col-span-2">
-              <label className={labelCls}>수금 상태</label>
+              <label className={labelCls}>계약 단계</label>
               <div className="flex gap-1.5 flex-wrap">
-                {PAYMENT_STATUSES.map(s => (
-                  <button key={s} type="button" onClick={() => setPaymentStatus(s)}
+                {CONTRACT_STAGES.map(s => (
+                  <button key={s} type="button" onClick={() => setContractStage(s)}
                     className={`px-3 py-1.5 rounded-full text-xs border transition-all ${
-                      paymentStatus === s
+                      contractStage === s
                         ? 'border-yellow-400 bg-yellow-50 text-yellow-800 font-medium'
                         : 'border-gray-200 text-gray-500 hover:border-gray-300 hover:bg-gray-50'
                     }`}>{s}</button>

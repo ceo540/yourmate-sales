@@ -19,7 +19,7 @@ export async function updateSaleDetail(formData: FormData) {
     client_org: (formData.get('client_org') as string) || null,
     service_type,
     revenue: formData.get('revenue') ? Number(formData.get('revenue')) : 0,
-    payment_status: (formData.get('payment_status') as string) || '계약전',
+    contract_stage: (formData.get('contract_stage') as string) || '계약',
     contract_type: (formData.get('contract_type') as string) || null,
     inflow_date: (formData.get('inflow_date') as string) || null,
     payment_date: (formData.get('payment_date') as string) || null,

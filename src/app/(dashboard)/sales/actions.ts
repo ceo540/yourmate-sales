@@ -22,7 +22,7 @@ export async function createSale(formData: FormData) {
     customer_id: (formData.get('customer_id') as string) || null,
     service_type,
     revenue: formData.get('revenue') ? Number(formData.get('revenue')) : 0,
-    payment_status: (formData.get('payment_status') as string) || '계약전',
+    contract_stage: (formData.get('contract_stage') as string) || '계약',
     contract_type: (formData.get('contract_type') as string) || null,
     memo: (formData.get('memo') as string) || null,
     inflow_date,
@@ -56,7 +56,7 @@ export async function updateSale(formData: FormData) {
     customer_id: (formData.get('customer_id') as string) || null,
     service_type,
     revenue: formData.get('revenue') ? Number(formData.get('revenue')) : 0,
-    payment_status: (formData.get('payment_status') as string) || '계약전',
+    contract_stage: (formData.get('contract_stage') as string) || '계약',
     contract_type: (formData.get('contract_type') as string) || null,
     memo: (formData.get('memo') as string) || null,
     inflow_date: (formData.get('inflow_date') as string) || null,
@@ -79,9 +79,9 @@ export async function bulkDeleteSales(ids: string[]) {
   revalidatePath('/sales')
 }
 
-export async function bulkUpdateSalesStatus(ids: string[], payment_status: string) {
+export async function bulkUpdateSalesStage(ids: string[], contract_stage: string) {
   const supabase = await createClient()
-  await supabase.from('sales').update({ payment_status, updated_at: new Date().toISOString() }).in('id', ids)
+  await supabase.from('sales').update({ contract_stage, updated_at: new Date().toISOString() }).in('id', ids)
   revalidatePath('/sales')
 }
 
@@ -134,7 +134,7 @@ export async function updateSaleInline(id: string, data: {
   customer_id: string | null
   service_type: string | null
   revenue: number
-  payment_status: string
+  contract_stage: string
   contract_type: string | null
   memo: string | null
   inflow_date: string | null

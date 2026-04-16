@@ -19,7 +19,7 @@ export async function POST(req: Request) {
 
 프로젝트명: ${sale.name}
 발주처: ${sale.client_org ?? '-'}
-수금 상태: ${sale.payment_status ?? '계약전'}
+계약 단계: ${sale.contract_stage ?? '계약'}
 매출: ${sale.revenue ? Math.round(sale.revenue / 10000) + '만원' : '-'}
 
 업무 현황 (총 ${tasks.length}건):

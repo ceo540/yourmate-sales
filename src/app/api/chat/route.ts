@@ -256,7 +256,7 @@ const TOOLS: OpenAI.Chat.ChatCompletionTool[] = [
         type: 'object' as const,
         properties: {
           search: { type: 'string', description: '건명 또는 발주처 검색어' },
-          payment_status: { type: 'string', description: '계약전 | 계약완료 | 선금수령 | 중도금수령 | 완납' },
+          contract_stage: { type: 'string', description: '계약 | 착수 | 선금 | 중도금 | 완수 | 계산서발행 | 잔금' },
           service_type: { type: 'string', description: '서비스 타입 필터' },
           year_month: { type: 'string', description: '월별 조회 (예: 2026-04)' },
           limit: { type: 'number', description: '최대 조회 건수 (기본 20)' },
@@ -281,7 +281,7 @@ const TOOLS: OpenAI.Chat.ChatCompletionTool[] = [
     type: 'function' as const,
     function: {
       name: 'get_receivables',
-      description: '미수금 현황을 조회합니다. 계약완료 이후 아직 완납되지 않은 건들.',
+      description: '미수금 현황을 조회합니다. 계약 이후 아직 잔금이 완료되지 않은 건들.',
       parameters: {
         type: 'object' as const,
         properties: {},
@@ -376,9 +376,9 @@ const TOOLS: OpenAI.Chat.ChatCompletionTool[] = [
         type: 'object' as const,
         properties: {
           search: { type: 'string', description: '건명 또는 발주처 검색어' },
-          payment_status: { type: 'string', description: '새 상태: 계약전 | 계약완료 | 선금수령 | 중도금수령 | 완납' },
+          contract_stage: { type: 'string', description: '새 단계: 계약 | 착수 | 선금 | 중도금 | 완수 | 계산서발행 | 잔금' },
         },
-        required: ['search', 'payment_status'],
+        required: ['search', 'contract_stage'],
       },
     },
   },
@@ -548,13 +548,13 @@ async function executeTool(name: string, input: Record<string, unknown>, userRol
   if (name === 'get_sales') {
     let query = supabase
       .from('sales')
-      .select('id, name, client_org, service_type, department, revenue, payment_status, inflow_date, memo')
+      .select('id, name, client_org, service_type, department, revenue, contract_stage, inflow_date, memo')
       .order('inflow_date', { ascending: false })
       .limit((input.limit as number) || 20)
 
     if (isMember) query = query.eq('assignee_id', userId)
     if (input.search) query = query.or(`name.ilike.%${input.search}%,client_org.ilike.%${input.search}%`)
-    if (input.payment_status) query = query.eq('payment_status', input.payment_status)
+    if (input.contract_stage) query = query.eq('contract_stage', input.contract_stage)
     if (input.service_type) query = query.eq('service_type', input.service_type)
     if (input.year_month) query = query.gte('inflow_date', `${input.year_month}-01`).lte('inflow_date', `${input.year_month}-31`)
 
@@ -568,7 +568,7 @@ async function executeTool(name: string, input: Record<string, unknown>, userRol
     const year = (input.year as number) || new Date().getFullYear()
     const { data, error } = await supabase
       .from('sales')
-      .select('inflow_date, revenue, payment_status')
+      .select('inflow_date, revenue, contract_stage')
       .gte('inflow_date', `${year}-01-01`)
       .lte('inflow_date', `${year}-12-31`)
 
@@ -594,8 +594,8 @@ async function executeTool(name: string, input: Record<string, unknown>, userRol
     if (isMember) return { error: '팀원은 전체 미수금 조회 권한이 없어.' }
     const { data, error } = await supabase
       .from('sales')
-      .select('id, name, client_org, service_type, revenue, payment_status, inflow_date')
-      .in('payment_status', ['계약완료', '선금수령', '중도금수령'])
+      .select('id, name, client_org, service_type, revenue, contract_stage, inflow_date')
+      .in('contract_stage', ['착수', '선금', '중도금', '완수', '계산서발행'])
       .order('inflow_date', { ascending: false })
 
     if (error) return { error: error.message }
@@ -640,7 +640,7 @@ async function executeTool(name: string, input: Record<string, unknown>, userRol
 
     const { data: saleRow, error: insertErr } = await supabase.from('sales').insert({
       name: saleName, client_org: clientOrg, service_type: serviceType, department,
-      revenue, payment_status: '계약전', memo, inflow_date: inflowDate, dropbox_url: dropboxUrl,
+      revenue, contract_stage: '계약', memo, inflow_date: inflowDate, dropbox_url: dropboxUrl,
     }).select('id').single()
     if (insertErr) return { error: insertErr.message }
 
@@ -856,15 +856,15 @@ async function executeTool(name: string, input: Record<string, unknown>, userRol
   }
 
   if (name === 'update_sale_status') {
-    const validStatuses = ['계약전', '계약완료', '선금수령', '중도금수령', '완납']
-    if (!validStatuses.includes(input.payment_status as string)) {
-      return { error: `유효하지 않은 상태야. 가능한 값: ${validStatuses.join(', ')}` }
+    const validStatuses = ['계약', '착수', '선금', '중도금', '완수', '계산서발행', '잔금']
+    if (!validStatuses.includes(input.contract_stage as string)) {
+      return { error: `유효하지 않은 단계야. 가능한 값: ${validStatuses.join(', ')}` }
     }
 
     // 먼저 해당 건 조회
     let findQuery = supabase
       .from('sales')
-      .select('id, name, payment_status')
+      .select('id, name, contract_stage')
       .or(`name.ilike.%${input.search}%,client_org.ilike.%${input.search}%`)
       .limit(1)
     if (isMember) findQuery = findQuery.eq('assignee_id', userId)
@@ -876,11 +876,11 @@ async function executeTool(name: string, input: Record<string, unknown>, userRol
     const sale = found[0]
     const { error: updateErr } = await supabase
       .from('sales')
-      .update({ payment_status: input.payment_status })
+      .update({ contract_stage: input.contract_stage })
       .eq('id', sale.id)
 
     if (updateErr) return { error: updateErr.message }
-    return { success: true, name: sale.name, prev_status: sale.payment_status, new_status: input.payment_status }
+    return { success: true, name: sale.name, prev_status: sale.contract_stage, new_status: input.contract_stage }
   }
 
   if (name === 'update_notion_status') {
@@ -1174,7 +1174,7 @@ async function executeTool(name: string, input: Record<string, unknown>, userRol
       department,
       assignee_id: finalLead.assignee_id,
       revenue: 0,
-      payment_status: '계약전',
+      contract_stage: '계약',
       memo: finalLead.initial_content,
       inflow_date: finalLead.inflow_date || new Date().toISOString().slice(0, 10),
     }).select('id').single()

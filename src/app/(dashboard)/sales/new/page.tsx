@@ -7,7 +7,7 @@ import SubmitButton from '@/components/ui/SubmitButton'
 interface BusinessEntity { id: string; name: string }
 interface Customer { id: string; name: string; type: string }
 
-const PAYMENT_STATUSES = ['계약전', '계약완료', '선금수령', '중도금수령', '완납'] as const
+const CONTRACT_STAGES = ['계약', '착수', '선금', '중도금', '완수', '계산서발행', '잔금'] as const
 
 export default async function NewSalePage() {
   const supabase = await createClient()
@@ -179,15 +179,15 @@ export default async function NewSalePage() {
             </div>
           </div>
 
-          {/* 수금상태 */}
+          {/* 계약단계 */}
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1.5">수금 상태</label>
+            <label className="block text-sm font-medium text-gray-700 mb-1.5">계약 단계</label>
             <div className="flex gap-2 flex-wrap">
-              {PAYMENT_STATUSES.map((status, i) => (
+              {CONTRACT_STAGES.map((status, i) => (
                 <label key={status} className="cursor-pointer">
                   <input
                     type="radio"
-                    name="payment_status"
+                    name="contract_stage"
                     value={status}
                     defaultChecked={i === 0}
                     className="sr-only peer"

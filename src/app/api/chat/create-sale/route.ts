@@ -186,7 +186,7 @@ export async function POST(req: NextRequest) {
       service_type: service_type || null,
       department,
       revenue: revenue || 0,
-      payment_status: '계약전',
+      contract_stage: '계약',
       memo: memo || null,
       inflow_date: inflowDate,
       dropbox_url: dropboxUrl || null,
