@@ -162,6 +162,56 @@ export async function createSaleFolder(params: {
   return `https://www.dropbox.com/home${DB_BASE}${folderPath}`
 }
 
+// 드롭박스 폴더명 변경 (현재 sale.name 기준으로 rename)
+export async function renameDropboxFolder(
+  dropboxUrl: string,
+  newName: string,
+): Promise<{ newUrl: string } | { error: string }> {
+  const token = await getDropboxToken()
+  if (!token) return { error: '드롭박스 토큰 없음' }
+
+  const WEB_BASE = 'https://www.dropbox.com/home'
+  if (!dropboxUrl.startsWith(WEB_BASE)) return { error: '지원하지 않는 Dropbox URL 형식' }
+
+  const fullPath = dropboxUrl.replace(WEB_BASE, '')
+  const lastSlash = fullPath.lastIndexOf('/')
+  if (lastSlash < 0) return { error: '잘못된 경로 형식' }
+
+  const parentPath = fullPath.substring(0, lastSlash)
+  const folderName = fullPath.substring(lastSlash + 1)
+
+  // 날짜 접두사 추출 (예: "260416 ")
+  const dateMatch = folderName.match(/^(\d{6})\s/)
+  const datePrefix = dateMatch ? dateMatch[1] + ' ' : ''
+
+  const newFolderName = `${datePrefix}${newName}`
+  const newPath = `${parentPath}/${newFolderName}`
+
+  if (newPath === fullPath) return { newUrl: dropboxUrl }
+
+  const res = await fetch('https://api.dropboxapi.com/2/files/move_v2', {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${token}`,
+      'Content-Type': 'application/json',
+      'Dropbox-API-Path-Root': JSON.stringify({ '.tag': 'root', 'root': ROOT_NAMESPACE }),
+    },
+    body: JSON.stringify({
+      from_path: fullPath,
+      to_path: newPath,
+      allow_shared_folder: true,
+      autorename: false,
+    }),
+  })
+
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}))
+    return { error: `드롭박스 이름 변경 실패: ${JSON.stringify(err).slice(0, 120)}` }
+  }
+
+  return { newUrl: `${WEB_BASE}${newPath}` }
+}
+
 // 드롭박스 파일 다운로드 후 텍스트 추출 (PDF → 텍스트, 기타 → 미지원)
 export async function readDropboxFile(relativePath: string): Promise<{ text: string; truncated: boolean } | { error: string }> {
   const token = await getDropboxToken()

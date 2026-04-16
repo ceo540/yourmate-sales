@@ -9,6 +9,7 @@ import { createTask, updateTaskStatus, deleteTask } from '../tasks/actions'
 import { saveNotes, saveProjectOverview, generateProjectOverview, chatInNotes, generateDocument } from './notes-action'
 import { updateProgressStatus } from '../actions'
 import { listSaleDropboxFiles } from './dropbox-action'
+import { syncSaleName, type SyncResult } from './sync-name-action'
 import dynamic from 'next/dynamic'
 import { DEPARTMENT_LABELS, PROGRESS_STATUSES, ProgressStatus } from '@/types'
 import TaskDetailPanel from './TaskDetailPanel'
@@ -43,6 +44,7 @@ interface Sale {
   entity_id: string | null; assignee_id: string | null
   contract_assignee_id: string | null
   notes: string | null; project_overview: string | null
+  notion_page_id: string | null
 }
 
 interface Props {
@@ -844,6 +846,8 @@ function ContractTab({ sale, profiles, entities, customers }: {
   const stageIdx = CONTRACT_STAGE_MAP[sale.contract_stage ?? '계약'] ?? 0
   const [saved, setSaved] = useState(false)
   const [isPending, startTransition] = useTransition()
+  const [syncing, setSyncing] = useState(false)
+  const [syncResult, setSyncResult] = useState<SyncResult | null>(null)
   const [progressStatus, setProgressStatus] = useState<ProgressStatus>((sale.progress_status as ProgressStatus) ?? '착수전')
 
   function handleProgressChange(status: ProgressStatus) {
@@ -915,6 +919,39 @@ function ContractTab({ sale, profiles, entities, customers }: {
           ))}
         </div>
       </div>
+
+      {/* 이름 동기화 */}
+      {(sale.dropbox_url || sale.notion_page_id) && (
+        <div className="bg-white border border-gray-100 rounded-xl p-4">
+          <div className="flex items-center justify-between gap-3">
+            <div className="min-w-0">
+              <p className="text-xs font-medium text-gray-700">이름 동기화</p>
+              <p className="text-xs text-gray-400 mt-0.5 truncate">
+                건명 변경 후 드롭박스 폴더{sale.notion_page_id ? ' · 노션 페이지' : ''}를 현재 이름으로 업데이트
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={async () => {
+                setSyncing(true)
+                setSyncResult(null)
+                const result = await syncSaleName(sale.id)
+                setSyncResult(result)
+                setSyncing(false)
+              }}
+              disabled={syncing}
+              className="flex-shrink-0 px-3 py-1.5 text-xs font-semibold rounded-lg border border-gray-200 hover:border-gray-400 transition-all disabled:opacity-50"
+            >
+              {syncing ? '동기화 중...' : '🔄 동기화'}
+            </button>
+          </div>
+          {syncResult && (
+            <p className={`text-xs mt-2 ${syncResult.success ? 'text-green-600' : 'text-red-500'}`}>
+              {syncResult.message}
+            </p>
+          )}
+        </div>
+      )}
 
       {/* 수정 폼 */}
       <div className="bg-white border border-gray-100 rounded-xl p-5">

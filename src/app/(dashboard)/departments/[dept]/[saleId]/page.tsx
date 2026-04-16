@@ -5,12 +5,14 @@ import Link from 'next/link'
 import { DEPARTMENT_LABELS } from '@/types'
 import SaleHubClient from '@/app/(dashboard)/sales/[id]/SaleHubClient'
 
-const PAYMENT_STATUS_BADGE: Record<string, string> = {
-  '계약전':    'bg-gray-100 text-gray-500',
-  '계약완료':  'bg-blue-50 text-blue-600',
-  '선금수령':  'bg-yellow-50 text-yellow-700',
-  '중도금수령': 'bg-orange-50 text-orange-600',
-  '완납':      'bg-green-50 text-green-600',
+const CONTRACT_STAGE_BADGE: Record<string, string> = {
+  '계약':       'bg-blue-50 text-blue-600',
+  '착수':       'bg-purple-50 text-purple-600',
+  '선금':       'bg-yellow-50 text-yellow-700',
+  '중도금':     'bg-orange-50 text-orange-600',
+  '완수':       'bg-teal-50 text-teal-600',
+  '계산서발행': 'bg-indigo-50 text-indigo-600',
+  '잔금':       'bg-green-50 text-green-600',
 }
 
 export default async function DeptSalePage({
@@ -65,7 +67,7 @@ export default async function DeptSalePage({
   }))
 
   const deptLabel = (DEPARTMENT_LABELS as any)[dept] ?? dept
-  const statusBadge = PAYMENT_STATUS_BADGE[sale.payment_status ?? '계약전'] ?? 'bg-gray-100 text-gray-500'
+  const statusBadge = CONTRACT_STAGE_BADGE[sale.contract_stage ?? '계약'] ?? 'bg-gray-100 text-gray-500'
 
   return (
     <div className="max-w-2xl mx-auto">
@@ -86,7 +88,7 @@ export default async function DeptSalePage({
       <div className="flex items-center gap-3 mb-5">
         <h1 className="text-xl font-bold text-gray-900 leading-tight flex-1">{sale.name}</h1>
         <span className={`text-xs px-2.5 py-1 rounded-full font-medium flex-shrink-0 ${statusBadge}`}>
-          {sale.payment_status ?? '계약전'}
+          {sale.contract_stage ?? '계약'}
         </span>
       </div>
 
@@ -112,6 +114,7 @@ export default async function DeptSalePage({
           customer_id: sale.customer_id ?? null,
           notes: sale.notes ?? null,
           project_overview: sale.project_overview ?? null,
+          notion_page_id: (sale as any).notion_page_id ?? null,
         }}
         tasks={tasks}
         logs={logs}

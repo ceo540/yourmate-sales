@@ -115,6 +115,7 @@ export default async function SalePage({ params }: {
           customer_id: sale.customer_id ?? null,
           notes: sale.notes ?? null,
           project_overview: sale.project_overview ?? null,
+          notion_page_id: (sale as any).notion_page_id ?? null,
         }}
         tasks={tasks}
         logs={logs}

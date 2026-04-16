@@ -26,6 +26,7 @@ interface Sale {
   name: string
   service_type: string | null
   contract_stage: string | null
+  progress_status: string | null
   revenue: number | null
   inflow_date: string | null
   client_org: string | null
@@ -101,6 +102,7 @@ export default function DeptClient({ dept, deptLabel, deptIcon, sales, goals, ta
   const [showGoalForm, setShowGoalForm] = useState(false)
   const [editingGoal, setEditingGoal] = useState<Goal | null>(null)
   const [filterAssignee, setFilterAssignee] = useState('')
+  const [hideCompleted, setHideCompleted] = useState(true)
   const [showNewSaleForm, setShowNewSaleForm] = useState(false)
   const [isPending, startTransition] = useTransition()
   const [addingSale, setAddingSale] = useState(false)
@@ -113,6 +115,12 @@ export default function DeptClient({ dept, deptLabel, deptIcon, sales, goals, ta
   let serviceSales = service === '미분류'
     ? sales.filter(s => !s.service_type)
     : sales.filter(s => s.service_type === service)
+
+  // 완료 건 (잔금 + 완수) 숨김 처리
+  const completedCount = serviceSales.filter(s => s.contract_stage === '잔금').length
+  if (hideCompleted) {
+    serviceSales = serviceSales.filter(s => s.contract_stage !== '잔금')
+  }
 
   if (filterAssignee) {
     serviceSales = serviceSales.filter(s => s.assignee?.name === filterAssignee)
@@ -245,12 +253,26 @@ export default function DeptClient({ dept, deptLabel, deptIcon, sales, goals, ta
               )}
 
               {/* 툴바: 요약 + 담당자 필터 + 새 건 버튼 */}
-              <div className="flex items-center gap-3 mb-3 flex-wrap">
+              <div className="flex items-center gap-2 mb-3 flex-wrap">
                 <span className="text-sm text-gray-500">
                   {filterAssignee ? `${filterAssignee} · ` : ''}{serviceSales.length}건
+                  {hideCompleted && completedCount > 0 && (
+                    <span className="text-gray-400"> (완료 {completedCount}건 숨김)</span>
+                  )}
                 </span>
                 {!filterAssignee && totalRevenue > 0 && (
                   <span className="text-sm font-semibold text-gray-900">{(totalRevenue / 10000).toLocaleString()}만원</span>
+                )}
+
+                {completedCount > 0 && (
+                  <button
+                    onClick={() => setHideCompleted(v => !v)}
+                    className={`text-xs px-2 py-1 rounded-lg border transition-all ${
+                      hideCompleted ? 'border-gray-200 text-gray-400 bg-white hover:border-gray-300' : 'border-green-300 text-green-600 bg-green-50'
+                    }`}
+                  >
+                    {hideCompleted ? '완료 건 표시' : '완료 건 숨기기'}
+                  </button>
                 )}
 
                 {assigneeOptions.length > 1 && (
@@ -342,8 +364,24 @@ export default function DeptClient({ dept, deptLabel, deptIcon, sales, goals, ta
 
                         {/* 건명 + 클라이언트 */}
                         <div className="flex-1 min-w-0">
-                          <p className="text-sm font-medium text-gray-900 group-hover:text-gray-700 truncate">{s.name}</p>
-                          {s.client_org && <p className="text-xs text-gray-400 mt-0.5">{s.client_org}</p>}
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            <p className="text-sm font-medium text-gray-900 group-hover:text-gray-700 truncate">{s.name}</p>
+                            {s.progress_status && s.progress_status !== '착수전' && (
+                              <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium flex-shrink-0 ${
+                                s.progress_status === '완수' ? 'bg-teal-50 text-teal-600' :
+                                s.progress_status === '착수중' ? 'bg-blue-50 text-blue-600' :
+                                'bg-gray-100 text-gray-400'
+                              }`}>{s.progress_status}</span>
+                            )}
+                          </div>
+                          <div className="flex items-center gap-2 mt-0.5">
+                            {s.client_org && <p className="text-xs text-gray-400 truncate">{s.client_org}</p>}
+                            {s.inflow_date && (
+                              <p className="text-xs text-gray-300 flex-shrink-0">
+                                {s.inflow_date.slice(5).replace('-', '/')}
+                              </p>
+                            )}
+                          </div>
                         </div>
 
                         {/* 업무 진행률 */}

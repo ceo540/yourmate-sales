@@ -86,9 +86,9 @@ async function createNotionProject(params: {
   revenue: number | null
   memo: string | null
   proposal: ProjectProposal
-}): Promise<{ url: string | null; error?: string }> {
+}): Promise<{ url: string | null; pageId: string | null; error?: string }> {
   const token = process.env.NOTION_TOKEN
-  if (!token) return { url: null, error: 'NOTION_TOKEN not set' }
+  if (!token) return { url: null, pageId: null, error: 'NOTION_TOKEN not set' }
 
   const { name, inflowDate, department, client_org, service_type, revenue, proposal } = params
 
@@ -154,10 +154,9 @@ async function createNotionProject(params: {
   const data = await res.json()
   console.log('Notion response:', JSON.stringify(data))
 
-  if (data.object === 'error') return { url: null, error: `Notion error ${data.status}: ${data.message}` }
-  if (data.url) return { url: data.url }
-  if (data.id) return { url: `https://notion.so/${data.id.replace(/-/g, '')}` }
-  return { url: null, error: 'No id in response' }
+  if (data.object === 'error') return { url: null, pageId: null, error: `Notion error ${data.status}: ${data.message}` }
+  if (data.id) return { url: data.url ?? `https://notion.so/${data.id.replace(/-/g, '')}`, pageId: data.id }
+  return { url: null, pageId: null, error: 'No id in response' }
 }
 
 export async function POST(req: NextRequest) {
@@ -215,6 +214,11 @@ export async function POST(req: NextRequest) {
       memo: memo || null,
       proposal,
     })
+
+    // notion_page_id 저장 (sync-name-action에서 이름 동기화에 사용)
+    if (notion.pageId) {
+      await supabase.from('sales').update({ notion_page_id: notion.pageId }).eq('id', data.id)
+    }
 
     return NextResponse.json({ id: data.id, notionUrl: notion.url, notionError: notion.error ?? null })
   } catch (e) {
