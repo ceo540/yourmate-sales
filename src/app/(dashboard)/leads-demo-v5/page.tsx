@@ -2,82 +2,104 @@
 import { useState, useRef } from 'react'
 
 // ============================================================
-// 리드 관리 데모 v5 — 인터랙티브 (작성/수정/소통 저장 가능)
+// 리드 관리 데모 v5
+// - 카드: D-day 블록 + 3줄 컴팩트
+// - 소통 내역 기본 탭
+// - 개요 탭: 요약 + 드롭박스
+// - 폼: 담당자/기관 검색 + 추가
 // ============================================================
 
-type Log = { id: string; content: string; contacted_at: string; author_name: string }
+type Log  = { id: string; content: string; contacted_at: string; author_name: string }
 type Lead = {
   id: string; lead_id: string; status: string
   contact_name: string; client_org: string
-  phone: string; email: string; office_phone: string
+  phone: string; email: string
   service_type: string; project_name: string
   inflow_date: string; remind_date: string
-  channel: string; assignee_name: string; notes: string
-  logs: Log[]
-  // 고객 카드
+  channel: string; assignee_name: string
+  notes: string; dropbox_url: string
   customer_region: string; customer_type: string
   contact_title: string; contact_dept: string
+  logs: Log[]
 }
 
-const STATUSES   = ['유입', '미팅', '견적', '협상', '완료', '취소']
-const SERVICES   = ['SOS', '002크리에이티브', '렌탈', 'CS', '학교상점']
-const CHANNELS   = ['이메일', '인스타그램', '홈페이지', '지인소개', '전화', '기타']
-const ASSIGNEES  = ['정태영', '조민현', '유제민', '임지영', '김수아']
-const REGIONS    = ['서울', '경기', '인천', '부산', '대구', '광주', '대전', '세종', '기타']
-const CUST_TYPES = ['공공기관', '학교', '기업', '개인', '비영리', '기타']
+// ── Mock 인물 DB (검색용) ─────────────────────────────────────
+type PersonOption = { id: string; name: string; phone: string; email: string; org: string; title: string }
+const MOCK_PERSONS: PersonOption[] = [
+  { id: 'p1', name: '김지수',  phone: '010-1234-5678', email: 'jisu.kim@seoul.go.kr',  org: '서울시교육청',        title: '팀장' },
+  { id: 'p2', name: '박현우',  phone: '010-9876-5432', email: '',                       org: '경기도문화재단',       title: '' },
+  { id: 'p3', name: '이수진',  phone: '02-3456-7890',  email: 'sujin.lee@kywa.or.kr',  org: '한국청소년활동진흥원', title: '담당자' },
+  { id: 'p4', name: '홍길동',  phone: '010-0000-1111', email: 'hong@example.com',       org: '인천교육청',          title: '주임' },
+  { id: 'p5', name: '강민정',  phone: '010-7777-8888', email: 'minjung@ice.go.kr',      org: '인천교육청',          title: '팀장' },
+]
+
+// ── Mock 기관 DB ──────────────────────────────────────────────
+const MOCK_ORGS = ['서울시교육청', '경기도문화재단', '한국청소년활동진흥원', '인천교육청', '서초구청', '경기도교육청']
+
+const STATUSES  = ['유입','미팅','견적','협상','완료','취소']
+const SERVICES  = ['SOS','002크리에이티브','렌탈','CS','학교상점']
+const CHANNELS  = ['이메일','인스타그램','홈페이지','지인소개','전화','기타']
+const ASSIGNEES = ['정태영','조민현','유제민','임지영','김수아']
+const REGIONS   = ['서울','경기','인천','부산','대구','광주','대전','기타']
+const CUST_TYPES= ['공공기관','학교','기업','개인','비영리','기타']
 
 const INIT_LEADS: Lead[] = [
   {
     id: '1', lead_id: 'LEAD20260416-0001', status: '미팅',
     contact_name: '김지수', client_org: '서울시교육청',
-    phone: '010-1234-5678', email: 'jisu.kim@seoul.go.kr', office_phone: '02-3456-0000',
+    phone: '010-1234-5678', email: 'jisu.kim@seoul.go.kr',
     service_type: 'SOS', project_name: '2026 진로체험 페스티벌',
     inflow_date: '2026-04-10', remind_date: '2026-04-18',
-    channel: '이메일', assignee_name: '정태영', notes: '예산 500만원, 학생 200명',
+    channel: '이메일', assignee_name: '정태영',
+    notes: '예산 470만원으로 조정 완료. 5/23 행사, 5/22 셋업. 4/18 현장 미팅 예정.',
+    dropbox_url: 'https://www.dropbox.com/home/★ADMIN/SOS/260410 진로체험 페스티벌',
     customer_region: '서울', customer_type: '공공기관', contact_title: '팀장', contact_dept: '진로교육팀',
     logs: [
-      { id: 'l1', content: '이메일로 문의 접수. 5월 행사 견적 요청.', contacted_at: '2026-04-10T10:00:00Z', author_name: '정태영' },
-      { id: 'l2', content: '전화 통화. 예산 500만원, 학생 200명 확인.', contacted_at: '2026-04-12T14:30:00Z', author_name: '정태영' },
-      { id: 'l3', content: `[전사록 4/13 14:32]\n정태영: 견적서 검토 어떠셨어요?\n김지수: 음향 장비 쪽이 좀 오버되더라고요. PA 기본으로 조정 가능할까요?\n정태영: 470만원으로 맞출 수 있습니다.\n김지수: 좋아요, 수정 견적 다시 보내주세요. 5/23 행사, 5/22 셋업 예정.`, contacted_at: '2026-04-13T14:37:00Z', author_name: '정태영' },
-      { id: 'l4', content: '수정 견적 470만원 발송. 내부 결재 후 회신 예정.', contacted_at: '2026-04-13T17:00:00Z', author_name: '정태영' },
-      { id: 'l5', content: '미팅 확정. 4/18 오전 10시. 담당 홍민준 010-2345-6789.', contacted_at: '2026-04-15T09:00:00Z', author_name: '정태영' },
+      { id:'l1', content:'이메일로 문의 접수. 5월 행사 견적 요청.', contacted_at:'2026-04-10T10:00:00Z', author_name:'정태영' },
+      { id:'l2', content:'전화 통화. 예산 500만원, 학생 200명 확인.', contacted_at:'2026-04-12T14:30:00Z', author_name:'정태영' },
+      { id:'l3', content:`[전사록 4/13 14:32]\n정태영: 견적서 검토 어떠셨어요?\n김지수: 음향 장비 쪽이 오버됩니다. PA 기본으로 조정 가능할까요?\n정태영: 470만원으로 맞출 수 있습니다.\n김지수: 수정 견적 다시 보내주세요. 5/23 행사, 5/22 셋업.`, contacted_at:'2026-04-13T14:37:00Z', author_name:'정태영' },
+      { id:'l4', content:'수정 견적 470만원 발송 완료.', contacted_at:'2026-04-13T17:00:00Z', author_name:'정태영' },
+      { id:'l5', content:'미팅 확정. 4/18 오전 10시. 홍민준 010-2345-6789.', contacted_at:'2026-04-15T09:00:00Z', author_name:'정태영' },
     ],
   },
   {
-    id: '2', lead_id: 'LEAD20260416-0002', status: '유입',
-    contact_name: '박현우', client_org: '경기도문화재단',
-    phone: '010-9876-5432', email: '', office_phone: '',
-    service_type: '002크리에이티브', project_name: '',
-    inflow_date: '2026-04-14', remind_date: '',
-    channel: '인스타그램', assignee_name: '조민현', notes: '',
-    customer_region: '경기', customer_type: '공공기관', contact_title: '', contact_dept: '',
-    logs: [
-      { id: 'l6', content: 'SNS DM으로 홍보 영상 제작 문의. 예산/일정 미확인.', contacted_at: '2026-04-14T16:00:00Z', author_name: '조민현' },
+    id:'2', lead_id:'LEAD20260416-0002', status:'유입',
+    contact_name:'박현우', client_org:'경기도문화재단',
+    phone:'010-9876-5432', email:'',
+    service_type:'002크리에이티브', project_name:'',
+    inflow_date:'2026-04-14', remind_date:'',
+    channel:'인스타그램', assignee_name:'조민현',
+    notes:'', dropbox_url:'',
+    customer_region:'경기', customer_type:'공공기관', contact_title:'', contact_dept:'',
+    logs:[
+      { id:'l6', content:'SNS DM으로 홍보 영상 제작 문의. 예산/일정 미확인.', contacted_at:'2026-04-14T16:00:00Z', author_name:'조민현' },
     ],
   },
   {
-    id: '3', lead_id: 'LEAD20260416-0003', status: '견적',
-    contact_name: '이수진', client_org: '한국청소년활동진흥원',
-    phone: '02-3456-7890', email: 'sujin.lee@kywa.or.kr', office_phone: '',
-    service_type: '렌탈', project_name: '청소년 음악캠프 장비 렌탈',
-    inflow_date: '2026-04-08', remind_date: '2026-04-20',
-    channel: '홈페이지', assignee_name: '유제민', notes: '드럼 2조, 앰프 4개 / 6월 중',
-    customer_region: '서울', customer_type: '비영리', contact_title: '담당자', contact_dept: '사업팀',
-    logs: [
-      { id: 'l7', content: '홈페이지 폼 문의. 드럼 세트 2조, 앰프 4개 6월 렌탈.', contacted_at: '2026-04-08T11:00:00Z', author_name: '유제민' },
-      { id: 'l8', content: '견적서 발송 완료. 검토 후 회신 요청.', contacted_at: '2026-04-11T10:00:00Z', author_name: '유제민' },
+    id:'3', lead_id:'LEAD20260416-0003', status:'견적',
+    contact_name:'이수진', client_org:'한국청소년활동진흥원',
+    phone:'02-3456-7890', email:'sujin.lee@kywa.or.kr',
+    service_type:'렌탈', project_name:'청소년 음악캠프 장비 렌탈',
+    inflow_date:'2026-04-08', remind_date:'2026-04-20',
+    channel:'홈페이지', assignee_name:'유제민',
+    notes:'드럼 2조, 앰프 4개 / 6월 중 렌탈. 견적 발송 후 회신 대기.',
+    dropbox_url:'',
+    customer_region:'서울', customer_type:'비영리', contact_title:'담당자', contact_dept:'사업팀',
+    logs:[
+      { id:'l7', content:'홈페이지 폼 문의. 드럼 세트 2조, 앰프 4개 6월 렌탈.', contacted_at:'2026-04-08T11:00:00Z', author_name:'유제민' },
+      { id:'l8', content:'견적서 발송 완료. 검토 후 회신 요청.', contacted_at:'2026-04-11T10:00:00Z', author_name:'유제민' },
     ],
   },
 ]
 
-// ── 상수 ──────────────────────────────────────────────────────────
+// ── 상수 ─────────────────────────────────────────────────────
 const STATUS_CFG: Record<string, { dot: string; badge: string }> = {
-  '유입': { dot: 'bg-gray-400',    badge: 'bg-gray-100 text-gray-500' },
-  '미팅': { dot: 'bg-blue-400',    badge: 'bg-blue-100 text-blue-700' },
-  '견적': { dot: 'bg-violet-400',  badge: 'bg-violet-100 text-violet-700' },
-  '협상': { dot: 'bg-orange-400',  badge: 'bg-orange-100 text-orange-700' },
-  '완료': { dot: 'bg-emerald-400', badge: 'bg-emerald-100 text-emerald-700' },
-  '취소': { dot: 'bg-red-300',     badge: 'bg-red-100 text-red-400' },
+  '유입': { dot:'bg-gray-400',    badge:'bg-gray-100 text-gray-500' },
+  '미팅': { dot:'bg-blue-400',    badge:'bg-blue-100 text-blue-700' },
+  '견적': { dot:'bg-violet-400',  badge:'bg-violet-100 text-violet-700' },
+  '협상': { dot:'bg-orange-400',  badge:'bg-orange-100 text-orange-700' },
+  '완료': { dot:'bg-emerald-400', badge:'bg-emerald-100 text-emerald-700' },
+  '취소': { dot:'bg-red-300',     badge:'bg-red-100 text-red-400' },
 }
 const SVC_CLR: Record<string, string> = {
   'SOS':           'text-yellow-700 bg-yellow-50 border-yellow-200',
@@ -87,41 +109,35 @@ const SVC_CLR: Record<string, string> = {
   '학교상점':       'text-pink-700 bg-pink-50 border-pink-200',
 }
 
-// ── 유틸 ──────────────────────────────────────────────────────────
-function getDday(dateStr: string): number | null {
-  if (!dateStr) return null
-  const today = new Date(); today.setHours(0,0,0,0)
-  const target = new Date(dateStr); target.setHours(0,0,0,0)
-  return Math.round((target.getTime() - today.getTime()) / 86400000)
+// ── 유틸 ─────────────────────────────────────────────────────
+function getDday(s: string): number | null {
+  if (!s) return null
+  const t = new Date(); t.setHours(0,0,0,0)
+  const r = new Date(s); r.setHours(0,0,0,0)
+  return Math.round((r.getTime() - t.getTime()) / 86400000)
 }
-function DdayBadge({ d }: { d: number }) {
-  if (d === 0) return <span className="font-extrabold text-sm text-white bg-red-500 px-2.5 py-1 rounded-lg">D-DAY</span>
-  if (d < 0)   return <span className="font-extrabold text-sm text-red-600 bg-red-100 px-2.5 py-1 rounded-lg">D+{Math.abs(d)}</span>
-  if (d <= 3)  return <span className="font-extrabold text-sm text-orange-600 bg-orange-100 px-2.5 py-1 rounded-lg">D-{d}</span>
-  if (d <= 7)  return <span className="font-extrabold text-sm text-yellow-700 bg-yellow-100 px-2.5 py-1 rounded-lg">D-{d}</span>
-  return <span className="font-bold text-sm text-gray-500 bg-gray-100 px-2.5 py-1 rounded-lg">D-{d}</span>
+
+function DdayBlock({ d, small }: { d: number; small?: boolean }) {
+  const base = small ? 'text-xs font-bold px-2 py-0.5 rounded-md' : 'text-sm font-extrabold px-2.5 py-1 rounded-lg'
+  if (d === 0) return <span className={`${base} bg-red-500 text-white`}>D-DAY</span>
+  if (d < 0)   return <span className={`${base} bg-red-100 text-red-600`}>D+{Math.abs(d)}</span>
+  if (d <= 3)  return <span className={`${base} bg-orange-100 text-orange-600`}>D-{d}</span>
+  if (d <= 7)  return <span className={`${base} bg-yellow-100 text-yellow-700`}>D-{d}</span>
+  return <span className={`${base} bg-gray-100 text-gray-500`}>D-{d}</span>
 }
+
 function timeAgo(iso: string) {
   const d = Math.floor((Date.now() - new Date(iso).getTime()) / 86400000)
   if (d === 0) return '오늘'
   if (d === 1) return '어제'
   if (d < 7)  return `${d}일 전`
-  return new Date(iso).toLocaleDateString('ko-KR', { month: 'short', day: 'numeric' })
+  return new Date(iso).toLocaleDateString('ko-KR', { month:'short', day:'numeric' })
 }
-function uid() { return Math.random().toString(36).slice(2) }
+function uid() { return Math.random().toString(36).slice(2,9) }
 
-// ── 폼 기본값 ────────────────────────────────────────────────────
-const BLANK_LEAD: Omit<Lead, 'id' | 'lead_id' | 'logs'> = {
-  status: '유입', contact_name: '', client_org: '', phone: '', email: '',
-  office_phone: '', service_type: 'SOS', project_name: '',
-  inflow_date: new Date().toISOString().slice(0, 10), remind_date: '',
-  channel: '이메일', assignee_name: '정태영', notes: '',
-  customer_region: '', customer_type: '', contact_title: '', contact_dept: '',
-}
-
-// ── 긴 소통 내역 접기 ────────────────────────────────────────────
+// ── 소통 항목 ────────────────────────────────────────────────
 function LogItem({ log, onDelete }: { log: Log; onDelete: () => void }) {
-  const long = log.content.length > 80
+  const long = log.content.length > 100
   const [exp, setExp] = useState(!long)
   return (
     <div className="flex gap-3 group">
@@ -148,108 +164,217 @@ function LogItem({ log, onDelete }: { log: Log; onDelete: () => void }) {
   )
 }
 
-// ── 인풋 공통 ────────────────────────────────────────────────────
+// ── 폼 공통 ──────────────────────────────────────────────────
 const LBL = 'block text-xs font-medium text-gray-500 mb-1'
 const INP = 'w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-yellow-300'
 const SEL = INP + ' bg-white'
 
-// ── 메인 ─────────────────────────────────────────────────────────
+type FormState = Omit<Lead, 'id'|'lead_id'|'logs'> & { personId: string }
+const BLANK: FormState = {
+  status:'유입', contact_name:'', client_org:'', phone:'', email:'',
+  service_type:'SOS', project_name:'', inflow_date:new Date().toISOString().slice(0,10),
+  remind_date:'', channel:'이메일', assignee_name:'정태영', notes:'', dropbox_url:'',
+  customer_region:'', customer_type:'', contact_title:'', contact_dept:'', personId:'',
+}
+
+// ── 담당자 검색 컴포넌트 ──────────────────────────────────────
+function PersonSearch({
+  form, setForm, persons, setPersons
+}: {
+  form: FormState
+  setForm: React.Dispatch<React.SetStateAction<FormState>>
+  persons: PersonOption[]
+  setPersons: React.Dispatch<React.SetStateAction<PersonOption[]>>
+}) {
+  const [query, setQuery] = useState(form.contact_name)
+  const [open, setOpen] = useState(false)
+  const [addMode, setAddMode] = useState(false)
+  const [newPhone, setNewPhone] = useState('')
+  const [newEmail, setNewEmail] = useState('')
+
+  const matched = persons.filter(p =>
+    !query || p.name.includes(query) || p.org.includes(query)
+  ).slice(0, 6)
+
+  const selected = form.personId ? persons.find(p => p.id === form.personId) : null
+
+  function pick(p: PersonOption) {
+    setForm(f => ({ ...f, personId:p.id, contact_name:p.name, phone:f.phone||p.phone, email:f.email||p.email, client_org:f.client_org||p.org }))
+    setQuery(p.name); setOpen(false); setAddMode(false)
+  }
+  function clear() {
+    setForm(f => ({ ...f, personId:'', contact_name:'', phone:'', email:'' }))
+    setQuery(''); setAddMode(false)
+  }
+  function addNew() {
+    if (!query.trim()) return
+    const np: PersonOption = { id:uid(), name:query.trim(), phone:newPhone, email:newEmail, org:form.client_org, title:'' }
+    setPersons(ps => [...ps, np]); pick(np); setNewPhone(''); setNewEmail('')
+  }
+
+  if (selected) return (
+    <div className="bg-blue-50 border border-blue-200 rounded-lg px-3 py-2.5 flex items-start justify-between">
+      <div>
+        <p className="text-sm font-semibold text-gray-900">{selected.name}
+          {selected.title && <span className="ml-1 text-xs text-gray-500">· {selected.title}</span>}
+        </p>
+        {selected.org && <p className="text-xs text-gray-500 mt-0.5">{selected.org}</p>}
+        {selected.phone && <p className="text-xs text-gray-400 mt-0.5">{selected.phone}</p>}
+      </div>
+      <button onClick={clear} className="text-xs text-gray-400 hover:text-red-400 ml-2">✕</button>
+    </div>
+  )
+
+  return (
+    <div className="relative">
+      <input
+        type="text" value={query}
+        onChange={e => { setQuery(e.target.value); setOpen(true); setAddMode(false) }}
+        onFocus={() => setOpen(true)}
+        onBlur={() => setTimeout(() => setOpen(false), 150)}
+        className={INP} placeholder="이름 또는 기관으로 검색..."
+      />
+      {open && (
+        <div className="absolute z-10 left-0 right-0 top-full mt-1 bg-white border border-gray-200 rounded-xl shadow-lg overflow-hidden">
+          {matched.map(p => (
+            <button key={p.id} type="button" onMouseDown={() => pick(p)}
+              className="w-full text-left px-3 py-2.5 hover:bg-gray-50 transition-colors border-b border-gray-50 last:border-0">
+              <p className="text-sm font-medium text-gray-800">{p.name}
+                {p.title && <span className="text-gray-400 text-xs ml-1">· {p.title}</span>}
+              </p>
+              <p className="text-xs text-gray-400">{p.org || '소속 없음'}{p.phone ? ` · ${p.phone}` : ''}</p>
+            </button>
+          ))}
+          {!addMode ? (
+            <button type="button" onMouseDown={() => setAddMode(true)}
+              className="w-full text-left px-3 py-2.5 text-sm text-yellow-700 font-semibold hover:bg-yellow-50 transition-colors">
+              + "{query || '새 담당자'}" 추가
+            </button>
+          ) : (
+            <div className="px-3 py-2.5 space-y-2 border-t border-gray-100">
+              <p className="text-xs font-semibold text-gray-600">새 담당자: {query}</p>
+              <input type="text" value={newPhone} onChange={e => setNewPhone(e.target.value)}
+                placeholder="전화번호" className="w-full text-xs border border-gray-200 rounded-lg px-2.5 py-1.5 focus:outline-none focus:ring-1 focus:ring-yellow-300" />
+              <input type="text" value={newEmail} onChange={e => setNewEmail(e.target.value)}
+                placeholder="이메일" className="w-full text-xs border border-gray-200 rounded-lg px-2.5 py-1.5 focus:outline-none focus:ring-1 focus:ring-yellow-300" />
+              <button type="button" onMouseDown={addNew}
+                className="w-full text-xs bg-yellow-400 hover:bg-yellow-500 text-gray-900 font-semibold py-1.5 rounded-lg transition-colors">
+                추가
+              </button>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ── 기관 검색 컴포넌트 ────────────────────────────────────────
+function OrgSearch({ value, onChange }: { value: string; onChange: (v: string) => void }) {
+  const [open, setOpen] = useState(false)
+  const [orgs, setOrgs] = useState(MOCK_ORGS)
+  const matched = orgs.filter(o => !value || o.includes(value)).slice(0, 6)
+
+  return (
+    <div className="relative">
+      <input
+        type="text" value={value}
+        onChange={e => { onChange(e.target.value); setOpen(true) }}
+        onFocus={() => setOpen(true)}
+        onBlur={() => setTimeout(() => setOpen(false), 150)}
+        className={INP} placeholder="기관명 검색 또는 직접 입력"
+      />
+      {open && (value || matched.length > 0) && (
+        <div className="absolute z-10 left-0 right-0 top-full mt-1 bg-white border border-gray-200 rounded-xl shadow-lg overflow-hidden">
+          {matched.map(o => (
+            <button key={o} type="button" onMouseDown={() => { onChange(o); setOpen(false) }}
+              className="w-full text-left px-3 py-2 text-sm text-gray-700 hover:bg-gray-50">
+              {o}
+            </button>
+          ))}
+          {value && !orgs.includes(value) && (
+            <button type="button" onMouseDown={() => { setOrgs(p => [...p, value]); setOpen(false) }}
+              className="w-full text-left px-3 py-2 text-sm text-yellow-700 font-semibold hover:bg-yellow-50">
+              + "{value}" 신규 기관 추가
+            </button>
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ── 메인 ─────────────────────────────────────────────────────
 export default function LeadsDemoV5() {
   const [leads, setLeads] = useState<Lead[]>(INIT_LEADS)
+  const [persons, setPersons] = useState<PersonOption[]>(MOCK_PERSONS)
   const [selectedId, setSelectedId] = useState<string | null>('1')
-  const [tab, setTab] = useState<'info' | 'logs' | 'customer'>('info')
+  const [tab, setTab] = useState<'logs'|'overview'|'customer'>('logs')
   const [filter, setFilter] = useState('전체')
   const [showClosed, setShowClosed] = useState(false)
-  const [showNewForm, setShowNewForm] = useState(false)
+  const [showForm, setShowForm] = useState(false)
   const [editMode, setEditMode] = useState(false)
-  const [form, setForm] = useState<Omit<Lead, 'id' | 'lead_id' | 'logs'>>(BLANK_LEAD)
+  const [form, setForm] = useState<FormState>(BLANK)
   const [logInput, setLogInput] = useState('')
   const [aiLoading, setAiLoading] = useState(false)
   const [showAi, setShowAi] = useState(false)
-  const logRef = useRef<HTMLTextAreaElement>(null)
 
   const filtered = leads.filter(l => {
-    if (!showClosed && (l.status === '완료' || l.status === '취소')) return false
+    if (!showClosed && (l.status==='완료'||l.status==='취소')) return false
     if (filter !== '전체' && l.status !== filter) return false
     return true
   })
   const selected = leads.find(l => l.id === selectedId) ?? null
-  const counts = leads.reduce((a, l) => { a[l.status] = (a[l.status] || 0) + 1; return a }, {} as Record<string, number>)
-  const activeCount = leads.filter(l => !['완료', '취소'].includes(l.status)).length
+  const counts = leads.reduce((a,l) => { a[l.status]=(a[l.status]||0)+1; return a }, {} as Record<string,number>)
+  const activeCount = leads.filter(l => !['완료','취소'].includes(l.status)).length
   const remindCount = leads.filter(l => {
-    const d = getDday(l.remind_date)
-    return d !== null && d <= 3 && !['완료', '취소'].includes(l.status)
+    const d = getDday(l.remind_date); return d !== null && d <= 3 && !['완료','취소'].includes(l.status)
   }).length
 
-  // ── 저장 ──
+  function setF<K extends keyof FormState>(k: K, v: FormState[K]) { setForm(f => ({...f,[k]:v})) }
+
   function saveLead() {
     if (editMode && selected) {
-      setLeads(ls => ls.map(l => l.id === selected.id ? { ...l, ...form } : l))
-      setEditMode(false)
+      setLeads(ls => ls.map(l => l.id===selected.id ? {...l, ...form} : l))
     } else {
-      const newId = uid()
-      const newLead: Lead = {
-        ...form, id: newId,
-        lead_id: `LEAD${new Date().toISOString().slice(0,10).replace(/-/g,'')}-${String(leads.length+1).padStart(4,'0')}`,
-        logs: [],
-      }
-      setLeads(ls => [newLead, ...ls])
-      setSelectedId(newId)
-      setShowNewForm(false)
-      setTab('info')
+      const id = uid()
+      setLeads(ls => [{
+        ...form, id, lead_id:`LEAD${new Date().toISOString().slice(0,10).replace(/-/g,'')}-${String(ls.length+1).padStart(4,'0')}`,
+        logs:[],
+      }, ...ls])
+      setSelectedId(id); setTab('logs')
     }
+    setShowForm(false); setEditMode(false)
   }
 
   function openNew() {
-    setForm(BLANK_LEAD)
-    setShowNewForm(true)
-    setEditMode(false)
+    setForm(BLANK); setEditMode(false); setShowForm(true)
   }
   function openEdit() {
     if (!selected) return
-    setForm({
-      status: selected.status, contact_name: selected.contact_name,
-      client_org: selected.client_org, phone: selected.phone, email: selected.email,
-      office_phone: selected.office_phone, service_type: selected.service_type,
-      project_name: selected.project_name, inflow_date: selected.inflow_date,
-      remind_date: selected.remind_date, channel: selected.channel,
-      assignee_name: selected.assignee_name, notes: selected.notes,
-      customer_region: selected.customer_region, customer_type: selected.customer_type,
-      contact_title: selected.contact_title, contact_dept: selected.contact_dept,
-    })
-    setEditMode(true)
-    setShowNewForm(true)
+    setForm({ ...selected, personId:'' }); setEditMode(true); setShowForm(true)
   }
 
   function addLog() {
     if (!logInput.trim() || !selected) return
-    const newLog: Log = {
-      id: uid(), content: logInput.trim(),
-      contacted_at: new Date().toISOString(), author_name: '나 (데모)',
-    }
-    setLeads(ls => ls.map(l => l.id === selected.id ? { ...l, logs: [...l.logs, newLog] } : l))
-    setLogInput('')
-    setShowAi(false)
+    setLeads(ls => ls.map(l => l.id===selected.id ? {
+      ...l, logs:[...l.logs, { id:uid(), content:logInput.trim(), contacted_at:new Date().toISOString(), author_name:'나 (데모)' }]
+    } : l))
+    setLogInput(''); setShowAi(false)
   }
-  function deleteLog(logId: string) {
+  function deleteLog(lid: string) {
     if (!selected) return
-    setLeads(ls => ls.map(l => l.id === selected.id ? { ...l, logs: l.logs.filter(g => g.id !== logId) } : l))
+    setLeads(ls => ls.map(l => l.id===selected.id ? {...l, logs:l.logs.filter(g => g.id!==lid)} : l))
   }
-
   function handleAi() {
     if (showAi) { setShowAi(false); return }
     setAiLoading(true)
     setTimeout(() => { setAiLoading(false); setShowAi(true) }, 1100)
   }
 
-  const AI_SUMMARIES: Record<string, string> = {
-    '1': '예산 500만 → 470만으로 조정 협의. 5/23 행사 · 5/22 셋업. 수정 견적 발송 후 내부 결재 대기. 4/18 오전 미팅 예정.',
-    '3': '드럼 2조 · 앰프 4개 6월 렌탈 견적 발송. 회신 대기. 4/20 리마인드.',
-  }
-
-  // ── 폼 패널 (신규/수정 공통) ──────────────────────────────────
-  function setF<K extends keyof typeof form>(k: K, v: (typeof form)[K]) {
-    setForm(f => ({ ...f, [k]: v }))
+  const AI_MOCK: Record<string,string> = {
+    '1':'예산 500→470만 조정 완료. 5/23 행사 · 5/22 셋업. 4/18 현장 미팅 예정. 수정 견적 내부 결재 대기.',
+    '3':'드럼 2조·앰프 4개 6월 렌탈. 견적 발송 후 회신 대기. 4/20 리마인드.',
   }
 
   return (
@@ -275,216 +400,234 @@ export default function LeadsDemoV5() {
           </button>
         </div>
         <div className="flex items-center gap-1 mt-3">
-          {['전체', '유입', '미팅', '견적', '협상'].map(s => (
+          {['전체','유입','미팅','견적','협상'].map(s => (
             <button key={s} onClick={() => setFilter(s)}
-              className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${filter === s ? 'bg-gray-900 text-white' : 'text-gray-500 hover:bg-gray-100'}`}>
-              {s}{s !== '전체' && counts[s] ? <span className="ml-1 opacity-60 text-xs">{counts[s]}</span> : null}
+              className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${filter===s?'bg-gray-900 text-white':'text-gray-500 hover:bg-gray-100'}`}>
+              {s}{s!=='전체'&&counts[s]?<span className="ml-1 opacity-60 text-xs">{counts[s]}</span>:null}
             </button>
           ))}
           <div className="flex-1" />
-          <button onClick={() => setShowClosed(v => !v)} className="text-xs text-gray-400 hover:text-gray-600 px-2 py-1.5 rounded-lg hover:bg-gray-100">
-            {showClosed ? '완료/취소 숨기기' : '완료/취소 보기'}
+          <button onClick={() => setShowClosed(v=>!v)} className="text-xs text-gray-400 hover:text-gray-600 px-2 py-1.5 rounded-lg hover:bg-gray-100">
+            {showClosed?'완료/취소 숨기기':'완료/취소 보기'}
           </button>
         </div>
       </div>
 
-      {/* 바디 */}
       <div className="flex flex-1 overflow-hidden">
 
         {/* ── 왼쪽 목록 ── */}
-        <div className="w-[380px] flex-shrink-0 border-r border-gray-200 bg-white overflow-y-auto">
-          <div className="p-2 space-y-1.5">
+        <div className="w-[360px] flex-shrink-0 border-r border-gray-200 bg-white overflow-y-auto">
+          <div className="p-2 space-y-1">
             {filtered.map(lead => {
-              const cfg = STATUS_CFG[lead.status] || STATUS_CFG['유입']
+              const cfg = STATUS_CFG[lead.status]||STATUS_CFG['유입']
               const dday = getDday(lead.remind_date)
               const isSelected = lead.id === selectedId
-              const lastLog = lead.logs[lead.logs.length - 1]
 
               return (
-                <button key={lead.id} onClick={() => { setSelectedId(lead.id); setTab('info'); setShowAi(false) }}
-                  className={`w-full text-left px-4 py-3.5 rounded-xl transition-all ${isSelected ? 'bg-yellow-50 border border-yellow-200' : 'hover:bg-gray-50 border border-transparent'}`}>
+                <button key={lead.id} onClick={() => { setSelectedId(lead.id); setShowAi(false) }}
+                  className={`w-full text-left rounded-xl transition-all overflow-hidden border ${isSelected?'border-yellow-200 bg-yellow-50':'border-transparent hover:bg-gray-50'}`}>
+                  <div className="flex items-stretch">
 
-                  {/* 행 1: D-day + 상태 + 서비스 */}
-                  <div className="flex items-center justify-between gap-2 mb-2">
-                    <div className="flex items-center gap-2">
-                      {dday !== null ? <DdayBadge d={dday} /> : <span className="text-xs text-gray-300">—</span>}
+                    {/* D-day 세로 블록 */}
+                    <div className={`w-14 flex-shrink-0 flex items-center justify-center ${
+                      dday === null ? 'bg-gray-50' :
+                      dday === 0   ? 'bg-red-500' :
+                      dday < 0    ? 'bg-red-100' :
+                      dday <= 3   ? 'bg-orange-100' :
+                      dday <= 7   ? 'bg-yellow-100' : 'bg-gray-100'
+                    }`}>
+                      {dday === null ? (
+                        <span className="text-gray-300 text-xs">—</span>
+                      ) : (
+                        <span className={`font-black text-sm leading-none ${
+                          dday===0?'text-white':dday<0?'text-red-600':dday<=3?'text-orange-600':dday<=7?'text-yellow-700':'text-gray-500'
+                        }`}>
+                          {dday===0?'D-DAY':dday<0?`D+${Math.abs(dday)}`:`D-${dday}`}
+                        </span>
+                      )}
                     </div>
-                    <div className="flex items-center gap-1.5">
-                      <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${cfg.badge}`}>{lead.status}</span>
-                      <span className={`text-xs px-1.5 py-0.5 rounded border font-medium ${SVC_CLR[lead.service_type] || 'bg-gray-50 text-gray-400 border-gray-200'}`}>
-                        {lead.service_type}
-                      </span>
+
+                    {/* 카드 내용 */}
+                    <div className="flex-1 min-w-0 px-3 py-2.5">
+                      {/* 행1: 프로젝트명 */}
+                      <p className="text-sm font-bold text-gray-900 truncate">
+                        {lead.project_name || '(프로젝트명 없음)'}
+                      </p>
+                      {/* 행2: 담당자 · 기관 */}
+                      <div className="flex items-center gap-1.5 mt-0.5">
+                        <div className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${cfg.dot}`} />
+                        <span className="text-xs text-gray-600 truncate">{lead.contact_name}</span>
+                        {lead.client_org && <>
+                          <span className="text-gray-300 text-xs flex-shrink-0">·</span>
+                          <span className="text-xs text-gray-400 truncate">{lead.client_org}</span>
+                        </>}
+                      </div>
+                      {/* 행3: 배지 + 메타 */}
+                      <div className="flex items-center gap-1.5 mt-1.5 flex-wrap">
+                        <span className={`text-xs px-1.5 py-0.5 rounded-full font-medium flex-shrink-0 ${cfg.badge}`}>{lead.status}</span>
+                        <span className={`text-xs px-1.5 py-0.5 rounded border font-medium flex-shrink-0 ${SVC_CLR[lead.service_type]||'text-gray-400 bg-gray-50 border-gray-200'}`}>{lead.service_type}</span>
+                        <span className="text-xs text-gray-400 flex-shrink-0 ml-auto">{lead.assignee_name}</span>
+                      </div>
                     </div>
-                  </div>
-
-                  {/* 행 2: 프로젝트명 (메인 식별자) */}
-                  <p className="text-sm font-bold text-gray-900 mb-0.5 truncate">
-                    {lead.project_name || '(프로젝트명 없음)'}
-                  </p>
-
-                  {/* 행 3: 담당자명 · 기관 */}
-                  <div className="flex items-center gap-1.5 mb-2">
-                    <div className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${cfg.dot}`} />
-                    <span className="text-xs text-gray-600 font-medium">{lead.contact_name}</span>
-                    {lead.client_org && <><span className="text-gray-300 text-xs">·</span>
-                    <span className="text-xs text-gray-400 truncate">{lead.client_org}</span></>}
-                  </div>
-
-                  {/* 행 4: 최근 소통 미리보기 */}
-                  {lastLog && (
-                    <p className="text-xs text-gray-400 line-clamp-1 leading-relaxed">
-                      {lastLog.content}
-                    </p>
-                  )}
-
-                  {/* 행 5: 담당 · 채널 */}
-                  <div className="flex items-center gap-2 mt-1.5">
-                    <span className="text-xs text-gray-400">{lead.assignee_name}</span>
-                    <span className="text-gray-200 text-xs">·</span>
-                    <span className="text-xs text-gray-400">{lead.channel}</span>
-                    <span className="text-gray-200 text-xs">·</span>
-                    <span className="text-xs text-gray-400">{lead.inflow_date.slice(5).replace('-','/')} 유입</span>
                   </div>
                 </button>
               )
             })}
-            {filtered.length === 0 && (
-              <p className="text-center py-12 text-sm text-gray-400">해당 조건의 리드가 없습니다.</p>
-            )}
+            {filtered.length===0 && <p className="text-center py-12 text-sm text-gray-400">해당 조건의 리드가 없습니다.</p>}
           </div>
         </div>
 
         {/* ── 오른쪽 상세 ── */}
         {selected ? (
-          <div className="flex-1 overflow-y-auto bg-white">
+          <div className="flex-1 overflow-y-auto">
             <div className="max-w-2xl mx-auto px-8 py-6">
 
               {/* 타이틀 */}
-              <div className="flex items-start justify-between gap-4 mb-2">
+              <div className="flex items-start justify-between gap-4 mb-4">
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center gap-2 flex-wrap mb-1.5">
-                    {(() => { const d = getDday(selected.remind_date); return d !== null ? <DdayBadge d={d} /> : null })()}
+                    {(() => { const d=getDday(selected.remind_date); return d!==null?<DdayBlock d={d} />:null })()}
                     <span className={`text-xs px-2.5 py-1 rounded-full font-semibold ${STATUS_CFG[selected.status]?.badge}`}>{selected.status}</span>
-                    <span className={`text-xs px-2 py-1 rounded border font-medium ${SVC_CLR[selected.service_type] || 'bg-gray-50 text-gray-400 border-gray-200'}`}>{selected.service_type}</span>
-                    <span className="text-xs text-gray-300 font-mono ml-1">{selected.lead_id}</span>
+                    <span className={`text-xs px-2 py-1 rounded border font-medium ${SVC_CLR[selected.service_type]||'bg-gray-50 text-gray-400 border-gray-200'}`}>{selected.service_type}</span>
                   </div>
-                  <h2 className="text-xl font-bold text-gray-900 leading-tight">
-                    {selected.project_name || '(프로젝트명 없음)'}
-                  </h2>
-                  <p className="text-gray-500 text-sm mt-0.5">{selected.contact_name} · {selected.client_org}</p>
+                  <h2 className="text-xl font-bold text-gray-900">{selected.project_name||'(프로젝트명 없음)'}</h2>
+                  <p className="text-sm text-gray-500 mt-0.5">{selected.contact_name} · {selected.client_org}</p>
                 </div>
                 <div className="flex gap-2 flex-shrink-0">
-                  <button onClick={openEdit} className="text-sm border border-gray-200 hover:border-gray-300 text-gray-600 px-3 py-1.5 rounded-xl transition-colors">수정</button>
-                  <button className="text-sm bg-yellow-400 hover:bg-yellow-500 text-gray-900 font-semibold px-3 py-1.5 rounded-xl transition-colors">계약 전환</button>
+                  <button onClick={openEdit} className="text-sm border border-gray-200 hover:border-gray-300 text-gray-600 px-3 py-1.5 rounded-xl">수정</button>
+                  <button className="text-sm bg-yellow-400 hover:bg-yellow-500 text-gray-900 font-semibold px-3 py-1.5 rounded-xl">계약 전환</button>
                 </div>
               </div>
 
               {/* 탭 */}
-              <div className="flex gap-0 border-b border-gray-200 mb-5 mt-4">
-                {(['info','logs','customer'] as const).map(t => (
+              <div className="flex border-b border-gray-200 mb-5">
+                {(['logs','overview','customer'] as const).map(t => (
                   <button key={t} onClick={() => setTab(t)}
-                    className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors -mb-px ${tab === t ? 'border-yellow-400 text-gray-900' : 'border-transparent text-gray-400 hover:text-gray-600'}`}>
-                    {t === 'info' ? '기본 정보' : t === 'logs' ? `소통 내역 ${selected.logs.length}` : '고객 카드'}
+                    className={`px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors ${tab===t?'border-yellow-400 text-gray-900':'border-transparent text-gray-400 hover:text-gray-600'}`}>
+                    {t==='logs'?`소통 내역 ${selected.logs.length}`:t==='overview'?'개요':'고객 카드'}
                   </button>
                 ))}
               </div>
 
-              {/* ── 탭: 기본 정보 ── */}
-              {tab === 'info' && (
+              {/* ── 소통 내역 ── */}
+              {tab==='logs' && (
                 <div className="bg-white rounded-2xl border border-gray-200 p-5">
-                  <div className="grid grid-cols-2 gap-x-8 gap-y-3.5">
-                    <InfoRow label="담당자"    value={selected.assignee_name} />
-                    <InfoRow label="유입 채널" value={selected.channel} />
-                    <InfoRow label="전화"      value={selected.phone || '—'} highlight />
-                    <InfoRow label="이메일"    value={selected.email || '—'} />
-                    {selected.office_phone && <InfoRow label="사무실" value={selected.office_phone} />}
-                    <InfoRow label="유입일"    value={selected.inflow_date} />
-                    {selected.remind_date && <InfoRow label="리마인드" value={selected.remind_date} warn />}
-                    {selected.notes && (
-                      <div className="col-span-2 pt-3 border-t border-gray-100">
-                        <InfoRow label="메모" value={selected.notes} />
+                  <div className="flex items-center justify-between mb-4">
+                    <span className="text-sm font-semibold text-gray-700">소통 내역 <span className="text-gray-400 font-normal">{selected.logs.length}건</span></span>
+                    {selected.logs.length >= 2 && (
+                      <button onClick={handleAi} disabled={aiLoading}
+                        className={`flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg border transition-colors disabled:opacity-50 ${showAi?'bg-violet-50 border-violet-200 text-violet-700':'bg-gray-50 border-gray-200 text-gray-500 hover:border-gray-300'}`}>
+                        {aiLoading ? <><span className="animate-spin">⏳</span> 요약 중...</> : showAi?'✦ AI 요약 닫기':'✦ AI로 요약'}
+                      </button>
+                    )}
+                  </div>
+                  {showAi && AI_MOCK[selected.id] && (
+                    <div className="mb-4 bg-violet-50 border border-violet-200 rounded-xl p-3.5">
+                      <p className="text-xs font-semibold text-violet-700 mb-1">✦ AI 요약</p>
+                      <p className="text-sm text-violet-900 leading-relaxed">{AI_MOCK[selected.id]}</p>
+                    </div>
+                  )}
+                  <div className="space-y-0 mb-4">
+                    {selected.logs.length===0 && <p className="text-sm text-gray-400 text-center py-6">소통 내역이 없습니다.</p>}
+                    {[...selected.logs].reverse().map(log => (
+                      <LogItem key={log.id} log={log} onDelete={() => deleteLog(log.id)} />
+                    ))}
+                  </div>
+                  <div className="border border-gray-200 rounded-xl p-3.5 bg-gray-50">
+                    <textarea value={logInput} onChange={e => setLogInput(e.target.value)}
+                      placeholder="소통 내용, 전화 전사록, 이메일 내용 등 자유롭게..."
+                      className="w-full text-sm text-gray-700 bg-transparent resize-none outline-none placeholder-gray-300 min-h-[64px]" />
+                    <div className="flex items-center justify-between mt-2 pt-2 border-t border-gray-200">
+                      <button onClick={() => setLogInput(v => (v?v+'\n':'')+new Date().toLocaleTimeString('ko-KR',{hour:'2-digit',minute:'2-digit'})+' ')}
+                        className="text-xs text-gray-400 hover:text-gray-600">현재 시간 입력</button>
+                      <button onClick={addLog} className="text-xs bg-gray-900 text-white px-3 py-1.5 rounded-lg hover:bg-gray-700">저장</button>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* ── 개요 ── */}
+              {tab==='overview' && (
+                <div className="space-y-3">
+                  {/* 요약 메모 */}
+                  <div className="bg-white rounded-2xl border border-gray-200 p-5">
+                    <div className="flex items-center justify-between mb-3">
+                      <p className="text-sm font-semibold text-gray-700">요약</p>
+                    </div>
+                    {selected.notes ? (
+                      <p className="text-sm text-gray-700 leading-relaxed whitespace-pre-line">{selected.notes}</p>
+                    ) : (
+                      <p className="text-sm text-gray-400">요약 내용이 없습니다. 수정에서 메모를 추가해주세요.</p>
+                    )}
+                  </div>
+
+                  {/* 연락처 빠른 참조 */}
+                  <div className="bg-white rounded-2xl border border-gray-200 p-5">
+                    <p className="text-sm font-semibold text-gray-700 mb-3">연락처</p>
+                    <div className="space-y-2">
+                      {selected.phone && (
+                        <div className="flex items-center gap-2">
+                          <span className="text-xs text-gray-400 w-12">전화</span>
+                          <span className="text-sm font-medium text-blue-600">{selected.phone}</span>
+                        </div>
+                      )}
+                      {selected.email && (
+                        <div className="flex items-center gap-2">
+                          <span className="text-xs text-gray-400 w-12">이메일</span>
+                          <span className="text-sm text-gray-700">{selected.email}</span>
+                        </div>
+                      )}
+                      {!selected.phone && !selected.email && (
+                        <p className="text-sm text-gray-400">등록된 연락처가 없습니다.</p>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* 드롭박스 폴더 */}
+                  <div className="bg-white rounded-2xl border border-gray-200 p-5">
+                    <p className="text-sm font-semibold text-gray-700 mb-3">드롭박스 폴더</p>
+                    {selected.dropbox_url ? (
+                      <div className="flex items-center gap-2">
+                        <div className="flex-1 text-sm text-blue-600 bg-blue-50 rounded-lg px-3 py-2 truncate">
+                          {selected.dropbox_url}
+                        </div>
+                        <a href={selected.dropbox_url} target="_blank" rel="noreferrer"
+                          className="flex-shrink-0 text-xs border border-gray-200 hover:border-gray-300 text-gray-600 px-3 py-2 rounded-lg transition-colors">
+                          열기
+                        </a>
+                      </div>
+                    ) : (
+                      <div className="flex items-center gap-2">
+                        <p className="text-sm text-gray-400 flex-1">연결된 폴더가 없습니다.</p>
+                        <button className="flex-shrink-0 text-xs bg-gray-900 text-white px-3 py-1.5 rounded-lg hover:bg-gray-700">
+                          폴더 생성
+                        </button>
                       </div>
                     )}
                   </div>
                 </div>
               )}
 
-              {/* ── 탭: 소통 내역 ── */}
-              {tab === 'logs' && (
-                <div className="bg-white rounded-2xl border border-gray-200 p-5">
-                  <div className="flex items-center justify-between mb-4">
-                    <span className="text-sm font-semibold text-gray-700">소통 내역 <span className="text-gray-400 font-normal">{selected.logs.length}건</span></span>
-                    {selected.logs.length >= 2 && (
-                      <button onClick={handleAi} disabled={aiLoading}
-                        className={`flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg border transition-colors ${showAi ? 'bg-violet-50 border-violet-200 text-violet-700' : 'bg-gray-50 border-gray-200 text-gray-500 hover:border-gray-300'} disabled:opacity-50`}>
-                        {aiLoading ? <><span className="animate-spin inline-block">⏳</span> 요약 중...</> : showAi ? '✦ AI 요약 닫기' : '✦ AI로 요약'}
-                      </button>
-                    )}
-                  </div>
-
-                  {showAi && AI_SUMMARIES[selected.id] && (
-                    <div className="mb-4 bg-violet-50 border border-violet-200 rounded-xl p-3.5">
-                      <p className="text-xs font-semibold text-violet-700 mb-1">✦ AI 요약</p>
-                      <p className="text-sm text-violet-900 leading-relaxed">{AI_SUMMARIES[selected.id]}</p>
-                    </div>
-                  )}
-
-                  <div className="space-y-0 mb-4">
-                    {selected.logs.length === 0 && (
-                      <p className="text-sm text-gray-400 text-center py-6">소통 내역이 없습니다.</p>
-                    )}
-                    {[...selected.logs].reverse().map(log => (
-                      <LogItem key={log.id} log={log} onDelete={() => deleteLog(log.id)} />
-                    ))}
-                  </div>
-
-                  {/* 소통 입력 */}
-                  <div className="border border-gray-200 rounded-xl p-3.5 bg-gray-50">
-                    <textarea ref={logRef} value={logInput} onChange={e => setLogInput(e.target.value)}
-                      placeholder="소통 내용, 통화 전사록, 메모 등 자유롭게 입력..."
-                      className="w-full text-sm text-gray-700 bg-transparent resize-none outline-none placeholder-gray-300 min-h-[64px]" />
-                    <div className="flex items-center justify-between mt-2 pt-2 border-t border-gray-200">
-                      <button
-                        onClick={() => setLogInput(v => (v ? v + '\n' : '') + new Date().toLocaleTimeString('ko-KR', {hour:'2-digit', minute:'2-digit'}) + ' ')}
-                        className="text-xs text-gray-400 hover:text-gray-600 transition-colors">
-                        현재 시간 입력
-                      </button>
-                      <button onClick={addLog} className="text-xs bg-gray-900 text-white px-3 py-1.5 rounded-lg hover:bg-gray-700 transition-colors">
-                        저장
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              {/* ── 탭: 고객 카드 ── */}
-              {tab === 'customer' && (
+              {/* ── 고객 카드 ── */}
+              {tab==='customer' && (
                 <div className="space-y-3">
-                  {/* 기관 카드 */}
                   <div className="bg-white rounded-2xl border border-gray-200 p-5">
-                    <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">기관 정보</p>
+                    <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">기관</p>
                     <div className="grid grid-cols-2 gap-x-8 gap-y-3">
-                      <InfoRow label="기관명"   value={selected.client_org || '—'} />
-                      <InfoRow label="지역"     value={selected.customer_region || '—'} />
-                      <InfoRow label="기관 유형" value={selected.customer_type || '—'} />
+                      <InfoRow label="기관명"   value={selected.client_org||'—'} />
+                      <InfoRow label="지역"     value={selected.customer_region||'—'} />
+                      <InfoRow label="기관 유형" value={selected.customer_type||'—'} />
                     </div>
                   </div>
-
-                  {/* 담당자 카드 */}
                   <div className="bg-white rounded-2xl border border-gray-200 p-5">
                     <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">담당자</p>
                     <div className="grid grid-cols-2 gap-x-8 gap-y-3">
-                      <InfoRow label="이름"   value={selected.contact_name || '—'} />
-                      <InfoRow label="직급"   value={selected.contact_title || '—'} />
-                      <InfoRow label="부서"   value={selected.contact_dept || '—'} />
-                      <InfoRow label="전화"   value={selected.phone || '—'} highlight />
-                      <InfoRow label="이메일" value={selected.email || '—'} />
+                      <InfoRow label="이름" value={selected.contact_name||'—'} />
+                      <InfoRow label="직급" value={selected.contact_title||'—'} />
+                      <InfoRow label="부서" value={selected.contact_dept||'—'} />
+                      <InfoRow label="전화" value={selected.phone||'—'} highlight />
+                      <InfoRow label="이메일" value={selected.email||'—'} />
                     </div>
-                  </div>
-
-                  {/* 다른 리드 연결 안내 */}
-                  <div className="bg-gray-50 rounded-xl p-4 text-center">
-                    <p className="text-xs text-gray-400">이 고객과 연결된 다른 리드 · 계약이 있으면 여기에 표시됩니다.</p>
                   </div>
                 </div>
               )}
@@ -498,54 +641,33 @@ export default function LeadsDemoV5() {
         )}
       </div>
 
-      {/* ── 신규/수정 폼 (슬라이드 오버레이) ── */}
-      {showNewForm && (
+      {/* ── 폼 오버레이 ── */}
+      {showForm && (
         <div className="fixed inset-0 z-50 flex">
-          <div className="flex-1 bg-black/30" onClick={() => { setShowNewForm(false); setEditMode(false) }} />
-          <div className="w-[480px] bg-white shadow-2xl overflow-y-auto flex flex-col">
+          <div className="flex-1 bg-black/30" onClick={() => { setShowForm(false); setEditMode(false) }} />
+          <div className="w-[480px] bg-white shadow-2xl flex flex-col">
             <div className="px-6 py-4 border-b border-gray-200 flex items-center justify-between flex-shrink-0">
-              <h2 className="text-base font-bold text-gray-900">{editMode ? '리드 수정' : '새 리드 추가'}</h2>
-              <button onClick={() => { setShowNewForm(false); setEditMode(false) }} className="text-gray-400 hover:text-gray-600 text-lg">✕</button>
+              <h2 className="text-base font-bold text-gray-900">{editMode?'리드 수정':'새 리드 추가'}</h2>
+              <button onClick={() => { setShowForm(false); setEditMode(false) }} className="text-gray-400 hover:text-gray-600">✕</button>
             </div>
 
-            <div className="flex-1 px-6 py-5 space-y-4 overflow-y-auto">
-
-              {/* 프로젝트명 */}
+            <div className="flex-1 overflow-y-auto px-6 py-5 space-y-4">
               <div>
                 <label className={LBL}>프로젝트명</label>
                 <input type="text" className={INP} placeholder="ex) 2026 진로체험 페스티벌"
                   value={form.project_name} onChange={e => setF('project_name', e.target.value)} />
               </div>
 
-              {/* 담당자 이름 + 기관 */}
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className={LBL}>담당자 이름 *</label>
-                  <input type="text" className={INP} placeholder="홍길동"
-                    value={form.contact_name} onChange={e => setF('contact_name', e.target.value)} />
-                </div>
-                <div>
-                  <label className={LBL}>기관명</label>
-                  <input type="text" className={INP} placeholder="서울시교육청"
-                    value={form.client_org} onChange={e => setF('client_org', e.target.value)} />
-                </div>
+              <div>
+                <label className={LBL}>담당자 *</label>
+                <PersonSearch form={form} setForm={setForm} persons={persons} setPersons={setPersons} />
               </div>
 
-              {/* 전화 + 이메일 */}
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className={LBL}>전화번호</label>
-                  <input type="text" className={INP} placeholder="010-0000-0000"
-                    value={form.phone} onChange={e => setF('phone', e.target.value)} />
-                </div>
-                <div>
-                  <label className={LBL}>이메일</label>
-                  <input type="text" className={INP} placeholder="email@example.com"
-                    value={form.email} onChange={e => setF('email', e.target.value)} />
-                </div>
+              <div>
+                <label className={LBL}>기관명</label>
+                <OrgSearch value={form.client_org} onChange={v => setF('client_org', v)} />
               </div>
 
-              {/* 서비스 + 채널 */}
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className={LBL}>서비스 유형</label>
@@ -561,7 +683,6 @@ export default function LeadsDemoV5() {
                 </div>
               </div>
 
-              {/* 상태 + 담당 직원 */}
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className={LBL}>상태</label>
@@ -577,31 +698,27 @@ export default function LeadsDemoV5() {
                 </div>
               </div>
 
-              {/* 유입일 + 리마인드 */}
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className={LBL}>유입일</label>
-                  <input type="date" className={INP}
-                    value={form.inflow_date} onChange={e => setF('inflow_date', e.target.value)} />
+                  <input type="date" className={INP} value={form.inflow_date} onChange={e => setF('inflow_date', e.target.value)} />
                 </div>
                 <div>
                   <label className={LBL}>리마인드 날짜</label>
-                  <input type="date" className={INP}
-                    value={form.remind_date} onChange={e => setF('remind_date', e.target.value)} />
+                  <input type="date" className={INP} value={form.remind_date} onChange={e => setF('remind_date', e.target.value)} />
                 </div>
               </div>
 
-              {/* 메모 */}
               <div>
-                <label className={LBL}>메모</label>
-                <textarea className={INP + ' resize-none'} rows={2} placeholder="예산, 규모, 특이사항 등"
+                <label className={LBL}>요약 / 메모</label>
+                <textarea className={INP+' resize-none'} rows={3}
+                  placeholder="예산, 규모, 진행 상황 요약 등"
                   value={form.notes} onChange={e => setF('notes', e.target.value)} />
               </div>
 
               <hr className="border-gray-100" />
-              <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider">고객 카드</p>
+              <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider">고객 카드 (선택)</p>
 
-              {/* 지역 + 기관 유형 */}
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className={LBL}>지역</label>
@@ -619,30 +736,24 @@ export default function LeadsDemoV5() {
                 </div>
               </div>
 
-              {/* 직급 + 부서 */}
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className={LBL}>직급</label>
-                  <input type="text" className={INP} placeholder="팀장, 담당자 등"
-                    value={form.contact_title} onChange={e => setF('contact_title', e.target.value)} />
+                  <input type="text" className={INP} placeholder="팀장" value={form.contact_title} onChange={e => setF('contact_title', e.target.value)} />
                 </div>
                 <div>
                   <label className={LBL}>부서</label>
-                  <input type="text" className={INP} placeholder="진로교육팀 등"
-                    value={form.contact_dept} onChange={e => setF('contact_dept', e.target.value)} />
+                  <input type="text" className={INP} placeholder="진로교육팀" value={form.contact_dept} onChange={e => setF('contact_dept', e.target.value)} />
                 </div>
               </div>
-
             </div>
 
             <div className="px-6 py-4 border-t border-gray-100 flex gap-3 flex-shrink-0">
-              <button onClick={() => { setShowNewForm(false); setEditMode(false) }}
-                className="flex-1 border border-gray-200 text-gray-600 text-sm py-2.5 rounded-xl hover:bg-gray-50 transition-colors">
-                취소
-              </button>
+              <button onClick={() => { setShowForm(false); setEditMode(false) }}
+                className="flex-1 border border-gray-200 text-gray-600 text-sm py-2.5 rounded-xl hover:bg-gray-50">취소</button>
               <button onClick={saveLead}
-                className="flex-1 bg-yellow-400 hover:bg-yellow-500 text-gray-900 font-semibold text-sm py-2.5 rounded-xl transition-colors">
-                {editMode ? '저장' : '리드 추가'}
+                className="flex-1 bg-yellow-400 hover:bg-yellow-500 text-gray-900 font-semibold text-sm py-2.5 rounded-xl">
+                {editMode?'저장':'리드 추가'}
               </button>
             </div>
           </div>
@@ -652,11 +763,11 @@ export default function LeadsDemoV5() {
   )
 }
 
-function InfoRow({ label, value, highlight, warn }: { label: string; value: string; highlight?: boolean; warn?: boolean }) {
+function InfoRow({ label, value, highlight }: { label: string; value: string; highlight?: boolean }) {
   return (
     <div className="flex items-baseline gap-2">
-      <span className="text-xs text-gray-400 w-20 flex-shrink-0">{label}</span>
-      <span className={`text-sm font-medium break-all ${highlight ? 'text-blue-600' : warn ? 'text-orange-600' : 'text-gray-800'}`}>{value}</span>
+      <span className="text-xs text-gray-400 w-16 flex-shrink-0">{label}</span>
+      <span className={`text-sm font-medium break-all ${highlight?'text-blue-600':'text-gray-800'}`}>{value}</span>
     </div>
   )
 }
