@@ -130,21 +130,17 @@ export default function PipelineClient({ leads, sales, profiles }: Props) {
 
     // 매출건 → column 매핑
     for (const sale of sales) {
-      const ps = sale.payment_status ?? '계약전'
+      const ps = sale.contract_stage ?? '계약'
       const prog = sale.progress_status ?? '착수전'
       let column: ColumnKey
       let stageLabel: string
 
-      if (ps === '계약전') {
-        column = 'active'
-        stageLabel = '계약전'
-      } else if (ps === '계약완료' || ps === '선금수령' || ps === '중도금수령') {
-        column = 'active'
+      if (ps === '잔금') {
+        column = 'done'
         stageLabel = ps
       } else {
-        // 완납 제외는 이미 쿼리에서 처리됨 — 여기서는 다 완수/잔금
-        column = 'done'
-        stageLabel = prog === '완수' ? '완수(잔금대기)' : ps
+        column = 'active'
+        stageLabel = ps
       }
 
       // 운영 진행이 완수이면 done 컬럼으로

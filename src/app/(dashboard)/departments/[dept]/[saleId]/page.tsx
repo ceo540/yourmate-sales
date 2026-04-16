@@ -96,7 +96,7 @@ export default async function DeptSalePage({
           id: sale.id,
           name: sale.name,
           memo: sale.memo,
-          payment_status: sale.payment_status,
+          contract_stage: sale.contract_stage,
           progress_status: sale.progress_status ?? null,
           service_type: sale.service_type,
           department: sale.department,

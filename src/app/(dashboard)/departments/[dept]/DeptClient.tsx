@@ -25,7 +25,7 @@ interface Sale {
   id: string
   name: string
   service_type: string | null
-  payment_status: string | null
+  contract_stage: string | null
   revenue: number | null
   inflow_date: string | null
   client_org: string | null
@@ -60,11 +60,13 @@ interface DeptClientProps {
 }
 
 const PAY_STATUS_COLORS: Record<string, string> = {
-  '계약전':    'bg-gray-100 text-gray-500',
-  '계약완료':  'bg-blue-50 text-blue-600',
-  '선금수령':  'bg-yellow-50 text-yellow-700',
-  '중도금수령': 'bg-orange-50 text-orange-600',
-  '완납':      'bg-green-100 text-green-700',
+  '계약':       'bg-blue-50 text-blue-600',
+  '착수':       'bg-purple-50 text-purple-600',
+  '선금':       'bg-yellow-50 text-yellow-700',
+  '중도금':     'bg-orange-50 text-orange-600',
+  '완수':       'bg-teal-50 text-teal-600',
+  '계산서발행': 'bg-indigo-50 text-indigo-600',
+  '잔금':       'bg-green-100 text-green-700',
 }
 
 const TASK_STATUS_COLORS: Record<string, string> = {
@@ -219,8 +221,8 @@ export default function DeptClient({ dept, deptLabel, deptIcon, sales, goals, ta
                       </div>
                       <div className="flex items-center gap-2 flex-shrink-0">
                         {s.revenue && <span className="text-sm text-gray-600">{(s.revenue / 10000).toFixed(0)}만</span>}
-                        <span className={`text-[11px] px-2 py-0.5 rounded-full font-medium ${PAY_STATUS_COLORS[s.payment_status ?? ''] ?? 'bg-gray-100 text-gray-400'}`}>
-                          {s.payment_status ?? '-'}
+                        <span className={`text-[11px] px-2 py-0.5 rounded-full font-medium ${PAY_STATUS_COLORS[s.contract_stage ?? ''] ?? 'bg-gray-100 text-gray-400'}`}>
+                          {s.contract_stage ?? '-'}
                         </span>
                       </div>
                     </Link>
@@ -333,8 +335,8 @@ export default function DeptClient({ dept, deptLabel, deptIcon, sales, goals, ta
                       >
                         {/* 상태 점 */}
                         <div className={`w-2 h-2 rounded-full flex-shrink-0 ${
-                          s.payment_status === '완납' ? 'bg-green-400' :
-                          s.payment_status === '계약완료' || s.payment_status === '선금수령' || s.payment_status === '중도금수령' ? 'bg-yellow-400' :
+                          s.contract_stage === '잔금' ? 'bg-green-400' :
+                          s.contract_stage === '착수' || s.contract_stage === '선금' || s.contract_stage === '중도금' || s.contract_stage === '완수' || s.contract_stage === '계산서발행' ? 'bg-yellow-400' :
                           'bg-gray-300'
                         }`} />
 
@@ -378,8 +380,8 @@ export default function DeptClient({ dept, deptLabel, deptIcon, sales, goals, ta
                         ) : null}
 
                         {/* 결제 상태 */}
-                        <span className={`text-[11px] px-2 py-0.5 rounded-full font-medium flex-shrink-0 ${PAY_STATUS_COLORS[s.payment_status ?? ''] ?? 'bg-gray-100 text-gray-400'}`}>
-                          {s.payment_status ?? '-'}
+                        <span className={`text-[11px] px-2 py-0.5 rounded-full font-medium flex-shrink-0 ${PAY_STATUS_COLORS[s.contract_stage ?? ''] ?? 'bg-gray-100 text-gray-400'}`}>
+                          {s.contract_stage ?? '-'}
                         </span>
 
                         <span className="text-gray-300 group-hover:text-gray-500 text-xs flex-shrink-0">→</span>

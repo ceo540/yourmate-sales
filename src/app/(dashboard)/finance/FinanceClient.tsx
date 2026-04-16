@@ -6,7 +6,7 @@ interface Sale {
   id: string
   name: string
   revenue: number | null
-  payment_status: string | null
+  contract_stage: string | null
   inflow_date: string | null
   entity: { id: string; name: string }[] | null
   sale_costs: SaleCost[]
@@ -131,7 +131,7 @@ export default function FinanceClient({ sales, fixedCosts, payroll, year }: Prop
 
   // 미수금 / 미지급
   const receivables = sales.filter(s =>
-    s.payment_status && s.payment_status !== '완납' && s.payment_status !== '계약전' && (s.revenue ?? 0) > 0 &&
+    s.contract_stage && s.contract_stage !== '잔금' && s.contract_stage !== '계약' && (s.revenue ?? 0) > 0 &&
     (filterEntity === 'all' || s.entity?.[0]?.name === filterEntity)
   )
   const totalReceivables = receivables.reduce((s, r) => s + (r.revenue ?? 0), 0)
@@ -357,7 +357,7 @@ export default function FinanceClient({ sales, fixedCosts, payroll, year }: Prop
                 <div key={s.id} className="flex items-center gap-3 px-5 py-2.5">
                   <div className="flex-1 min-w-0">
                     <p className="text-sm text-gray-800 truncate">{s.name}</p>
-                    <span className="text-xs text-orange-500">{s.payment_status}</span>
+                    <span className="text-xs text-orange-500">{s.contract_stage}</span>
                   </div>
                   <span className="text-sm font-semibold text-orange-400 flex-shrink-0">{fmtW(s.revenue ?? 0)}</span>
                 </div>

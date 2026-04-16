@@ -19,7 +19,7 @@ export default async function FinancePage() {
   ] = await Promise.all([
     supabase
       .from('sales')
-      .select('id, name, revenue, payment_status, inflow_date, entity:business_entities(id, name), sale_costs(amount, category, is_paid)')
+      .select('id, name, revenue, contract_stage, inflow_date, entity:business_entities(id, name), sale_costs(amount, category, is_paid)')
       .gte('inflow_date', `${thisYear}-01-01`)
       .order('inflow_date', { ascending: false }),
     supabase

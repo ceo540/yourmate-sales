@@ -67,7 +67,7 @@ export default function SaleDrawer({ sale, entities, vendors, profiles, customer
   const [contractType, setContractType] = useState(sale.contract_type ?? '')
   const [assigneeId, setAssigneeId] = useState(sale.assignee?.id ?? '')
   const [revenue, setRevenue] = useState(String(sale.revenue ?? ''))
-  const [contractStage, setPaymentStatus] = useState(sale.contract_stage ?? '계약')
+  const [contractStage, setContractStage] = useState(sale.contract_stage ?? '계약')
   const [inflowDate, setInflowDate] = useState(sale.inflow_date ? sale.inflow_date.split('T')[0] : '')
   const [paymentDate, setPaymentDate] = useState(sale.payment_date ? sale.payment_date.split('T')[0] : '')
   const [dropboxUrl, setDropboxUrl] = useState(sale.dropbox_url ?? '')

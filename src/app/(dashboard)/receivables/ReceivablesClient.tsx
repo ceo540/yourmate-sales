@@ -6,7 +6,7 @@ interface Sale {
   id: string
   name: string
   revenue: number | null
-  payment_status: string | null
+  contract_stage: string | null
   inflow_date: string | null
   created_at: string
   entity: { id: string; name: string } | null
@@ -34,16 +34,24 @@ function formatDate(d: string | null) {
   return new Date(d).toLocaleDateString('ko-KR', { year: 'numeric', month: 'short', day: 'numeric' })
 }
 
-const PAYMENT_STATUS_COLORS: Record<string, string> = {
-  '계약완료': 'bg-blue-50 text-blue-600',
-  '선금수령': 'bg-yellow-50 text-yellow-700',
-  '중도금수령': 'bg-orange-50 text-orange-600',
+const CONTRACT_STAGE_COLORS: Record<string, string> = {
+  '계약': 'bg-blue-50 text-blue-600',
+  '착수': 'bg-purple-50 text-purple-600',
+  '선금': 'bg-yellow-50 text-yellow-700',
+  '중도금': 'bg-orange-50 text-orange-600',
+  '완수': 'bg-teal-50 text-teal-600',
+  '계산서발행': 'bg-indigo-50 text-indigo-600',
+  '잔금': 'bg-green-50 text-green-600',
 }
 
 const STATUS_ORDER: Record<string, number> = {
-  '계약완료': 0,
-  '선금수령': 1,
-  '중도금수령': 2,
+  '계약': 0,
+  '착수': 1,
+  '선금': 2,
+  '중도금': 3,
+  '완수': 4,
+  '계산서발행': 5,
+  '잔금': 6,
 }
 
 export default function ReceivablesClient({ sales, entities }: Props) {
@@ -54,7 +62,7 @@ export default function ReceivablesClient({ sales, entities }: Props) {
   const filtered = sales
     .filter(s => {
       if (filterEntity && (s.entity as any)?.id !== filterEntity) return false
-      if (filterStatus && s.payment_status !== filterStatus) return false
+      if (filterStatus && s.contract_stage !== filterStatus) return false
       return true
     })
     .sort((a, b) => {
@@ -67,7 +75,7 @@ export default function ReceivablesClient({ sales, entities }: Props) {
   // 상태별 집계
   const statusGroups: Record<string, { count: number; amount: number }> = {}
   for (const s of sales) {
-    const key = s.payment_status ?? ''
+    const key = s.contract_stage ?? ''
     if (!statusGroups[key]) statusGroups[key] = { count: 0, amount: 0 }
     statusGroups[key].count++
     statusGroups[key].amount += s.revenue ?? 0
@@ -94,7 +102,7 @@ export default function ReceivablesClient({ sales, entities }: Props) {
               onClick={() => setFilterStatus(filterStatus === status ? '' : status)}
             >
               <div className="flex items-center gap-1.5 mb-1">
-                <span className={`text-xs px-1.5 py-0.5 rounded-full ${PAYMENT_STATUS_COLORS[status] ?? 'bg-gray-100 text-gray-500'}`}>{status}</span>
+                <span className={`text-xs px-1.5 py-0.5 rounded-full ${CONTRACT_STAGE_COLORS[status] ?? 'bg-gray-100 text-gray-500'}`}>{status}</span>
               </div>
               <p className="text-lg font-bold text-gray-800">{formatMoney(amount)}원</p>
               <p className="text-xs text-gray-400 mt-0.5">{count}건</p>
@@ -154,9 +162,9 @@ export default function ReceivablesClient({ sales, entities }: Props) {
                   </div>
                 </div>
                 <div className="flex items-center gap-3 flex-shrink-0">
-                  {s.payment_status && (
-                    <span className={`text-xs px-2 py-0.5 rounded-full ${PAYMENT_STATUS_COLORS[s.payment_status] ?? 'bg-gray-100 text-gray-500'}`}>
-                      {s.payment_status}
+                  {s.contract_stage && (
+                    <span className={`text-xs px-2 py-0.5 rounded-full ${CONTRACT_STAGE_COLORS[s.contract_stage] ?? 'bg-gray-100 text-gray-500'}`}>
+                      {s.contract_stage}
                     </span>
                   )}
                   <span className="text-base font-bold text-gray-800">{formatMoney(s.revenue ?? 0)}원</span>

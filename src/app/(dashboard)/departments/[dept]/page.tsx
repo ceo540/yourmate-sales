@@ -31,7 +31,7 @@ export default async function DeptPage({ params }: { params: Promise<{ dept: str
   // 해당 사업부 프로젝트 목록
   const { data: salesRaw } = await supabase
     .from('sales')
-    .select('id, name, service_type, payment_status, revenue, inflow_date, client_org, assignee_id, memo')
+    .select('id, name, service_type, contract_stage, revenue, inflow_date, client_org, assignee_id, memo')
     .eq('department', dept)
     .order('created_at', { ascending: false })
 

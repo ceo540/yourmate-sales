@@ -30,7 +30,7 @@ export async function saveProjectOverview(saleId: string, overview: string) {
 
 // AI로 프로젝트 개요 생성
 export async function generateProjectOverview(data: {
-  sale: { name: string; client_org: string | null; service_type: string | null; revenue: number | null; payment_status: string | null; memo: string | null }
+  sale: { name: string; client_org: string | null; service_type: string | null; revenue: number | null; contract_stage: string | null; memo: string | null }
   tasks: { title: string; status: string; priority: string | null; assignee: string | null; due_date: string | null; description: string | null }[]
   logs: { content: string; log_type: string; created_at: string; author: string | null }[]
   notes: string
