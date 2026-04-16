@@ -5,6 +5,7 @@ import { createAdminClient } from '@/lib/supabase/admin'
 import crypto from 'crypto'
 import { logApiUsage } from '@/lib/api-usage'
 import { searchDropbox, listDropboxFolder, readDropboxFile } from '@/lib/dropbox'
+import { sendGroupMessage, notifyLeadConverted } from '@/lib/channeltalk'
 
 const openai = new OpenAI()
 
@@ -582,6 +583,12 @@ async function executeTool(name: string, input: Record<string, unknown>): Promis
     }).select('id').single()
     if (saleErr) return { error: saleErr.message }
     await supabase.from('leads').update({ converted_sale_id: sale.id, status: '완료', updated_at: new Date().toISOString() }).eq('id', finalLead.id)
+    notifyLeadConverted({
+      clientOrg: (finalLead.client_org as string | null) ?? null,
+      serviceType: serviceType ?? null,
+      saleName: (finalLead.client_org as string) || '(리드전환)',
+      saleId: sale.id as string,
+    }).catch(console.error)
     return { success: true, lead_id: finalLead.lead_id, client_org: finalLead.client_org, sale_id: sale.id }
   }
 
@@ -645,40 +652,6 @@ async function executeTool(name: string, input: Record<string, unknown>): Promis
   return { error: '알 수 없는 도구' }
 }
 
-async function sendGroupMessage(chatKey: string, text: string) {
-  const key = process.env.CHANNELTALK_ACCESS_KEY
-  const secret = process.env.CHANNELTALK_ACCESS_SECRET
-  if (!key || !secret) {
-    console.error('ChannelTalk keys not set')
-    return
-  }
-
-  // chatKey "group-556532" 또는 "556532" → 숫자 ID만 추출
-  const groupId = chatKey.startsWith('group-') ? chatKey.replace('group-', '') : chatKey
-
-  const url = `https://api.channel.io/open/v5/groups/${groupId}/messages`
-  console.log('[ChannelTalk send] url:', url, '| text:', text.slice(0, 50))
-
-  const res = await fetch(url, {
-    method: 'POST',
-    headers: {
-      'x-access-key': key,
-      'x-access-secret': secret,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      plainText: text,
-      blocks: [{ type: 'text', value: text }],
-    }),
-  })
-  const data = await res.json()
-  if (!res.ok) {
-    console.error('ChannelTalk send error:', JSON.stringify(data))
-  } else {
-    console.log('[ChannelTalk send] success')
-  }
-  return data
-}
 
 async function processWithGPT(chatKey: string, userMessage: string) {
   const today = new Date().toLocaleDateString('ko-KR', { year: 'numeric', month: 'long', day: 'numeric', timeZone: 'Asia/Seoul' })

@@ -3,6 +3,9 @@ import { createClient } from '@/lib/supabase/server'
 import { revalidatePath } from 'next/cache'
 import { createSaleFolder } from '@/lib/dropbox'
 
+const STATUS_FLOW = ['유입', '견적발송', '렌탈확정', '진행중', '수거완료', '검수중', '완료']
+function statusIdx(s: string) { return STATUS_FLOW.indexOf(s) }
+
 export async function createRental(data: {
   customer_name: string
   customer_id?: string
@@ -20,6 +23,7 @@ export async function createRental(data: {
   pickup_method?: string
   total_amount?: number
   deposit?: number
+  has_deposit?: boolean
   payment_method?: string
   inflow_source?: string
   notes?: string
@@ -31,10 +35,10 @@ export async function createRental(data: {
   const { data: rental, error } = await supabase.from('rentals').insert({
     ...data,
     status: '유입',
+    has_deposit: data.has_deposit ?? (data.deposit ? data.deposit > 0 : false),
   }).select('id').single()
   if (error) return { error: error.message }
 
-  // sales 레코드 자동 생성 + 연결
   let dropboxUrl: string | null = null
   try {
     const folderUrl = await createSaleFolder({
@@ -53,7 +57,7 @@ export async function createRental(data: {
     service_type: '교구대여',
     department: 'school_store',
     revenue: data.total_amount ?? 0,
-    payment_status: '계약전',
+    contract_stage: '계약',
     client_org: data.customer_name,
     customer_id: data.customer_id ?? null,
     assignee_id: data.assignee_id ?? null,
@@ -73,16 +77,17 @@ export async function createRental(data: {
 export async function updateRental(id: string, data: Record<string, unknown>) {
   const supabase = await createClient()
 
-  // sales 동기화 (total_amount, status 변경 시)
   const { data: rental } = await supabase.from('rentals').select('sale_id').eq('id', id).single()
   if (rental?.sale_id) {
     const salesUpdate: Record<string, unknown> = {}
     if (data.total_amount !== undefined) salesUpdate.revenue = data.total_amount
     if (data.status !== undefined) {
       const statusMap: Record<string, string> = {
-        '유입': '계약전', '확정': '계약완료', '진행중': '선금수령', '반납': '완납',
+        '유입': '계약', '견적발송': '계약', '렌탈확정': '계약',
+        '진행중': '착수', '수거완료': '착수', '검수중': '완수',
+        '완료': '잔금',
       }
-      salesUpdate.payment_status = statusMap[data.status as string] ?? '계약전'
+      salesUpdate.contract_stage = statusMap[data.status as string] ?? '계약'
     }
     if (data.dropbox_url !== undefined) salesUpdate.dropbox_url = data.dropbox_url
     if (Object.keys(salesUpdate).length > 0) {
@@ -143,25 +148,55 @@ export async function removeRentalItem(itemId: string, rentalId: string) {
 
 export async function updateRentalChecklist(id: string, checklist: Record<string, boolean>) {
   const supabase = await createClient()
-  const updates: Record<string, unknown> = { checklist, updated_at: new Date().toISOString() }
 
-  // 검수 완료 + 보증금 환급 모두 체크 시 자동으로 완료 처리
-  if (checklist.final_inspection && checklist.deposit_returned) {
-    updates.status = '완료'
-    const { data: rental } = await supabase.from('rentals').select('sale_id').eq('id', id).single()
-    if (rental?.sale_id) {
-      await supabase.from('sales').update({ payment_status: '완납' }).eq('id', rental.sale_id)
-    }
+  const { data: rental } = await supabase
+    .from('rentals').select('status, has_deposit, sale_id').eq('id', id).single()
+  if (!rental) return { error: '렌탈을 찾을 수 없습니다.' }
+
+  const cur = statusIdx(rental.status)
+  let newStatus: string | null = null
+
+  // 계약 3개 완료 → 렌탈확정
+  if (checklist.contract_sent && checklist.contract_signed && checklist.docs_received) {
+    if (cur < statusIdx('렌탈확정')) newStatus = '렌탈확정'
+  }
+
+  // 배송완료 체크 → 진행중
+  if (checklist.delivered && cur < statusIdx('진행중')) {
+    newStatus = '진행중'
+  }
+
+  // 수거완료 체크 → 수거완료
+  if (checklist.returned && cur < statusIdx('수거완료')) {
+    newStatus = '수거완료'
+  }
+
+  // 검수 시작 → 검수중
+  if (checklist.inspection_done && cur < statusIdx('검수중')) {
+    newStatus = '검수중'
+  }
+
+  // 완료 조건: 검수완료 + (이슈없음 OR 이슈조치완료) + 보증금 환급 (보증금 있는 경우)
+  const inspectionOk = checklist.inspection_done && (checklist.no_issue || checklist.issue_resolved)
+  const depositOk = !rental.has_deposit || checklist.deposit_returned
+  if (inspectionOk && depositOk && cur < statusIdx('완료')) {
+    newStatus = '완료'
+  }
+
+  const updates: Record<string, unknown> = { checklist, updated_at: new Date().toISOString() }
+  if (newStatus) updates.status = newStatus
+
+  if (newStatus === '완료' && rental.sale_id) {
+    await supabase.from('sales').update({ contract_stage: '잔금' }).eq('id', rental.sale_id)
   }
 
   const { error } = await supabase.from('rentals').update(updates).eq('id', id)
   if (error) return { error: error.message }
   revalidatePath('/rentals')
   revalidatePath(`/rentals/${id}`)
-  return { success: true }
+  return { success: true, newStatus }
 }
 
-// 소통 이력 추가 (contact_1 → contact_2 → contact_3 순서로 채움)
 export async function addRentalContact(rentalId: string, text: string) {
   const supabase = await createClient()
   const { data: rental } = await supabase

@@ -32,10 +32,11 @@ const NAV_GROUPS: Record<string, NavItem[]> = {
     { href: '/sos',                            label: 'SOS 공연',         icon: '🎤', pageKey: 'sos' },
   ],
   영업: [
-    { href: '/pipeline', label: '파이프라인', icon: '🔄', pageKey: 'pipeline' },
-    { href: '/sales',        label: '매출 현황', icon: '💰', pageKey: 'sales' },
-    { href: '/sales/report', label: '계약 목록', icon: '📄', pageKey: 'sales_report' },
-    { href: '/leads',        label: '리드 관리', icon: '📥', pageKey: 'leads' },
+    { href: '/pipeline',      label: '파이프라인', icon: '🔄', pageKey: 'pipeline' },
+    { href: '/sales',         label: '매출 현황', icon: '💰', pageKey: 'sales' },
+    { href: '/sales/report',  label: '계약 목록', icon: '📄', pageKey: 'sales_report' },
+    { href: '/contract-hub',  label: '계약 허브', icon: '📑', pageKey: 'contract_hub' },
+    { href: '/leads',         label: '리드 관리', icon: '📥', pageKey: 'leads' },
   ],
   재무: [
     { href: '/receivables',  label: '미수금 현황', icon: '🔔', pageKey: 'receivables' },

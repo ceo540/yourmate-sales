@@ -6,6 +6,15 @@ import NextTopLoader from 'nextjs-toploader'
 export const metadata: Metadata = {
   title: '유어메이트 시스템',
   description: '유어메이트 사내 운영 플랫폼',
+  manifest: '/manifest.json',
+  appleWebApp: {
+    capable: true,
+    statusBarStyle: 'default',
+    title: '유어메이트',
+  },
+  icons: {
+    apple: '/apple-touch-icon.png',
+  },
 }
 
 export default function RootLayout({
