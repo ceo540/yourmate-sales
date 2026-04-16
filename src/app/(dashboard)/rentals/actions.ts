@@ -27,6 +27,7 @@ export async function createRental(data: {
   payment_method?: string
   inflow_source?: string
   notes?: string
+  title?: string  // 사용자가 입력한 제목 (예: "260301 대한초등학교")
 }) {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
@@ -39,11 +40,14 @@ export async function createRental(data: {
   }).select('id').single()
   if (error) return { error: error.message }
 
+  // 드롭박스 폴더명: title이 있으면 title 우선, 없으면 customer_name 사용
+  const folderName = data.title?.trim() || data.customer_name
+
   let dropboxUrl: string | null = null
   try {
     const folderUrl = await createSaleFolder({
       service_type: '교구대여',
-      name: data.customer_name,
+      name: folderName,
       inflow_date: data.rental_start ?? null,
     })
     if (folderUrl) {

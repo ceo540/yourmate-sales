@@ -223,6 +223,7 @@ export default function RentalsClient({ rentals: initialRentals, profiles, custo
       total_amount: newForm.total_amount ? parseInt(newForm.total_amount) : undefined,
       deposit: newForm.deposit ? parseInt(newForm.deposit) : undefined,
       has_deposit: newForm.has_deposit,
+      title: newForm.title || undefined,  // 제목: 페이지 타이틀 + 드롭박스 폴더명에 사용
     })
     if (res.error) { alert(res.error); return }
     setShowNew(false)
@@ -298,22 +299,44 @@ export default function RentalsClient({ rentals: initialRentals, profiles, custo
     })
   }
 
-  // ─── 캘린더 ─────────────────────────────────────────────────
-  const calDays = getCalendarDays(calYear, calMonth)
-  const activeRentals = rentals.filter(r => !['취소','보류'].includes(r.status))
+  // ─── 캘린더 필터 ────────────────────────────────────────────
+  // 전체: 활성 건 모두(취소/보류 제외), 날짜 기준 rental_start
+  // 배송: 상태 유입/견적발송/렌탈확정, 날짜 기준 rental_start
+  // 수거: 상태 진행중/수거완료/검수중, 날짜 기준 rental_end
+  // 완료: 상태 완료, 날짜 기준 rental_end
+  type CalFilter = '전체' | '배송' | '수거' | '완료'
+  const [calFilter, setCalFilter] = useState<CalFilter>('전체')
 
-  // 날짜별 렌탈 맵핑 (rental_start 기준)
+  const calDays = getCalendarDays(calYear, calMonth)
+
+  // 필터에 따라 표시할 렌탈 목록과 기준 날짜 필드 결정
+  const filteredCalRentals = rentals.filter(r => {
+    if (calFilter === '전체') return !['취소','보류'].includes(r.status)
+    if (calFilter === '배송') return ['유입','견적발송','렌탈확정'].includes(r.status)
+    if (calFilter === '수거') return ['진행중','수거완료','검수중'].includes(r.status)
+    if (calFilter === '완료') return r.status === '완료'
+    return false
+  })
+
+  // 필터별 날짜 기준 필드
+  const calDateField = (calFilter === '수거' || calFilter === '완료') ? 'rental_end' : 'rental_start'
+
+  // 날짜별 렌탈 맵핑
   const rentalsByDate: Record<string, Rental[]> = {}
   const noDateRentals: Rental[] = []
-  for (const r of activeRentals) {
-    if (!r.rental_start) { noDateRentals.push(r); continue }
-    const d = new Date(r.rental_start)
+  for (const r of filteredCalRentals) {
+    const dateStr = r[calDateField as keyof Rental] as string | null
+    if (!dateStr) { noDateRentals.push(r); continue }
+    const d = new Date(dateStr)
     if (d.getFullYear() === calYear && d.getMonth() === calMonth) {
       const key = d.getDate().toString()
       if (!rentalsByDate[key]) rentalsByDate[key] = []
       rentalsByDate[key].push(r)
     }
   }
+
+  // 전체 활성 건 (취소/보류 제외) — 이달 건수 표시용
+  const activeRentals = rentals.filter(r => !['취소','보류'].includes(r.status))
 
   const todayStr = today.toISOString().slice(0, 10)
 
@@ -373,6 +396,18 @@ export default function RentalsClient({ rentals: initialRentals, profiles, custo
             onClick={() => setShowNew(true)}
             className="bg-yellow-400 hover:bg-yellow-500 text-black text-sm font-medium px-3 py-1.5 rounded-lg"
           >+ 신규 등록</button>
+        </div>
+
+        {/* 캘린더 필터 탭: 전체 / 배송 / 수거 / 완료 */}
+        <div className="px-4 pt-2 pb-0 flex gap-1 border-b border-gray-100">
+          {(['전체','배송','수거','완료'] as CalFilter[]).map(f => (
+            <button key={f} onClick={() => setCalFilter(f)}
+              className={`text-xs px-3 py-1.5 rounded-t border-b-2 transition-colors
+                ${calFilter === f
+                  ? 'border-yellow-400 text-yellow-700 font-semibold bg-yellow-50'
+                  : 'border-transparent text-gray-400 hover:text-gray-600'}`}
+            >{f}</button>
+          ))}
         </div>
 
         {/* 캘린더 네비 */}
@@ -712,7 +747,8 @@ function DetailPanel({
       </div>
 
       {/* 상태 스텝퍼 */}
-      <div className="bg-white rounded-xl border border-gray-100 p-3">
+      <div className="bg-white rounded-xl border border-gray-100 p-3 space-y-2">
+        {/* 메인 흐름 스텝퍼: 유입 → 견적발송 → ... → 완료 */}
         <div className="flex items-center gap-1 overflow-x-auto">
           {STATUS_FLOW.map((s, i) => (
             <div key={s} className="flex items-center gap-1 shrink-0">
@@ -726,6 +762,31 @@ function DetailPanel({
               {i < STATUS_FLOW.length - 1 && <span className="text-gray-200 text-xs">›</span>}
             </div>
           ))}
+        </div>
+        {/* 예외 상태: 보류 / 취소 (흐름과 별도로 언제든 설정 가능) */}
+        <div className="flex items-center gap-2 pt-1 border-t border-gray-50">
+          <span className="text-[10px] text-gray-300">예외</span>
+          <button
+            onClick={() => saveField('status', '보류')}
+            className={`text-xs px-2.5 py-0.5 rounded-full border transition-all
+              ${rental.status === '보류'
+                ? 'bg-orange-100 border-orange-300 text-orange-700 font-semibold'
+                : 'border-gray-200 text-gray-400 hover:border-orange-300 hover:text-orange-500'}`}
+          >보류</button>
+          <button
+            onClick={() => saveField('status', '취소')}
+            className={`text-xs px-2.5 py-0.5 rounded-full border transition-all
+              ${rental.status === '취소'
+                ? 'bg-red-100 border-red-300 text-red-500 font-semibold'
+                : 'border-gray-200 text-gray-400 hover:border-red-300 hover:text-red-400'}`}
+          >취소</button>
+          {/* 보류/취소 상태일 때 이전 상태로 되돌리는 버튼 */}
+          {(rental.status === '보류' || rental.status === '취소') && (
+            <button
+              onClick={() => saveField('status', '유입')}
+              className="text-[10px] text-blue-400 hover:text-blue-600 ml-1"
+            >↩ 유입으로 복귀</button>
+          )}
         </div>
       </div>
 
