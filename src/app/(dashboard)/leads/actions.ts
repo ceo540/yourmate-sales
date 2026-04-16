@@ -5,6 +5,7 @@ import { revalidatePath } from 'next/cache'
 import { SERVICE_TO_DEPT } from '@/types'
 import { createSaleFolder } from '@/lib/dropbox'
 import { syncLeadToCustomerDB } from '@/lib/customer-sync'
+import { notifyLeadConverted } from '@/lib/channeltalk'
 
 // LEAD{YYYYMMDD}-{NNNN} 형식 ID 생성
 async function generateLeadId(): Promise<string> {
@@ -142,7 +143,7 @@ export async function convertLeadToSale(leadId: string) {
     department,
     assignee_id: lead.assignee_id,
     revenue: 0,
-    payment_status: '계약전',
+    contract_stage: '계약',
     memo: lead.initial_content,
     inflow_date: lead.inflow_date || new Date().toISOString().slice(0, 10),
     lead_id: leadId,
@@ -162,12 +163,20 @@ export async function convertLeadToSale(leadId: string) {
     }
   }
 
-  // 리드에 converted_sale_id 업데이트 + 상태를 '진행중'으로 (완료 아님 — 추가 계약 가능)
+  // 리드에 converted_sale_id 업데이트 + 상태를 '완료'로
   await supabase.from('leads').update({
     converted_sale_id: sale!.id,
-    status: '진행중',
+    status: '완료',
     updated_at: new Date().toISOString(),
   }).eq('id', leadId)
+
+  // 채널톡 알림 (CHANNELTALK_GROUP_ID 설정 시)
+  notifyLeadConverted({
+    clientOrg: lead.client_org,
+    serviceType: lead.service_type,
+    saleName: displayName ? `${displayName} (리드전환)` : '(리드전환)',
+    saleId: sale!.id,
+  }).catch(console.error)
 
   revalidatePath('/leads')
   revalidatePath('/sales/report')
@@ -197,7 +206,7 @@ export async function addSaleToLead(leadId: string, data: {
     department,
     assignee_id: lead.assignee_id,
     revenue: data.revenue,
-    payment_status: '계약전',
+    contract_stage: '계약',
     memo: data.memo,
     inflow_date: lead.inflow_date || new Date().toISOString().slice(0, 10),
     lead_id: leadId,
@@ -217,10 +226,10 @@ export async function addSaleToLead(leadId: string, data: {
     }
   }
 
-  // converted_sale_id가 없으면 이 건을 대표 계약건으로 설정 + 상태 '진행중'으로
+  // converted_sale_id가 없으면 이 건을 대표 계약건으로 설정 + 상태 '완료'로
   const leadUpdates: Record<string, unknown> = {}
   if (!lead.converted_sale_id) leadUpdates.converted_sale_id = sale!.id
-  if (!['진행중', '완료', '취소'].includes(lead.status as string)) leadUpdates.status = '진행중'
+  if (!['완료', '취소'].includes(lead.status as string)) leadUpdates.status = '완료'
   if (Object.keys(leadUpdates).length > 0) {
     await supabase.from('leads').update({ ...leadUpdates, updated_at: new Date().toISOString() }).eq('id', leadId)
   }
