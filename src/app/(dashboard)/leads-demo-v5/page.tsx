@@ -1,12 +1,10 @@
 'use client'
-import { useState, useRef } from 'react'
+import { useState } from 'react'
 
 // ============================================================
 // 리드 관리 데모 v5
-// - 카드: D-day 블록 + 3줄 컴팩트
-// - 소통 내역 기본 탭
-// - 개요 탭: 요약 + 드롭박스
-// - 폼: 담당자/기관 검색 + 추가
+// 탭: [요약+소통] [고객카드] [수정]
+// 헤더 버튼: [드롭박스] [계약전환]
 // ============================================================
 
 type Log  = { id: string; content: string; contacted_at: string; author_name: string }
@@ -309,11 +307,10 @@ export default function LeadsDemoV5() {
   const [leads, setLeads] = useState<Lead[]>(INIT_LEADS)
   const [persons, setPersons] = useState<PersonOption[]>(MOCK_PERSONS)
   const [selectedId, setSelectedId] = useState<string | null>('1')
-  const [tab, setTab] = useState<'logs'|'overview'|'customer'>('logs')
+  const [tab, setTab] = useState<'main'|'customer'|'edit'>('main')
   const [filter, setFilter] = useState('전체')
   const [showClosed, setShowClosed] = useState(false)
   const [showForm, setShowForm] = useState(false)
-  const [editMode, setEditMode] = useState(false)
   const [form, setForm] = useState<FormState>(BLANK)
   const [logInput, setLogInput] = useState('')
   const [aiLoading, setAiLoading] = useState(false)
@@ -333,26 +330,32 @@ export default function LeadsDemoV5() {
 
   function setF<K extends keyof FormState>(k: K, v: FormState[K]) { setForm(f => ({...f,[k]:v})) }
 
+  // 신규 리드 저장
   function saveLead() {
-    if (editMode && selected) {
-      setLeads(ls => ls.map(l => l.id===selected.id ? {...l, ...form} : l))
-    } else {
-      const id = uid()
-      setLeads(ls => [{
-        ...form, id, lead_id:`LEAD${new Date().toISOString().slice(0,10).replace(/-/g,'')}-${String(ls.length+1).padStart(4,'0')}`,
-        logs:[],
-      }, ...ls])
-      setSelectedId(id); setTab('logs')
-    }
-    setShowForm(false); setEditMode(false)
+    const id = uid()
+    setLeads(ls => [{
+      ...form, id,
+      lead_id:`LEAD${new Date().toISOString().slice(0,10).replace(/-/g,'')}-${String(ls.length+1).padStart(4,'0')}`,
+      logs:[],
+    }, ...ls])
+    setSelectedId(id); setShowForm(false); setTab('main')
+  }
+
+  // 수정 탭에서 인라인 저장
+  function saveEdit() {
+    if (!selected) return
+    setLeads(ls => ls.map(l => l.id===selected.id ? {...l, ...form} : l))
+    setTab('main')
   }
 
   function openNew() {
-    setForm(BLANK); setEditMode(false); setShowForm(true)
+    setForm(BLANK); setShowForm(true)
   }
-  function openEdit() {
+
+  // 수정 탭 열 때 폼 초기화
+  function openEditTab() {
     if (!selected) return
-    setForm({ ...selected, personId:'' }); setEditMode(true); setShowForm(true)
+    setForm({ ...selected, personId:'' }); setTab('edit')
   }
 
   function addLog() {
@@ -493,125 +496,98 @@ export default function LeadsDemoV5() {
                   <h2 className="text-xl font-bold text-gray-900">{selected.project_name||'(프로젝트명 없음)'}</h2>
                   <p className="text-sm text-gray-500 mt-0.5">{selected.contact_name} · {selected.client_org}</p>
                 </div>
+                {/* 버튼: 드롭박스 + 계약전환 */}
                 <div className="flex gap-2 flex-shrink-0">
-                  <button onClick={openEdit} className="text-sm border border-gray-200 hover:border-gray-300 text-gray-600 px-3 py-1.5 rounded-xl">수정</button>
-                  <button className="text-sm bg-yellow-400 hover:bg-yellow-500 text-gray-900 font-semibold px-3 py-1.5 rounded-xl">계약 전환</button>
+                  {selected.dropbox_url ? (
+                    <a href={selected.dropbox_url} target="_blank" rel="noreferrer"
+                      className="flex items-center gap-1.5 text-sm border border-gray-200 hover:border-blue-300 hover:bg-blue-50 text-gray-600 hover:text-blue-600 px-3 py-1.5 rounded-xl transition-colors">
+                      <span>📁</span><span>드롭박스</span>
+                    </a>
+                  ) : (
+                    <button
+                      onClick={() => setLeads(ls => ls.map(l => l.id===selected.id ? {...l, dropbox_url:'https://www.dropbox.com/home/★ADMIN/SOS/260416 '+selected.project_name} : l))}
+                      className="flex items-center gap-1.5 text-sm border border-dashed border-gray-300 hover:border-gray-400 text-gray-400 hover:text-gray-600 px-3 py-1.5 rounded-xl transition-colors">
+                      <span>📁</span><span>폴더 연결</span>
+                    </button>
+                  )}
+                  <button className="text-sm bg-yellow-400 hover:bg-yellow-500 text-gray-900 font-semibold px-3 py-1.5 rounded-xl transition-colors">
+                    계약 전환
+                  </button>
                 </div>
               </div>
 
               {/* 탭 */}
               <div className="flex border-b border-gray-200 mb-5">
-                {(['logs','overview','customer'] as const).map(t => (
-                  <button key={t} onClick={() => setTab(t)}
+                {(['main','customer','edit'] as const).map(t => (
+                  <button key={t}
+                    onClick={() => { if (t==='edit') openEditTab(); else setTab(t) }}
                     className={`px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors ${tab===t?'border-yellow-400 text-gray-900':'border-transparent text-gray-400 hover:text-gray-600'}`}>
-                    {t==='logs'?`소통 내역 ${selected.logs.length}`:t==='overview'?'개요':'고객 카드'}
+                    {t==='main'?'요약 · 소통':t==='customer'?'고객 카드':'수정'}
                   </button>
                 ))}
               </div>
 
-              {/* ── 소통 내역 ── */}
-              {tab==='logs' && (
-                <div className="bg-white rounded-2xl border border-gray-200 p-5">
-                  <div className="flex items-center justify-between mb-4">
-                    <span className="text-sm font-semibold text-gray-700">소통 내역 <span className="text-gray-400 font-normal">{selected.logs.length}건</span></span>
-                    {selected.logs.length >= 2 && (
-                      <button onClick={handleAi} disabled={aiLoading}
-                        className={`flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg border transition-colors disabled:opacity-50 ${showAi?'bg-violet-50 border-violet-200 text-violet-700':'bg-gray-50 border-gray-200 text-gray-500 hover:border-gray-300'}`}>
-                        {aiLoading ? <><span className="animate-spin">⏳</span> 요약 중...</> : showAi?'✦ AI 요약 닫기':'✦ AI로 요약'}
-                      </button>
-                    )}
-                  </div>
-                  {showAi && AI_MOCK[selected.id] && (
-                    <div className="mb-4 bg-violet-50 border border-violet-200 rounded-xl p-3.5">
-                      <p className="text-xs font-semibold text-violet-700 mb-1">✦ AI 요약</p>
-                      <p className="text-sm text-violet-900 leading-relaxed">{AI_MOCK[selected.id]}</p>
-                    </div>
-                  )}
-                  <div className="space-y-0 mb-4">
-                    {selected.logs.length===0 && <p className="text-sm text-gray-400 text-center py-6">소통 내역이 없습니다.</p>}
-                    {[...selected.logs].reverse().map(log => (
-                      <LogItem key={log.id} log={log} onDelete={() => deleteLog(log.id)} />
-                    ))}
-                  </div>
-                  <div className="border border-gray-200 rounded-xl p-3.5 bg-gray-50">
-                    <textarea value={logInput} onChange={e => setLogInput(e.target.value)}
-                      placeholder="소통 내용, 전화 전사록, 이메일 내용 등 자유롭게..."
-                      className="w-full text-sm text-gray-700 bg-transparent resize-none outline-none placeholder-gray-300 min-h-[64px]" />
-                    <div className="flex items-center justify-between mt-2 pt-2 border-t border-gray-200">
-                      <button onClick={() => setLogInput(v => (v?v+'\n':'')+new Date().toLocaleTimeString('ko-KR',{hour:'2-digit',minute:'2-digit'})+' ')}
-                        className="text-xs text-gray-400 hover:text-gray-600">현재 시간 입력</button>
-                      <button onClick={addLog} className="text-xs bg-gray-900 text-white px-3 py-1.5 rounded-lg hover:bg-gray-700">저장</button>
-                    </div>
-                  </div>
-                </div>
-              )}
+              {/* ── 탭: 요약 + 소통 (기본) ── */}
+              {tab==='main' && (
+                <div className="space-y-4">
 
-              {/* ── 개요 ── */}
-              {tab==='overview' && (
-                <div className="space-y-3">
-                  {/* 요약 메모 */}
+                  {/* 요약 카드 */}
                   <div className="bg-white rounded-2xl border border-gray-200 p-5">
-                    <div className="flex items-center justify-between mb-3">
-                      <p className="text-sm font-semibold text-gray-700">요약</p>
-                    </div>
+                    <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2.5">요약</p>
                     {selected.notes ? (
                       <p className="text-sm text-gray-700 leading-relaxed whitespace-pre-line">{selected.notes}</p>
                     ) : (
-                      <p className="text-sm text-gray-400">요약 내용이 없습니다. 수정에서 메모를 추가해주세요.</p>
+                      <p className="text-sm text-gray-400 italic">요약 없음 — 수정 탭에서 추가하세요.</p>
                     )}
                   </div>
 
-                  {/* 연락처 빠른 참조 */}
+                  {/* 소통 내역 카드 */}
                   <div className="bg-white rounded-2xl border border-gray-200 p-5">
-                    <p className="text-sm font-semibold text-gray-700 mb-3">연락처</p>
-                    <div className="space-y-2">
-                      {selected.phone && (
-                        <div className="flex items-center gap-2">
-                          <span className="text-xs text-gray-400 w-12">전화</span>
-                          <span className="text-sm font-medium text-blue-600">{selected.phone}</span>
-                        </div>
-                      )}
-                      {selected.email && (
-                        <div className="flex items-center gap-2">
-                          <span className="text-xs text-gray-400 w-12">이메일</span>
-                          <span className="text-sm text-gray-700">{selected.email}</span>
-                        </div>
-                      )}
-                      {!selected.phone && !selected.email && (
-                        <p className="text-sm text-gray-400">등록된 연락처가 없습니다.</p>
+                    <div className="flex items-center justify-between mb-4">
+                      <span className="text-xs font-semibold text-gray-400 uppercase tracking-wider">
+                        소통 내역 <span className="normal-case font-normal text-gray-400">{selected.logs.length}건</span>
+                      </span>
+                      {selected.logs.length >= 2 && (
+                        <button onClick={handleAi} disabled={aiLoading}
+                          className={`flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg border transition-colors disabled:opacity-50 ${showAi?'bg-violet-50 border-violet-200 text-violet-700':'bg-gray-50 border-gray-200 text-gray-500 hover:border-gray-300'}`}>
+                          {aiLoading?<><span className="animate-spin inline-block">⏳</span> 요약 중...</>:showAi?'✦ AI 요약 닫기':'✦ AI로 요약'}
+                        </button>
                       )}
                     </div>
-                  </div>
 
-                  {/* 드롭박스 폴더 */}
-                  <div className="bg-white rounded-2xl border border-gray-200 p-5">
-                    <p className="text-sm font-semibold text-gray-700 mb-3">드롭박스 폴더</p>
-                    {selected.dropbox_url ? (
-                      <div className="flex items-center gap-2">
-                        <div className="flex-1 text-sm text-blue-600 bg-blue-50 rounded-lg px-3 py-2 truncate">
-                          {selected.dropbox_url}
-                        </div>
-                        <a href={selected.dropbox_url} target="_blank" rel="noreferrer"
-                          className="flex-shrink-0 text-xs border border-gray-200 hover:border-gray-300 text-gray-600 px-3 py-2 rounded-lg transition-colors">
-                          열기
-                        </a>
-                      </div>
-                    ) : (
-                      <div className="flex items-center gap-2">
-                        <p className="text-sm text-gray-400 flex-1">연결된 폴더가 없습니다.</p>
-                        <button className="flex-shrink-0 text-xs bg-gray-900 text-white px-3 py-1.5 rounded-lg hover:bg-gray-700">
-                          폴더 생성
-                        </button>
+                    {showAi && AI_MOCK[selected.id] && (
+                      <div className="mb-4 bg-violet-50 border border-violet-200 rounded-xl p-3.5">
+                        <p className="text-xs font-semibold text-violet-700 mb-1">✦ AI 요약</p>
+                        <p className="text-sm text-violet-900 leading-relaxed">{AI_MOCK[selected.id]}</p>
                       </div>
                     )}
+
+                    <div className="space-y-0 mb-4">
+                      {selected.logs.length===0 && <p className="text-sm text-gray-400 text-center py-6">소통 내역이 없습니다.</p>}
+                      {[...selected.logs].reverse().map(log => (
+                        <LogItem key={log.id} log={log} onDelete={() => deleteLog(log.id)} />
+                      ))}
+                    </div>
+
+                    <div className="border border-gray-200 rounded-xl p-3.5 bg-gray-50">
+                      <textarea value={logInput} onChange={e => setLogInput(e.target.value)}
+                        placeholder="소통 내용, 전화 전사록, 이메일 내용 등 자유롭게..."
+                        className="w-full text-sm text-gray-700 bg-transparent resize-none outline-none placeholder-gray-300 min-h-[64px]" />
+                      <div className="flex items-center justify-between mt-2 pt-2 border-t border-gray-200">
+                        <button onClick={() => setLogInput(v=>(v?v+'\n':'')+new Date().toLocaleTimeString('ko-KR',{hour:'2-digit',minute:'2-digit'})+' ')}
+                          className="text-xs text-gray-400 hover:text-gray-600">현재 시간 입력</button>
+                        <button onClick={addLog} className="text-xs bg-gray-900 text-white px-3 py-1.5 rounded-lg hover:bg-gray-700">저장</button>
+                      </div>
+                    </div>
                   </div>
                 </div>
               )}
 
-              {/* ── 고객 카드 ── */}
+              {/* ── 탭: 고객 카드 ── */}
               {tab==='customer' && (
-                <div className="space-y-3">
-                  <div className="bg-white rounded-2xl border border-gray-200 p-5">
+                <div className="bg-white rounded-2xl border border-gray-200 p-5 space-y-5">
+                  {/* 기관 */}
+                  <div>
                     <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">기관</p>
                     <div className="grid grid-cols-2 gap-x-8 gap-y-3">
                       <InfoRow label="기관명"   value={selected.client_org||'—'} />
@@ -619,15 +595,113 @@ export default function LeadsDemoV5() {
                       <InfoRow label="기관 유형" value={selected.customer_type||'—'} />
                     </div>
                   </div>
-                  <div className="bg-white rounded-2xl border border-gray-200 p-5">
-                    <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">담당자</p>
+                  <hr className="border-gray-100" />
+                  {/* 담당자 + 연락처 */}
+                  <div>
+                    <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">담당자 · 연락처</p>
                     <div className="grid grid-cols-2 gap-x-8 gap-y-3">
-                      <InfoRow label="이름" value={selected.contact_name||'—'} />
-                      <InfoRow label="직급" value={selected.contact_title||'—'} />
-                      <InfoRow label="부서" value={selected.contact_dept||'—'} />
-                      <InfoRow label="전화" value={selected.phone||'—'} highlight />
+                      <InfoRow label="이름"   value={selected.contact_name||'—'} />
+                      <InfoRow label="직급"   value={selected.contact_title||'—'} />
+                      <InfoRow label="부서"   value={selected.contact_dept||'—'} />
+                      <InfoRow label="전화"   value={selected.phone||'—'} highlight />
                       <InfoRow label="이메일" value={selected.email||'—'} />
                     </div>
+                  </div>
+                </div>
+              )}
+
+              {/* ── 탭: 수정 (인라인 폼) ── */}
+              {tab==='edit' && (
+                <div className="bg-white rounded-2xl border border-gray-200 p-5 space-y-4">
+                  <div>
+                    <label className={LBL}>프로젝트명</label>
+                    <input type="text" className={INP} value={form.project_name} onChange={e => setF('project_name', e.target.value)} />
+                  </div>
+                  <div>
+                    <label className={LBL}>담당자</label>
+                    <PersonSearch form={form} setForm={setForm} persons={persons} setPersons={setPersons} />
+                  </div>
+                  <div>
+                    <label className={LBL}>기관명</label>
+                    <OrgSearch value={form.client_org} onChange={v => setF('client_org', v)} />
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className={LBL}>서비스 유형</label>
+                      <select className={SEL} value={form.service_type} onChange={e => setF('service_type', e.target.value)}>
+                        {SERVICES.map(s=><option key={s}>{s}</option>)}
+                      </select>
+                    </div>
+                    <div>
+                      <label className={LBL}>상태</label>
+                      <select className={SEL} value={form.status} onChange={e => setF('status', e.target.value)}>
+                        {STATUSES.map(s=><option key={s}>{s}</option>)}
+                      </select>
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className={LBL}>유입 채널</label>
+                      <select className={SEL} value={form.channel} onChange={e => setF('channel', e.target.value)}>
+                        {CHANNELS.map(c=><option key={c}>{c}</option>)}
+                      </select>
+                    </div>
+                    <div>
+                      <label className={LBL}>담당 직원</label>
+                      <select className={SEL} value={form.assignee_name} onChange={e => setF('assignee_name', e.target.value)}>
+                        {ASSIGNEES.map(a=><option key={a}>{a}</option>)}
+                      </select>
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className={LBL}>유입일</label>
+                      <input type="date" className={INP} value={form.inflow_date} onChange={e => setF('inflow_date', e.target.value)} />
+                    </div>
+                    <div>
+                      <label className={LBL}>리마인드 날짜</label>
+                      <input type="date" className={INP} value={form.remind_date} onChange={e => setF('remind_date', e.target.value)} />
+                    </div>
+                  </div>
+                  <div>
+                    <label className={LBL}>요약 / 메모</label>
+                    <textarea className={INP+' resize-none'} rows={3}
+                      value={form.notes} onChange={e => setF('notes', e.target.value)} />
+                  </div>
+                  <hr className="border-gray-100" />
+                  <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider">고객 카드</p>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className={LBL}>지역</label>
+                      <select className={SEL} value={form.customer_region} onChange={e => setF('customer_region', e.target.value)}>
+                        <option value="">선택 안함</option>
+                        {REGIONS.map(r=><option key={r}>{r}</option>)}
+                      </select>
+                    </div>
+                    <div>
+                      <label className={LBL}>기관 유형</label>
+                      <select className={SEL} value={form.customer_type} onChange={e => setF('customer_type', e.target.value)}>
+                        <option value="">선택 안함</option>
+                        {CUST_TYPES.map(t=><option key={t}>{t}</option>)}
+                      </select>
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className={LBL}>직급</label>
+                      <input type="text" className={INP} value={form.contact_title} onChange={e => setF('contact_title', e.target.value)} />
+                    </div>
+                    <div>
+                      <label className={LBL}>부서</label>
+                      <input type="text" className={INP} value={form.contact_dept} onChange={e => setF('contact_dept', e.target.value)} />
+                    </div>
+                  </div>
+
+                  <div className="flex gap-3 pt-2">
+                    <button onClick={() => setTab('main')}
+                      className="flex-1 border border-gray-200 text-gray-600 text-sm py-2.5 rounded-xl hover:bg-gray-50">취소</button>
+                    <button onClick={saveEdit}
+                      className="flex-1 bg-yellow-400 hover:bg-yellow-500 text-gray-900 font-semibold text-sm py-2.5 rounded-xl">저장</button>
                   </div>
                 </div>
               )}
@@ -641,120 +715,66 @@ export default function LeadsDemoV5() {
         )}
       </div>
 
-      {/* ── 폼 오버레이 ── */}
+      {/* ── 신규 리드 폼 오버레이 ── */}
       {showForm && (
         <div className="fixed inset-0 z-50 flex">
-          <div className="flex-1 bg-black/30" onClick={() => { setShowForm(false); setEditMode(false) }} />
+          <div className="flex-1 bg-black/30" onClick={() => setShowForm(false)} />
           <div className="w-[480px] bg-white shadow-2xl flex flex-col">
             <div className="px-6 py-4 border-b border-gray-200 flex items-center justify-between flex-shrink-0">
-              <h2 className="text-base font-bold text-gray-900">{editMode?'리드 수정':'새 리드 추가'}</h2>
-              <button onClick={() => { setShowForm(false); setEditMode(false) }} className="text-gray-400 hover:text-gray-600">✕</button>
+              <h2 className="text-base font-bold text-gray-900">새 리드 추가</h2>
+              <button onClick={() => setShowForm(false)} className="text-gray-400 hover:text-gray-600">✕</button>
             </div>
-
             <div className="flex-1 overflow-y-auto px-6 py-5 space-y-4">
               <div>
                 <label className={LBL}>프로젝트명</label>
                 <input type="text" className={INP} placeholder="ex) 2026 진로체험 페스티벌"
                   value={form.project_name} onChange={e => setF('project_name', e.target.value)} />
               </div>
-
               <div>
                 <label className={LBL}>담당자 *</label>
                 <PersonSearch form={form} setForm={setForm} persons={persons} setPersons={setPersons} />
               </div>
-
               <div>
                 <label className={LBL}>기관명</label>
                 <OrgSearch value={form.client_org} onChange={v => setF('client_org', v)} />
               </div>
-
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className={LBL}>서비스 유형</label>
                   <select className={SEL} value={form.service_type} onChange={e => setF('service_type', e.target.value)}>
-                    {SERVICES.map(s => <option key={s}>{s}</option>)}
+                    {SERVICES.map(s=><option key={s}>{s}</option>)}
                   </select>
                 </div>
                 <div>
                   <label className={LBL}>유입 채널</label>
                   <select className={SEL} value={form.channel} onChange={e => setF('channel', e.target.value)}>
-                    {CHANNELS.map(c => <option key={c}>{c}</option>)}
+                    {CHANNELS.map(c=><option key={c}>{c}</option>)}
                   </select>
                 </div>
               </div>
-
               <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className={LBL}>상태</label>
-                  <select className={SEL} value={form.status} onChange={e => setF('status', e.target.value)}>
-                    {STATUSES.map(s => <option key={s}>{s}</option>)}
-                  </select>
-                </div>
                 <div>
                   <label className={LBL}>담당 직원</label>
                   <select className={SEL} value={form.assignee_name} onChange={e => setF('assignee_name', e.target.value)}>
-                    {ASSIGNEES.map(a => <option key={a}>{a}</option>)}
+                    {ASSIGNEES.map(a=><option key={a}>{a}</option>)}
                   </select>
-                </div>
-              </div>
-
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className={LBL}>유입일</label>
-                  <input type="date" className={INP} value={form.inflow_date} onChange={e => setF('inflow_date', e.target.value)} />
                 </div>
                 <div>
                   <label className={LBL}>리마인드 날짜</label>
                   <input type="date" className={INP} value={form.remind_date} onChange={e => setF('remind_date', e.target.value)} />
                 </div>
               </div>
-
               <div>
                 <label className={LBL}>요약 / 메모</label>
-                <textarea className={INP+' resize-none'} rows={3}
-                  placeholder="예산, 규모, 진행 상황 요약 등"
+                <textarea className={INP+' resize-none'} rows={2} placeholder="예산, 규모, 진행 상황 등"
                   value={form.notes} onChange={e => setF('notes', e.target.value)} />
               </div>
-
-              <hr className="border-gray-100" />
-              <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider">고객 카드 (선택)</p>
-
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className={LBL}>지역</label>
-                  <select className={SEL} value={form.customer_region} onChange={e => setF('customer_region', e.target.value)}>
-                    <option value="">선택 안함</option>
-                    {REGIONS.map(r => <option key={r}>{r}</option>)}
-                  </select>
-                </div>
-                <div>
-                  <label className={LBL}>기관 유형</label>
-                  <select className={SEL} value={form.customer_type} onChange={e => setF('customer_type', e.target.value)}>
-                    <option value="">선택 안함</option>
-                    {CUST_TYPES.map(t => <option key={t}>{t}</option>)}
-                  </select>
-                </div>
-              </div>
-
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className={LBL}>직급</label>
-                  <input type="text" className={INP} placeholder="팀장" value={form.contact_title} onChange={e => setF('contact_title', e.target.value)} />
-                </div>
-                <div>
-                  <label className={LBL}>부서</label>
-                  <input type="text" className={INP} placeholder="진로교육팀" value={form.contact_dept} onChange={e => setF('contact_dept', e.target.value)} />
-                </div>
-              </div>
             </div>
-
             <div className="px-6 py-4 border-t border-gray-100 flex gap-3 flex-shrink-0">
-              <button onClick={() => { setShowForm(false); setEditMode(false) }}
+              <button onClick={() => setShowForm(false)}
                 className="flex-1 border border-gray-200 text-gray-600 text-sm py-2.5 rounded-xl hover:bg-gray-50">취소</button>
               <button onClick={saveLead}
-                className="flex-1 bg-yellow-400 hover:bg-yellow-500 text-gray-900 font-semibold text-sm py-2.5 rounded-xl">
-                {editMode?'저장':'리드 추가'}
-              </button>
+                className="flex-1 bg-yellow-400 hover:bg-yellow-500 text-gray-900 font-semibold text-sm py-2.5 rounded-xl">리드 추가</button>
             </div>
           </div>
         </div>
