@@ -701,6 +701,14 @@ async function processWithGPT(chatKey: string, userMessage: string) {
 }
 
 export async function POST(req: NextRequest) {
+  // ── 봇 활성화 여부 체크 ─────────────────────────────────────
+  // Vercel 환경변수 CHANNELTALK_BOT_ENABLED=true 로 설정해야 활성화됨
+  // 기본값: 비활성 (고객 채널 답변 방지)
+  if (process.env.CHANNELTALK_BOT_ENABLED !== 'true') {
+    return NextResponse.json({ result: 'bot disabled' })
+  }
+  // ────────────────────────────────────────────────────────────
+
   const body = await req.text()
 
   // 서명 검증 (secret 설정 시 fail-closed)
