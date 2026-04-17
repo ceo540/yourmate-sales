@@ -15,10 +15,10 @@ export default async function ReceivablesPage() {
   const [{ data: salesRaw }, { data: entities }, { data: profiles }] = await Promise.all([
     supabase
       .from('sales')
-      .select('id, name, revenue, payment_status, inflow_date, created_at, assignee_id, entity_id')
-      .neq('payment_status', '완납')
-      .not('payment_status', 'is', null)
-      .neq('payment_status', '계약전')
+      .select('id, name, revenue, contract_stage, inflow_date, created_at, assignee_id, entity_id')
+      .neq('contract_stage', '잔금')
+      .not('contract_stage', 'is', null)
+      .neq('contract_stage', '계약')
       .gt('revenue', 0)
       .order('created_at', { ascending: false }),
     supabase.from('business_entities').select('id, name').order('name'),

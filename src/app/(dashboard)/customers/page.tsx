@@ -89,7 +89,7 @@ export default async function CustomersPage() {
   // 담당자 리드에 연결된 매출건 조회
   const personLeadIds = (personLeadsRaw ?? []).map((l: any) => l.id)
   const { data: personSalesRaw } = personLeadIds.length > 0
-    ? await supabase.from('sales').select('id, lead_id, name, revenue, payment_status, service_type').in('lead_id', personLeadIds)
+    ? await supabase.from('sales').select('id, lead_id, name, revenue, contract_stage, service_type').in('lead_id', personLeadIds)
     : { data: [] }
 
   const personSalesByLead: Record<string, any[]> = {}
@@ -124,7 +124,7 @@ export default async function CustomersPage() {
       created_at: p.created_at,
       job_history,
       leads: personLeads,
-      sales: personSales.map((s: any) => ({ id: s.id, name: s.name, revenue: s.revenue || 0, payment_status: s.payment_status, service_type: s.service_type })),
+      sales: personSales.map((s: any) => ({ id: s.id, name: s.name, revenue: s.revenue || 0, contract_stage: s.contract_stage, service_type: s.service_type })),
       total_sales: totalSales,
     }
   })

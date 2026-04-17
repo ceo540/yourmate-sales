@@ -31,7 +31,7 @@ export default async function DepartmentsPage() {
   // 사업부별 활성 프로젝트 수 집계
   const { data: salesData } = await supabase
     .from('sales')
-    .select('department, payment_status')
+    .select('department, contract_stage')
     .not('department', 'is', null)
 
   const salesByDept: Record<string, { total: number; active: number }> = {}
@@ -39,7 +39,7 @@ export default async function DepartmentsPage() {
     const d = s.department as string
     if (!salesByDept[d]) salesByDept[d] = { total: 0, active: 0 }
     salesByDept[d].total++
-    if (s.payment_status !== '완료' && s.payment_status !== '취소') {
+    if (s.contract_stage !== '잔금') {
       salesByDept[d].active++
     }
   }

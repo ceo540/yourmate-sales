@@ -10,7 +10,7 @@ interface SaleCost {
   amount: number
   category: string
   memo: string | null
-  sale: { id: string; name: string; inflow_date: string | null; payment_status: string | null }
+  sale: { id: string; name: string; inflow_date: string | null; contract_stage: string | null }
 }
 
 interface Payment {

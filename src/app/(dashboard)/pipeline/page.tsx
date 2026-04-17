@@ -21,8 +21,8 @@ export default async function PipelinePage() {
   // 완납 제외한 매출건 (진행 중인 것)
   const { data: salesRaw } = await admin
     .from('sales')
-    .select('id, name, client_org, service_type, payment_status, progress_status, revenue, assignee_id, lead_id, inflow_date, remind_date')
-    .not('payment_status', 'eq', '완납')
+    .select('id, name, client_org, service_type, contract_stage, progress_status, revenue, assignee_id, lead_id, inflow_date, remind_date')
+    .not('contract_stage', 'eq', '잔금')
     .order('inflow_date', { ascending: false })
 
   // 담당자 목록

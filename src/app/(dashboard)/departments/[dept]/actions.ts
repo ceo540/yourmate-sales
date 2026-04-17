@@ -25,7 +25,7 @@ export async function createSaleFromDept(formData: FormData) {
     assignee_id: (formData.get('assignee_id') as string) || null,
     client_org: (formData.get('client_org') as string) || null,
     revenue: formData.get('revenue') ? Number(formData.get('revenue')) : 0,
-    payment_status: '계약전',
+    contract_stage: '계약',
     inflow_date,
   }).select('id').single()
 

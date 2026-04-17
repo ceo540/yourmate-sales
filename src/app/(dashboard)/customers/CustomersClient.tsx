@@ -26,7 +26,7 @@ interface JobHistory {
   dept: string; title: string; started_at: string; ended_at: string | null; is_current: boolean
 }
 interface PersonLead { id: string; lead_id: string; client_org: string | null; service_type: string | null; status: string; inflow_date: string | null; converted_sale_id: string | null }
-interface PersonSale { id: string; name: string; revenue: number; payment_status: string; service_type: string | null }
+interface PersonSale { id: string; name: string; revenue: number; contract_stage: string; service_type: string | null }
 interface Person {
   id: string; name: string; phone: string; email: string; notes: string
   channeltalk_user_id?: string | null
@@ -861,7 +861,7 @@ export default function CustomersClient({ customers, persons, isAdmin }: Props) 
                             <p className="text-sm font-medium text-gray-800">{s.name}</p>
                             <p className="text-xs text-gray-400">
                               {s.service_type && <span>{s.service_type} · </span>}
-                              <span className={s.payment_status === '완납' ? 'text-gray-400' : 'text-green-600'}>{s.payment_status}</span>
+                              <span className={s.contract_stage === '잔금' ? 'text-gray-400' : 'text-green-600'}>{s.contract_stage}</span>
                             </p>
                           </div>
                           <p className="text-sm font-bold text-gray-700 shrink-0">{fmt(s.revenue)}</p>

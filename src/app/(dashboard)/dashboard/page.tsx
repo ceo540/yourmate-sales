@@ -28,12 +28,14 @@ function formatDue(d: string | null) {
   return { label: `D-${diff}`, color: 'text-gray-400' }
 }
 
-const PAYMENT_STATUS_COLORS: Record<string, string> = {
-  '계약전': 'bg-gray-100 text-gray-500',
-  '계약완료': 'bg-blue-50 text-blue-600',
-  '선금수령': 'bg-yellow-50 text-yellow-700',
-  '중도금수령': 'bg-orange-50 text-orange-600',
-  '완납': 'bg-green-50 text-green-600',
+const CONTRACT_STAGE_COLORS: Record<string, string> = {
+  '계약': 'bg-blue-50 text-blue-600',
+  '착수': 'bg-purple-50 text-purple-600',
+  '선금': 'bg-yellow-50 text-yellow-700',
+  '중도금': 'bg-orange-50 text-orange-600',
+  '완수': 'bg-teal-50 text-teal-600',
+  '계산서발행': 'bg-indigo-50 text-indigo-600',
+  '잔금': 'bg-green-50 text-green-600',
 }
 
 const STATUS_STYLE: Record<string, string> = {
@@ -88,7 +90,7 @@ export default async function DashboardPage() {
 
   let salesQuery = admin
     .from('sales')
-    .select('id, name, revenue, payment_status, inflow_date, created_at')
+    .select('id, name, revenue, contract_stage, inflow_date, created_at')
     .order('created_at', { ascending: false })
     .limit(8)
   if (!isAdmin) salesQuery = salesQuery.eq('assignee_id', user.id)
@@ -282,9 +284,9 @@ export default async function DashboardPage() {
                     </div>
                     <div className="text-right flex-shrink-0">
                       <p className="text-sm font-semibold text-gray-700">{formatMoney(s.revenue ?? 0)}</p>
-                      {s.payment_status && (
-                        <span className={`text-xs px-1.5 py-0.5 rounded-full ${PAYMENT_STATUS_COLORS[s.payment_status] ?? 'bg-gray-100 text-gray-500'}`}>
-                          {s.payment_status}
+                      {s.contract_stage && (
+                        <span className={`text-xs px-1.5 py-0.5 rounded-full ${CONTRACT_STAGE_COLORS[s.contract_stage] ?? 'bg-gray-100 text-gray-500'}`}>
+                          {s.contract_stage}
                         </span>
                       )}
                     </div>

@@ -17,7 +17,7 @@ interface Sale {
   department: string | null
   service_type: string | null
   revenue: number | null
-  payment_status: string | null
+  contract_stage: string | null
   memo: string | null
   inflow_date: string | null
   payment_date: string | null

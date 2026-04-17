@@ -10,7 +10,7 @@ export default async function VendorLedgerPage({ params }: { params: Promise<{ i
     supabase.from('vendors').select('id, name, type, phone, bank_info, memo').eq('id', id).single(),
     supabase
       .from('sale_costs')
-      .select('id, item, amount, category, memo, sale:sales(id, name, inflow_date, payment_status)')
+      .select('id, item, amount, category, memo, sale:sales(id, name, inflow_date, contract_stage)')
       .eq('vendor_id', id)
       .order('created_at', { ascending: false }),
     supabase
