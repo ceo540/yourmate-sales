@@ -112,3 +112,15 @@ export async function deleteGoal(id: string, dept: string) {
   revalidatePath(`/departments/${dept}`)
   revalidatePath('/departments')
 }
+
+export async function updateSaleRemindDate(saleId: string, remind_date: string | null, dept: string) {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) throw new Error('Unauthorized')
+
+  const admin = createAdminClient()
+  await admin.from('sales').update({ remind_date }).eq('id', saleId)
+
+  revalidatePath(`/departments/${dept}`)
+  revalidatePath(`/sales/${saleId}`)
+}

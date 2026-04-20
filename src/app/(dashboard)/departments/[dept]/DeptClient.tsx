@@ -3,7 +3,8 @@
 import { useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
-import { createGoal, updateGoal, deleteGoal, createSaleFromDept } from './actions'
+import { createGoal, updateGoal, deleteGoal, createSaleFromDept, updateSaleRemindDate } from './actions'
+import { createTask } from '../../sales/tasks/actions'
 import { SERVICE_TYPES } from '@/types'
 
 interface Profile { id: string; name: string }
@@ -29,6 +30,7 @@ interface Sale {
   progress_status: string | null
   revenue: number | null
   inflow_date: string | null
+  remind_date: string | null
   client_org: string | null
   memo: string | null
   assignee: { name: string } | null
@@ -45,7 +47,7 @@ interface Task {
   due_date: string | null
 }
 
-interface TaskStats { total: number; done: number; urgent: number }
+interface TaskStats { total: number; done: number; urgent: number; overdue: number }
 
 interface DeptClientProps {
   dept: string
@@ -78,6 +80,14 @@ const TASK_STATUS_COLORS: Record<string, string> = {
   '보류':   'bg-yellow-100 text-yellow-700',
 }
 
+const TASK_STATUS_DOT: Record<string, string> = {
+  '할 일':  'bg-gray-300',
+  '진행중': 'bg-blue-500',
+  '검토중': 'bg-purple-500',
+  '완료':   'bg-green-400',
+  '보류':   'bg-yellow-400',
+}
+
 const STATUS_COLORS: Record<string, string> = {
   '진행전': 'bg-gray-100 text-gray-500',
   '진행중': 'bg-blue-100 text-blue-700',
@@ -85,8 +95,31 @@ const STATUS_COLORS: Record<string, string> = {
   '보류':   'bg-yellow-100 text-yellow-700',
 }
 
-// 렌탈 전용 서비스
 const RENTAL_SERVICES = new Set(['교구대여'])
+
+function calcDday(dateStr: string | null): { diff: number; label: string; color: string } | null {
+  if (!dateStr) return null
+  const date = new Date(dateStr)
+  const today = new Date(); today.setHours(0, 0, 0, 0)
+  const diff = Math.ceil((date.getTime() - today.getTime()) / 86400000)
+  if (diff < 0) return { diff, label: `D+${Math.abs(diff)}`, color: 'bg-red-100 text-red-600' }
+  if (diff === 0) return { diff, label: 'D-day', color: 'bg-red-100 text-red-600' }
+  if (diff <= 3) return { diff, label: `D-${diff}`, color: 'bg-orange-100 text-orange-600' }
+  if (diff <= 7) return { diff, label: `D-${diff}`, color: 'bg-yellow-100 text-yellow-700' }
+  return { diff, label: `D-${diff}`, color: 'bg-gray-100 text-gray-400' }
+}
+
+function formatTaskDue(d: string | null) {
+  if (!d) return null
+  const date = new Date(d)
+  const today = new Date(); today.setHours(0, 0, 0, 0)
+  const diff = Math.ceil((date.getTime() - today.getTime()) / 86400000)
+  const str = `${date.getMonth() + 1}/${date.getDate()}`
+  if (diff < 0) return { str, color: 'text-red-500 font-semibold' }
+  if (diff === 0) return { str: '오늘', color: 'text-red-500 font-semibold' }
+  if (diff <= 3) return { str, color: 'text-orange-500' }
+  return { str, color: 'text-gray-400' }
+}
 
 export default function DeptClient({ dept, deptLabel, deptIcon, sales, goals, tasks, profiles, taskStatsBySale, isAdmin, year }: DeptClientProps) {
   const router = useRouter()
@@ -107,6 +140,14 @@ export default function DeptClient({ dept, deptLabel, deptIcon, sales, goals, ta
   const [isPending, startTransition] = useTransition()
   const [addingSale, setAddingSale] = useState(false)
 
+  // remind_date 인라인 편집
+  const [editingRemindId, setEditingRemindId] = useState<string | null>(null)
+  const [remindInputVal, setRemindInputVal] = useState('')
+
+  // 빠른 업무 추가
+  const [quickAddSaleId, setQuickAddSaleId] = useState<string | null>(null)
+  const [quickAddTitle, setQuickAddTitle] = useState('')
+
   const serviceCount = (svc: string) =>
     svc === '미분류'
       ? sales.filter(s => !s.service_type).length
@@ -116,7 +157,6 @@ export default function DeptClient({ dept, deptLabel, deptIcon, sales, goals, ta
     ? sales.filter(s => !s.service_type)
     : sales.filter(s => s.service_type === service)
 
-  // 완료 건 (잔금 + 완수) 숨김 처리
   const completedCount = serviceSales.filter(s => s.contract_stage === '잔금').length
   if (hideCompleted) {
     serviceSales = serviceSales.filter(s => s.contract_stage !== '잔금')
@@ -126,9 +166,16 @@ export default function DeptClient({ dept, deptLabel, deptIcon, sales, goals, ta
     serviceSales = serviceSales.filter(s => s.assignee?.name === filterAssignee)
   }
 
+  // remind_date 기준 정렬: 마감 임박 먼저, 없으면 뒤로
+  serviceSales = [...serviceSales].sort((a, b) => {
+    if (a.remind_date && b.remind_date) return a.remind_date.localeCompare(b.remind_date)
+    if (a.remind_date) return -1
+    if (b.remind_date) return 1
+    return 0
+  })
+
   const totalRevenue = serviceSales.reduce((s, r) => s + (r.revenue ?? 0), 0)
 
-  // 담당자 목록 (현재 서비스에 있는 건들의 담당자만)
   const assigneeOptions = Array.from(new Set(
     (service === '미분류' ? sales.filter(s => !s.service_type) : sales.filter(s => s.service_type === service))
       .map(s => s.assignee?.name).filter(Boolean)
@@ -148,6 +195,24 @@ export default function DeptClient({ dept, deptLabel, deptIcon, sales, goals, ta
     await createSaleFromDept(fd)
     setAddingSale(false)
     setShowNewSaleForm(false)
+  }
+
+  function handleRemindSave(saleId: string) {
+    const val = remindInputVal || null
+    startTransition(() => updateSaleRemindDate(saleId, val, dept))
+    setEditingRemindId(null)
+  }
+
+  function handleQuickAddTask(saleId: string) {
+    if (!quickAddTitle.trim()) return
+    const fd = new FormData()
+    fd.set('title', quickAddTitle)
+    fd.set('project_id', saleId)
+    fd.set('status', '할 일')
+    fd.set('priority', '보통')
+    startTransition(() => createTask(fd))
+    setQuickAddTitle('')
+    setQuickAddSaleId(null)
   }
 
   return (
@@ -186,7 +251,7 @@ export default function DeptClient({ dept, deptLabel, deptIcon, sales, goals, ta
               </button>
             )
           })}
-          {/* 우측: 업무/목표 보조 탭 */}
+          {/* 업무/목표 보조 탭 */}
           <div className="ml-auto flex gap-1">
             {(['tasks', 'goals'] as const).map(s => (
               <button
@@ -203,11 +268,10 @@ export default function DeptClient({ dept, deptLabel, deptIcon, sales, goals, ta
         </div>
       )}
 
-      {/* ── 서비스별 프로젝트 뷰 ── */}
+      {/* ── 프로젝트 뷰 ── */}
       {section === 'projects' && (
         <div className="mt-4">
           {RENTAL_SERVICES.has(service) ? (
-            /* 렌탈 서비스 */
             <div>
               <div className="flex items-center justify-between mb-3">
                 <p className="text-sm text-gray-500">렌탈은 배송·수거 일정 중심으로 관리</p>
@@ -237,14 +301,8 @@ export default function DeptClient({ dept, deptLabel, deptIcon, sales, goals, ta
                   ))}
                 </div>
               )}
-              {serviceSales.length === 0 && (
-                <div className="text-center py-12 text-gray-400 text-sm bg-white border border-dashed border-gray-200 rounded-xl">
-                  등록된 교구대여 계약이 없습니다
-                </div>
-              )}
             </div>
           ) : (
-            /* 일반 서비스 */
             <div>
               {service === '미분류' && (
                 <div className="mb-3 px-3 py-2 bg-orange-50 border border-orange-100 rounded-lg">
@@ -252,7 +310,7 @@ export default function DeptClient({ dept, deptLabel, deptIcon, sales, goals, ta
                 </div>
               )}
 
-              {/* 툴바: 요약 + 담당자 필터 + 새 건 버튼 */}
+              {/* 툴바 */}
               <div className="flex items-center gap-2 mb-3 flex-wrap">
                 <span className="text-sm text-gray-500">
                   {filterAssignee ? `${filterAssignee} · ` : ''}{serviceSales.length}건
@@ -344,86 +402,167 @@ export default function DeptClient({ dept, deptLabel, deptIcon, sales, goals, ta
                   <p className="text-xs">위의 &ldquo;+ 새 건&rdquo; 버튼으로 추가하세요</p>
                 </div>
               ) : serviceSales.length > 0 ? (
-                <div className="bg-white border border-gray-100 rounded-xl overflow-hidden">
+                <div className="bg-white border border-gray-100 rounded-xl overflow-visible">
                   {serviceSales.map((s, idx) => {
                     const stats = taskStatsBySale[s.id]
                     const pct = stats && stats.total > 0 ? Math.round((stats.done / stats.total) * 100) : null
+                    const dday = calcDday(s.remind_date)
+                    const isEditingRemind = editingRemindId === s.id
+                    const isQuickAdding = quickAddSaleId === s.id
 
                     return (
-                      <Link
-                        key={s.id}
-                        href={`/departments/${dept}/${s.id}`}
-                        className={`flex items-center gap-3 px-4 py-3.5 hover:bg-gray-50 transition-colors group ${idx !== serviceSales.length - 1 ? 'border-b border-gray-50' : ''}`}
-                      >
-                        {/* 상태 점 */}
-                        <div className={`w-2 h-2 rounded-full flex-shrink-0 ${
-                          s.contract_stage === '잔금' ? 'bg-green-400' :
-                          s.contract_stage === '착수' || s.contract_stage === '선금' || s.contract_stage === '중도금' || s.contract_stage === '완수' || s.contract_stage === '계산서발행' ? 'bg-yellow-400' :
-                          'bg-gray-300'
-                        }`} />
+                      <div key={s.id} className={idx !== serviceSales.length - 1 ? 'border-b border-gray-50' : ''}>
+                        <div className="relative group">
+                          <Link
+                            href={`/departments/${dept}/${s.id}`}
+                            className="flex items-center gap-3 px-4 py-3.5 hover:bg-gray-50 transition-colors"
+                          >
+                            {/* 상태 점 */}
+                            <div className={`w-2 h-2 rounded-full flex-shrink-0 ${
+                              s.contract_stage === '잔금' ? 'bg-green-400' :
+                              s.contract_stage === '착수' || s.contract_stage === '선금' || s.contract_stage === '중도금' || s.contract_stage === '완수' || s.contract_stage === '계산서발행' ? 'bg-yellow-400' :
+                              'bg-gray-300'
+                            }`} />
 
-                        {/* 건명 + 클라이언트 */}
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-center gap-1.5 flex-wrap">
-                            <p className="text-sm font-medium text-gray-900 group-hover:text-gray-700 truncate">{s.name}</p>
-                            {s.progress_status && s.progress_status !== '착수전' && (
-                              <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium flex-shrink-0 ${
-                                s.progress_status === '완수' ? 'bg-teal-50 text-teal-600' :
-                                s.progress_status === '착수중' ? 'bg-blue-50 text-blue-600' :
-                                'bg-gray-100 text-gray-400'
-                              }`}>{s.progress_status}</span>
+                            {/* 건명 + 클라이언트 */}
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center gap-1.5 flex-wrap">
+                                <p className="text-sm font-medium text-gray-900 group-hover:text-gray-700 truncate">{s.name}</p>
+                                {s.progress_status && s.progress_status !== '착수전' && (
+                                  <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium flex-shrink-0 ${
+                                    s.progress_status === '완수' ? 'bg-teal-50 text-teal-600' :
+                                    s.progress_status === '착수중' ? 'bg-blue-50 text-blue-600' :
+                                    'bg-gray-100 text-gray-400'
+                                  }`}>{s.progress_status}</span>
+                                )}
+                              </div>
+                              <div className="flex items-center gap-2 mt-0.5">
+                                {s.client_org && <p className="text-xs text-gray-400 truncate">{s.client_org}</p>}
+                                {s.inflow_date && (
+                                  <p className="text-xs text-gray-300 flex-shrink-0">
+                                    {s.inflow_date.slice(5).replace('-', '/')}
+                                  </p>
+                                )}
+                              </div>
+                            </div>
+
+                            {/* D-day 배지 / 마감 설정 버튼 */}
+                            <div className="flex-shrink-0" onClick={e => e.preventDefault()}>
+                              {isEditingRemind ? (
+                                <input
+                                  autoFocus
+                                  type="date"
+                                  value={remindInputVal}
+                                  onChange={e => setRemindInputVal(e.target.value)}
+                                  onBlur={() => handleRemindSave(s.id)}
+                                  onKeyDown={e => {
+                                    if (e.key === 'Enter') handleRemindSave(s.id)
+                                    if (e.key === 'Escape') setEditingRemindId(null)
+                                  }}
+                                  className="text-xs border border-yellow-300 rounded-lg px-2 py-1 focus:outline-none focus:border-yellow-400 bg-white w-32"
+                                />
+                              ) : dday ? (
+                                <button
+                                  onClick={e => {
+                                    e.stopPropagation()
+                                    setEditingRemindId(s.id)
+                                    setRemindInputVal(s.remind_date ?? '')
+                                  }}
+                                  className={`text-[11px] px-2 py-0.5 rounded-full font-semibold cursor-pointer hover:opacity-80 ${dday.color}`}
+                                >
+                                  {dday.label}
+                                </button>
+                              ) : (
+                                <button
+                                  onClick={e => {
+                                    e.stopPropagation()
+                                    setEditingRemindId(s.id)
+                                    setRemindInputVal('')
+                                  }}
+                                  className="text-[11px] px-2 py-0.5 rounded-full text-gray-300 hover:text-gray-500 hover:bg-gray-100 opacity-0 group-hover:opacity-100 transition-opacity"
+                                >
+                                  + 마감
+                                </button>
+                              )}
+                            </div>
+
+                            {/* 업무 진행률 */}
+                            {stats && stats.total > 0 && (
+                              <div className="flex items-center gap-2 flex-shrink-0 w-24">
+                                <div className="flex-1 h-1.5 bg-gray-100 rounded-full overflow-hidden">
+                                  <div
+                                    className="h-full rounded-full transition-all"
+                                    style={{
+                                      width: `${pct}%`,
+                                      backgroundColor: pct === 100 ? '#22c55e' : '#FFCE00',
+                                    }}
+                                  />
+                                </div>
+                                <span className="text-[11px] text-gray-400 whitespace-nowrap">{stats.done}/{stats.total}</span>
+                                {stats.overdue > 0 && (
+                                  <span className="text-[11px] px-1.5 py-0.5 rounded-full bg-red-50 text-red-500 font-semibold whitespace-nowrap">
+                                    ⚠ {stats.overdue}
+                                  </span>
+                                )}
+                              </div>
                             )}
-                          </div>
-                          <div className="flex items-center gap-2 mt-0.5">
-                            {s.client_org && <p className="text-xs text-gray-400 truncate">{s.client_org}</p>}
-                            {s.inflow_date && (
-                              <p className="text-xs text-gray-300 flex-shrink-0">
-                                {s.inflow_date.slice(5).replace('-', '/')}
-                              </p>
+
+                            {/* 담당자 */}
+                            {s.assignee && (
+                              <span className="text-xs text-gray-400 flex-shrink-0 hidden sm:block">{s.assignee.name}</span>
                             )}
+
+                            {/* 매출 */}
+                            {s.revenue ? (
+                              <span className="text-xs font-medium text-gray-600 flex-shrink-0">
+                                {(s.revenue / 10000).toFixed(0)}만
+                              </span>
+                            ) : null}
+
+                            {/* 계약 단계 */}
+                            <span className={`text-[11px] px-2 py-0.5 rounded-full font-medium flex-shrink-0 ${PAY_STATUS_COLORS[s.contract_stage ?? ''] ?? 'bg-gray-100 text-gray-400'}`}>
+                              {s.contract_stage ?? '-'}
+                            </span>
+
+                            <span className="text-gray-300 group-hover:text-gray-500 text-xs flex-shrink-0">→</span>
+                          </Link>
+
+                          {/* + 업무 버튼 (hover 시) */}
+                          <div
+                            className="absolute right-8 top-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 transition-opacity"
+                            onClick={e => e.preventDefault()}
+                          >
+                            <button
+                              onClick={e => {
+                                e.stopPropagation()
+                                setQuickAddSaleId(isQuickAdding ? null : s.id)
+                                setQuickAddTitle('')
+                              }}
+                              className="text-[11px] px-2 py-0.5 rounded-full bg-white border border-gray-200 text-gray-500 hover:border-yellow-300 hover:text-gray-800 shadow-sm"
+                            >
+                              + 업무
+                            </button>
                           </div>
                         </div>
 
-                        {/* 업무 진행률 */}
-                        {stats && stats.total > 0 && (
-                          <div className="flex items-center gap-2 flex-shrink-0 w-24">
-                            <div className="flex-1 h-1.5 bg-gray-100 rounded-full overflow-hidden">
-                              <div
-                                className="h-full rounded-full transition-all"
-                                style={{
-                                  width: `${pct}%`,
-                                  backgroundColor: pct === 100 ? '#22c55e' : '#FFCE00',
-                                }}
-                              />
-                            </div>
-                            <span className="text-[11px] text-gray-400 whitespace-nowrap">{stats.done}/{stats.total}</span>
-                            {stats.urgent > 0 && (
-                              <span className="text-[11px] px-1.5 py-0.5 rounded-full bg-red-50 text-red-500 font-semibold whitespace-nowrap">
-                                ⚠ {stats.urgent}
-                              </span>
-                            )}
+                        {/* 빠른 업무 추가 폼 */}
+                        {isQuickAdding && (
+                          <div className="px-4 py-2.5 bg-yellow-50 border-t border-yellow-100">
+                            <input
+                              autoFocus
+                              value={quickAddTitle}
+                              onChange={e => setQuickAddTitle(e.target.value)}
+                              onKeyDown={e => {
+                                if (e.key === 'Enter') handleQuickAddTask(s.id)
+                                if (e.key === 'Escape') { setQuickAddSaleId(null); setQuickAddTitle('') }
+                              }}
+                              placeholder="업무명 입력 후 Enter"
+                              className="w-full text-sm bg-white border border-yellow-200 rounded-lg px-3 py-1.5 focus:outline-none focus:border-yellow-400"
+                            />
+                            <p className="text-[11px] text-gray-400 mt-1">Esc로 취소</p>
                           </div>
                         )}
-
-                        {/* 담당자 */}
-                        {s.assignee && (
-                          <span className="text-xs text-gray-400 flex-shrink-0 hidden sm:block">{s.assignee.name}</span>
-                        )}
-
-                        {/* 매출 */}
-                        {s.revenue ? (
-                          <span className="text-xs font-medium text-gray-600 flex-shrink-0">
-                            {(s.revenue / 10000).toFixed(0)}만
-                          </span>
-                        ) : null}
-
-                        {/* 결제 상태 */}
-                        <span className={`text-[11px] px-2 py-0.5 rounded-full font-medium flex-shrink-0 ${PAY_STATUS_COLORS[s.contract_stage ?? ''] ?? 'bg-gray-100 text-gray-400'}`}>
-                          {s.contract_stage ?? '-'}
-                        </span>
-
-                        <span className="text-gray-300 group-hover:text-gray-500 text-xs flex-shrink-0">→</span>
-                      </Link>
+                      </div>
                     )
                   })}
                 </div>
@@ -433,42 +572,77 @@ export default function DeptClient({ dept, deptLabel, deptIcon, sales, goals, ta
         </div>
       )}
 
-      {/* ── 업무 탭 ── */}
+      {/* ── 업무 탭 (프로젝트별 그룹) ── */}
       {section === 'tasks' && (
         <div className="mt-4">
           <p className="text-sm text-gray-500 mb-3">이 사업부 프로젝트에 연결된 업무 {tasks.length}개</p>
           {tasks.length === 0 ? (
             <div className="text-center py-16 text-gray-400 text-sm">등록된 업무가 없습니다</div>
-          ) : (
-            <div className="space-y-4">
-              {(['할 일', '진행중', '검토중', '완료', '보류'] as const).map(status => {
-                const grouped = tasks.filter(t => t.status === status)
-                if (grouped.length === 0) return null
-                return (
-                  <div key={status}>
-                    <div className="flex items-center gap-2 mb-2">
-                      <span className={`text-[11px] px-2 py-0.5 rounded-full font-medium ${TASK_STATUS_COLORS[status]}`}>{status}</span>
-                      <span className="text-xs text-gray-400">{grouped.length}개</span>
-                    </div>
-                    <div className="bg-white border border-gray-100 rounded-xl overflow-hidden">
-                      {grouped.map((task, idx) => (
-                        <div key={task.id} className={`flex items-center gap-3 px-4 py-3 ${idx !== grouped.length - 1 ? 'border-b border-gray-50' : ''}`}>
-                          <div className="flex-1 min-w-0">
-                            <p className="text-sm font-medium text-gray-900 truncate">{task.title}</p>
-                            {task.sale && <p className="text-[11px] text-gray-400 mt-0.5">📁 {task.sale.name}</p>}
-                          </div>
-                          <div className="flex items-center gap-2 flex-shrink-0 text-xs text-gray-400">
-                            {task.assignee && <span>{task.assignee.name}</span>}
-                            {task.due_date && <span>{task.due_date.slice(0, 10)}</span>}
-                          </div>
+          ) : (() => {
+            // 프로젝트별 그룹화
+            const grouped = tasks.reduce((acc, t) => {
+              const key = t.project_id ?? '__internal__'
+              if (!acc[key]) acc[key] = { sale: t.sale, tasks: [] }
+              acc[key].tasks.push(t)
+              return acc
+            }, {} as Record<string, { sale: { name: string } | null; tasks: Task[] }>)
+
+            const sortedKeys = Object.keys(grouped).sort((a, b) => {
+              if (a === '__internal__') return 1
+              if (b === '__internal__') return -1
+              return (grouped[a].sale?.name ?? '').localeCompare(grouped[b].sale?.name ?? '')
+            })
+
+            return (
+              <div className="space-y-4">
+                {sortedKeys.map(key => {
+                  const group = grouped[key]
+                  const activeTasks = group.tasks.filter(t => t.status !== '완료' && t.status !== '보류')
+                  const doneTasks = group.tasks.filter(t => t.status === '완료')
+                  const projectName = key === '__internal__' ? '사업부 공통 업무' : (group.sale?.name ?? '프로젝트 없음')
+
+                  return (
+                    <div key={key} className="bg-white border border-gray-100 rounded-xl overflow-hidden">
+                      {/* 프로젝트 헤더 */}
+                      <div className="flex items-center justify-between px-4 py-2.5 bg-gray-50 border-b border-gray-100">
+                        <div className="flex items-center gap-2">
+                          <span className="text-sm font-semibold text-gray-800">📁 {projectName}</span>
                         </div>
-                      ))}
+                        <span className="text-[11px] text-gray-400">
+                          완료 {doneTasks.length}/{group.tasks.length}
+                        </span>
+                      </div>
+
+                      {/* 업무 목록 */}
+                      {activeTasks.map((task, idx) => {
+                        const due = formatTaskDue(task.due_date)
+                        return (
+                          <div key={task.id} className={`flex items-center gap-3 px-4 py-2.5 ${idx !== activeTasks.length - 1 ? 'border-b border-gray-50' : doneTasks.length > 0 ? 'border-b border-gray-50' : ''}`}>
+                            <div className={`w-2 h-2 rounded-full flex-shrink-0 ${TASK_STATUS_DOT[task.status] ?? 'bg-gray-300'}`} />
+                            <div className="flex-1 min-w-0">
+                              <p className="text-sm text-gray-900 truncate">{task.title}</p>
+                            </div>
+                            <div className="flex items-center gap-2 flex-shrink-0 text-xs">
+                              <span className={`${TASK_STATUS_COLORS[task.status]} text-[10px] px-1.5 py-0.5 rounded-full font-medium`}>{task.status}</span>
+                              {task.assignee && <span className="text-gray-400">{task.assignee.name}</span>}
+                              {due && <span className={due.color}>{due.str}</span>}
+                            </div>
+                          </div>
+                        )
+                      })}
+
+                      {/* 완료 업무 (접힌 형태) */}
+                      {doneTasks.length > 0 && (
+                        <div className="px-4 py-2 bg-gray-50">
+                          <p className="text-[11px] text-gray-400">완료 {doneTasks.length}건: {doneTasks.map(t => t.title).join(', ')}</p>
+                        </div>
+                      )}
                     </div>
-                  </div>
-                )
-              })}
-            </div>
-          )}
+                  )
+                })}
+              </div>
+            )
+          })()}
         </div>
       )}
 
