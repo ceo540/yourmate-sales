@@ -4,6 +4,7 @@ import { useRouter } from 'next/navigation'
 import { Lead, LeadStatus, LEAD_STATUSES, LEAD_CHANNELS, LEAD_SOURCES } from '@/types'
 import { createLead, updateLead, deleteLead, convertLeadToSale, addSaleToLead, createLeadFolder, updateLeadDropboxUrl, createPerson, updateLeadPersonAndCustomer } from './actions'
 import { createLeadLog, getLeadLogs, deleteLeadLog } from './lead-log-actions'
+import ProjectClaudeChat from '@/components/ProjectClaudeChat'
 
 const LABEL_CLS = 'block text-xs font-medium text-gray-500 mb-1'
 const INPUT_CLS = 'w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-yellow-300'
@@ -1132,6 +1133,14 @@ export default function LeadsClient({ leads, profiles, persons, currentUserId, i
                           </>
                         )}
                       </div>
+
+                      {/* Claude 협업 */}
+                      <ProjectClaudeChat
+                        leadId={selectedLead.id}
+                        serviceType={selectedLead.service_type}
+                        projectName={selectedLead.project_name}
+                        dropboxUrl={selectedLead.dropbox_url}
+                      />
                     </>
                   )}
 

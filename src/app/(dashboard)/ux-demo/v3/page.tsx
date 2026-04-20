@@ -7,22 +7,22 @@ import Link from 'next/link'
 const SAMPLE_PROJECTS = [
   {
     id: '1', name: '경기도특수교육원 진드페', client_org: '경기도교육청', assignee: '임지영',
-    payment_status: '선금수령', revenue: 4200000,
+    contract_stage: '선금', revenue: 4200000,
     tasks: { total: 7, done: 3, urgent: 2 },
   },
   {
     id: '2', name: 'SOS 행사운영 — 한양대', client_org: '한양대학교', assignee: '유제민',
-    payment_status: '계약완료', revenue: 1800000,
+    contract_stage: '착수', revenue: 1800000,
     tasks: { total: 4, done: 0, urgent: 1 },
   },
   {
     id: '3', name: '장곡중학교 악기렌탈 4월', client_org: '장곡중학교', assignee: '방준영',
-    payment_status: '완납', revenue: 640000,
+    contract_stage: '잔금', revenue: 640000,
     tasks: { total: 3, done: 3, urgent: 0 },
   },
   {
     id: '4', name: '용인교육지원청 홍보영상', client_org: '용인교육지원청', assignee: '이하나',
-    payment_status: '계약전', revenue: 3500000,
+    contract_stage: '계약', revenue: 3500000,
     tasks: { total: 2, done: 0, urgent: 0 },
   },
 ]
@@ -38,11 +38,13 @@ const SAMPLE_TASKS = [
 ]
 
 const PAY_COLORS: Record<string, string> = {
-  '계약전':    'bg-gray-100 text-gray-500',
-  '계약완료':  'bg-blue-50 text-blue-600',
-  '선금수령':  'bg-yellow-50 text-yellow-700',
-  '중도금수령': 'bg-orange-50 text-orange-600',
-  '완납':      'bg-green-100 text-green-700',
+  '계약':       'bg-blue-50 text-blue-600',
+  '착수':       'bg-purple-50 text-purple-600',
+  '선금':       'bg-yellow-50 text-yellow-700',
+  '중도금':     'bg-orange-50 text-orange-600',
+  '완수':       'bg-teal-50 text-teal-600',
+  '계산서발행': 'bg-indigo-50 text-indigo-600',
+  '잔금':       'bg-green-100 text-green-700',
 }
 const STATUS_COLORS: Record<string, string> = {
   '할 일':  'bg-gray-100 text-gray-600',
@@ -225,8 +227,8 @@ function DeptSection() {
             >
               {/* 상태 점 */}
               <div className={`w-2 h-2 rounded-full flex-shrink-0 ${
-                s.payment_status === '완납' ? 'bg-green-400' :
-                s.payment_status === '계약완료' || s.payment_status === '선금수령' ? 'bg-yellow-400' :
+                s.contract_stage === '잔금' ? 'bg-green-400' :
+                s.contract_stage === '착수' || s.contract_stage === '선금' ? 'bg-yellow-400' :
                 'bg-gray-300'
               }`} />
 
@@ -261,8 +263,8 @@ function DeptSection() {
               </span>
 
               {/* 결제 상태 */}
-              <span className={`text-[11px] px-2 py-0.5 rounded-full font-medium flex-shrink-0 ${PAY_COLORS[s.payment_status] ?? 'bg-gray-100 text-gray-400'}`}>
-                {s.payment_status}
+              <span className={`text-[11px] px-2 py-0.5 rounded-full font-medium flex-shrink-0 ${PAY_COLORS[s.contract_stage] ?? 'bg-gray-100 text-gray-400'}`}>
+                {s.contract_stage}
               </span>
 
               <span className="text-gray-300 group-hover:text-gray-500 text-xs flex-shrink-0">→</span>
@@ -366,8 +368,8 @@ function TasksSection({ tasks }: { tasks: typeof SAMPLE_TASKS }) {
                   </a>
                   <span className="text-xs text-gray-400">{groupTasks.length}개</span>
                 </div>
-                <span className={`text-[11px] px-2 py-0.5 rounded-full font-medium ${PAY_COLORS[proj?.payment_status ?? ''] ?? 'bg-gray-100 text-gray-400'}`}>
-                  {proj?.payment_status}
+                <span className={`text-[11px] px-2 py-0.5 rounded-full font-medium ${PAY_COLORS[proj?.contract_stage ?? ''] ?? 'bg-gray-100 text-gray-400'}`}>
+                  {proj?.contract_stage}
                 </span>
               </div>
 

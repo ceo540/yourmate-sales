@@ -1,5 +1,5 @@
-// ROOT_NAMESPACE는 ★ DB 폴더 자체의 네임스페이스
-// → API 경로는 ★ DB 기준 상대경로, 웹 URL에만 DB_BASE 사용
+// ROOT_NAMESPACE는 계정 루트 네임스페이스
+// → API 경로는 절대경로 (/방 준영/1. 가업/★ DB/...), 웹 URL에서 /home 제거 후 그대로 사용
 const DB_BASE = '/방 준영/1. 가업/★ DB'
 const ROOT_NAMESPACE = process.env.DROPBOX_ROOT_NAMESPACE ?? '3265523555'
 
@@ -162,6 +162,46 @@ export async function createSaleFolder(params: {
   return `https://www.dropbox.com/home${DB_BASE}${folderPath}`
 }
 
+// 텍스트 파일을 드롭박스 폴더에 업로드 (Dropbox-API-Arg 헤더 한글 문제로 URL 파라미터 방식 사용)
+export async function uploadTextFile(params: {
+  folderWebUrl: string
+  filename: string
+  content: string
+}): Promise<{ ok: true; filename: string; savedPath?: string } | { ok: false; error: string }> {
+  const token = await getDropboxToken()
+  if (!token) return { ok: false, error: '드롭박스 토큰 없음' }
+
+  const WEB_BASE = 'https://www.dropbox.com/home'
+  if (!params.folderWebUrl.startsWith(WEB_BASE)) return { ok: false, error: 'URL 형식 오류 (/home/... 필요)' }
+
+  // URL 디코딩 후 절대경로 사용 (path_root + 절대경로 조합이 공유폴더 쓰기에 정상 작동)
+  const folderPath = decodeURIComponent(params.folderWebUrl.replace(WEB_BASE, ''))
+  const filePath = `${folderPath}/${params.filename}`
+
+  const arg = encodeURIComponent(JSON.stringify({ path: filePath, mode: 'overwrite', autorename: false }))
+  const pathRoot = encodeURIComponent(JSON.stringify({ '.tag': 'root', root: ROOT_NAMESPACE }))
+
+  const res = await fetch(
+    `https://content.dropboxapi.com/2/files/upload?arg=${arg}&path_root=${pathRoot}`,
+    {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${token}`,
+        'Content-Type': 'application/octet-stream',
+      },
+      body: Buffer.from(params.content, 'utf-8'),
+    }
+  )
+  if (!res.ok) {
+    const errBody = await res.text().catch(() => '')
+    console.error('[uploadTextFile] Dropbox error', res.status, errBody, { filePath })
+    return { ok: false, error: `Dropbox ${res.status}: ${errBody.slice(0, 200)}` }
+  }
+  const json = await res.json().catch(() => ({}))
+  console.log('[uploadTextFile] saved at', json.path_display)
+  return { ok: true as const, filename: params.filename, savedPath: json.path_display as string }
+}
+
 // 드롭박스 폴더명 변경 (현재 sale.name 기준으로 rename)
 export async function renameDropboxFolder(
   dropboxUrl: string,
@@ -217,15 +257,16 @@ export async function readDropboxFile(relativePath: string): Promise<{ text: str
   const token = await getDropboxToken()
   if (!token) return { error: '드롭박스 토큰 없음' }
 
-  // 파일 다운로드
-  const res = await fetch('https://content.dropboxapi.com/2/files/download', {
-    method: 'POST',
-    headers: {
-      'Authorization': `Bearer ${token}`,
-      'Dropbox-API-Arg': JSON.stringify({ path: relativePath }),
-      'Dropbox-API-Path-Root': JSON.stringify({ '.tag': 'root', 'root': ROOT_NAMESPACE }),
-    },
-  })
+  // 한글 경로 헤더 ByteString 에러 방지 — URL 파라미터 방식 사용
+  const arg = encodeURIComponent(JSON.stringify({ path: relativePath }))
+  const pathRoot = encodeURIComponent(JSON.stringify({ '.tag': 'root', root: ROOT_NAMESPACE }))
+  const res = await fetch(
+    `https://content.dropboxapi.com/2/files/download?arg=${arg}&path_root=${pathRoot}`,
+    {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${token}` },
+    }
+  )
 
   if (!res.ok) {
     const err = await res.text()

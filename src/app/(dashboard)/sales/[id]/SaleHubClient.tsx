@@ -15,6 +15,7 @@ import { DEPARTMENT_LABELS, PROGRESS_STATUSES, ProgressStatus } from '@/types'
 import TaskDetailPanel from './TaskDetailPanel'
 const TiptapEditor = dynamic(() => import('./TiptapEditor'), { ssr: false, loading: () => <div className="h-32 bg-gray-50 rounded-lg animate-pulse" /> })
 import CostSheetEditor from '../CostSheetEditor'
+import ProjectClaudeChat from '@/components/ProjectClaudeChat'
 
 interface Profile { id: string; name: string }
 interface BusinessEntity { id: string; name: string }
@@ -93,7 +94,7 @@ function formatDue(d: string | null) {
 }
 
 export default function SaleHubClient({ sale, tasks: initialTasks, logs, profiles, entities, customers, costs: initialCosts, vendors, showInternalCosts, viewMode, isAdmin, currentUserId }: Props) {
-  const [tab, setTab] = useState<'overview' | 'tasks' | 'logs' | 'notes' | 'contract' | '원가'>('overview')
+  const [tab, setTab] = useState<'overview' | 'tasks' | 'logs' | 'notes' | 'contract' | '원가' | 'claude'>('overview')
   const [tasks, setTasks] = useState(initialTasks)
   const [selectedTask, setSelectedTask] = useState<Task | null>(null)
   const [isPending, startTransition] = useTransition()
@@ -117,7 +118,7 @@ export default function SaleHubClient({ sale, tasks: initialTasks, logs, profile
   const [logContactedAt, setLogContactedAt] = useState(() => new Date().toISOString().slice(0, 16))
   const [logError, setLogError] = useState<string | null>(null)
 
-  // 의도적으로 logs prop sync useEffect 제거 — getSaleLogs()로 직접 갱신하므로 서버 재렌더 prop이 localLogs를 덮어쓰지 않도록
+  useEffect(() => { setLocalLogs(logs) }, [logs])
 
   const pendingTasks = tasks.filter(t => t.status !== '완료' && t.status !== '보류')
   const completedTasks = tasks.filter(t => t.status === '완료')
@@ -162,6 +163,7 @@ export default function SaleHubClient({ sale, tasks: initialTasks, logs, profile
     { key: 'notes'    as const, label: '자유 노트',  modes: ['full', 'project'] },
     { key: 'contract' as const, label: '계약 정보',  modes: ['full', 'contract'] },
     { key: '원가'      as const, label: `원가 (${localCosts.length})`, modes: ['full', 'contract'] },
+    { key: 'claude'   as const, label: 'Claude',                     modes: ['full', 'project', 'contract'] },
   ]
   const TABS = ALL_TABS.filter(t => t.modes.includes(viewMode))
 
@@ -335,6 +337,18 @@ export default function SaleHubClient({ sale, tasks: initialTasks, logs, profile
       )}
 
       {/* ── 원가 탭 ── */}
+      {/* 항상 마운트 유지 — 탭 전환 시 대화 내용 보존 */}
+      <div className={tab === 'claude' ? '' : 'hidden'}>
+        <ProjectClaudeChat
+          saleId={sale.id}
+          serviceType={sale.service_type}
+          projectName={sale.name}
+          dropboxUrl={sale.dropbox_url}
+          defaultOpen
+          onRevalidate={async () => { const updated = await getSaleLogs(sale.id); setLocalLogs(updated) }}
+        />
+      </div>
+
       {tab === '원가' && (
         <CostSheetEditor
           saleId={sale.id}

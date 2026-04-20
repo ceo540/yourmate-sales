@@ -39,7 +39,7 @@
     "next": "16.1.6",
     "nextjs-toploader": "^3.9.17",
     "openai": "^6.33.0",
-    "pdf-parse": "^2.4.5",
+    "pdf-parse": "^1.1.1",
     "react": "19.2.3",
     "react-dom": "19.2.3",
     "react-simplemde-editor": "^5.2.0",

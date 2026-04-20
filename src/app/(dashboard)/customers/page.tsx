@@ -7,38 +7,34 @@ export default async function CustomersPage() {
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) redirect('/login')
 
-  const { data: profile } = await supabase.from('profiles').select('role').eq('id', user.id).single()
-  const isAdmin = profile?.role === 'admin' || profile?.role === 'manager'
-
-  // 기관 + 소속관계(담당자 포함)
-  const { data: customersRaw } = await supabase
-    .from('customers')
-    .select(`
+  const [
+    { data: profile },
+    { data: customersRaw },
+    { data: personsRaw },
+    { data: salesAgg },
+  ] = await Promise.all([
+    supabase.from('profiles').select('role').eq('id', user.id).single(),
+    // 기관 + 소속관계(담당자 포함)
+    supabase.from('customers').select(`
       *,
       person_org_relations(
         id, dept, title, started_at, ended_at, is_current,
         persons(id, name, phone, email)
       )
-    `)
-    .order('name')
-
-  // 담당자 + 소속이력(기관명 포함)
-  const { data: personsRaw } = await supabase
-    .from('persons')
-    .select(`
+    `).order('name'),
+    // 담당자 + 소속이력(기관명 포함)
+    supabase.from('persons').select(`
       *,
       person_org_relations(
         id, dept, title, started_at, ended_at, is_current,
         customers(id, name)
       )
-    `)
-    .order('name')
+    `).order('name'),
+    // 기관별 매출 집계
+    supabase.from('sales').select('id, customer_id, revenue, title, service_type, created_at').not('customer_id', 'is', null),
+  ])
 
-  // 기관별 매출 집계 (customer_id 연결된 것만, 필요한 컬럼만 선택)
-  const { data: salesAgg } = await supabase
-    .from('sales')
-    .select('id, customer_id, revenue, title, service_type, created_at')
-    .not('customer_id', 'is', null)
+  const isAdmin = profile?.role === 'admin' || profile?.role === 'manager'
 
   // 기관 데이터 가공
   const customers = (customersRaw ?? []).map((c: any) => {

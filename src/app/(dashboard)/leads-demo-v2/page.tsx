@@ -24,15 +24,15 @@ type Lead = {
   id: string; lead_id: string; client_org: string; contact_name: string
   service_type: string; status: string; remind_date: string | null
   assignee: string; converted_sale_id: string | null
-  relatedSales: { id: string; name: string; payment_status: string }[]
+  relatedSales: { id: string; name: string; contract_stage: string }[]
 }
 
 const MOCK_LEADS: Lead[] = [
   { id: '1', lead_id: 'LEAD20260408-0001', client_org: '○○초등학교', contact_name: '김교감', service_type: '교육프로그램', status: '견적발송', remind_date: '2026-04-11', assignee: '조민현', converted_sale_id: null, relatedSales: [] },
   { id: '2', lead_id: 'LEAD20260407-0003', client_org: '△△문화재단', contact_name: '이팀장', service_type: '행사운영', status: '조율중', remind_date: '2026-04-09', assignee: '임지영', converted_sale_id: null, relatedSales: [] },
   { id: '3', lead_id: 'LEAD20260405-0002', client_org: '□□교육청', contact_name: '박장학사', service_type: 'SOS', status: '유입', remind_date: null, assignee: '방준영', converted_sale_id: null, relatedSales: [] },
-  { id: '4', lead_id: 'LEAD20260401-0001', client_org: '★★복지관', contact_name: '최관장', service_type: '콘텐츠제작', status: '계약', remind_date: null, assignee: '임지영', converted_sale_id: 'sale-1', relatedSales: [{ id: 'sale-1', name: '★★복지관 영상제작', payment_status: '계약전' }] },
-  { id: '5', lead_id: 'LEAD20260328-0002', client_org: '◇◇중학교', contact_name: '정선생', service_type: '납품설치', status: '계약', remind_date: null, assignee: '방준영', converted_sale_id: 'sale-2', relatedSales: [{ id: 'sale-2', name: '◇◇중 음향장비 납품', payment_status: '선금수령' }, { id: 'sale-3', name: '◇◇중 추가 설치', payment_status: '계약전' }] },
+  { id: '4', lead_id: 'LEAD20260401-0001', client_org: '★★복지관', contact_name: '최관장', service_type: '콘텐츠제작', status: '계약', remind_date: null, assignee: '임지영', converted_sale_id: 'sale-1', relatedSales: [{ id: 'sale-1', name: '★★복지관 영상제작', contract_stage: '계약' }] },
+  { id: '5', lead_id: 'LEAD20260328-0002', client_org: '◇◇중학교', contact_name: '정선생', service_type: '납품설치', status: '계약', remind_date: null, assignee: '방준영', converted_sale_id: 'sale-2', relatedSales: [{ id: 'sale-2', name: '◇◇중 음향장비 납품', contract_stage: '선금' }, { id: 'sale-3', name: '◇◇중 추가 설치', contract_stage: '계약' }] },
   { id: '6', lead_id: 'LEAD20260320-0001', client_org: '△△아트센터', contact_name: '', service_type: '행사대여', status: '취소', remind_date: null, assignee: '조민현', converted_sale_id: null, relatedSales: [] },
 ]
 
@@ -72,13 +72,13 @@ export default function LeadsDemoV2() {
       ...l,
       status: '계약',
       converted_sale_id: 'demo-sale',
-      relatedSales: [{ id: 'demo-sale', name: saleName, payment_status: '계약전' }],
+      relatedSales: [{ id: 'demo-sale', name: saleName, contract_stage: '계약' }],
     } : l))
     setSelected(prev => prev?.id === leadId ? {
       ...prev,
       status: '계약',
       converted_sale_id: 'demo-sale',
-      relatedSales: [{ id: 'demo-sale', name: saleName, payment_status: '계약전' }],
+      relatedSales: [{ id: 'demo-sale', name: saleName, contract_stage: '계약' }],
     } : prev)
     // 필터를 활성으로 유지 (계약으로 빠짐)
     setTimeout(() => setStatusFilter('활성'), 600)
@@ -284,8 +284,8 @@ export default function LeadsDemoV2() {
                           className="flex items-center justify-between bg-teal-50 border border-teal-100 rounded-xl px-3 py-2.5 hover:border-teal-300 hover:bg-teal-100 transition-colors group">
                           <p className="text-sm font-medium text-gray-800 group-hover:text-teal-700 transition-colors">{sale.name}</p>
                           <div className="flex items-center gap-1.5 shrink-0 ml-2">
-                            <span className={`text-[10px] px-1.5 py-0.5 rounded-full ${sale.payment_status === '계약전' ? 'bg-yellow-100 text-yellow-700' : 'bg-green-100 text-green-700'}`}>
-                              {sale.payment_status}
+                            <span className={`text-[10px] px-1.5 py-0.5 rounded-full ${sale.contract_stage === '계약' ? 'bg-yellow-100 text-yellow-700' : 'bg-green-100 text-green-700'}`}>
+                              {sale.contract_stage}
                             </span>
                             <span className="text-xs text-teal-400 opacity-0 group-hover:opacity-100 transition-opacity">→</span>
                           </div>

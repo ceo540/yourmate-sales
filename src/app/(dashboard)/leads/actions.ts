@@ -6,6 +6,7 @@ import { SERVICE_TO_DEPT } from '@/types'
 import { createSaleFolder } from '@/lib/dropbox'
 import { syncLeadToCustomerDB } from '@/lib/customer-sync'
 import { notifyLeadConverted } from '@/lib/channeltalk'
+import { createOrUpdateLeadBrief } from '@/lib/brief-generator'
 
 // LEAD{YYYYMMDD}-{NNNN} 형식 ID 생성
 async function generateLeadId(): Promise<string> {
@@ -73,8 +74,20 @@ export async function createLead(formData: FormData) {
   const email = formData.get('email') as string | null
   await syncLeadToCustomerDB({ client_org, contact_name, phone, email })
 
+  // service_type이 있으면 Dropbox 폴더 + brief.md 자동 생성
+  const service_type = formData.get('service_type') as string | null
+  if (service_type && insertedLead?.id) {
+    try {
+      await createOrUpdateLeadBrief(insertedLead.id)
+    } catch {
+      // brief 생성 실패는 무시 — 리드 등록 자체에 영향 없음
+    }
+  }
+
   revalidatePath('/leads')
 }
+
+const BRIEF_TRIGGER_FIELDS = ['project_name', 'client_org', 'contact_name', 'assignee_id', 'notes', 'initial_content']
 
 export async function updateLead(id: string, data: Partial<{
   person_id: string | null
@@ -107,6 +120,19 @@ export async function updateLead(id: string, data: Partial<{
       phone: data.phone ?? null,
       email: data.email ?? null,
     })
+  }
+  // 주요 필드 변경 시 brief.md 갱신 (Dropbox 폴더가 있을 때만)
+  const shouldRefreshBrief = BRIEF_TRIGGER_FIELDS.some(f => f in data)
+  if (shouldRefreshBrief) {
+    const admin = createAdminClient()
+    const { data: lead } = await admin.from('leads').select('dropbox_url, service_type').eq('id', id).single()
+    if (lead?.dropbox_url && lead?.service_type) {
+      try {
+        await createOrUpdateLeadBrief(id)
+      } catch {
+        // brief 갱신 실패는 무시
+      }
+    }
   }
   revalidatePath('/leads')
 }
