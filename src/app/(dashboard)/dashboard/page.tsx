@@ -2,6 +2,7 @@ import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { redirect } from 'next/navigation'
 import Link from 'next/link'
+import DashboardMemo from './DashboardMemo'
 
 const SVC_COLOR: Record<string, string> = {
   'SOS': '#7C3AED', '교육프로그램': '#2563EB', '납품설치': '#2563EB',
@@ -262,6 +263,11 @@ export default async function DashboardPage() {
             <Link href="/calendar" className="text-xs text-gray-400 hover:text-gray-600">캘린더 전체 보기 →</Link>
           </div>
         </div>
+      </div>
+
+      {/* 메모 + 캘린더 */}
+      <div className="mt-4 grid grid-cols-1 lg:grid-cols-2 gap-4">
+        <DashboardMemo />
       </div>
     </div>
   )

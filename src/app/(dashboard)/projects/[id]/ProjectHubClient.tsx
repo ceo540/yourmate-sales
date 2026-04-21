@@ -6,7 +6,7 @@ import {
   createProjectLog, deleteProjectLog, getProjectLogs,
   updateProjectMemo, updateProjectNotes, updateProjectStatus,
   linkProjectCustomer, createAndLinkCustomer, updateProjectDropbox,
-  updateCustomerContact, addProjectMember, removeProjectMember, linkSaleToProject,
+  updateProjectName, updateCustomerContact, addProjectMember, removeProjectMember, linkSaleToProject,
   togglePaymentReceived, addPaymentSchedule, deletePaymentSchedule,
   addSaleCost, deleteSaleCost, updateContractStage, updateContractProgressStatus,
   updateContractInfo, createTaskForProject,
@@ -78,6 +78,7 @@ function Avatar({ name, idx = 0, size = 'sm' }: { name: string; idx?: number; si
 
 // ── 인터페이스 ────────────────────────────────────────────────────────────────
 interface Profile { id: string; name: string }
+interface Person { id: string; name: string; phone: string | null; email: string | null }
 interface Customer { id: string; name: string; type: string | null; contact_name: string | null; phone: string | null; contact_email: string | null }
 interface Member { profile_id: string; role: string; name: string }
 interface PaymentSchedule { id: string; label: string; amount: number; is_received: boolean; due_date: string | null }
@@ -116,7 +117,7 @@ interface Props {
   tasks: Task[]; logs: Log[]; costs: CostItem[]
   profiles: Profile[]; customers: Customer[]; customer: Customer | null
   leads: Lead[]; salesOptions: SaleOption[]; entities: Entity[]
-  isAdmin: boolean; currentUserId: string
+  persons: Person[]; isAdmin: boolean; currentUserId: string
 }
 
 // ── 담당자 피커 ───────────────────────────────────────────────────────────────
@@ -204,6 +205,9 @@ function ContractCard({
   const [costAmount, setCostAmount] = useState('')
   const [costCategory, setCostCategory] = useState('인건비')
 
+  const [quickEditRevenue, setQuickEditRevenue] = useState(false)
+  const [quickRevenueInput, setQuickRevenueInput] = useState(String(contract.revenue ?? 0))
+
   const contractCosts = costs.filter(c => c.sale_id === contract.id)
   const contractTasks = tasks.filter(t => t.project_id === contract.id)
   const revenue = contract.revenue ?? 0
@@ -277,6 +281,14 @@ function ContractCard({
   function handleDeleteCost(costId: string) {
     startTransition(async () => { await deleteSaleCost(costId, projectId); onCostDelete(costId) })
   }
+  function handleSaveQuickRevenue() {
+    const rev = Number(quickRevenueInput) || 0
+    startTransition(async () => {
+      await updateContractInfo(contract.id, { revenue: rev }, projectId)
+      onContractChange(contract.id, { revenue: rev })
+      setQuickEditRevenue(false)
+    })
+  }
 
   return (
     <div className={`border rounded-xl overflow-hidden transition-all ${expanded ? 'border-gray-200 shadow-sm' : 'border-gray-100'}`}>
@@ -296,7 +308,22 @@ function ContractCard({
             )}
           </div>
           <div className="flex items-center gap-3 mt-0.5">
-            <span className="text-xs text-gray-500 font-medium">{fmtMoney(revenue)}원</span>
+            {quickEditRevenue ? (
+              <input
+                type="number" value={quickRevenueInput}
+                onChange={e => setQuickRevenueInput(e.target.value)}
+                onBlur={handleSaveQuickRevenue}
+                onKeyDown={e => { if (e.key === 'Enter') handleSaveQuickRevenue(); if (e.key === 'Escape') setQuickEditRevenue(false) }}
+                className="text-xs border border-yellow-300 rounded px-1.5 py-0.5 w-28 focus:outline-none"
+                autoFocus onClick={e => e.stopPropagation()} />
+            ) : (
+              <span
+                onClick={e => { e.stopPropagation(); setQuickRevenueInput(String(contract.revenue ?? 0)); setQuickEditRevenue(true) }}
+                className={`text-xs font-medium cursor-pointer hover:underline hover:decoration-dotted ${revenue === 0 ? 'text-orange-400' : 'text-gray-500'}`}
+                title="클릭하여 계약금액 수정">
+                {revenue === 0 ? '💰 금액 미입력 (클릭)' : `${fmtMoney(revenue)}원`}
+              </span>
+            )}
             {contract.client_org && <span className="text-xs text-gray-400 truncate max-w-[160px]">{contract.client_org}</span>}
           </div>
         </div>
@@ -613,7 +640,7 @@ function LogForm({ contracts, onSubmit, isPending }: {
 // ── 메인 컴포넌트 ─────────────────────────────────────────────────────────────
 export default function ProjectHubClient({
   project, members, contracts: initialContracts, tasks: initialTasks, logs: initialLogs,
-  costs: initialCosts, profiles, customers, customer, leads, salesOptions, entities, isAdmin,
+  costs: initialCosts, profiles, customers, customer, leads, salesOptions, entities, persons, isAdmin,
 }: Props) {
   const router = useRouter()
   const [localContracts, setLocalContracts] = useState(initialContracts)
@@ -623,6 +650,10 @@ export default function ProjectHubClient({
   const [localMembers, setLocalMembers] = useState(members)
   const [localCustomer, setLocalCustomer] = useState(customer)
   const [isPending, startTransition] = useTransition()
+
+  const [localName, setLocalName] = useState(project.name)
+  const [editingName, setEditingName] = useState(false)
+  const [nameInput, setNameInput] = useState(project.name)
 
   // 탭
   const [activeTab, setActiveTab] = useState<'work' | 'contract'>('work')
@@ -669,6 +700,8 @@ export default function ProjectHubClient({
   const [newCustomerPhone, setNewCustomerPhone] = useState('')
   const [newCustomerEmail, setNewCustomerEmail] = useState('')
   const [editingContact, setEditingContact] = useState(false)
+  const [personSearch, setPersonSearch] = useState('')
+  const [personDropdownOpen, setPersonDropdownOpen] = useState(false)
   const [contactName, setContactName] = useState(customer?.contact_name ?? '')
   const [contactPhone, setContactPhone] = useState(customer?.phone ?? '')
   const [contactEmail, setContactEmail] = useState(customer?.contact_email ?? '')
@@ -703,6 +736,16 @@ export default function ProjectHubClient({
   // 계약 콜백
   function handleContractChange(contractId: string, patch: Partial<Contract>) {
     setLocalContracts(prev => prev.map(c => c.id === contractId ? { ...c, ...patch } : c))
+  }
+
+  function handleSaveName() {
+    if (!nameInput.trim() || nameInput === localName) { setEditingName(false); return }
+    startTransition(async () => {
+      const res = await updateProjectName(project.id, nameInput.trim())
+      setLocalName(nameInput.trim())
+      if (res.newDropboxUrl) setDropboxUrl(res.newDropboxUrl)
+      setEditingName(false)
+    })
   }
 
   function handlePmChange(added: Profile | null, removed: Profile | null) {
@@ -854,7 +897,24 @@ export default function ProjectHubClient({
                 {project.service_type && <span className="text-xs bg-purple-50 text-purple-600 px-2 py-0.5 rounded-full">{project.service_type}</span>}
                 {project.department && <span className="text-xs text-gray-400">{project.department}</span>}
               </div>
-              <h1 className="text-xl font-bold text-gray-900 leading-tight">{project.name}</h1>
+              {editingName ? (
+                <div className="flex items-center gap-2">
+                  <input value={nameInput} onChange={e => setNameInput(e.target.value)}
+                    onKeyDown={e => { if (e.key === 'Enter') handleSaveName(); if (e.key === 'Escape') { setEditingName(false); setNameInput(localName) } }}
+                    className="text-xl font-bold text-gray-900 border-b-2 border-yellow-400 bg-transparent focus:outline-none leading-tight min-w-0 w-full"
+                    autoFocus />
+                  <button onClick={handleSaveName} disabled={isPending}
+                    className="text-xs px-2 py-1 rounded font-medium flex-shrink-0 disabled:opacity-40" style={{ backgroundColor: '#FFCE00', color: '#121212' }}>저장</button>
+                  <button onClick={() => { setEditingName(false); setNameInput(localName) }}
+                    className="text-xs px-2 py-1 rounded border border-gray-200 text-gray-500 flex-shrink-0">취소</button>
+                </div>
+              ) : (
+                <div className="flex items-center gap-2 group">
+                  <h1 className="text-xl font-bold text-gray-900 leading-tight">{localName}</h1>
+                  <button onClick={() => { setEditingName(true); setNameInput(localName) }}
+                    className="text-gray-300 hover:text-gray-600 opacity-0 group-hover:opacity-100 transition-opacity text-sm flex-shrink-0">✏</button>
+                </div>
+              )}
               <div className="flex items-center gap-5 mt-2">
                 <div className="flex items-center gap-2">
                   <span className="text-xs text-gray-400 w-8">PM</span>
@@ -1371,6 +1431,34 @@ export default function ProjectHubClient({
                 </div>
                 {editingContact ? (
                   <div className="space-y-2 mb-2">
+                    <div className="relative">
+                      <input value={personSearch}
+                        onChange={e => { setPersonSearch(e.target.value); setPersonDropdownOpen(true) }}
+                        onFocus={() => setPersonDropdownOpen(true)}
+                        placeholder="기존 담당자 검색..."
+                        className="w-full text-xs border border-gray-200 rounded-lg px-2.5 py-1.5 focus:outline-none focus:border-yellow-400" />
+                      {personDropdownOpen && personSearch && (
+                        <div className="absolute left-0 top-full mt-0.5 bg-white border border-gray-200 rounded-xl shadow-lg z-30 w-full max-h-36 overflow-y-auto py-1">
+                          {persons.filter(p => p.name.toLowerCase().includes(personSearch.toLowerCase())).slice(0, 8).map(p => (
+                            <button key={p.id} type="button"
+                              onClick={() => {
+                                setContactName(p.name)
+                                setContactPhone(p.phone ?? '')
+                                setContactEmail(p.email ?? '')
+                                setPersonSearch('')
+                                setPersonDropdownOpen(false)
+                              }}
+                              className="w-full text-left px-3 py-2 hover:bg-gray-50 flex items-center gap-2">
+                              <span className="text-xs font-medium text-gray-700">{p.name}</span>
+                              {p.phone && <span className="text-xs text-gray-400">{p.phone}</span>}
+                            </button>
+                          ))}
+                          {persons.filter(p => p.name.toLowerCase().includes(personSearch.toLowerCase())).length === 0 && (
+                            <p className="px-3 py-2 text-xs text-gray-400">검색 결과 없음</p>
+                          )}
+                        </div>
+                      )}
+                    </div>
                     <input value={contactName} onChange={e => setContactName(e.target.value)} placeholder="담당자명"
                       className="w-full text-xs border border-yellow-300 rounded-lg px-2.5 py-1.5 focus:outline-none focus:border-yellow-400" />
                     <input value={contactPhone} onChange={e => setContactPhone(e.target.value)} placeholder="연락처"

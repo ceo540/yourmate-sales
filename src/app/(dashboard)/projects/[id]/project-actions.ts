@@ -3,6 +3,7 @@
 import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { revalidatePath } from 'next/cache'
+import { renameDropboxFolder } from '@/lib/dropbox'
 
 export async function createProjectLog(
   projectId: string,
@@ -123,6 +124,30 @@ export async function createAndLinkCustomer(
   await admin.from('projects').update({ customer_id: created.id }).eq('id', projectId)
   revalidatePath(`/projects/${projectId}`)
   return { id: created.id }
+}
+
+export async function updateProjectName(
+  projectId: string,
+  name: string,
+): Promise<{ newDropboxUrl?: string | null }> {
+  const admin = createAdminClient()
+  const { data: project } = await admin.from('projects').select('dropbox_url').eq('id', projectId).single()
+
+  let newDropboxUrl: string | null = null
+  if (project?.dropbox_url) {
+    const result = await renameDropboxFolder(project.dropbox_url, name)
+    if ('newUrl' in result) newDropboxUrl = result.newUrl
+  }
+
+  await admin.from('projects').update({
+    name,
+    ...(newDropboxUrl ? { dropbox_url: newDropboxUrl } : {}),
+    updated_at: new Date().toISOString(),
+  }).eq('id', projectId)
+
+  revalidatePath(`/projects/${projectId}`)
+  revalidatePath('/projects')
+  return { newDropboxUrl }
 }
 
 export async function updateProjectDropbox(projectId: string, dropboxUrl: string) {

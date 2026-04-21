@@ -1,7 +1,8 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useTransition } from 'react'
 import Link from 'next/link'
+import { assignProjectNumbers } from './project-list-actions'
 
 const SVC_COLOR: Record<string, string> = {
   'SOS': '#7C3AED', '교육프로그램': '#2563EB', '납품설치': '#2563EB',
@@ -44,9 +45,15 @@ interface Project {
 export default function ProjectsClient({ projects, isAdmin }: { projects: Project[]; isAdmin: boolean }) {
   const [search, setSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState('전체')
+  const [svcFilter, setSvcFilter] = useState('전체')
+  const [assignPending, startAssign] = useTransition()
+  const [assignMsg, setAssignMsg] = useState('')
+
+  const svcTypes = ['전체', ...Array.from(new Set(projects.map(p => p.service_type).filter(Boolean) as string[]))]
 
   const filtered = projects.filter(p => {
     if (statusFilter !== '전체' && p.status !== statusFilter) return false
+    if (svcFilter !== '전체' && p.service_type !== svcFilter) return false
     if (search) {
       const q = search.toLowerCase()
       return (
@@ -84,7 +91,34 @@ export default function ProjectsClient({ projects, isAdmin }: { projects: Projec
             )
           })}
         </div>
-        <span className="ml-auto text-xs text-gray-400">{filtered.length}건</span>
+        {isAdmin && (
+          <button onClick={() => startAssign(async () => {
+            const res = await assignProjectNumbers()
+            setAssignMsg(res.assigned > 0 ? `${res.assigned}건 번호 부여 완료` : '이미 모두 번호 있음')
+            setTimeout(() => setAssignMsg(''), 4000)
+          })} disabled={assignPending}
+            className="ml-auto text-xs px-2.5 py-1.5 rounded-lg border border-gray-200 text-gray-500 hover:border-gray-400 disabled:opacity-50">
+            {assignPending ? '처리 중...' : '번호 일괄 부여'}
+          </button>
+        )}
+        {assignMsg && <span className="text-xs text-green-600 font-medium">{assignMsg}</span>}
+        {!isAdmin && <span className="ml-auto text-xs text-gray-400">{filtered.length}건</span>}
+      </div>
+      {/* 서비스 필터 */}
+      <div className="flex gap-1.5 mb-4 flex-wrap">
+        {svcTypes.map(s => {
+          const active = svcFilter === s
+          return (
+            <button key={s} onClick={() => setSvcFilter(s)}
+              className="px-2.5 py-1 rounded-full text-xs border transition-all"
+              style={active
+                ? { backgroundColor: '#FFCE00', color: '#121212', borderColor: '#FFCE00' }
+                : { backgroundColor: '#fff', color: '#9CA3AF', borderColor: '#E5E7EB' }
+              }>
+              {s}
+            </button>
+          )
+        })}
       </div>
 
       {/* 테이블 */}

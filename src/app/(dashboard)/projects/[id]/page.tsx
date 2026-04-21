@@ -28,6 +28,7 @@ export default async function ProjectPage({ params }: { params: Promise<{ id: st
     { data: salesOptionsRaw },
     { data: entities },
     { data: leadsRaw },
+    { data: personsRaw },
   ] = await Promise.all([
     admin.from('project_members').select('profile_id, role, profiles:profile_id(id, name)').eq('project_id', id),
     admin.from('sales').select('*, payment_schedules(*)').eq('project_id', id).order('created_at'),
@@ -41,6 +42,7 @@ export default async function ProjectPage({ params }: { params: Promise<{ id: st
     admin.from('sales').select('id, name, revenue').is('project_id', null).order('created_at', { ascending: false }).limit(200),
     admin.from('business_entities').select('id, name'),
     admin.from('leads').select('id, lead_id, project_name, status, inflow_date, assignee_id').eq('project_id', id),
+    admin.from('persons').select('id, name, phone, email').order('name').limit(500),
   ])
 
   const contractIds = (contractsRaw ?? []).map(c => c.id)
@@ -163,6 +165,7 @@ export default async function ProjectPage({ params }: { params: Promise<{ id: st
         salesOptions={(salesOptionsRaw ?? []).map(s => ({ id: s.id, name: s.name, revenue: s.revenue ?? null }))}
         leads={leads}
         entities={entities ?? []}
+        persons={(personsRaw ?? []).map((p: any) => ({ id: p.id, name: p.name, phone: p.phone ?? null, email: p.email ?? null }))}
         isAdmin={isAdmin}
         currentUserId={user.id}
       />
