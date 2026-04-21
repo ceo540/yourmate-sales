@@ -121,6 +121,7 @@ interface Rental {
   contact_2: string | null
   contact_3: string | null
   checklist: Record<string, boolean> | null
+  parent_rental_id: string | null
   items: RentalItem[]
 }
 interface Props {
@@ -309,8 +310,11 @@ export default function RentalsClient({ rentals: initialRentals, profiles, custo
 
   const calDays = getCalendarDays(calYear, calMonth)
 
+  // 연결된 하위 건은 기본 숨김 (부모 계약건 상세에서 확인)
+  const standaloneRentals = rentals.filter(r => !r.parent_rental_id)
+
   // 필터에 따라 표시할 렌탈 목록과 기준 날짜 필드 결정
-  const filteredCalRentals = rentals.filter(r => {
+  const filteredCalRentals = standaloneRentals.filter(r => {
     if (calFilter === '전체') return !['취소','보류'].includes(r.status)
     if (calFilter === '배송') return ['유입','견적발송','렌탈확정'].includes(r.status)
     if (calFilter === '수거') return ['진행중','수거완료','검수중'].includes(r.status)
@@ -336,7 +340,7 @@ export default function RentalsClient({ rentals: initialRentals, profiles, custo
   }
 
   // 전체 활성 건 (취소/보류 제외) — 이달 건수 표시용
-  const activeRentals = rentals.filter(r => !['취소','보류'].includes(r.status))
+  const activeRentals = standaloneRentals.filter(r => !['취소','보류'].includes(r.status))
 
   const todayStr = today.toISOString().slice(0, 10)
 

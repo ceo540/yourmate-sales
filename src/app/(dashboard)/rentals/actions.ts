@@ -267,6 +267,24 @@ export async function updateDeliveryChecklist(id: string, rentalId: string, chec
   return { success: true, newStatus }
 }
 
+export async function linkRentalToParent(childId: string, parentId: string) {
+  const supabase = await createClient()
+  const { error } = await supabase.from('rentals').update({ parent_rental_id: parentId }).eq('id', childId)
+  if (error) return { error: error.message }
+  revalidatePath(`/rentals/${parentId}`)
+  revalidatePath('/rentals')
+  return { success: true }
+}
+
+export async function unlinkRentalFromParent(childId: string, parentId: string) {
+  const supabase = await createClient()
+  const { error } = await supabase.from('rentals').update({ parent_rental_id: null }).eq('id', childId)
+  if (error) return { error: error.message }
+  revalidatePath(`/rentals/${parentId}`)
+  revalidatePath('/rentals')
+  return { success: true }
+}
+
 export async function addRentalContact(rentalId: string, text: string) {
   const supabase = await createClient()
   const { data: rental } = await supabase

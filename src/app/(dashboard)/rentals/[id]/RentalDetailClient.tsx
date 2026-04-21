@@ -1,7 +1,7 @@
 'use client'
 import { useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
-import { updateRental, updateRentalStatus, deleteRental, addRentalItem, removeRentalItem, addRentalDelivery, updateRentalDelivery, deleteRentalDelivery, updateDeliveryChecklist } from '../actions'
+import { updateRental, updateRentalStatus, deleteRental, addRentalItem, removeRentalItem, addRentalDelivery, updateRentalDelivery, deleteRentalDelivery, updateDeliveryChecklist, linkRentalToParent, unlinkRentalFromParent } from '../actions'
 import { RENTAL_STATUSES } from '../RentalsClient'
 
 const STATUS_STYLE: Record<string, string> = {
@@ -49,6 +49,16 @@ interface RentalDelivery {
   notes: string | null
 }
 
+interface LinkedRental {
+  id: string
+  title: string | null
+  customer_name: string
+  status: string
+  rental_start: string | null
+  rental_end: string | null
+  total_amount: number
+}
+
 interface Rental {
   id: string
   customer_name: string
@@ -72,11 +82,13 @@ interface Rental {
   content: string | null
   items: RentalItem[]
   deliveries: RentalDelivery[]
+  linkedRentals: LinkedRental[]
 }
 
 interface Props {
   rental: Rental
   profiles: { id: string; name: string }[]
+  linkableRentals: LinkedRental[]
 }
 
 const DELIVERY_STATUS_BADGE: Record<string, string> = {
@@ -114,12 +126,22 @@ const DELIVERY_CHECKLIST_GROUPS = [
   },
 ]
 
-export default function RentalDetailClient({ rental, profiles }: Props) {
+export default function RentalDetailClient({ rental, profiles, linkableRentals }: Props) {
   const router = useRouter()
   const [isPending, startTransition] = useTransition()
   const [editing, setEditing] = useState(false)
   const [content, setContent] = useState(rental.content ?? '')
   const [contentSaved, setContentSaved] = useState(true)
+
+  // 연결된 기존 건
+  const [linkedRentals, setLinkedRentals] = useState<LinkedRental[]>(rental.linkedRentals)
+  const [showLinkSearch, setShowLinkSearch] = useState(false)
+  const [linkSearch, setLinkSearch] = useState('')
+
+  const filteredLinkable = linkableRentals.filter(r =>
+    !linkedRentals.find(l => l.id === r.id) &&
+    (r.customer_name.includes(linkSearch) || (r.title ?? '').includes(linkSearch))
+  )
 
   // 배송일정
   const [deliveries, setDeliveries] = useState<RentalDelivery[]>(rental.deliveries)
@@ -470,6 +492,89 @@ export default function RentalDetailClient({ rental, profiles }: Props) {
               <span className="text-sm font-bold text-gray-800">{fmt(itemsTotal)}원</span>
             </div>
           </>
+        )}
+      </div>
+
+      {/* 연결된 기존 건 */}
+      <div className="bg-white border border-gray-200 rounded-2xl p-5 mb-4">
+        <div className="flex items-center justify-between mb-3">
+          <h2 className="text-sm font-semibold text-gray-700">연결된 기존 건 <span className="text-gray-400 font-normal">({linkedRentals.length})</span></h2>
+          <button onClick={() => { setShowLinkSearch(v => !v); setLinkSearch('') }}
+            className="text-xs px-3 py-1.5 bg-gray-900 text-white rounded-lg hover:bg-gray-800">
+            + 기존 건 연결
+          </button>
+        </div>
+
+        {showLinkSearch && (
+          <div className="mb-3 border border-yellow-200 rounded-xl p-3 bg-yellow-50 space-y-2">
+            <input
+              autoFocus
+              value={linkSearch}
+              onChange={e => setLinkSearch(e.target.value)}
+              placeholder="고객명 또는 건명으로 검색..."
+              className="w-full text-sm border border-gray-200 rounded-lg px-3 py-1.5 bg-white focus:outline-none focus:border-yellow-400"
+            />
+            {filteredLinkable.length === 0 ? (
+              <p className="text-xs text-gray-400 text-center py-2">연결 가능한 건이 없습니다.</p>
+            ) : (
+              <div className="max-h-48 overflow-y-auto space-y-1">
+                {filteredLinkable.slice(0, 20).map(r => (
+                  <button key={r.id}
+                    onClick={async () => {
+                      const result = await linkRentalToParent(r.id, rental.id)
+                      if ('error' in result) { alert(result.error); return }
+                      setLinkedRentals(prev => [...prev, r])
+                      setShowLinkSearch(false)
+                      setLinkSearch('')
+                    }}
+                    className="w-full text-left px-3 py-2 bg-white border border-gray-100 rounded-lg hover:border-yellow-300 hover:bg-yellow-50 transition-colors"
+                  >
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="min-w-0">
+                        <p className="text-xs font-medium text-gray-800 truncate">{r.title || r.customer_name}</p>
+                        {r.title && <p className="text-[10px] text-gray-400">{r.customer_name}</p>}
+                      </div>
+                      <div className="flex items-center gap-2 flex-shrink-0">
+                        {r.rental_start && <span className="text-[10px] text-gray-400">{r.rental_start}</span>}
+                        <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium ${DELIVERY_STATUS_BADGE[r.status] ?? 'bg-gray-100 text-gray-500'}`}>{r.status}</span>
+                      </div>
+                    </div>
+                  </button>
+                ))}
+              </div>
+            )}
+            <button onClick={() => { setShowLinkSearch(false); setLinkSearch('') }}
+              className="w-full text-xs text-gray-400 hover:text-gray-600 py-1">취소</button>
+          </div>
+        )}
+
+        {linkedRentals.length === 0 && !showLinkSearch ? (
+          <p className="text-sm text-gray-400 text-center py-4">연결된 기존 건이 없습니다.</p>
+        ) : (
+          <div className="space-y-2">
+            {linkedRentals.map(r => (
+              <div key={r.id} className="flex items-center gap-3 px-4 py-3 border border-gray-100 rounded-xl hover:bg-gray-50 transition-colors">
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-medium text-gray-800 truncate">{r.title || r.customer_name}</p>
+                  <div className="flex items-center gap-2 mt-0.5 text-xs text-gray-400">
+                    {r.title && <span>{r.customer_name}</span>}
+                    {r.rental_start && <span>{r.rental_start}</span>}
+                    {r.rental_end && <span>→ {r.rental_end}</span>}
+                    {r.total_amount > 0 && <span>{fmt(r.total_amount)}원</span>}
+                  </div>
+                </div>
+                <div className="flex items-center gap-2 flex-shrink-0">
+                  <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium ${DELIVERY_STATUS_BADGE[r.status] ?? 'bg-gray-100 text-gray-500'}`}>{r.status}</span>
+                  <a href={`/rentals/${r.id}`} className="text-xs text-blue-400 hover:text-blue-600 px-2 py-1 border border-blue-100 rounded-lg">보기</a>
+                  <button onClick={async () => {
+                    if (!confirm(`"${r.title || r.customer_name}" 연결을 해제할까요?`)) return
+                    await unlinkRentalFromParent(r.id, rental.id)
+                    setLinkedRentals(prev => prev.filter(x => x.id !== r.id))
+                  }} className="text-xs text-gray-400 hover:text-red-500 px-2 py-1 border border-gray-200 rounded-lg">해제</button>
+                </div>
+              </div>
+            ))}
+          </div>
         )}
       </div>
 
