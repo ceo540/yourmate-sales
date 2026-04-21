@@ -78,11 +78,56 @@ function DdayBadge({ dday }: { dday: number | null }) {
 }
 
 const LEADS = [
-  { id: 'L-001', name: '한국예술종합학교 SOS 공연', client: '한국예술종합학교', service: 'SOS', source: '채널톡', assignee: '조민현', date: '2026-04-20', status: '검토중' },
-  { id: 'L-002', name: '성남시청 행사 운영', client: '성남시청', service: '행사운영', source: '이메일', assignee: '유제민', date: '2026-04-18', status: '견적발송' },
-  { id: 'L-003', name: '용인교육지원청 홍보영상', client: '용인교육지원청', service: '콘텐츠제작', source: '소개', assignee: '유제민', date: '2026-04-15', status: '미응답' },
-  { id: 'L-004', name: '분당중학교 교구대여', client: '분당중학교', service: '교구대여', source: '채널톡', assignee: '조민현', date: '2026-04-21', status: '상담중' },
-  { id: 'L-005', name: '경기아트센터 음향설치', client: '경기아트센터', service: '납품설치', source: '재거래', assignee: '방준영', date: '2026-04-19', status: '검토중' },
+  {
+    id: 'L-001', name: '한국예술종합학교 SOS 공연', client: '한국예술종합학교', service: 'SOS',
+    source: '채널톡', assignee: '조민현', date: '2026-04-20', status: '검토중', dday: 3,
+    contact: '김담당 (교육팀)', phone: '010-1111-2222', email: 'kim@karts.ac.kr',
+    eventDate: '2026-05-10', budget: '300만 내외', note: '5월 중 공연 희망, 재학생 대상',
+    comms: [
+      { date: '2026-04-20', author: '조민현', content: '채널톡 문의 접수. 5월 공연 가능 여부 확인 요청함.', channel: '채널톡' },
+      { date: '2026-04-21', author: '조민현', content: '유선 상담 완료. 예산 300만, 재학생 500명 대상.', channel: '전화' },
+    ]
+  },
+  {
+    id: 'L-002', name: '성남시청 행사 운영', client: '성남시청', service: '행사운영',
+    source: '이메일', assignee: '유제민', date: '2026-04-18', status: '견적발송', dday: 7,
+    contact: '이과장 (문화과)', phone: '031-729-0000', email: 'lee@seongnam.go.kr',
+    eventDate: '2026-05-25', budget: '800만', note: '야외 행사, 무대 + 음향 + 진행',
+    comms: [
+      { date: '2026-04-18', author: '유제민', content: '이메일 문의 접수. 5월 25일 야외 행사 운영 의뢰.', channel: '이메일' },
+      { date: '2026-04-19', author: '유제민', content: '견적서 800만원 발송 완료.', channel: '이메일' },
+      { date: '2026-04-21', author: '유제민', content: '검토 중이라 함. 이번 주 내 회신 예정.', channel: '전화' },
+    ]
+  },
+  {
+    id: 'L-003', name: '용인교육지원청 홍보영상', client: '용인교육지원청', service: '콘텐츠제작',
+    source: '소개', assignee: '유제민', date: '2026-04-15', status: '미응답', dday: -3,
+    contact: '한장학 (장학사)', phone: '031-000-1111', email: 'han@yongin.go.kr',
+    eventDate: null, budget: '미정', note: '3월 소개로 연결. 유선 2회 미응답 상태.',
+    comms: [
+      { date: '2026-04-15', author: '유제민', content: '소개로 연락처 받음. 문자 발송.', channel: '문자' },
+      { date: '2026-04-17', author: '유제민', content: '전화 미응답.', channel: '전화' },
+      { date: '2026-04-20', author: '유제민', content: '재전화 미응답. 문자 재발송.', channel: '전화' },
+    ]
+  },
+  {
+    id: 'L-004', name: '분당중학교 교구대여', client: '분당중학교', service: '교구대여',
+    source: '채널톡', assignee: '조민현', date: '2026-04-21', status: '상담중', dday: 1,
+    contact: '박선생 (과학부)', phone: '010-3333-4444', email: 'park@bundang.ms.kr',
+    eventDate: '2026-04-28', budget: '30만 내외', note: '아이패드 10대 + 앱 포함 1주 대여',
+    comms: [
+      { date: '2026-04-21', author: '조민현', content: '채널톡 문의. 아이패드 10대 1주 대여 가능 여부 확인 요청.', channel: '채널톡' },
+    ]
+  },
+  {
+    id: 'L-005', name: '경기아트센터 음향설치', client: '경기아트센터', service: '납품설치',
+    source: '재거래', assignee: '방준영', date: '2026-04-19', status: '검토중', dday: 10,
+    contact: '최운영 (운영팀장)', phone: '031-555-6666', email: 'choi@gart.or.kr',
+    eventDate: null, budget: '1,500만 예상', note: '2023년 거래처. 리뉴얼 공사 후 음향 재설치 검토 중.',
+    comms: [
+      { date: '2026-04-19', author: '방준영', content: '재거래 의뢰 전화 접수. 현장 방문 일정 조율 중.', channel: '전화' },
+    ]
+  },
 ]
 
 const LEAD_STATUS_COLOR: Record<string, string> = { '상담중': '#2563EB', '검토중': '#F59E0B', '견적발송': '#7C3AED', '미응답': '#EF4444', '계약전환': '#059669' }
@@ -91,6 +136,7 @@ const LEAD_STATUS_BG: Record<string, string> = { '상담중': '#EFF6FF', '검토
 export default function RedesignDemo() {
   const [page, setPage] = useState('home')
   const [selectedProject, setSelectedProject] = useState<typeof PROJECTS[0] | null>(null)
+  const [selectedLead, setSelectedLead] = useState<typeof LEADS[0] | null>(LEADS[3])
   const [selectedCustomer, setSelectedCustomer] = useState<typeof CUSTOMERS[0] | null>(null)
   const [projectTab, setProjectTab] = useState('overview')
   const [deptFilter, setDeptFilter] = useState('전체')
@@ -264,76 +310,150 @@ export default function RedesignDemo() {
           </div>
         )}
 
-        {/* LEADS */}
+        {/* LEADS — 좌측 목록 + 우측 상세 패널 */}
         {page === 'leads' && (
-          <div style={{ padding: 28 }}>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20 }}>
-              <div>
-                <h1 style={{ fontSize: 20, fontWeight: 700, margin: 0 }}>리드 관리</h1>
-                <p style={{ color: '#6B7280', margin: '4px 0 0', fontSize: 13 }}>총 {LEADS.length}건 · 이번 주 신규 3건</p>
-              </div>
-              <button style={{ background: YELLOW, color: DARK, border: 'none', borderRadius: 8, padding: '9px 18px', fontWeight: 700, fontSize: 13, cursor: 'pointer' }}>+ 리드 등록</button>
-            </div>
+          <div style={{ display: 'flex', height: '100%', overflow: 'hidden' }}>
 
-            {/* 상태별 카운트 */}
-            <div style={{ display: 'flex', gap: 10, marginBottom: 20 }}>
-              {[
-                { label: '전체', count: LEADS.length, color: '#6B7280', bg: '#F9FAFB' },
-                { label: '상담중', count: LEADS.filter(l => l.status === '상담중').length, color: '#2563EB', bg: '#EFF6FF' },
-                { label: '견적발송', count: LEADS.filter(l => l.status === '견적발송').length, color: '#7C3AED', bg: '#F5F3FF' },
-                { label: '검토중', count: LEADS.filter(l => l.status === '검토중').length, color: '#F59E0B', bg: '#FFFBEB' },
-                { label: '미응답', count: LEADS.filter(l => l.status === '미응답').length, color: '#EF4444', bg: '#FEF2F2' },
-              ].map(s => (
-                <div key={s.label} style={{ background: s.bg, borderRadius: 10, padding: '10px 16px', display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer' }}>
-                  <span style={{ fontSize: 18, fontWeight: 800, color: s.color }}>{s.count}</span>
-                  <span style={{ fontSize: 12, color: s.color, fontWeight: 600 }}>{s.label}</span>
+            {/* 좌측: 리드 목록 (D-day 순) */}
+            <div style={{ width: 340, borderRight: '1px solid #E5E7EB', background: '#fff', display: 'flex', flexDirection: 'column', flexShrink: 0 }}>
+              <div style={{ padding: '16px 16px 12px', borderBottom: '1px solid #F3F4F6' }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
+                  <h2 style={{ margin: 0, fontSize: 16, fontWeight: 700 }}>리드 관리</h2>
+                  <button style={{ background: YELLOW, color: DARK, border: 'none', borderRadius: 7, padding: '6px 12px', fontWeight: 700, fontSize: 12, cursor: 'pointer' }}>+ 등록</button>
                 </div>
-              ))}
+                <input placeholder="검색..." style={{ width: '100%', padding: '8px 12px', borderRadius: 8, border: '1px solid #E5E7EB', fontSize: 13, outline: 'none', boxSizing: 'border-box' }} />
+              </div>
+
+              {/* 상태 필터 */}
+              <div style={{ padding: '10px 12px', borderBottom: '1px solid #F3F4F6', display: 'flex', gap: 4, overflowX: 'auto' }}>
+                {['전체', '상담중', '견적발송', '검토중', '미응답'].map(s => (
+                  <button key={s}
+                    style={{ padding: '4px 10px', borderRadius: 20, border: `1px solid ${LEAD_STATUS_COLOR[s] || '#E5E7EB'}`, background: '#fff', color: LEAD_STATUS_COLOR[s] || '#6B7280', fontSize: 11, cursor: 'pointer', whiteSpace: 'nowrap', fontWeight: 600 }}>
+                    {s}
+                  </button>
+                ))}
+              </div>
+
+              {/* D-day 순 목록 */}
+              <div style={{ flex: 1, overflowY: 'auto' }}>
+                {[...LEADS].sort((a, b) => a.dday - b.dday).map(l => (
+                  <div key={l.id} onClick={() => setSelectedLead(l)}
+                    style={{ padding: '14px 16px', borderBottom: '1px solid #F3F4F6', cursor: 'pointer', background: selectedLead?.id === l.id ? `${YELLOW}18` : 'transparent', borderLeft: selectedLead?.id === l.id ? `3px solid ${YELLOW}` : '3px solid transparent' }}
+                    onMouseEnter={e => { if (selectedLead?.id !== l.id) e.currentTarget.style.background = '#F9FAFB' }}
+                    onMouseLeave={e => { if (selectedLead?.id !== l.id) e.currentTarget.style.background = 'transparent' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
+                      <DdayBadge dday={l.dday} />
+                      <Badge label={l.status} color={LEAD_STATUS_COLOR[l.status]} bg={LEAD_STATUS_BG[l.status]} />
+                      <span style={{ marginLeft: 'auto', fontSize: 11, color: '#9CA3AF' }}>{l.assignee}</span>
+                    </div>
+                    <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 3 }}>{l.name}</div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                      <span style={{ fontSize: 11, color: '#9CA3AF' }}>{l.client}</span>
+                      <Badge label={l.service} color={SERVICE_COLOR[l.service] || '#6B7280'} bg={`${SERVICE_COLOR[l.service]}18`} />
+                      <span style={{ fontSize: 11, color: '#9CA3AF', marginLeft: 'auto' }}>유입: {l.source}</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
             </div>
 
-            <div style={{ display: 'flex', gap: 10, marginBottom: 16 }}>
-              <input placeholder="리드명, 고객, 담당자 검색..." style={{ padding: '8px 14px', borderRadius: 8, border: '1px solid #E5E7EB', fontSize: 13, width: 260, outline: 'none' }} />
-            </div>
+            {/* 우측: 상세 패널 */}
+            {selectedLead ? (
+              <div style={{ flex: 1, overflowY: 'auto', padding: 24 }}>
+                {/* 상세 헤더 */}
+                <div style={{ background: '#fff', borderRadius: 12, padding: '18px 22px', boxShadow: '0 1px 4px rgba(0,0,0,0.06)', marginBottom: 16 }}>
+                  <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between' }}>
+                    <div>
+                      <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 8 }}>
+                        <DdayBadge dday={selectedLead.dday} />
+                        <Badge label={selectedLead.status} color={LEAD_STATUS_COLOR[selectedLead.status]} bg={LEAD_STATUS_BG[selectedLead.status]} />
+                        <Badge label={selectedLead.service} color={SERVICE_COLOR[selectedLead.service] || '#6B7280'} bg={`${SERVICE_COLOR[selectedLead.service]}18`} />
+                      </div>
+                      <h2 style={{ margin: '0 0 6px', fontSize: 18, fontWeight: 800 }}>{selectedLead.name}</h2>
+                      <div style={{ fontSize: 13, color: '#6B7280', display: 'flex', gap: 14 }}>
+                        <span>🏢 {selectedLead.client}</span>
+                        <span>👤 {selectedLead.assignee}</span>
+                        <span>유입: {selectedLead.source}</span>
+                      </div>
+                    </div>
+                    <div style={{ display: 'flex', gap: 8 }}>
+                      <select style={{ padding: '7px 12px', borderRadius: 8, border: '1px solid #E5E7EB', fontSize: 12, cursor: 'pointer' }}>
+                        {['상담중', '견적발송', '검토중', '미응답'].map(s => (
+                          <option key={s} selected={selectedLead.status === s}>{s}</option>
+                        ))}
+                      </select>
+                      <button style={{ background: YELLOW, border: 'none', borderRadius: 8, padding: '7px 16px', fontWeight: 700, fontSize: 12, cursor: 'pointer' }}>계약 전환 →</button>
+                    </div>
+                  </div>
+                </div>
 
-            <div style={{ background: '#fff', borderRadius: 12, boxShadow: '0 1px 4px rgba(0,0,0,0.06)', overflow: 'hidden' }}>
-              <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-                <thead>
-                  <tr style={{ background: '#F9FAFB', borderBottom: '1px solid #F3F4F6' }}>
-                    {['리드명', '고객', '서비스', '유입경로', '상태', '담당자', '등록일', ''].map(h => (
-                      <th key={h} style={{ padding: '12px 16px', textAlign: 'left', fontSize: 12, fontWeight: 600, color: '#6B7280' }}>{h}</th>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, marginBottom: 16 }}>
+                  {/* 고객/담당자 */}
+                  <div style={{ background: '#fff', borderRadius: 12, padding: 18, boxShadow: '0 1px 4px rgba(0,0,0,0.06)' }}>
+                    <h3 style={{ margin: '0 0 12px', fontSize: 13, fontWeight: 700 }}>담당자 정보</h3>
+                    {[['이름', selectedLead.contact], ['전화', selectedLead.phone], ['이메일', selectedLead.email]].map(([k, v]) => (
+                      <div key={k} style={{ display: 'flex', gap: 8, padding: '6px 0', borderBottom: '1px solid #F3F4F6', fontSize: 13 }}>
+                        <span style={{ color: '#9CA3AF', width: 40, flexShrink: 0 }}>{k}</span>
+                        <span style={{ fontWeight: 600 }}>{v}</span>
+                      </div>
                     ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {LEADS.map(l => (
-                    <tr key={l.id}
-                      style={{ borderBottom: '1px solid #F3F4F6', cursor: 'pointer' }}
-                      onMouseEnter={e => (e.currentTarget.style.background = '#FAFAFA')}
-                      onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}>
-                      <td style={{ padding: '14px 16px', fontWeight: 600 }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                          <div style={{ width: 3, height: 20, background: SERVICE_COLOR[l.service] || '#E5E7EB', borderRadius: 2 }} />
-                          {l.name}
+                  </div>
+
+                  {/* 프로젝트 정보 */}
+                  <div style={{ background: '#fff', borderRadius: 12, padding: 18, boxShadow: '0 1px 4px rgba(0,0,0,0.06)' }}>
+                    <h3 style={{ margin: '0 0 12px', fontSize: 13, fontWeight: 700 }}>프로젝트 정보</h3>
+                    {[['일정', selectedLead.eventDate || '미정'], ['예산', selectedLead.budget], ['등록일', selectedLead.date]].map(([k, v]) => (
+                      <div key={k} style={{ display: 'flex', gap: 8, padding: '6px 0', borderBottom: '1px solid #F3F4F6', fontSize: 13 }}>
+                        <span style={{ color: '#9CA3AF', width: 40, flexShrink: 0 }}>{k}</span>
+                        <span style={{ fontWeight: 600 }}>{v}</span>
+                      </div>
+                    ))}
+                    <div style={{ marginTop: 10, padding: 10, background: '#F9FAFB', borderRadius: 8, fontSize: 12, color: '#374151' }}>
+                      📝 {selectedLead.note}
+                    </div>
+                  </div>
+                </div>
+
+                {/* 소통 내역 */}
+                <div style={{ background: '#fff', borderRadius: 12, padding: 18, boxShadow: '0 1px 4px rgba(0,0,0,0.06)', marginBottom: 16 }}>
+                  <h3 style={{ margin: '0 0 14px', fontSize: 13, fontWeight: 700 }}>소통 내역</h3>
+                  {selectedLead.comms.map((c, i) => (
+                    <div key={i} style={{ display: 'flex', gap: 10, marginBottom: 12 }}>
+                      <div style={{ width: 28, height: 28, background: YELLOW, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 700, flexShrink: 0 }}>{c.author[0]}</div>
+                      <div style={{ flex: 1 }}>
+                        <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 4 }}>
+                          <span style={{ fontWeight: 700, fontSize: 13 }}>{c.author}</span>
+                          <span style={{ fontSize: 11, color: '#9CA3AF' }}>{c.date}</span>
+                          <span style={{ fontSize: 11, padding: '1px 6px', background: '#F3F4F6', borderRadius: 10, color: '#6B7280' }}>{c.channel}</span>
                         </div>
-                      </td>
-                      <td style={{ padding: '14px 16px', color: '#6B7280', fontSize: 13 }}>{l.client}</td>
-                      <td style={{ padding: '14px 16px' }}>
-                        <Badge label={l.service} color={SERVICE_COLOR[l.service] || '#6B7280'} bg={`${SERVICE_COLOR[l.service]}18`} />
-                      </td>
-                      <td style={{ padding: '14px 16px', fontSize: 12, color: '#6B7280' }}>{l.source}</td>
-                      <td style={{ padding: '14px 16px' }}>
-                        <Badge label={l.status} color={LEAD_STATUS_COLOR[l.status]} bg={LEAD_STATUS_BG[l.status]} />
-                      </td>
-                      <td style={{ padding: '14px 16px', fontSize: 13 }}>{l.assignee}</td>
-                      <td style={{ padding: '14px 16px', fontSize: 12, color: '#9CA3AF' }}>{l.date}</td>
-                      <td style={{ padding: '14px 16px' }}>
-                        <button style={{ background: YELLOW, border: 'none', borderRadius: 6, padding: '5px 12px', fontSize: 11, fontWeight: 700, cursor: 'pointer', whiteSpace: 'nowrap' }}>계약 전환 →</button>
-                      </td>
-                    </tr>
+                        <div style={{ fontSize: 13, color: '#374151', background: '#F9FAFB', padding: '8px 12px', borderRadius: 8 }}>{c.content}</div>
+                      </div>
+                    </div>
                   ))}
-                </tbody>
-              </table>
-            </div>
+                  <div style={{ display: 'flex', gap: 8, marginTop: 4 }}>
+                    <input placeholder="소통 내용 입력..." style={{ flex: 1, padding: '9px 12px', borderRadius: 8, border: '1px solid #E5E7EB', fontSize: 13, outline: 'none' }} />
+                    <button style={{ background: YELLOW, border: 'none', borderRadius: 8, padding: '9px 14px', fontWeight: 700, fontSize: 13, cursor: 'pointer' }}>저장</button>
+                  </div>
+                </div>
+
+                {/* Claude 협업 */}
+                <div style={{ background: '#fff', borderRadius: 12, padding: 18, boxShadow: '0 1px 4px rgba(0,0,0,0.06)' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
+                    <div style={{ width: 24, height: 24, background: DARK, borderRadius: 6, display: 'flex', alignItems: 'center', justifyContent: 'center', color: YELLOW, fontSize: 11 }}>✦</div>
+                    <span style={{ fontWeight: 700, fontSize: 13 }}>Claude 협업</span>
+                    <span style={{ fontSize: 11, color: '#9CA3AF' }}>리드 맥락 자동 주입됨</span>
+                  </div>
+                  <div style={{ display: 'flex', gap: 8 }}>
+                    <input placeholder="이 리드에 대해 물어보세요..." style={{ flex: 1, padding: '9px 12px', borderRadius: 8, border: '1px solid #E5E7EB', fontSize: 13, outline: 'none' }} />
+                    <button style={{ background: DARK, color: YELLOW, border: 'none', borderRadius: 8, padding: '9px 14px', fontWeight: 700, fontSize: 13, cursor: 'pointer' }}>전송</button>
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#9CA3AF', fontSize: 14 }}>
+                리드를 선택하세요
+              </div>
+            )}
           </div>
         )}
 
