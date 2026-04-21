@@ -113,6 +113,14 @@ export async function deleteGoal(id: string, dept: string) {
   revalidatePath('/departments')
 }
 
+export async function updateSaleServiceType(saleId: string, serviceType: string, dept: string) {
+  const admin = createAdminClient()
+  const newDept = SERVICE_TO_DEPT[serviceType] ?? dept
+  await admin.from('sales').update({ service_type: serviceType, department: newDept }).eq('id', saleId)
+  revalidatePath(`/departments/${dept}`)
+  if (newDept !== dept) revalidatePath(`/departments/${newDept}`)
+}
+
 export async function updateSaleRemindDate(saleId: string, remind_date: string | null, dept: string) {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()

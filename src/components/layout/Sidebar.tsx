@@ -19,17 +19,26 @@ interface NavItem {
 // 메뉴 구조
 // 새 카테고리 추가: 아래 객체에 키와 아이템 배열 추가하면 끝
 // ─────────────────────────────────────────────────────────────────
+// 사업부별 서브 아이템 (해당 사업부 활성 시에만 표시)
+const DEPT_SUBITEMS: Record<string, NavItem[]> = {
+  sound_of_school: [
+    { href: '/sos', label: 'SOS 공연', icon: '🎤', pageKey: 'sos' },
+  ],
+  school_store: [
+    { href: '/rentals', label: '렌탈 관리', icon: '🎸', pageKey: 'rentals' },
+  ],
+}
+
+const TASKS_ITEM: NavItem = { href: '/tasks', label: '업무 관리', icon: '✅', pageKey: 'tasks' }
+
 const NAV_GROUPS: Record<string, NavItem[]> = {
   사업부: [
-    { href: '/departments/sound_of_school',   label: 'SOS',             icon: '🎵', pageKey: 'departments' },
     { href: '/departments/artkiwoom',         label: '아트키움',         icon: '🎨', pageKey: 'departments' },
+    { href: '/departments/sound_of_school',   label: 'SOS',             icon: '🎵', pageKey: 'departments' },
     { href: '/departments/school_store',      label: '학교상점',         icon: '🏫', pageKey: 'departments' },
     { href: '/departments/002_creative',      label: '002 Creative',     icon: '🎬', pageKey: 'departments' },
-    { href: '/departments/yourmate',          label: '유어메이트',       icon: '🏢', pageKey: 'departments' },
     { href: '/departments/002_entertainment', label: '002 ENT',          icon: '🎤', pageKey: 'departments' },
-    { href: '/tasks',                         label: '업무 관리',        icon: '✅', pageKey: 'tasks' },
-    { href: '/rentals',                       label: '렌탈 관리',        icon: '🎸', pageKey: 'rentals' },
-    { href: '/sos',                            label: 'SOS 공연',         icon: '🎤', pageKey: 'sos' },
+    { href: '/departments/yourmate',          label: '유어메이트',       icon: '🏢', pageKey: 'departments' },
   ],
   영업: [
     { href: '/pipeline',      label: '파이프라인', icon: '🔄', pageKey: 'pipeline' },
@@ -178,6 +187,11 @@ export default function Sidebar() {
 
   const subItems = (NAV_GROUPS[activeCategory] ?? []).filter(isItemVisible)
 
+  // 현재 활성 사업부 감지 (사업부 카테고리일 때만)
+  const activeDept = activeCategory === '사업부'
+    ? Object.keys(DEPT_SUBITEMS).find(d => pathname.startsWith(`/departments/${d}`)) ?? null
+    : null
+
   return (
     <>
       {/* ── 데스크탑: 상단 탭 바 ───────────────────────────────── */}
@@ -243,26 +257,66 @@ export default function Sidebar() {
           {subItems.map(item => {
             const active = isItemActive(item, subItems)
             const badge = badgeCounts[item.pageKey] ?? 0
+            // 이 사업부의 서브항목 (활성 사업부일 때만)
+            const deptKey = item.href.replace('/departments/', '')
+            const deptSubs = activeDept === deptKey ? (DEPT_SUBITEMS[deptKey] ?? []) : []
+            return (
+              <div key={item.href}>
+                <Link
+                  href={item.href}
+                  className={`flex items-center gap-2.5 px-3 py-2.5 rounded-lg text-sm transition-colors ${
+                    active ? 'font-semibold text-gray-900' : 'text-gray-500 hover:text-gray-900 hover:bg-gray-50'
+                  }`}
+                  style={active ? { backgroundColor: '#FFCE00' } : {}}
+                >
+                  <span className="text-sm">{item.icon}</span>
+                  <span>{item.label}</span>
+                  {item.demo && <span className="ml-auto text-[9px] px-1 py-0.5 rounded bg-gray-100 text-gray-400 font-medium">데모</span>}
+                  {!item.demo && badge > 0 && (
+                    <span className="ml-auto text-[10px] px-1.5 py-0.5 rounded-full bg-red-500 text-white font-bold min-w-[18px] text-center">{badge}</span>
+                  )}
+                </Link>
+                {deptSubs.map(sub => {
+                  const subActive = pathname === sub.href || pathname.startsWith(sub.href + '/')
+                  return (
+                    <Link
+                      key={sub.href}
+                      href={sub.href}
+                      className={`flex items-center gap-2 pl-8 pr-3 py-2 rounded-lg text-xs transition-colors ${
+                        subActive ? 'font-semibold text-gray-900' : 'text-gray-400 hover:text-gray-700 hover:bg-gray-50'
+                      }`}
+                      style={subActive ? { backgroundColor: '#FFF8CC' } : {}}
+                    >
+                      <span>{sub.icon}</span>
+                      <span>{sub.label}</span>
+                    </Link>
+                  )
+                })}
+              </div>
+            )
+          })}
+        </nav>
+        <div className="px-2 pb-3 border-t border-gray-100 pt-2 space-y-0.5">
+          {/* 업무 관리 — 항상 하단 고정 */}
+          {isItemVisible(TASKS_ITEM) && (() => {
+            const active = pathname === TASKS_ITEM.href || pathname.startsWith(TASKS_ITEM.href + '/')
+            const badge = badgeCounts[TASKS_ITEM.pageKey] ?? 0
             return (
               <Link
-                key={item.href}
-                href={item.href}
+                href={TASKS_ITEM.href}
                 className={`flex items-center gap-2.5 px-3 py-2.5 rounded-lg text-sm transition-colors ${
                   active ? 'font-semibold text-gray-900' : 'text-gray-500 hover:text-gray-900 hover:bg-gray-50'
                 }`}
                 style={active ? { backgroundColor: '#FFCE00' } : {}}
               >
-                <span className="text-sm">{item.icon}</span>
-                <span>{item.label}</span>
-                {item.demo && <span className="ml-auto text-[9px] px-1 py-0.5 rounded bg-gray-100 text-gray-400 font-medium">데모</span>}
-                {!item.demo && badge > 0 && (
+                <span className="text-sm">{TASKS_ITEM.icon}</span>
+                <span>{TASKS_ITEM.label}</span>
+                {badge > 0 && (
                   <span className="ml-auto text-[10px] px-1.5 py-0.5 rounded-full bg-red-500 text-white font-bold min-w-[18px] text-center">{badge}</span>
                 )}
               </Link>
             )
-          })}
-        </nav>
-        <div className="px-2 pb-3 border-t border-gray-100 pt-2">
+          })()}
           <Link
             href="/about"
             className={`flex items-center gap-2.5 px-3 py-2 rounded-lg text-xs transition-colors ${
@@ -318,24 +372,62 @@ export default function Sidebar() {
                     {items.map(item => {
                       const active = isItemActive(item, items)
                       const badge = badgeCounts[item.pageKey] ?? 0
+                      const deptKey = item.href.replace('/departments/', '')
+                      const deptSubs = cat === '사업부' && activeDept === deptKey ? (DEPT_SUBITEMS[deptKey] ?? []) : []
+                      return (
+                        <div key={item.href}>
+                          <Link
+                            href={item.href}
+                            className={`flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-colors ${
+                              active ? 'font-semibold text-gray-900' : 'text-gray-500 hover:text-gray-900 hover:bg-gray-50'
+                            }`}
+                            style={active ? { backgroundColor: '#FFCE00' } : {}}
+                          >
+                            <span>{item.icon}</span>
+                            <span>{item.label}</span>
+                            {item.demo && <span className="ml-auto text-[9px] px-1 py-0.5 rounded bg-gray-100 text-gray-400 font-medium">데모</span>}
+                            {!item.demo && badge > 0 && (
+                              <span className="ml-auto text-[10px] px-1.5 py-0.5 rounded-full bg-red-500 text-white font-bold min-w-[18px] text-center">{badge}</span>
+                            )}
+                          </Link>
+                          {deptSubs.map(sub => {
+                            const subActive = pathname === sub.href || pathname.startsWith(sub.href + '/')
+                            return (
+                              <Link
+                                key={sub.href}
+                                href={sub.href}
+                                className={`flex items-center gap-2 pl-9 pr-3 py-2 rounded-lg text-xs transition-colors ${
+                                  subActive ? 'font-semibold text-gray-900' : 'text-gray-400 hover:text-gray-700 hover:bg-gray-50'
+                                }`}
+                                style={subActive ? { backgroundColor: '#FFF8CC' } : {}}
+                              >
+                                <span>{sub.icon}</span>
+                                <span>{sub.label}</span>
+                              </Link>
+                            )
+                          })}
+                        </div>
+                      )
+                    })}
+                    {cat === '사업부' && isItemVisible(TASKS_ITEM) && (() => {
+                      const active = pathname === TASKS_ITEM.href || pathname.startsWith(TASKS_ITEM.href + '/')
+                      const badge = badgeCounts[TASKS_ITEM.pageKey] ?? 0
                       return (
                         <Link
-                          key={item.href}
-                          href={item.href}
-                          className={`flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-colors ${
+                          href={TASKS_ITEM.href}
+                          className={`flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-colors mt-1 ${
                             active ? 'font-semibold text-gray-900' : 'text-gray-500 hover:text-gray-900 hover:bg-gray-50'
                           }`}
                           style={active ? { backgroundColor: '#FFCE00' } : {}}
                         >
-                          <span>{item.icon}</span>
-                          <span>{item.label}</span>
-                          {item.demo && <span className="ml-auto text-[9px] px-1 py-0.5 rounded bg-gray-100 text-gray-400 font-medium">데모</span>}
-                          {!item.demo && badge > 0 && (
+                          <span>{TASKS_ITEM.icon}</span>
+                          <span>{TASKS_ITEM.label}</span>
+                          {badge > 0 && (
                             <span className="ml-auto text-[10px] px-1.5 py-0.5 rounded-full bg-red-500 text-white font-bold min-w-[18px] text-center">{badge}</span>
                           )}
                         </Link>
                       )
-                    })}
+                    })()}
                   </div>
                 )
               })}

@@ -1,7 +1,6 @@
 import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { redirect, notFound } from 'next/navigation'
-import Link from 'next/link'
 import { DEPARTMENT_LABELS, Department } from '@/types'
 import DeptClient from './DeptClient'
 
@@ -41,6 +40,7 @@ export default async function DeptPage({ params }: { params: Promise<{ dept: str
 
   const sales = (salesRaw ?? []).map(s => ({
     ...s,
+    project_id: (s as any).project_id ?? null,
     assignee: s.assignee_id ? { name: profileMap[s.assignee_id] ?? '' } : null,
   }))
 
@@ -96,12 +96,7 @@ export default async function DeptPage({ params }: { params: Promise<{ dept: str
   }
 
   return (
-    <div className="max-w-4xl mx-auto">
-      <div className="mb-4">
-        <Link href="/departments" className="text-sm text-gray-400 hover:text-gray-700 transition-colors">
-          ← 사업부 목록
-        </Link>
-      </div>
+    <>
       <DeptClient
         dept={dept}
         deptLabel={DEPARTMENT_LABELS[dept as Department]}
@@ -114,6 +109,6 @@ export default async function DeptPage({ params }: { params: Promise<{ dept: str
         isAdmin={isAdmin}
         year={currentYear}
       />
-    </div>
+    </>
   )
 }

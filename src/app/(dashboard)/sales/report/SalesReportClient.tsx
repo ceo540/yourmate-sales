@@ -31,6 +31,7 @@ interface Sale {
   contract_type: string | null
   cost_confirmed?: boolean | null
   created_at: string
+  project_id: string | null
   assignee: { id: string; name: string } | null
   entity: { id: string; name: string } | null
   sale_costs: CostItem[]

@@ -12,6 +12,7 @@ import { listSaleDropboxFiles } from './dropbox-action'
 import { syncSaleName, type SyncResult } from './sync-name-action'
 import dynamic from 'next/dynamic'
 import { DEPARTMENT_LABELS, PROGRESS_STATUSES, ProgressStatus } from '@/types'
+import QuotationModal from './QuotationModal'
 import TaskDetailPanel from './TaskDetailPanel'
 const TiptapEditor = dynamic(() => import('./TiptapEditor'), { ssr: false, loading: () => <div className="h-32 bg-gray-50 rounded-lg animate-pulse" /> })
 import CostSheetEditor from '../CostSheetEditor'
@@ -433,6 +434,7 @@ function OverviewTab({ sale, tasks, logs, notes, initialOverview, costs, showInt
   const [docTarget, setDocTarget] = useState<'client' | 'internal' | 'freelancer' | null>(null)
   const [docContent, setDocContent] = useState('')
   const [docGenerating, setDocGenerating] = useState(false)
+  const [showQuotation, setShowQuotation] = useState(false)
 
   // 드롭박스 파일 목록
   const [dropboxFiles, setDropboxFiles] = useState<{ name: string; path: string; type: 'file' | 'folder' }[] | null>(null)
@@ -649,6 +651,30 @@ function OverviewTab({ sale, tasks, logs, notes, initialOverview, costs, showInt
           )}
         </div>
       </div>
+
+      {/* 견적서 생성 */}
+      <div className="bg-white border border-gray-100 rounded-xl p-4">
+        <div className="flex items-center justify-between">
+          <div>
+            <p className="text-xs font-semibold text-gray-600">견적서 생성</p>
+            <p className="text-xs text-gray-400 mt-0.5">항목 입력 → 인쇄용 HTML 생성</p>
+          </div>
+          <button
+            onClick={() => setShowQuotation(true)}
+            className="px-4 py-2 text-xs font-semibold bg-yellow-400 hover:bg-yellow-500 text-gray-900 rounded-lg transition-colors"
+          >
+            견적서 만들기
+          </button>
+        </div>
+      </div>
+
+      {showQuotation && (
+        <QuotationModal
+          serviceType={sale.service_type}
+          clientOrg={sale.client_org}
+          onClose={() => setShowQuotation(false)}
+        />
+      )}
 
       {/* 문서 생성 */}
       <div className="bg-white border border-gray-100 rounded-xl p-4">

@@ -400,6 +400,7 @@ export default function LeadsClient({ leads, profiles, persons, currentUserId, i
   // Tab / inline editing
   const [tab, setTab] = useState<'main' | 'customer' | 'edit'>('main')
   const [inlineEdit, setInlineEdit] = useState<'status' | 'service' | 'remind' | null>(null)
+  const [quickServiceLeadId, setQuickServiceLeadId] = useState<string | null>(null)
 
   // Title inline edit
   const [editingTitle, setEditingTitle] = useState(false)
@@ -608,7 +609,7 @@ export default function LeadsClient({ leads, profiles, persons, currentUserId, i
     const result = await convertLeadToSale(leadId)
     setConvertingId(null)
     if ('error' in result) { alert('전환 실패: ' + result.error) }
-    else { router.push(`/sales/${result.sale_id}`) }
+    else { router.push(result.project_id ? `/projects/${result.project_id}` : `/sales/${result.sale_id}`) }
   }
 
   async function handleCreateLeadFolder(leadId: string) {
@@ -769,6 +770,7 @@ export default function LeadsClient({ leads, profiles, persons, currentUserId, i
       <div className="flex gap-3 md:h-[calc(100vh-200px)] min-h-[520px]">
 
         {/* ── 왼쪽 카드 목록 ── */}
+        {quickServiceLeadId && <div className="fixed inset-0 z-20" onClick={() => setQuickServiceLeadId(null)} />}
         <div className={`${selectedLead ? 'hidden md:flex' : 'flex'} md:w-[360px] flex-shrink-0 flex-col border border-gray-200 rounded-xl bg-white overflow-hidden`}>
           <div className="overflow-y-auto flex-1 p-2 space-y-1">
             {filtered.length === 0 ? (
@@ -823,11 +825,29 @@ export default function LeadsClient({ leads, profiles, persons, currentUserId, i
                       </div>
                       <div className="flex items-center gap-1.5 mt-1.5 flex-wrap">
                         <span className={`text-xs px-1.5 py-0.5 rounded-full font-medium flex-shrink-0 ${cfg.badge}`}>{lead.status}</span>
-                        {lead.service_type && (
-                          <span className={`text-xs px-1.5 py-0.5 rounded border font-medium flex-shrink-0 ${SVC_CLR[lead.service_type] || 'text-gray-400 bg-gray-50 border-gray-200'}`}>
-                            {lead.service_type}
+                        {/* 서비스 배지 — 없어도 클릭 가능하게 항상 표시 */}
+                        <div className="relative flex-shrink-0">
+                          <span
+                            onClick={e => { e.stopPropagation(); setSelectedLead(lead); setQuickServiceLeadId(lead.id === quickServiceLeadId ? null : lead.id) }}
+                            className={`text-xs px-1.5 py-0.5 rounded border font-medium cursor-pointer hover:opacity-70 transition-opacity ${
+                              lead.service_type ? (SVC_CLR[lead.service_type] || 'text-gray-400 bg-gray-50 border-gray-200') : 'text-gray-300 bg-white border-dashed border-gray-300'
+                            }`}>
+                            {lead.service_type || '서비스?'}
                           </span>
-                        )}
+                          {quickServiceLeadId === lead.id && (
+                            <div className="absolute left-0 top-full mt-1 bg-white border border-gray-200 rounded-xl shadow-lg z-30 overflow-hidden min-w-[110px]">
+                              {SERVICE_TYPES.map(s => (
+                                <button key={s} type="button" onClick={e => {
+                                  e.stopPropagation()
+                                  startTransition(async () => { await updateLead(lead.id, { service_type: s }) })
+                                  setQuickServiceLeadId(null)
+                                }} className={`w-full text-left px-3 py-2 text-xs hover:bg-gray-50 ${s === lead.service_type ? 'bg-gray-50 font-bold text-gray-900' : 'text-gray-600'}`}>
+                                  {s}
+                                </button>
+                              ))}
+                            </div>
+                          )}
+                        </div>
                         <span className="text-xs text-gray-400 flex-shrink-0 ml-auto">
                           {(lead.assignee as { name?: string })?.name || '—'}
                         </span>
@@ -1362,8 +1382,8 @@ export default function LeadsClient({ leads, profiles, persons, currentUserId, i
                         <div className="bg-white rounded-2xl border border-gray-200 p-5">
                           <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">연관 매출건 ({selectedLead.relatedSales.length})</p>
                           <div className="space-y-1.5">
-                            {selectedLead.relatedSales.map((sale: { id: string; name: string; revenue: number | null; contract_stage: string; progress_status?: string | null }) => (
-                              <a key={sale.id} href={`/sales/${sale.id}`}
+                            {selectedLead.relatedSales.map((sale: { id: string; name: string; revenue: number | null; contract_stage: string; progress_status?: string | null; project_id?: string | null }) => (
+                              <a key={sale.id} href={sale.project_id ? `/projects/${sale.project_id}` : `/sales/${sale.id}`}
                                 className="flex items-center justify-between bg-gray-50 border border-gray-100 rounded-xl px-3 py-2.5 hover:border-yellow-300 transition-colors group">
                                 <div>
                                   <p className="text-sm font-medium text-gray-800 group-hover:text-yellow-700">{sale.name}</p>

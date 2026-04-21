@@ -15,10 +15,12 @@ const CONTRACT_STAGE_BADGE: Record<string, string> = {
   '잔금':       'bg-green-50 text-green-600',
 }
 
-export default async function SalePage({ params }: {
+export default async function SalePage({ params, searchParams }: {
   params: Promise<{ id: string }>
+  searchParams: Promise<{ direct?: string }>
 }) {
   const { id } = await params
+  const { direct } = await searchParams
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) redirect('/login')
@@ -32,8 +34,10 @@ export default async function SalePage({ params }: {
     : { data: null }
   const showInternalCosts = profile?.role === 'admin' || (costPerm?.access_level ?? 'full') !== 'off'
 
-  const { data: sale } = await admin.from('sales').select('*, notes, project_overview').eq('id', id).single()
+  const { data: sale } = await admin.from('sales').select('*, notes, project_overview, project_id').eq('id', id).single()
   if (!sale) notFound()
+
+  if ((sale as any).project_id && !direct) redirect(`/projects/${(sale as any).project_id}`)
 
   const uid = profile?.id
   const isProjectAssignee = sale.assignee_id === uid

@@ -31,6 +31,7 @@ interface Sale {
   payment_date: string | null
   dropbox_url: string | null
   created_at: string
+  project_id: string | null
   assignee: { id: string; name: string } | null
   entity: { id: string; name: string } | null
   sale_costs: CostItem[]
@@ -385,7 +386,7 @@ export default function SaleExpandEditor({ sale, colSpan, entities, vendors, pro
               </button>
             )}
             <button
-              onClick={e => { e.stopPropagation(); router.push(`/sales/${sale.id}?from=/sales/report`) }}
+              onClick={e => { e.stopPropagation(); router.push(sale.project_id ? `/projects/${sale.project_id}` : `/sales/${sale.id}?from=/sales/report`) }}
               className="px-4 py-2 rounded-lg text-sm font-medium bg-blue-50 text-blue-600 hover:bg-blue-100 transition-colors"
             >
               업무 관리

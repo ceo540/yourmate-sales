@@ -189,9 +189,30 @@ export async function convertLeadToSale(leadId: string) {
     }
   }
 
-  // 리드에 converted_sale_id 업데이트 + 상태를 '완료'로
+  // project 자동 생성
+  const adminDb2 = createAdminClient()
+  const { data: project } = await adminDb2.from('projects').insert({
+    name: displayName ?? '(리드전환)',
+    service_type: serviceType,
+    department,
+    pm_id: lead.assignee_id ?? null,
+    customer_id: customerId,
+    status: '진행중',
+    _source_sale_id: sale!.id,
+  }).select('id').single()
+
+  if (project) {
+    await adminDb2.from('sales').update({ project_id: project.id }).eq('id', sale!.id)
+    if (lead.assignee_id) {
+      await adminDb2.from('project_members').insert({ project_id: project.id, profile_id: lead.assignee_id, role: 'PM' }).single()
+    }
+  }
+
+  // 리드에 converted_sale_id + project_id 업데이트, 상태 '완료'
   await supabase.from('leads').update({
     converted_sale_id: sale!.id,
+    project_id: project?.id ?? null,
+    is_primary_lead: true,
     status: '완료',
     updated_at: new Date().toISOString(),
   }).eq('id', leadId)
@@ -208,7 +229,7 @@ export async function convertLeadToSale(leadId: string) {
   revalidatePath('/sales/report')
   revalidatePath('/pipeline')
 
-  return { success: true, sale_id: sale!.id }
+  return { success: true, sale_id: sale!.id, project_id: project?.id ?? null }
 }
 
 export async function addSaleToLead(leadId: string, data: {

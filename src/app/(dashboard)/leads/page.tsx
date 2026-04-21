@@ -50,7 +50,7 @@ export default async function LeadsPage({ searchParams }: { searchParams: any })
   // 연관 매출건 조회 (lead_id 기반)
   const leadIds = (leadsRaw ?? []).map((l: any) => l.id)
   const { data: relatedSalesRaw } = leadIds.length > 0
-    ? await admin.from('sales').select('id, name, contract_stage, progress_status, revenue, lead_id').in('lead_id', leadIds)
+    ? await admin.from('sales').select('id, name, contract_stage, progress_status, revenue, lead_id, project_id').in('lead_id', leadIds)
     : { data: [] }
 
   const relatedSalesMap: Record<string, any[]> = {}

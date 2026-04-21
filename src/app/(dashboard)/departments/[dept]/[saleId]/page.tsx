@@ -35,8 +35,10 @@ export default async function DeptSalePage({
     : { data: null }
   const showInternalCosts = profile?.role === 'admin' || (costPerm?.access_level ?? 'full') !== 'off'
 
-  const { data: sale } = await admin.from('sales').select('*, notes, project_overview').eq('id', saleId).single()
+  const { data: sale } = await admin.from('sales').select('*, notes, project_overview, project_id').eq('id', saleId).single()
   if (!sale) notFound()
+
+  if ((sale as any).project_id) redirect(`/projects/${(sale as any).project_id}`)
 
   const uid = profile?.id
   const isProjectAssignee = sale.assignee_id === uid

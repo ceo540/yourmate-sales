@@ -1,0 +1,1492 @@
+'use client'
+
+import { useState, useTransition, useRef, useEffect } from 'react'
+import {
+  createProjectLog, deleteProjectLog, getProjectLogs,
+  updateProjectMemo, updateProjectNotes, updateProjectStatus,
+  linkProjectCustomer, createAndLinkCustomer, updateProjectDropbox,
+  updateCustomerContact, addProjectMember, removeProjectMember, linkSaleToProject,
+  togglePaymentReceived, addPaymentSchedule, deletePaymentSchedule,
+  addSaleCost, deleteSaleCost, updateContractStage, updateContractProgressStatus,
+  updateContractInfo, createTaskForProject,
+} from './project-actions'
+import { updateTaskStatus, deleteTask, updateTask } from '../../sales/tasks/actions'
+import ProjectClaudeChat from '@/components/ProjectClaudeChat'
+
+// ── 상수 ──────────────────────────────────────────────────────────────────────
+type LogType = '통화' | '이메일' | '방문' | '미팅' | '출장' | '내부회의' | '메모'
+const LOG_CATEGORY: Record<LogType, '외부' | '내부'> = {
+  통화: '외부', 이메일: '외부', 방문: '외부', 미팅: '외부', 출장: '외부',
+  내부회의: '내부', 메모: '내부',
+}
+const LOG_TYPE_STYLE: Record<string, { badge: string; bar: string; label: string }> = {
+  통화:     { badge: 'bg-blue-50 text-blue-700 border-blue-100',        bar: 'bg-blue-300',    label: '📞 통화' },
+  이메일:   { badge: 'bg-violet-50 text-violet-700 border-violet-100',  bar: 'bg-violet-300',  label: '✉ 이메일' },
+  방문:     { badge: 'bg-green-50 text-green-700 border-green-100',     bar: 'bg-green-300',   label: '🏢 방문' },
+  미팅:     { badge: 'bg-teal-50 text-teal-700 border-teal-100',        bar: 'bg-teal-300',    label: '🤝 미팅' },
+  출장:     { badge: 'bg-cyan-50 text-cyan-700 border-cyan-100',        bar: 'bg-cyan-300',    label: '🚗 출장' },
+  내부회의: { badge: 'bg-orange-50 text-orange-700 border-orange-100',  bar: 'bg-orange-300',  label: '💬 내부회의' },
+  메모:     { badge: 'bg-yellow-50 text-yellow-700 border-yellow-100',  bar: 'bg-yellow-300',  label: '📝 메모' },
+}
+const STAGE_COLORS: Record<string, string> = {
+  계약: 'bg-blue-100 text-blue-700', 착수: 'bg-purple-100 text-purple-700',
+  선금: 'bg-yellow-100 text-yellow-700', 중도금: 'bg-orange-100 text-orange-700',
+  완수: 'bg-teal-100 text-teal-700', 계산서발행: 'bg-indigo-100 text-indigo-700',
+  잔금: 'bg-green-100 text-green-700',
+}
+const STATUS_STYLE: Record<string, string> = {
+  '완료': 'bg-green-100 text-green-700', '진행중': 'bg-blue-100 text-blue-700',
+  '할 일': 'bg-gray-100 text-gray-500', '보류': 'bg-red-100 text-red-500', '검토중': 'bg-yellow-100 text-yellow-700',
+}
+const PRIORITY_DOT: Record<string, string> = {
+  긴급: 'bg-red-500', 높음: 'bg-orange-400', 보통: 'bg-gray-300', 낮음: 'bg-gray-200',
+}
+const AVATAR_COLORS = ['bg-yellow-400', 'bg-blue-400', 'bg-green-400', 'bg-purple-400', 'bg-orange-400']
+const PIPELINE = ['유입', '협의중', '견적발송', '계약', '진행중', '완료']
+const LOG_HAS_LOCATION    = new Set(['방문', '미팅', '출장', '내부회의'])
+const LOG_HAS_PARTICIPANTS = new Set(['방문', '미팅', '출장', '내부회의'])
+const LOG_HAS_OUTCOME     = new Set(['통화', '이메일', '방문', '미팅', '출장', '내부회의'])
+const CONTRACT_STAGES = ['계약', '착수', '선금', '중도금', '완수', '계산서발행', '잔금']
+const PROGRESS_OPTIONS = ['착수전', '착수중', '완수']
+const COST_CATEGORIES = ['인건비', '장비', '자재', '외주', '교통', '식비', '기타']
+
+// ── 유틸 ──────────────────────────────────────────────────────────────────────
+function fmtMoney(n: number) {
+  if (n >= 100000000) return `${(n / 100000000).toFixed(1)}억`
+  if (n >= 10000000)  return `${Math.round(n / 10000000) * 10}백만`
+  if (n >= 10000)     return `${Math.round(n / 10000)}만`
+  return n.toLocaleString()
+}
+function fmtDate(s: string | null) {
+  if (!s) return ''
+  return new Date(s).toLocaleDateString('ko-KR', { month: 'short', day: 'numeric' })
+}
+function fmtDatetime(s: string | null) {
+  if (!s) return ''
+  return new Date(s).toLocaleDateString('ko-KR', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })
+}
+function Avatar({ name, idx = 0, size = 'sm' }: { name: string; idx?: number; size?: 'sm' | 'md' }) {
+  const sz = size === 'sm' ? 'w-5 h-5 text-xs' : 'w-7 h-7 text-sm'
+  return (
+    <div className={`${sz} ${AVATAR_COLORS[idx % AVATAR_COLORS.length]} rounded-full flex items-center justify-center font-bold text-gray-900 flex-shrink-0`}>
+      {name[0]}
+    </div>
+  )
+}
+
+// ── 인터페이스 ────────────────────────────────────────────────────────────────
+interface Profile { id: string; name: string }
+interface Customer { id: string; name: string; type: string | null; contact_name: string | null; phone: string | null; contact_email: string | null }
+interface Member { profile_id: string; role: string; name: string }
+interface PaymentSchedule { id: string; label: string; amount: number; is_received: boolean; due_date: string | null }
+interface Contract {
+  id: string; name: string; revenue: number | null; contract_stage: string | null
+  progress_status: string | null; inflow_date: string | null; payment_date: string | null
+  client_org: string | null; contract_split_reason: string | null; dropbox_url: string | null
+  payment_schedules: PaymentSchedule[]
+  assignee_name: string | null; entity_name: string | null; assignee_id: string | null; entity_id: string | null
+}
+interface Task {
+  id: string; title: string; status: string; priority: string | null
+  due_date: string | null; assignee: { id: string; name: string } | null
+  project_id: string | null; description: string | null
+}
+interface Log {
+  id: string; content: string; log_type: string; log_category: string | null
+  contacted_at: string | null; created_at: string; author: { name: string } | null
+  location?: string | null; participants?: string[] | null; outcome?: string | null
+  sale_id?: string | null
+}
+interface CostItem { id: string; item: string; amount: number; category: string; sale_id: string }
+interface Project {
+  id: string; name: string; service_type: string | null; department: string | null
+  status: string; dropbox_url: string | null; memo: string | null; notes: string | null
+  customer_id: string | null; pm_id: string | null
+}
+interface Lead {
+  id: string; lead_id: string; project_name: string | null
+  status: string | null; inflow_date: string | null; assignee_name: string | null
+}
+interface SaleOption { id: string; name: string; revenue: number | null }
+interface Entity { id: string; name: string }
+interface Props {
+  project: Project; members: Member[]; contracts: Contract[]
+  tasks: Task[]; logs: Log[]; costs: CostItem[]
+  profiles: Profile[]; customers: Customer[]; customer: Customer | null
+  leads: Lead[]; salesOptions: SaleOption[]; entities: Entity[]
+  isAdmin: boolean; currentUserId: string
+}
+
+// ── 담당자 피커 ───────────────────────────────────────────────────────────────
+function AssigneePicker({ label, value, multi, profiles, onChange }: {
+  label: string; value: Profile[]; multi: boolean; profiles: Profile[]
+  onChange: (added: Profile | null, removed: Profile | null) => void
+}) {
+  const [open, setOpen] = useState(false)
+  const ref = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    const h = (e: MouseEvent) => { if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false) }
+    document.addEventListener('mousedown', h)
+    return () => document.removeEventListener('mousedown', h)
+  }, [])
+  function toggle(p: Profile) {
+    const exists = value.find(v => v.id === p.id)
+    if (exists) { onChange(null, p) }
+    else { if (!multi && value.length > 0) onChange(null, value[0]); onChange(p, null) }
+    if (!multi) setOpen(false)
+  }
+  return (
+    <div className="relative" ref={ref}>
+      <div className="flex items-center gap-1.5 flex-wrap cursor-pointer" onClick={() => setOpen(true)}>
+        {value.length === 0
+          ? <span className="text-xs text-gray-400 border border-dashed border-gray-200 px-2 py-0.5 rounded hover:border-gray-400">+ {label}</span>
+          : value.map((p, i) => (
+            <div key={p.id} className="flex items-center gap-1">
+              <Avatar name={p.name} idx={i} />
+              <span className="text-xs text-gray-700">{p.name}</span>
+            </div>
+          ))
+        }
+        {value.length > 0 && <span className="text-xs text-gray-300 hover:text-gray-600 ml-0.5">+</span>}
+      </div>
+      {open && (
+        <div className="absolute left-0 top-full mt-1 bg-white border border-gray-200 rounded-xl shadow-lg z-30 min-w-40 py-1">
+          {profiles.map((p, i) => {
+            const selected = !!value.find(v => v.id === p.id)
+            return (
+              <button key={p.id} onClick={() => toggle(p)}
+                className={`w-full flex items-center gap-2 px-3 py-2 text-sm hover:bg-gray-50 ${selected ? 'font-medium text-gray-900' : 'text-gray-600'}`}>
+                <Avatar name={p.name} idx={i} />
+                <span>{p.name}</span>
+                {selected && <span className="ml-auto text-yellow-500 text-xs">✓</span>}
+              </button>
+            )
+          })}
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ── 계약 카드 ─────────────────────────────────────────────────────────────────
+function ContractCard({
+  contract, index, tasks, costs, projectId, entities, profiles,
+  onContractChange, onCostAdd, onCostDelete,
+}: {
+  contract: Contract; index: number; tasks: Task[]; costs: CostItem[]
+  projectId: string; entities: Entity[]; profiles: Profile[]
+  onContractChange: (contractId: string, patch: Partial<Contract>) => void
+  onCostAdd: (cost: CostItem) => void
+  onCostDelete: (costId: string) => void
+}) {
+  const [expanded, setExpanded] = useState(index === 0)
+  const [finTab, setFinTab] = useState<'payment' | 'cost'>('payment')
+  const [isPending, startTransition] = useTransition()
+
+  const [editingInfo, setEditingInfo] = useState(false)
+  const [infoForm, setInfoForm] = useState({
+    name: contract.name, revenue: String(contract.revenue ?? 0),
+    entity_id: contract.entity_id ?? '', client_org: contract.client_org ?? '',
+    contract_split_reason: contract.contract_split_reason ?? '',
+    inflow_date: contract.inflow_date ?? '', payment_date: contract.payment_date ?? '',
+    dropbox_url: contract.dropbox_url ?? '',
+  })
+
+  const [showAddPay, setShowAddPay] = useState(false)
+  const [payLabel, setPayLabel] = useState('')
+  const [payAmount, setPayAmount] = useState('')
+  const [payDue, setPayDue] = useState('')
+
+  const [showAddCost, setShowAddCost] = useState(false)
+  const [costItem, setCostItem] = useState('')
+  const [costAmount, setCostAmount] = useState('')
+  const [costCategory, setCostCategory] = useState('인건비')
+
+  const contractCosts = costs.filter(c => c.sale_id === contract.id)
+  const contractTasks = tasks.filter(t => t.project_id === contract.id)
+  const revenue = contract.revenue ?? 0
+  const totalCost = contractCosts.reduce((s, c) => s + c.amount, 0)
+  const profit = revenue - totalCost
+  const margin = revenue > 0 ? Math.round(profit / revenue * 100) : 0
+  const received = contract.payment_schedules.filter(p => p.is_received).reduce((s, p) => s + p.amount, 0)
+  const receivedPct = revenue > 0 ? Math.round(received / revenue * 100) : 0
+
+  function handleStage(stage: string) {
+    startTransition(async () => {
+      await updateContractStage(contract.id, stage, projectId)
+      onContractChange(contract.id, { contract_stage: stage })
+    })
+  }
+  function handleProgress(status: string) {
+    startTransition(async () => {
+      await updateContractProgressStatus(contract.id, status, projectId)
+      onContractChange(contract.id, { progress_status: status })
+    })
+  }
+  function handleSaveInfo() {
+    startTransition(async () => {
+      const rev = Number(infoForm.revenue) || 0
+      await updateContractInfo(contract.id, {
+        name: infoForm.name || undefined, revenue: rev,
+        entity_id: infoForm.entity_id || null,
+        contract_split_reason: infoForm.contract_split_reason || null,
+        inflow_date: infoForm.inflow_date || null, payment_date: infoForm.payment_date || null,
+        client_org: infoForm.client_org || null, dropbox_url: infoForm.dropbox_url || null,
+      }, projectId)
+      const entity_name = infoForm.entity_id ? (entities.find(e => e.id === infoForm.entity_id)?.name ?? null) : null
+      onContractChange(contract.id, {
+        name: infoForm.name || contract.name, revenue: rev, entity_id: infoForm.entity_id || null, entity_name,
+        contract_split_reason: infoForm.contract_split_reason || null,
+        inflow_date: infoForm.inflow_date || null, payment_date: infoForm.payment_date || null,
+        client_org: infoForm.client_org || null, dropbox_url: infoForm.dropbox_url || null,
+      })
+      setEditingInfo(false)
+    })
+  }
+  function handlePayToggle(scheduleId: string, isReceived: boolean) {
+    startTransition(async () => {
+      await togglePaymentReceived(scheduleId, isReceived, projectId)
+      onContractChange(contract.id, { payment_schedules: contract.payment_schedules.map(p => p.id === scheduleId ? { ...p, is_received: isReceived } : p) })
+    })
+  }
+  function handleAddPayment() {
+    if (!payLabel.trim() || !payAmount) return
+    startTransition(async () => {
+      const result = await addPaymentSchedule(contract.id, payLabel, Number(payAmount), payDue || null, projectId)
+      if (result) {
+        onContractChange(contract.id, { payment_schedules: [...contract.payment_schedules, result] })
+        setPayLabel(''); setPayAmount(''); setPayDue(''); setShowAddPay(false)
+      }
+    })
+  }
+  function handleDeletePayment(scheduleId: string) {
+    startTransition(async () => {
+      await deletePaymentSchedule(scheduleId, projectId)
+      onContractChange(contract.id, { payment_schedules: contract.payment_schedules.filter(p => p.id !== scheduleId) })
+    })
+  }
+  function handleAddCost() {
+    if (!costItem.trim() || !costAmount) return
+    startTransition(async () => {
+      const result = await addSaleCost(contract.id, costItem, Number(costAmount), costCategory, projectId)
+      if (result) { onCostAdd(result); setCostItem(''); setCostAmount(''); setCostCategory('인건비'); setShowAddCost(false) }
+    })
+  }
+  function handleDeleteCost(costId: string) {
+    startTransition(async () => { await deleteSaleCost(costId, projectId); onCostDelete(costId) })
+  }
+
+  return (
+    <div className={`border rounded-xl overflow-hidden transition-all ${expanded ? 'border-gray-200 shadow-sm' : 'border-gray-100'}`}>
+      <button onClick={() => setExpanded(e => !e)} className="w-full flex items-center gap-3 px-4 py-3 hover:bg-gray-50 text-left">
+        <div className="w-6 h-6 rounded-full bg-gray-100 text-gray-500 text-xs font-bold flex items-center justify-center flex-shrink-0">{index + 1}</div>
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className="text-sm font-semibold text-gray-800">{contract.name}</span>
+            {contract.contract_stage && (
+              <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${STAGE_COLORS[contract.contract_stage] ?? 'bg-gray-100 text-gray-500'}`}>{contract.contract_stage}</span>
+            )}
+            {contract.progress_status && (
+              <span className="text-xs text-gray-400 border border-gray-200 px-1.5 py-0.5 rounded">{contract.progress_status}</span>
+            )}
+            {contract.entity_name && (
+              <span className="text-xs text-gray-400 border border-gray-200 px-1.5 py-0.5 rounded">{contract.entity_name}</span>
+            )}
+          </div>
+          <div className="flex items-center gap-3 mt-0.5">
+            <span className="text-xs text-gray-500 font-medium">{fmtMoney(revenue)}원</span>
+            {contract.client_org && <span className="text-xs text-gray-400 truncate max-w-[160px]">{contract.client_org}</span>}
+          </div>
+        </div>
+        <div className="flex items-center gap-3 flex-shrink-0">
+          <div className="flex items-center gap-1.5">
+            <div className="w-16 h-1.5 bg-gray-100 rounded-full overflow-hidden">
+              <div className="h-full bg-green-400 rounded-full" style={{ width: `${receivedPct}%` }} />
+            </div>
+            <span className="text-xs text-gray-400">{receivedPct}%</span>
+          </div>
+          {contract.assignee_name && <Avatar name={contract.assignee_name} size="sm" />}
+          <span className="text-gray-300 text-xs">{expanded ? '▲' : '▼'}</span>
+        </div>
+      </button>
+
+      {expanded && (
+        <div className="border-t border-gray-100">
+          {/* 단계 */}
+          <div className="px-4 py-2.5 border-b border-gray-50 space-y-2">
+            <div className="flex items-center gap-1 flex-wrap">
+              <span className="text-xs text-gray-400 w-12 flex-shrink-0">단계</span>
+              {CONTRACT_STAGES.map(stage => (
+                <button key={stage} onClick={() => handleStage(stage)} disabled={isPending}
+                  className={`text-xs px-2 py-0.5 rounded-full font-medium transition-all disabled:opacity-50 ${
+                    contract.contract_stage === stage ? (STAGE_COLORS[stage] ?? 'bg-gray-200 text-gray-700') : 'text-gray-400 hover:bg-gray-100 hover:text-gray-600'
+                  }`}>{stage}</button>
+              ))}
+            </div>
+            <div className="flex items-center gap-1 flex-wrap">
+              <span className="text-xs text-gray-400 w-12 flex-shrink-0">진행</span>
+              {PROGRESS_OPTIONS.map(s => (
+                <button key={s} onClick={() => handleProgress(s)} disabled={isPending}
+                  className={`text-xs px-2.5 py-0.5 rounded-full border transition-all disabled:opacity-50 ${
+                    contract.progress_status === s ? 'bg-gray-900 text-white border-gray-900' : 'border-gray-200 text-gray-400 hover:border-gray-400 hover:text-gray-600'
+                  }`}>{s}</button>
+              ))}
+            </div>
+          </div>
+
+          {/* 정보 편집 */}
+          {editingInfo ? (
+            <div className="px-4 py-3 bg-blue-50 border-b border-blue-100 space-y-2">
+              <div className="grid grid-cols-2 gap-2">
+                {[
+                  { label: '계약명', key: 'name', type: 'text' },
+                  { label: '매출액 (원)', key: 'revenue', type: 'number' },
+                  { label: '의뢰기관', key: 'client_org', type: 'text' },
+                  { label: '유입일', key: 'inflow_date', type: 'date' },
+                  { label: '계약일', key: 'payment_date', type: 'date' },
+                ].map(({ label, key, type }) => (
+                  <div key={key}>
+                    <label className="text-xs text-gray-500 mb-0.5 block">{label}</label>
+                    <input type={type} value={(infoForm as Record<string, string>)[key]}
+                      onChange={e => setInfoForm(f => ({ ...f, [key]: e.target.value }))}
+                      className="w-full text-xs border border-gray-200 rounded-lg px-2.5 py-1.5 focus:outline-none focus:border-yellow-400 bg-white" />
+                  </div>
+                ))}
+                <div>
+                  <label className="text-xs text-gray-500 mb-0.5 block">법인</label>
+                  <select value={infoForm.entity_id} onChange={e => setInfoForm(f => ({ ...f, entity_id: e.target.value }))}
+                    className="w-full text-xs border border-gray-200 rounded-lg px-2.5 py-1.5 bg-white focus:outline-none focus:border-yellow-400">
+                    <option value="">선택 안 함</option>
+                    {entities.map(e => <option key={e.id} value={e.id}>{e.name}</option>)}
+                  </select>
+                </div>
+              </div>
+              <div>
+                <label className="text-xs text-gray-500 mb-0.5 block">계약 분리 사유</label>
+                <input value={infoForm.contract_split_reason} onChange={e => setInfoForm(f => ({ ...f, contract_split_reason: e.target.value }))}
+                  className="w-full text-xs border border-gray-200 rounded-lg px-2.5 py-1.5 focus:outline-none focus:border-yellow-400 bg-white" />
+              </div>
+              <div>
+                <label className="text-xs text-gray-500 mb-0.5 block">Dropbox URL</label>
+                <input value={infoForm.dropbox_url} onChange={e => setInfoForm(f => ({ ...f, dropbox_url: e.target.value }))}
+                  className="w-full text-xs border border-gray-200 rounded-lg px-2.5 py-1.5 focus:outline-none focus:border-yellow-400 bg-white" />
+              </div>
+              <div className="flex gap-2">
+                <button onClick={handleSaveInfo} disabled={isPending}
+                  className="px-3 py-1.5 text-xs font-semibold rounded-lg hover:opacity-80 disabled:opacity-40"
+                  style={{ backgroundColor: '#FFCE00', color: '#121212' }}>저장</button>
+                <button onClick={() => setEditingInfo(false)}
+                  className="px-3 py-1.5 text-xs border border-blue-200 rounded-lg text-blue-600 hover:bg-blue-50">취소</button>
+              </div>
+            </div>
+          ) : (
+            <div className="px-4 py-2 border-b border-gray-50 flex items-center justify-between">
+              <div className="flex flex-wrap gap-x-3 gap-y-0.5 text-xs text-gray-500">
+                {contract.inflow_date && <span>유입 {fmtDate(contract.inflow_date)}</span>}
+                {contract.payment_date && <span>계약 {fmtDate(contract.payment_date)}</span>}
+                {contract.contract_split_reason && <span className="text-blue-500 truncate max-w-[200px]">분리: {contract.contract_split_reason}</span>}
+                {contract.dropbox_url && <a href={contract.dropbox_url} target="_blank" rel="noopener noreferrer" className="text-blue-400 hover:underline">Dropbox ↗</a>}
+                {!contract.inflow_date && !contract.payment_date && !contract.contract_split_reason && !contract.dropbox_url && (
+                  <span className="text-gray-300">날짜·분리사유·Dropbox 미입력</span>
+                )}
+              </div>
+              <button onClick={() => {
+                setInfoForm({ name: contract.name, revenue: String(contract.revenue ?? 0), entity_id: contract.entity_id ?? '',
+                  client_org: contract.client_org ?? '', contract_split_reason: contract.contract_split_reason ?? '',
+                  inflow_date: contract.inflow_date ?? '', payment_date: contract.payment_date ?? '', dropbox_url: contract.dropbox_url ?? '' })
+                setEditingInfo(true)
+              }} className="text-xs text-gray-300 hover:text-gray-600 ml-2 flex-shrink-0">✏ 편집</button>
+            </div>
+          )}
+
+          {/* 탭 */}
+          <div className="flex border-b border-gray-100">
+            {(['payment', 'cost'] as const).map(t => (
+              <button key={t} onClick={() => setFinTab(t)}
+                className={`px-4 py-2 text-xs font-medium transition-all ${finTab === t ? 'text-gray-900 border-b-2 border-yellow-400' : 'text-gray-400 hover:text-gray-600'}`}>
+                {t === 'payment' ? '입금 현황' : `원가 (마진 ${margin}%)`}
+              </button>
+            ))}
+          </div>
+
+          {/* 입금 현황 */}
+          {finTab === 'payment' && (
+            <div className="px-4 py-3">
+              <div className="space-y-1.5">
+                {contract.payment_schedules.length === 0 && !showAddPay && <p className="text-xs text-gray-400 py-1">입금 일정 없음</p>}
+                {contract.payment_schedules.map(ps => (
+                  <div key={ps.id} className="flex items-center gap-2 group">
+                    <button onClick={() => handlePayToggle(ps.id, !ps.is_received)} disabled={isPending}
+                      className={`w-4 h-4 rounded-full border-2 flex-shrink-0 flex items-center justify-center transition-all ${ps.is_received ? 'border-green-400 bg-green-400' : 'border-gray-300 hover:border-gray-500'}`}>
+                      {ps.is_received && <span className="text-white text-xs leading-none">✓</span>}
+                    </button>
+                    <span className="text-sm text-gray-700 flex-1">{ps.label}</span>
+                    <span className={`text-sm font-medium ${ps.is_received ? 'text-green-600' : 'text-gray-500'}`}>{fmtMoney(ps.amount)}원</span>
+                    {ps.due_date && !ps.is_received && <span className="text-xs text-gray-400">{fmtDate(ps.due_date)}</span>}
+                    <button onClick={() => handleDeletePayment(ps.id)} disabled={isPending}
+                      className="text-gray-200 hover:text-red-400 text-xs opacity-0 group-hover:opacity-100 transition-opacity">✕</button>
+                  </div>
+                ))}
+              </div>
+              {showAddPay ? (
+                <div className="mt-2 pt-2 border-t border-gray-100 space-y-1.5">
+                  <div className="flex gap-1.5">
+                    <input autoFocus value={payLabel} onChange={e => setPayLabel(e.target.value)} placeholder="항목명 (예: 선금)"
+                      className="flex-1 text-xs border border-gray-200 rounded-lg px-2.5 py-1.5 focus:outline-none focus:border-yellow-400" />
+                    <input type="number" value={payAmount} onChange={e => setPayAmount(e.target.value)} placeholder="금액"
+                      className="w-28 text-xs border border-gray-200 rounded-lg px-2.5 py-1.5 focus:outline-none focus:border-yellow-400" />
+                    <input type="date" value={payDue} onChange={e => setPayDue(e.target.value)}
+                      className="text-xs border border-gray-200 rounded-lg px-2 py-1.5" />
+                  </div>
+                  <div className="flex gap-1.5">
+                    <button onClick={handleAddPayment} disabled={!payLabel.trim() || !payAmount || isPending}
+                      className="px-3 py-1 text-xs font-semibold rounded-lg hover:opacity-80 disabled:opacity-40"
+                      style={{ backgroundColor: '#FFCE00', color: '#121212' }}>추가</button>
+                    <button onClick={() => { setShowAddPay(false); setPayLabel(''); setPayAmount(''); setPayDue('') }}
+                      className="px-3 py-1 text-xs border border-gray-200 rounded-lg text-gray-500">취소</button>
+                  </div>
+                </div>
+              ) : (
+                <button onClick={() => setShowAddPay(true)} className="mt-2 text-xs text-gray-400 hover:text-gray-700">+ 항목 추가</button>
+              )}
+              <div className="mt-2 pt-2 border-t border-gray-100 flex justify-between text-xs">
+                <span className="text-gray-500">수령 / 계약 총액</span>
+                <span className="font-semibold text-gray-800">{fmtMoney(received)}원 / {fmtMoney(revenue)}원</span>
+              </div>
+            </div>
+          )}
+
+          {/* 원가 */}
+          {finTab === 'cost' && (
+            <div className="px-4 py-3">
+              <div className="space-y-1.5">
+                {contractCosts.length === 0 && !showAddCost && <p className="text-xs text-gray-400 py-1">원가 없음</p>}
+                {contractCosts.map(c => (
+                  <div key={c.id} className="flex items-center gap-2 text-xs group">
+                    <span className="text-gray-400 bg-gray-50 px-1.5 py-0.5 rounded w-12 text-center flex-shrink-0">{c.category}</span>
+                    <span className="flex-1 text-gray-600">{c.item}</span>
+                    <span className="text-gray-800 font-medium">{fmtMoney(c.amount)}</span>
+                    <button onClick={() => handleDeleteCost(c.id)} disabled={isPending}
+                      className="text-gray-200 hover:text-red-400 opacity-0 group-hover:opacity-100 transition-opacity">✕</button>
+                  </div>
+                ))}
+              </div>
+              {showAddCost ? (
+                <div className="mt-2 pt-2 border-t border-gray-100 space-y-1.5">
+                  <div className="flex gap-1.5">
+                    <select value={costCategory} onChange={e => setCostCategory(e.target.value)}
+                      className="text-xs border border-gray-200 rounded-lg px-2 py-1.5 bg-white">
+                      {COST_CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
+                    </select>
+                    <input autoFocus value={costItem} onChange={e => setCostItem(e.target.value)} placeholder="항목명"
+                      className="flex-1 text-xs border border-gray-200 rounded-lg px-2.5 py-1.5 focus:outline-none focus:border-yellow-400" />
+                    <input type="number" value={costAmount} onChange={e => setCostAmount(e.target.value)} placeholder="금액"
+                      className="w-24 text-xs border border-gray-200 rounded-lg px-2.5 py-1.5 focus:outline-none focus:border-yellow-400" />
+                  </div>
+                  <div className="flex gap-1.5">
+                    <button onClick={handleAddCost} disabled={!costItem.trim() || !costAmount || isPending}
+                      className="px-3 py-1 text-xs font-semibold rounded-lg hover:opacity-80 disabled:opacity-40"
+                      style={{ backgroundColor: '#FFCE00', color: '#121212' }}>추가</button>
+                    <button onClick={() => { setShowAddCost(false); setCostItem(''); setCostAmount('') }}
+                      className="px-3 py-1 text-xs border border-gray-200 rounded-lg text-gray-500">취소</button>
+                  </div>
+                </div>
+              ) : (
+                <button onClick={() => setShowAddCost(true)} className="mt-2 text-xs text-gray-400 hover:text-gray-700">+ 원가 추가</button>
+              )}
+              <div className="mt-2 pt-2 border-t border-gray-100 grid grid-cols-3 gap-2 text-xs text-center">
+                <div><p className="text-gray-400">매출</p><p className="font-semibold text-gray-800">{fmtMoney(revenue)}</p></div>
+                <div><p className="text-gray-400">원가</p><p className="font-semibold text-gray-800">{fmtMoney(totalCost)}</p></div>
+                <div><p className="text-gray-400">이익</p><p className={`font-semibold ${profit >= 0 ? 'text-green-600' : 'text-red-500'}`}>{fmtMoney(profit)}</p></div>
+              </div>
+            </div>
+          )}
+
+          {contractTasks.length > 0 && (
+            <div className="px-4 pb-3 border-t border-gray-50">
+              <p className="text-xs text-gray-400 mt-2 mb-1.5">이 계약의 업무</p>
+              <div className="space-y-1">
+                {contractTasks.map(t => (
+                  <div key={t.id} className="flex items-center gap-2 text-xs">
+                    <div className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${PRIORITY_DOT[t.priority ?? '보통'] ?? 'bg-gray-300'}`} />
+                    <span className={`flex-1 ${t.status === '완료' ? 'line-through text-gray-300' : 'text-gray-600'}`}>{t.title}</span>
+                    <span className={`px-1.5 py-0.5 rounded-full ${STATUS_STYLE[t.status] ?? 'bg-gray-100 text-gray-500'}`}>{t.status}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ── 소통 추가 폼 ──────────────────────────────────────────────────────────────
+function LogForm({ contracts, onSubmit, isPending }: {
+  contracts: Contract[]
+  onSubmit: (type: string, category: string, content: string, contactedAt: string, location: string, participants: string[], outcome: string, saleId: string | null) => void
+  isPending: boolean
+}) {
+  const [type, setType] = useState<LogType>('통화')
+  const [content, setContent] = useState('')
+  const [date, setDate] = useState(new Date().toISOString().slice(0, 16))
+  const [location, setLocation] = useState('')
+  const [participants, setParticipants] = useState('')
+  const [outcome, setOutcome] = useState('')
+  const [saleId, setSaleId] = useState('')
+
+  const category = LOG_CATEGORY[type]
+  const showLocation    = LOG_HAS_LOCATION.has(type)
+  const showParticipants = LOG_HAS_PARTICIPANTS.has(type)
+  const showOutcome     = LOG_HAS_OUTCOME.has(type)
+
+  function submit() {
+    if (!content.trim()) return
+    const pList = participants.trim() ? participants.split(',').map(s => s.trim()).filter(Boolean) : []
+    onSubmit(type, category, content, date, location, pList, outcome, saleId || null)
+    setContent(''); setLocation(''); setParticipants(''); setOutcome('')
+    setDate(new Date().toISOString().slice(0, 16))
+  }
+
+  return (
+    <div className="px-4 pt-3 pb-3 border-b border-gray-50">
+      <div className="flex gap-1.5 flex-wrap mb-2">
+        <div className="flex items-center gap-1">
+          <span className="text-xs text-gray-400 mr-1">외부</span>
+          {(['통화', '이메일', '방문', '미팅', '출장'] as LogType[]).map(t => (
+            <button key={t} onClick={() => setType(t)}
+              className={`text-xs px-2.5 py-1 rounded-full border transition-all ${type === t ? 'bg-gray-900 text-white border-gray-900' : 'border-gray-200 text-gray-500 hover:border-gray-400'}`}>
+              {t}
+            </button>
+          ))}
+        </div>
+        <div className="w-px bg-gray-200 mx-0.5" />
+        <div className="flex items-center gap-1">
+          <span className="text-xs text-gray-400 mr-1">내부</span>
+          {(['내부회의', '메모'] as LogType[]).map(t => (
+            <button key={t} onClick={() => setType(t)}
+              className={`text-xs px-2.5 py-1 rounded-full border transition-all ${type === t ? 'bg-orange-500 text-white border-orange-500' : 'border-gray-200 text-gray-500 hover:border-gray-400'}`}>
+              {t}
+            </button>
+          ))}
+        </div>
+      </div>
+      <div className="flex gap-2 mb-2">
+        <input type="datetime-local" value={date} onChange={e => setDate(e.target.value)}
+          className="text-xs border border-gray-200 rounded-lg px-2 py-1.5 text-gray-600 focus:outline-none focus:ring-1 focus:ring-yellow-400 w-40 flex-shrink-0" />
+        <textarea value={content} onChange={e => setContent(e.target.value)}
+          placeholder={category === '내부' ? '회의 내용이나 메모를 입력하세요...' : '소통 내용을 입력하세요...'}
+          className="flex-1 text-sm border border-gray-200 rounded-lg px-3 py-2 resize-none focus:outline-none focus:ring-1 focus:ring-yellow-400"
+          rows={2} onKeyDown={e => { if (e.key === 'Enter' && e.metaKey) submit() }} />
+      </div>
+      {(showLocation || showParticipants) && (
+        <div className="flex gap-2 mb-2">
+          {showLocation && <input value={location} onChange={e => setLocation(e.target.value)} placeholder="📍 장소"
+            className="flex-1 text-xs border border-gray-200 rounded-lg px-2.5 py-1.5 focus:outline-none focus:ring-1 focus:ring-yellow-400" />}
+          {showParticipants && <input value={participants} onChange={e => setParticipants(e.target.value)} placeholder="참석자 (쉼표로 구분)"
+            className="flex-1 text-xs border border-gray-200 rounded-lg px-2.5 py-1.5 focus:outline-none focus:ring-1 focus:ring-yellow-400" />}
+        </div>
+      )}
+      {showOutcome && (
+        <input value={outcome} onChange={e => setOutcome(e.target.value)}
+          placeholder={category === '내부' ? '결정사항 요약 (선택)' : '결과 요약 (선택)'}
+          className="w-full text-xs border border-gray-200 rounded-lg px-2.5 py-1.5 focus:outline-none focus:ring-1 focus:ring-yellow-400 mb-2" />
+      )}
+      <div className="flex items-center gap-2">
+        {contracts.length > 1 && (
+          <select value={saleId} onChange={e => setSaleId(e.target.value)}
+            className="text-xs border border-gray-200 rounded-lg px-2 py-1.5 bg-white text-gray-600 focus:outline-none focus:ring-1 focus:ring-yellow-400">
+            <option value="">프로젝트 공통</option>
+            {contracts.map(c => <option key={c.id} value={c.id}>{c.name.slice(0, 20)}</option>)}
+          </select>
+        )}
+        <button onClick={submit} disabled={isPending || !content.trim()}
+          className="px-4 py-1.5 bg-yellow-400 text-gray-900 text-xs font-medium rounded-lg hover:bg-yellow-300 disabled:opacity-40">저장</button>
+      </div>
+    </div>
+  )
+}
+
+// ── 메인 컴포넌트 ─────────────────────────────────────────────────────────────
+export default function ProjectHubClient({
+  project, members, contracts: initialContracts, tasks: initialTasks, logs: initialLogs,
+  costs: initialCosts, profiles, customers, customer, leads, salesOptions, entities, isAdmin,
+}: Props) {
+  const [localContracts, setLocalContracts] = useState(initialContracts)
+  const [localCosts, setLocalCosts] = useState<CostItem[]>(initialCosts)
+  const [tasks, setTasks] = useState(initialTasks)
+  const [localLogs, setLocalLogs] = useState(initialLogs)
+  const [localMembers, setLocalMembers] = useState(members)
+  const [localCustomer, setLocalCustomer] = useState(customer)
+  const [isPending, startTransition] = useTransition()
+
+  // 탭
+  const [activeTab, setActiveTab] = useState<'work' | 'contract'>('work')
+
+  // 업무 탭 상태
+  const [logFilter, setLogFilter] = useState('전체')
+  const [taskFilter, setTaskFilter] = useState<'pending' | 'all'>('pending')
+  const [claudeOpen, setClaudeOpen] = useState(false)
+  const [showTaskForm, setShowTaskForm] = useState(false)
+  const [newTaskTitle, setNewTaskTitle] = useState('')
+  const [newTaskDesc, setNewTaskDesc] = useState('')
+  const [newTaskAssignee, setNewTaskAssignee] = useState('')
+  const [newTaskDue, setNewTaskDue] = useState('')
+  const [newTaskPriority, setNewTaskPriority] = useState('보통')
+  const [newTaskContractId, setNewTaskContractId] = useState(initialContracts[0]?.id ?? '')
+  const [expandedTaskId, setExpandedTaskId] = useState<string | null>(null)
+  const [editingTask, setEditingTask] = useState<Task | null>(null)
+
+  // 메모 & 유의사항
+  const [memo, setMemo] = useState(project.memo ?? '')
+  const [memoEditing, setMemoEditing] = useState(false)
+  const [localNotes, setLocalNotes] = useState(project.notes ?? '')
+  const [editingNotes, setEditingNotes] = useState(false)
+
+  // 상태 메뉴
+  const [localStatus, setLocalStatus] = useState(project.status)
+  const [showStatusMenu, setShowStatusMenu] = useState(false)
+  const statusMenuRef = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    const h = (e: MouseEvent) => { if (statusMenuRef.current && !statusMenuRef.current.contains(e.target as Node)) setShowStatusMenu(false) }
+    document.addEventListener('mousedown', h)
+    return () => document.removeEventListener('mousedown', h)
+  }, [])
+
+  // 고객 연결
+  const [linkingCustomer, setLinkingCustomer] = useState(false)
+  const [changingCustomer, setChangingCustomer] = useState(false)
+  const [selectedCustomerId, setSelectedCustomerId] = useState('')
+  const [customerSearch, setCustomerSearch] = useState('')
+  const [addingNewCustomer, setAddingNewCustomer] = useState(false)
+  const [newCustomerName, setNewCustomerName] = useState('')
+  const [newCustomerType, setNewCustomerType] = useState('기타')
+  const [newCustomerContact, setNewCustomerContact] = useState('')
+  const [newCustomerPhone, setNewCustomerPhone] = useState('')
+  const [newCustomerEmail, setNewCustomerEmail] = useState('')
+  const [editingContact, setEditingContact] = useState(false)
+  const [contactName, setContactName] = useState(customer?.contact_name ?? '')
+  const [contactPhone, setContactPhone] = useState(customer?.phone ?? '')
+  const [contactEmail, setContactEmail] = useState(customer?.contact_email ?? '')
+
+  // 계약 탭 상태
+  const [showLeads, setShowLeads] = useState(false)
+  const [showCustomerDetail, setShowCustomerDetail] = useState(false)
+  const [editingDropbox, setEditingDropbox] = useState(false)
+  const [dropboxUrl, setDropboxUrl] = useState(project.dropbox_url ?? '')
+  const [linkingSale, setLinkingSale] = useState(false)
+  const [selectedSaleId, setSelectedSaleId] = useState('')
+
+  // KPI
+  const totalRevenue  = localContracts.reduce((s, c) => s + (c.revenue ?? 0), 0)
+  const totalCost     = localCosts.reduce((s, c) => s + c.amount, 0)
+  const totalReceived = localContracts.flatMap(c => c.payment_schedules).filter(p => p.is_received).reduce((s, p) => s + p.amount, 0)
+  const profit = totalRevenue - totalCost
+  const margin = totalRevenue > 0 ? Math.round((profit / totalRevenue) * 100) : 0
+  const pendingTasks = tasks.filter(t => t.status !== '완료' && t.status !== '보류')
+  const shownTasks = taskFilter === 'pending' ? pendingTasks : tasks
+  const filteredLogs = localLogs.filter(l => {
+    if (logFilter === '전체') return true
+    if (logFilter === '공통') return !l.sale_id
+    return l.sale_id === logFilter
+  })
+
+  const pm = localMembers.find(m => m.role === 'PM')
+  const teamMembers = localMembers.filter(m => m.role !== 'PM')
+  const pmProfiles = pm ? [{ id: pm.profile_id, name: pm.name }] : []
+  const memberProfiles = teamMembers.map(m => ({ id: m.profile_id, name: m.name }))
+
+  // 계약 콜백
+  function handleContractChange(contractId: string, patch: Partial<Contract>) {
+    setLocalContracts(prev => prev.map(c => c.id === contractId ? { ...c, ...patch } : c))
+  }
+
+  function handlePmChange(added: Profile | null, removed: Profile | null) {
+    startTransition(async () => {
+      if (removed) { await removeProjectMember(project.id, removed.id); setLocalMembers(prev => prev.filter(m => m.profile_id !== removed.id)) }
+      if (added) { await addProjectMember(project.id, added.id, 'PM'); setLocalMembers(prev => [...prev.filter(m => m.role !== 'PM'), { profile_id: added.id, role: 'PM', name: added.name }]) }
+    })
+  }
+  function handleMemberChange(added: Profile | null, removed: Profile | null) {
+    startTransition(async () => {
+      if (removed) { await removeProjectMember(project.id, removed.id); setLocalMembers(prev => prev.filter(m => m.profile_id !== removed.id)) }
+      if (added) { await addProjectMember(project.id, added.id, '담당자'); setLocalMembers(prev => [...prev, { profile_id: added.id, role: '담당자', name: added.name }]) }
+    })
+  }
+
+  const pipelineIdx = PIPELINE.indexOf(localStatus ?? '진행중')
+  function handleStatusChange(stage: string) {
+    setLocalStatus(stage); setShowStatusMenu(false)
+    startTransition(async () => { await updateProjectStatus(project.id, stage) })
+  }
+
+  function handleAddLog(type: string, category: string, content: string, contactedAt: string, location: string, participants: string[], outcome: string, saleId: string | null) {
+    startTransition(async () => {
+      await createProjectLog(project.id, content, type, category, new Date(contactedAt).toISOString(), location, participants, outcome, saleId)
+      const updated = await getProjectLogs(project.id)
+      setLocalLogs(updated)
+    })
+  }
+  function handleDeleteLog(logId: string) {
+    startTransition(async () => { await deleteProjectLog(logId, project.id); setLocalLogs(prev => prev.filter(l => l.id !== logId)) })
+  }
+
+  function handleAddTask() {
+    if (!newTaskTitle.trim() || !newTaskContractId) return
+    startTransition(async () => {
+      const result = await createTaskForProject(newTaskContractId, newTaskTitle, newTaskAssignee || null, newTaskDue || null, newTaskPriority, newTaskDesc || null)
+      if (result) setTasks(prev => [...prev, result])
+      setNewTaskTitle(''); setNewTaskDesc(''); setNewTaskAssignee(''); setNewTaskDue(''); setNewTaskPriority('보통')
+      setShowTaskForm(false)
+    })
+  }
+  function handleSaveTaskEdit(task: Task) {
+    const fd = new FormData()
+    fd.set('id', task.id); fd.set('title', task.title); fd.set('status', task.status)
+    fd.set('priority', task.priority ?? '보통'); fd.set('description', task.description ?? '')
+    if (task.assignee) fd.set('assignee_id', task.assignee.id)
+    if (task.due_date) fd.set('due_date', task.due_date)
+    if (task.project_id) fd.set('project_id', task.project_id)
+    startTransition(async () => {
+      await updateTask(fd)
+      setTasks(prev => prev.map(t => t.id === task.id ? task : t))
+      setEditingTask(null); setExpandedTaskId(null)
+    })
+  }
+  function handleTaskToggle(taskId: string, currentStatus: string) {
+    const nextStatus = currentStatus === '완료' ? '할 일' : '완료'
+    startTransition(async () => {
+      await updateTaskStatus(taskId, nextStatus, null)
+      setTasks(prev => prev.map(t => t.id === taskId ? { ...t, status: nextStatus } : t))
+    })
+  }
+
+  // 고객 연결 UI (기존 연결 + 새로 추가 공통)
+  function renderCustomerLinkUI(onCancel: () => void) {
+    return (
+      <div className="space-y-2">
+        <div className="flex gap-0.5 bg-gray-100 rounded-lg p-0.5">
+          {(['기존 연결', '새로 추가'] as const).map(mode => (
+            <button key={mode} onClick={() => { setAddingNewCustomer(mode === '새로 추가'); setCustomerSearch(''); setSelectedCustomerId('') }}
+              className={`flex-1 text-xs py-1 rounded-md transition-all font-medium ${(mode === '새로 추가') === addingNewCustomer ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-400'}`}>
+              {mode}
+            </button>
+          ))}
+        </div>
+        {addingNewCustomer ? (
+          <div className="space-y-2 pt-1">
+            <input autoFocus value={newCustomerName} onChange={e => setNewCustomerName(e.target.value)} placeholder="기관/회사명 *"
+              className="w-full text-xs border border-gray-200 rounded-lg px-2.5 py-2 focus:outline-none focus:border-yellow-400" />
+            <select value={newCustomerType} onChange={e => setNewCustomerType(e.target.value)}
+              className="w-full text-xs border border-gray-200 rounded-lg px-2.5 py-2 bg-white focus:outline-none focus:border-yellow-400">
+              {['공공기관', '국공립학교', '사립학교', '기업', '비영리', '개인', '기타'].map(t => <option key={t} value={t}>{t}</option>)}
+            </select>
+            <input value={newCustomerContact} onChange={e => setNewCustomerContact(e.target.value)} placeholder="담당자명"
+              className="w-full text-xs border border-gray-200 rounded-lg px-2.5 py-2 focus:outline-none focus:border-yellow-400" />
+            <input value={newCustomerPhone} onChange={e => setNewCustomerPhone(e.target.value)} placeholder="연락처"
+              className="w-full text-xs border border-gray-200 rounded-lg px-2.5 py-2 focus:outline-none focus:border-yellow-400" />
+            <input value={newCustomerEmail} onChange={e => setNewCustomerEmail(e.target.value)} placeholder="이메일"
+              className="w-full text-xs border border-gray-200 rounded-lg px-2.5 py-2 focus:outline-none focus:border-yellow-400" />
+            <div className="flex gap-2 pt-1">
+              <button disabled={!newCustomerName.trim() || isPending}
+                onClick={() => startTransition(async () => {
+                  const res = await createAndLinkCustomer(project.id, { name: newCustomerName, type: newCustomerType, contact_name: newCustomerContact, phone: newCustomerPhone, contact_email: newCustomerEmail })
+                  if (!res.error) {
+                    setLocalCustomer({ id: res.id ?? '', name: newCustomerName, type: newCustomerType, contact_name: newCustomerContact || null, phone: newCustomerPhone || null, contact_email: newCustomerEmail || null })
+                    setNewCustomerName(''); setNewCustomerContact(''); setNewCustomerPhone(''); setNewCustomerEmail('')
+                    setLinkingCustomer(false); setChangingCustomer(false)
+                  }
+                })}
+                className="flex-1 py-1.5 text-xs font-semibold rounded-lg hover:opacity-80 disabled:opacity-40" style={{ backgroundColor: '#FFCE00', color: '#121212' }}>
+                추가 &amp; 연결
+              </button>
+              <button onClick={onCancel} className="px-3 py-1.5 text-xs border border-gray-200 rounded-lg text-gray-500">취소</button>
+            </div>
+          </div>
+        ) : (
+          <div className="space-y-2 pt-1">
+            <input autoFocus value={customerSearch} onChange={e => { setCustomerSearch(e.target.value); setSelectedCustomerId('') }}
+              placeholder="기관명 검색..."
+              className="w-full text-xs border border-gray-200 rounded-lg px-2.5 py-2 focus:outline-none focus:border-yellow-400" />
+            <div className="max-h-44 overflow-y-auto border border-gray-100 rounded-lg divide-y divide-gray-50">
+              {customers.filter(c => !customerSearch || c.name.toLowerCase().includes(customerSearch.toLowerCase())).slice(0, 12).map(c => (
+                <button key={c.id} type="button" onClick={() => setSelectedCustomerId(c.id)}
+                  className={`w-full text-left px-3 py-2 hover:bg-gray-50 flex items-center justify-between gap-2 ${selectedCustomerId === c.id ? 'bg-yellow-50' : ''}`}>
+                  <span className={`text-xs font-medium ${selectedCustomerId === c.id ? 'text-gray-900' : 'text-gray-700'}`}>{c.name}</span>
+                  {c.type && <span className="text-xs text-gray-400 flex-shrink-0">{c.type}</span>}
+                </button>
+              ))}
+              {customers.filter(c => !customerSearch || c.name.toLowerCase().includes(customerSearch.toLowerCase())).length === 0 && (
+                <p className="px-3 py-3 text-xs text-gray-400 text-center">검색 결과 없음</p>
+              )}
+            </div>
+            <div className="flex gap-2 pt-1">
+              <button onClick={() => startTransition(async () => {
+                if (selectedCustomerId) {
+                  await linkProjectCustomer(project.id, selectedCustomerId)
+                  const newCust = customers.find(c => c.id === selectedCustomerId)
+                  if (newCust) setLocalCustomer(newCust)
+                  setLinkingCustomer(false); setChangingCustomer(false); setSelectedCustomerId('')
+                }
+              })} disabled={!selectedCustomerId || isPending}
+                className="flex-1 py-1.5 text-xs font-semibold rounded-lg hover:opacity-80 disabled:opacity-40" style={{ backgroundColor: '#FFCE00', color: '#121212' }}>연결</button>
+              <button onClick={onCancel} className="px-3 py-1.5 text-xs border border-gray-200 rounded-lg text-gray-500">취소</button>
+            </div>
+          </div>
+        )}
+      </div>
+    )
+  }
+
+  return (
+    <div className="min-h-screen bg-[#F5F5F3] -mx-4 md:-mx-8 -mt-4">
+
+      {/* ── 헤더 ── */}
+      <div className="bg-white border-b border-gray-200 px-6 py-4 sticky top-0 z-20">
+        <div className="max-w-7xl mx-auto">
+          <div className="flex items-start justify-between gap-4">
+            <div className="flex-1 min-w-0">
+              <div className="flex items-center gap-2 mb-1">
+                {project.service_type && <span className="text-xs bg-purple-50 text-purple-600 px-2 py-0.5 rounded-full">{project.service_type}</span>}
+                {project.department && <span className="text-xs text-gray-400">{project.department}</span>}
+              </div>
+              <h1 className="text-xl font-bold text-gray-900 leading-tight">{project.name}</h1>
+              <div className="flex items-center gap-5 mt-2">
+                <div className="flex items-center gap-2">
+                  <span className="text-xs text-gray-400 w-8">PM</span>
+                  <AssigneePicker label="PM 지정" value={pmProfiles} multi={false} profiles={profiles} onChange={handlePmChange} />
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="text-xs text-gray-400 w-14">관련 인원</span>
+                  <AssigneePicker label="인원 추가" value={memberProfiles} multi profiles={profiles} onChange={handleMemberChange} />
+                </div>
+              </div>
+            </div>
+            <div className="flex-shrink-0 relative" ref={statusMenuRef}>
+              <button onClick={() => setShowStatusMenu(s => !s)}
+                className={`text-sm px-3 py-1.5 rounded-full font-medium cursor-pointer hover:opacity-80 transition-opacity ${
+                  localStatus === '완료' ? 'bg-green-100 text-green-700' : localStatus === '보류' ? 'bg-red-100 text-red-500' : 'bg-blue-100 text-blue-700'
+                }`}>{localStatus} ▾</button>
+              {showStatusMenu && (
+                <div className="absolute right-0 top-full mt-1 bg-white border border-gray-200 rounded-xl shadow-lg z-30 py-1 min-w-32">
+                  {[...PIPELINE, '보류'].map(s => (
+                    <button key={s} onClick={() => handleStatusChange(s)}
+                      className={`w-full text-left px-3 py-2 text-sm hover:bg-gray-50 ${localStatus === s ? 'font-semibold text-gray-900' : 'text-gray-600'}`}>
+                      {localStatus === s && '✓ '}{s}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+          <div className="flex items-center mt-3">
+            {PIPELINE.map((stage, i) => (
+              <div key={stage} className="flex items-center">
+                <button onClick={() => handleStatusChange(stage)}
+                  className={`flex items-center gap-1 px-3 py-1 rounded-lg text-xs font-medium transition-all hover:opacity-80 ${
+                    i < pipelineIdx ? 'text-gray-400 hover:bg-gray-100' : i === pipelineIdx ? 'bg-yellow-400 text-gray-900 shadow-sm' : 'text-gray-300 hover:bg-gray-100'
+                  }`}>
+                  {i < pipelineIdx && <span className="text-green-500">✓</span>}
+                  {stage}
+                </button>
+                {i < PIPELINE.length - 1 && <span className="text-gray-200 text-xs mx-0.5">›</span>}
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      {/* ── 본문 ── */}
+      <div className="max-w-7xl mx-auto px-6 py-5 flex gap-5 items-start">
+
+        {/* ─── 좌측 ─────────────────────────────────────── */}
+        <div className="flex-1 min-w-0 space-y-4">
+
+          {/* KPI */}
+          <div className="grid grid-cols-4 gap-3">
+            {[
+              { label: '계약 금액', value: fmtMoney(totalRevenue) + '원', sub: `계약 ${localContracts.length}건`, color: 'text-gray-900' },
+              { label: `마진 ${margin}%`, value: fmtMoney(profit) + '원', sub: `원가 ${fmtMoney(totalCost)}원`, color: profit >= 0 ? 'text-green-600' : 'text-red-500' },
+              { label: '수령 완료', value: fmtMoney(totalReceived) + '원', sub: `${totalRevenue > 0 ? Math.round(totalReceived / totalRevenue * 100) : 0}% 입금`, color: 'text-blue-600' },
+              { label: '진행 업무', value: `${pendingTasks.length}건`, sub: `전체 ${tasks.length}건`, color: pendingTasks.length > 0 ? 'text-blue-600' : 'text-green-600' },
+            ].map(c => (
+              <div key={c.label} className="bg-white rounded-xl border border-gray-100 px-4 py-3">
+                <p className="text-xs text-gray-400">{c.label}</p>
+                <p className={`text-base font-bold mt-0.5 ${c.color}`}>{c.value}</p>
+                <p className="text-xs text-gray-400 mt-0.5">{c.sub}</p>
+              </div>
+            ))}
+          </div>
+
+          {/* 탭 전환 */}
+          <div className="flex bg-white border border-gray-100 rounded-xl p-1">
+            {([['work', '업무'] as const, ['contract', '계약 관리'] as const]).map(([id, label]) => (
+              <button key={id} onClick={() => setActiveTab(id)}
+                className={`flex-1 py-2 text-sm font-semibold rounded-lg transition-all ${activeTab === id ? 'bg-yellow-400 text-gray-900' : 'text-gray-400 hover:text-gray-600'}`}>
+                {label}
+              </button>
+            ))}
+          </div>
+
+          {/* ── 업무 탭 ── */}
+          {activeTab === 'work' && (
+            <>
+              {/* 유의사항 */}
+              <div className={`border rounded-xl px-4 py-3 ${localNotes || editingNotes ? 'bg-orange-50 border-orange-200' : 'bg-white border-gray-100'}`}>
+                <div className="flex items-center justify-between mb-1">
+                  <p className="text-xs font-semibold text-orange-700">⚠ 유의사항</p>
+                  {!editingNotes && (
+                    <button onClick={() => setEditingNotes(true)} className="text-xs text-orange-400 hover:text-orange-700">{localNotes ? '편집' : '+ 추가'}</button>
+                  )}
+                </div>
+                {editingNotes ? (
+                  <div className="space-y-2">
+                    <textarea value={localNotes} onChange={e => setLocalNotes(e.target.value)} rows={3} autoFocus
+                      placeholder="특이사항, 주의사항을 입력하세요..."
+                      className="w-full text-sm border border-orange-300 rounded-lg px-3 py-2 resize-none focus:outline-none focus:ring-1 focus:ring-orange-400 bg-white" />
+                    <div className="flex gap-2">
+                      <button onClick={() => startTransition(async () => { await updateProjectNotes(project.id, localNotes); setEditingNotes(false) })}
+                        disabled={isPending} className="px-3 py-1.5 bg-orange-400 text-white text-xs font-medium rounded-lg hover:bg-orange-500">저장</button>
+                      <button onClick={() => { setLocalNotes(project.notes ?? ''); setEditingNotes(false) }}
+                        className="px-3 py-1.5 border border-orange-200 text-orange-600 text-xs rounded-lg hover:bg-orange-50">취소</button>
+                    </div>
+                  </div>
+                ) : localNotes ? (
+                  <p className="text-sm text-orange-800 leading-relaxed">{localNotes}</p>
+                ) : (
+                  <p className="text-xs text-orange-300">클릭해서 특이사항을 추가하세요</p>
+                )}
+              </div>
+
+              {/* 업무 */}
+              <div className="bg-white border border-gray-100 rounded-xl overflow-hidden">
+                <div className="flex items-center justify-between px-4 py-3 border-b border-gray-50">
+                  <div className="flex items-center gap-3">
+                    <h2 className="text-sm font-semibold text-gray-800">업무</h2>
+                    <div className="flex gap-0.5 bg-gray-100 rounded-full p-0.5">
+                      {(['pending', 'all'] as const).map(f => (
+                        <button key={f} onClick={() => setTaskFilter(f)}
+                          className={`text-xs px-2.5 py-0.5 rounded-full transition-all ${taskFilter === f ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-400'}`}>
+                          {f === 'pending' ? `진행중 ${pendingTasks.length}` : `전체 ${tasks.length}`}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                  <button onClick={() => setShowTaskForm(s => !s)} className="text-xs text-gray-400 hover:text-gray-700 px-2 py-1 rounded hover:bg-gray-50">+ 추가</button>
+                </div>
+
+                {showTaskForm && (
+                  <div className="px-4 py-3 bg-yellow-50 border-b border-yellow-100 space-y-2">
+                    {localContracts.length === 0 ? (
+                      <p className="text-xs text-gray-400">계약이 연결되어야 업무를 추가할 수 있습니다.</p>
+                    ) : (
+                      <>
+                        <input autoFocus value={newTaskTitle} onChange={e => setNewTaskTitle(e.target.value)} placeholder="업무명 *"
+                          className="w-full text-sm bg-white border border-yellow-200 rounded-lg px-3 py-2 focus:outline-none focus:border-yellow-400" />
+                        <textarea value={newTaskDesc} onChange={e => setNewTaskDesc(e.target.value)} placeholder="상세 내용 (선택)" rows={2}
+                          className="w-full text-sm bg-white border border-yellow-200 rounded-lg px-3 py-2 focus:outline-none focus:border-yellow-400 resize-none" />
+                        <div className="flex gap-2 flex-wrap">
+                          {localContracts.length > 1 && (
+                            <select value={newTaskContractId} onChange={e => setNewTaskContractId(e.target.value)}
+                              className="flex-1 text-xs border border-gray-200 rounded-lg px-2 py-1.5 bg-white min-w-[120px]">
+                              {localContracts.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                            </select>
+                          )}
+                          <select value={newTaskAssignee} onChange={e => setNewTaskAssignee(e.target.value)}
+                            className="flex-1 text-xs border border-gray-200 rounded-lg px-2 py-1.5 bg-white min-w-[100px]">
+                            <option value="">담당자</option>
+                            {profiles.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+                          </select>
+                          <select value={newTaskPriority} onChange={e => setNewTaskPriority(e.target.value)}
+                            className="text-xs border border-gray-200 rounded-lg px-2 py-1.5 bg-white">
+                            {['긴급', '높음', '보통', '낮음'].map(p => <option key={p} value={p}>{p}</option>)}
+                          </select>
+                          <input type="date" value={newTaskDue} onChange={e => setNewTaskDue(e.target.value)}
+                            className="text-xs border border-gray-200 rounded-lg px-2 py-1.5 min-w-[110px]" />
+                          <button onClick={handleAddTask} disabled={isPending || !newTaskTitle.trim()}
+                            className="px-3 py-1.5 text-xs font-semibold rounded-lg hover:opacity-80 disabled:opacity-40"
+                            style={{ backgroundColor: '#FFCE00', color: '#121212' }}>추가</button>
+                          <button onClick={() => setShowTaskForm(false)}
+                            className="px-3 py-1.5 text-xs border border-gray-200 rounded-lg text-gray-500">취소</button>
+                        </div>
+                      </>
+                    )}
+                  </div>
+                )}
+
+                <div className="divide-y divide-gray-50">
+                  {shownTasks.length === 0
+                    ? <p className="text-center py-8 text-sm text-gray-400">업무가 없습니다</p>
+                    : shownTasks.map(t => {
+                      const linkedContract = localContracts.find(c => c.id === t.project_id)
+                      const isExpanded = expandedTaskId === t.id
+                      const isEditing = editingTask?.id === t.id
+                      return (
+                        <div key={t.id}>
+                          <div className="flex items-center gap-3 px-4 py-2.5 hover:bg-gray-50 group cursor-pointer"
+                            onClick={() => { setExpandedTaskId(isExpanded ? null : t.id); setEditingTask(null) }}>
+                            <button onClick={e => { e.stopPropagation(); handleTaskToggle(t.id, t.status) }}
+                              className={`w-4 h-4 rounded-full border-2 flex-shrink-0 flex items-center justify-center transition-all ${t.status === '완료' ? 'border-green-400 bg-green-400' : 'border-gray-300 hover:border-gray-500'}`}>
+                              {t.status === '완료' && <span className="text-white text-xs leading-none">✓</span>}
+                            </button>
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center gap-2 flex-wrap">
+                                <p className={`text-sm ${t.status === '완료' ? 'line-through text-gray-300' : 'text-gray-800'}`}>{t.title}</p>
+                                {linkedContract && localContracts.length > 1 && (
+                                  <span className="text-xs bg-blue-50 text-blue-600 px-1.5 py-0.5 rounded">
+                                    {linkedContract.name.length > 12 ? linkedContract.name.slice(0, 12) + '…' : linkedContract.name}
+                                  </span>
+                                )}
+                              </div>
+                              {!isExpanded && t.description && <p className="text-xs text-gray-400 truncate mt-0.5">{t.description}</p>}
+                              {(t.assignee || t.due_date) && (
+                                <div className="flex items-center gap-1.5 mt-0.5">
+                                  {t.assignee && <><Avatar name={t.assignee.name} size="sm" /><span className="text-xs text-gray-400">{t.assignee.name}</span></>}
+                                  {t.due_date && <span className="text-xs text-gray-400">· {fmtDate(t.due_date)}</span>}
+                                </div>
+                              )}
+                            </div>
+                            <div className="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                              {t.priority && <span className={`w-1.5 h-1.5 rounded-full ${PRIORITY_DOT[t.priority] ?? 'bg-gray-200'}`} />}
+                              <span className={`text-xs px-1.5 py-0.5 rounded-full ${STATUS_STYLE[t.status] ?? 'bg-gray-100 text-gray-500'}`}>{t.status}</span>
+                              {isAdmin && (
+                                <button onClick={e => { e.stopPropagation(); startTransition(async () => { await deleteTask(t.id, null); setTasks(prev => prev.filter(x => x.id !== t.id)) }) }}
+                                  className="text-gray-300 hover:text-red-400 text-xs">✕</button>
+                              )}
+                            </div>
+                          </div>
+                          {isExpanded && (
+                            <div className="px-4 pb-3 bg-gray-50 border-t border-gray-100">
+                              {isEditing ? (
+                                <div className="pt-3 space-y-2">
+                                  <input value={editingTask!.title} onChange={e => setEditingTask(prev => prev ? { ...prev, title: e.target.value } : null)}
+                                    className="w-full text-sm border border-yellow-300 rounded-lg px-3 py-2 focus:outline-none focus:border-yellow-400 bg-white" />
+                                  <textarea value={editingTask!.description ?? ''} onChange={e => setEditingTask(prev => prev ? { ...prev, description: e.target.value } : null)}
+                                    placeholder="상세 내용..." rows={3}
+                                    className="w-full text-sm border border-yellow-300 rounded-lg px-3 py-2 focus:outline-none focus:border-yellow-400 bg-white resize-none" />
+                                  <div className="flex gap-2 flex-wrap">
+                                    <select value={editingTask!.status} onChange={e => setEditingTask(prev => prev ? { ...prev, status: e.target.value } : null)}
+                                      className="text-xs border border-gray-200 rounded-lg px-2 py-1.5 bg-white">
+                                      {['할 일', '진행중', '검토중', '보류', '완료'].map(s => <option key={s}>{s}</option>)}
+                                    </select>
+                                    <select value={editingTask!.priority ?? '보통'} onChange={e => setEditingTask(prev => prev ? { ...prev, priority: e.target.value } : null)}
+                                      className="text-xs border border-gray-200 rounded-lg px-2 py-1.5 bg-white">
+                                      {['긴급', '높음', '보통', '낮음'].map(p => <option key={p}>{p}</option>)}
+                                    </select>
+                                    <input type="date" value={editingTask!.due_date ?? ''} onChange={e => setEditingTask(prev => prev ? { ...prev, due_date: e.target.value } : null)}
+                                      className="text-xs border border-gray-200 rounded-lg px-2 py-1.5" />
+                                    <select value={editingTask!.assignee?.id ?? ''} onChange={e => {
+                                      const p = profiles.find(x => x.id === e.target.value)
+                                      setEditingTask(prev => prev ? { ...prev, assignee: p ? { id: p.id, name: p.name } : null } : null)
+                                    }} className="text-xs border border-gray-200 rounded-lg px-2 py-1.5 bg-white">
+                                      <option value="">담당자</option>
+                                      {profiles.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+                                    </select>
+                                  </div>
+                                  <div className="flex gap-2">
+                                    <button onClick={() => handleSaveTaskEdit(editingTask!)} disabled={isPending}
+                                      className="px-3 py-1.5 text-xs font-semibold rounded-lg hover:opacity-80" style={{ backgroundColor: '#FFCE00', color: '#121212' }}>저장</button>
+                                    <button onClick={() => setEditingTask(null)} className="px-3 py-1.5 text-xs border border-gray-200 rounded-lg text-gray-500">취소</button>
+                                  </div>
+                                </div>
+                              ) : (
+                                <div className="pt-3">
+                                  {t.description ? <p className="text-sm text-gray-600 whitespace-pre-wrap leading-relaxed mb-2">{t.description}</p> : <p className="text-xs text-gray-300 mb-2">상세 내용 없음</p>}
+                                  <button onClick={e => { e.stopPropagation(); setEditingTask({ ...t }) }}
+                                    className="text-xs text-gray-400 hover:text-gray-700 px-2 py-1 rounded hover:bg-gray-100">✏ 편집</button>
+                                </div>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                      )
+                    })
+                  }
+                </div>
+              </div>
+
+              {/* 소통 내역 */}
+              <div className="bg-white border border-gray-100 rounded-xl overflow-hidden">
+                <div className="flex items-center justify-between px-4 py-3 border-b border-gray-50">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <h2 className="text-sm font-semibold text-gray-800">소통 내역</h2>
+                    <div className="flex gap-1 flex-wrap">
+                      {(['전체', '공통', ...localContracts.map(c => c.id)]).map(f => {
+                        const c = localContracts.find(x => x.id === f)
+                        const label = f === '전체' ? '전체' : f === '공통' ? '공통' : (c ? (c.name.length > 6 ? c.name.slice(0, 6) + '…' : c.name) : f)
+                        return (
+                          <button key={f} onClick={() => setLogFilter(f)}
+                            className={`text-xs px-2 py-0.5 rounded-full border transition-all ${logFilter === f ? 'bg-gray-900 text-white border-gray-900' : 'border-gray-200 text-gray-500 hover:border-gray-400'}`}>
+                            {label}
+                          </button>
+                        )
+                      })}
+                    </div>
+                  </div>
+                  <span className="text-xs text-gray-400 flex-shrink-0">{filteredLogs.length}건</span>
+                </div>
+                <LogForm contracts={localContracts} onSubmit={handleAddLog} isPending={isPending} />
+                <div className="divide-y divide-gray-50">
+                  {filteredLogs.length === 0
+                    ? <p className="text-center py-8 text-sm text-gray-400">소통 내역이 없습니다</p>
+                    : filteredLogs.map(l => {
+                      const style = LOG_TYPE_STYLE[l.log_type] ?? { badge: 'bg-gray-100 text-gray-500 border-gray-100', bar: 'bg-gray-300', label: l.log_type }
+                      const linkedContract = l.sale_id ? localContracts.find(c => c.id === l.sale_id) : null
+                      return (
+                        <div key={l.id} className="px-4 py-3 group hover:bg-gray-50">
+                          <div className="flex items-start gap-3">
+                            <div className={`w-0.5 self-stretch rounded-full mt-1 flex-shrink-0 ${style.bar}`} />
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center gap-2 mb-1 flex-wrap">
+                                <span className={`text-xs px-1.5 py-0.5 rounded border ${style.badge}`}>{style.label}</span>
+                                <span className="text-xs text-gray-400">{fmtDatetime(l.contacted_at ?? l.created_at)}</span>
+                                {l.author && <div className="flex items-center gap-1"><Avatar name={l.author.name} size="sm" /><span className="text-xs text-gray-400">{l.author.name}</span></div>}
+                                {linkedContract
+                                  ? <span className="ml-auto text-xs bg-blue-50 text-blue-600 px-2 py-0.5 rounded-full">{linkedContract.name.length > 10 ? linkedContract.name.slice(0, 10) + '…' : linkedContract.name}</span>
+                                  : <span className="ml-auto text-xs bg-gray-50 text-gray-400 px-2 py-0.5 rounded-full">공통</span>
+                                }
+                                {isAdmin && <button onClick={() => handleDeleteLog(l.id)} className="text-gray-300 hover:text-red-400 text-xs opacity-0 group-hover:opacity-100">✕</button>}
+                              </div>
+                              <p className="text-sm text-gray-700 leading-relaxed whitespace-pre-wrap">{l.content}</p>
+                              {(l.location || (l.participants && l.participants.length > 0)) && (
+                                <div className="flex flex-wrap gap-3 mt-1.5">
+                                  {l.location && <span className="text-xs text-gray-400">📍 {l.location}</span>}
+                                  {l.participants && l.participants.length > 0 && <span className="text-xs text-gray-400">👥 {l.participants.join(', ')}</span>}
+                                </div>
+                              )}
+                              {l.outcome && (
+                                <div className="mt-2 px-2.5 py-1.5 bg-yellow-50 border border-yellow-100 rounded-lg">
+                                  <p className="text-xs text-yellow-800"><span className="font-semibold">결정: </span>{l.outcome}</p>
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                      )
+                    })
+                  }
+                </div>
+              </div>
+
+              {/* Claude */}
+              <div className="bg-white border border-gray-100 rounded-xl overflow-hidden">
+                <button onClick={() => setClaudeOpen(o => !o)} className="w-full flex items-center justify-between px-4 py-3 hover:bg-gray-50">
+                  <h2 className="text-sm font-semibold text-gray-800">Claude 협업</h2>
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs text-gray-400">프로젝트 맥락 자동 주입</span>
+                    <span className="text-gray-300 text-xs">{claudeOpen ? '▲' : '▼'}</span>
+                  </div>
+                </button>
+                {claudeOpen && (
+                  <div className="border-t border-gray-50">
+                    <ProjectClaudeChat saleId={localContracts[0]?.id} serviceType={project.service_type} projectName={project.name} dropboxUrl={project.dropbox_url} />
+                  </div>
+                )}
+              </div>
+            </>
+          )}
+
+          {/* ── 계약 관리 탭 ── */}
+          {activeTab === 'contract' && (
+            <>
+              {/* 계약 목록 */}
+              <div className="bg-white border border-gray-100 rounded-xl overflow-hidden">
+                <div className="flex items-center justify-between px-4 py-3 border-b border-gray-50">
+                  <div className="flex items-center gap-2">
+                    <h2 className="text-sm font-semibold text-gray-800">계약 목록</h2>
+                    <span className="text-xs bg-gray-100 text-gray-500 px-1.5 py-0.5 rounded-full">{localContracts.length}건</span>
+                    <span className="text-xs text-gray-400">합계 {fmtMoney(totalRevenue)}원</span>
+                  </div>
+                  <button onClick={() => setLinkingSale(s => !s)} className="text-xs text-gray-400 hover:text-gray-700 px-2 py-1 rounded hover:bg-gray-50">+ 매출 연결</button>
+                </div>
+
+                {linkingSale && (
+                  <div className="px-4 py-3 bg-gray-50 border-b border-gray-100">
+                    <div className="flex gap-2">
+                      <select value={selectedSaleId} onChange={e => setSelectedSaleId(e.target.value)}
+                        className="flex-1 text-xs border border-gray-200 rounded-lg px-2.5 py-1.5 bg-white focus:outline-none focus:border-yellow-400">
+                        <option value="">매출 건 선택...</option>
+                        {salesOptions.map(s => <option key={s.id} value={s.id}>{s.name}{s.revenue ? ` (${fmtMoney(s.revenue)}원)` : ''}</option>)}
+                      </select>
+                      <button onClick={() => startTransition(async () => { if (selectedSaleId) { await linkSaleToProject(project.id, selectedSaleId); setLinkingSale(false); setSelectedSaleId('') } })}
+                        disabled={!selectedSaleId || isPending}
+                        className="px-3 py-1.5 text-xs font-semibold rounded-lg hover:opacity-80 disabled:opacity-40" style={{ backgroundColor: '#FFCE00', color: '#121212' }}>연결</button>
+                      <button onClick={() => { setLinkingSale(false); setSelectedSaleId('') }}
+                        className="px-3 py-1.5 text-xs border border-gray-200 rounded-lg text-gray-500">취소</button>
+                    </div>
+                  </div>
+                )}
+
+                <div className="p-3 space-y-2">
+                  {localContracts.length === 0
+                    ? <p className="text-center py-6 text-sm text-gray-400">연결된 계약이 없습니다</p>
+                    : localContracts.map((c, i) => (
+                      <ContractCard key={c.id} contract={c} index={i} tasks={tasks} costs={localCosts}
+                        projectId={project.id} entities={entities} profiles={profiles}
+                        onContractChange={handleContractChange}
+                        onCostAdd={cost => setLocalCosts(prev => [...prev, cost])}
+                        onCostDelete={costId => setLocalCosts(prev => prev.filter(c => c.id !== costId))}
+                      />
+                    ))
+                  }
+                </div>
+
+                {localContracts.length > 0 && (
+                  <div className="px-4 py-3 border-t border-gray-100 bg-gray-50">
+                    <div className="grid grid-cols-4 gap-3 text-center text-xs">
+                      {[
+                        { label: '총 매출', value: fmtMoney(totalRevenue) + '원', cls: 'text-gray-900' },
+                        { label: '총 원가', value: fmtMoney(totalCost) + '원', cls: 'text-gray-700' },
+                        { label: '수령 완료', value: fmtMoney(totalReceived) + '원', cls: 'text-green-600' },
+                        { label: `총 이익 (${margin}%)`, value: fmtMoney(profit) + '원', cls: profit >= 0 ? 'text-green-600' : 'text-red-500' },
+                      ].map(r => (
+                        <div key={r.label}><p className="text-gray-400 mb-0.5">{r.label}</p><p className={`font-bold ${r.cls}`}>{r.value}</p></div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* 연결된 리드 */}
+              <div className="bg-white border border-gray-100 rounded-xl overflow-hidden">
+                <button onClick={() => setShowLeads(s => !s)} className="w-full flex items-center justify-between px-4 py-3 hover:bg-gray-50">
+                  <div className="flex items-center gap-2">
+                    <h2 className="text-sm font-semibold text-gray-800">연결된 리드</h2>
+                    <span className="text-xs bg-gray-100 text-gray-500 px-1.5 py-0.5 rounded-full">{leads.length}건</span>
+                    <span className="text-xs text-gray-400">이 프로젝트로 병합된 리드</span>
+                  </div>
+                  <span className="text-gray-300 text-xs">{showLeads ? '▲' : '▼'}</span>
+                </button>
+                {showLeads && (
+                  <div className="border-t border-gray-50 divide-y divide-gray-50">
+                    {leads.length === 0 ? (
+                      <div className="px-4 py-4 text-center">
+                        <p className="text-xs text-gray-400">연결된 리드가 없습니다</p>
+                        <a href="/leads" className="text-xs text-blue-400 hover:text-blue-600 mt-1 inline-block">리드 페이지에서 프로젝트 연결 →</a>
+                      </div>
+                    ) : leads.map((l, i) => (
+                      <div key={l.id} className="px-4 py-3 flex items-start gap-3">
+                        <div className={`mt-0.5 w-2 h-2 rounded-full flex-shrink-0 ${i === 0 ? 'bg-yellow-400' : 'bg-gray-300'}`} />
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2 mb-0.5">
+                            <span className="text-sm font-medium text-gray-800">{l.project_name ?? l.lead_id}</span>
+                            {i === 0 && <span className="text-xs bg-yellow-50 text-yellow-700 px-1.5 py-0.5 rounded-full">최초 리드</span>}
+                            <span className="text-xs font-mono text-gray-400">{l.lead_id}</span>
+                          </div>
+                          <p className="text-xs text-gray-400">{l.assignee_name && `${l.assignee_name} · `}유입 {l.inflow_date}</p>
+                        </div>
+                        {l.status && <span className="text-xs bg-blue-50 text-blue-600 px-2 py-0.5 rounded-full flex-shrink-0">{l.status}</span>}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {/* 프로젝트 메모 */}
+              <div className="bg-white border border-gray-100 rounded-xl overflow-hidden">
+                <div className="flex items-center justify-between px-4 py-3 border-b border-gray-50">
+                  <div className="flex items-center gap-2">
+                    <h2 className="text-sm font-semibold text-gray-800">프로젝트 메모</h2>
+                    <span className="text-xs text-gray-400">기획·결정 등 핵심 정보</span>
+                  </div>
+                  {!memoEditing && <button onClick={() => setMemoEditing(true)} className="text-xs text-gray-400 hover:text-gray-700 px-2 py-1 rounded hover:bg-gray-50">편집</button>}
+                </div>
+                <div className="px-4 py-3">
+                  {memoEditing ? (
+                    <div className="space-y-2">
+                      <textarea value={memo} onChange={e => setMemo(e.target.value)} rows={5} autoFocus
+                        className="w-full text-sm border border-yellow-300 rounded-lg px-3 py-2 resize-none focus:outline-none focus:ring-1 focus:ring-yellow-400" />
+                      <div className="flex gap-2">
+                        <button onClick={() => startTransition(async () => { await updateProjectMemo(project.id, memo); setMemoEditing(false) })}
+                          disabled={isPending} className="px-3 py-1.5 bg-yellow-400 text-gray-900 text-xs font-medium rounded-lg hover:bg-yellow-300">저장</button>
+                        <button onClick={() => { setMemo(project.memo ?? ''); setMemoEditing(false) }}
+                          className="px-3 py-1.5 border border-gray-200 text-gray-500 text-xs rounded-lg hover:bg-gray-50">취소</button>
+                      </div>
+                    </div>
+                  ) : (
+                    <p className="text-sm text-gray-700 whitespace-pre-wrap leading-relaxed">
+                      {memo || <span className="text-gray-300 cursor-pointer" onClick={() => setMemoEditing(true)}>클릭해서 메모를 입력하세요...</span>}
+                    </p>
+                  )}
+                </div>
+              </div>
+            </>
+          )}
+        </div>
+
+        {/* ─── 우측 사이드바 ─────────────────────────────── */}
+        <div className="w-72 flex-shrink-0 sticky top-[120px] space-y-4">
+
+          {/* 고객 카드 */}
+          {localCustomer && !changingCustomer ? (
+            <div className="bg-white border border-gray-100 rounded-xl overflow-hidden">
+              <div className="flex items-center justify-between px-4 py-3 border-b border-gray-50">
+                <div className="flex items-center gap-1.5">
+                  <span className="w-2 h-2 bg-green-400 rounded-full" />
+                  <h2 className="text-sm font-semibold text-gray-800">고객 카드</h2>
+                </div>
+                <div className="flex items-center gap-2">
+                  <button onClick={() => {
+                    setEditingContact(e => !e)
+                    setContactName(localCustomer.contact_name ?? '')
+                    setContactPhone(localCustomer.phone ?? '')
+                    setContactEmail(localCustomer.contact_email ?? '')
+                  }} className="text-xs text-gray-400 hover:text-gray-700">{editingContact ? '취소' : '담당자 편집'}</button>
+                  <button onClick={() => { setChangingCustomer(true); setAddingNewCustomer(false); setCustomerSearch(''); setSelectedCustomerId('') }}
+                    className="text-xs text-gray-400 hover:text-gray-700">기관 변경</button>
+                </div>
+              </div>
+              <div className="px-4 py-3">
+                <div className="flex items-center gap-2 mb-3">
+                  <div className="w-8 h-8 bg-blue-50 rounded-lg flex items-center justify-center text-sm font-bold text-blue-600 flex-shrink-0">{localCustomer.name[0]}</div>
+                  <div>
+                    <p className="text-sm font-semibold text-gray-800">{localCustomer.name}</p>
+                    <p className="text-xs text-gray-400">{localCustomer.type}</p>
+                  </div>
+                </div>
+                <div className="text-xs mb-3">
+                  <div className="flex justify-between">
+                    <span className="text-gray-400">이 프로젝트</span>
+                    <span className="text-gray-700 font-medium">{localContracts.length}개 계약 · {fmtMoney(totalRevenue)}원</span>
+                  </div>
+                </div>
+                {editingContact ? (
+                  <div className="space-y-2 mb-2">
+                    <input value={contactName} onChange={e => setContactName(e.target.value)} placeholder="담당자명"
+                      className="w-full text-xs border border-yellow-300 rounded-lg px-2.5 py-1.5 focus:outline-none focus:border-yellow-400" />
+                    <input value={contactPhone} onChange={e => setContactPhone(e.target.value)} placeholder="연락처"
+                      className="w-full text-xs border border-yellow-300 rounded-lg px-2.5 py-1.5 focus:outline-none focus:border-yellow-400" />
+                    <input value={contactEmail} onChange={e => setContactEmail(e.target.value)} placeholder="이메일"
+                      className="w-full text-xs border border-yellow-300 rounded-lg px-2.5 py-1.5 focus:outline-none focus:border-yellow-400" />
+                    <button onClick={() => startTransition(async () => {
+                      await updateCustomerContact(localCustomer.id, project.id, contactName, contactPhone, contactEmail)
+                      setLocalCustomer(prev => prev ? { ...prev, contact_name: contactName || null, phone: contactPhone || null, contact_email: contactEmail || null } : null)
+                      setEditingContact(false)
+                    })} disabled={isPending}
+                      className="px-3 py-1.5 text-xs font-semibold rounded-lg hover:opacity-80" style={{ backgroundColor: '#FFCE00', color: '#121212' }}>저장</button>
+                  </div>
+                ) : (
+                  <>
+                    {(localCustomer.contact_name || localCustomer.phone) ? (
+                      <div className="flex items-center justify-between text-xs mb-2">
+                        <div className="flex items-center gap-1.5">
+                          {localCustomer.contact_name && (
+                            <><div className="w-5 h-5 rounded-full bg-gray-100 flex items-center justify-center text-gray-500 text-xs">{localCustomer.contact_name[0]}</div>
+                            <span className="text-gray-700">{localCustomer.contact_name}</span></>
+                          )}
+                        </div>
+                        {localCustomer.phone && <span className="text-blue-500">{localCustomer.phone}</span>}
+                      </div>
+                    ) : (
+                      <p className="text-xs text-gray-300 mb-2">담당자 미등록</p>
+                    )}
+                    {showCustomerDetail && localCustomer.contact_email && <p className="text-xs text-gray-400 mt-1">{localCustomer.contact_email}</p>}
+                    {localCustomer.contact_email && (
+                      <button onClick={() => setShowCustomerDetail(s => !s)} className="text-xs text-gray-300 hover:text-gray-500 mt-1">
+                        {showCustomerDetail ? '이메일 숨기기' : `이메일 보기`}
+                      </button>
+                    )}
+                  </>
+                )}
+                <a href="/customers" className="mt-2 block text-xs text-blue-500 hover:underline">고객 DB 보기 →</a>
+              </div>
+            </div>
+          ) : (
+            <div className="bg-white border border-dashed border-gray-200 rounded-xl overflow-hidden">
+              <div className="px-4 py-3 border-b border-gray-50">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-sm font-semibold text-gray-700">{changingCustomer ? '기관 변경' : '고객 카드 미연결'}</p>
+                    <p className="text-xs text-gray-400 mt-0.5">{changingCustomer ? `현재: ${localCustomer?.name}` : '고객 DB에 연결하면 담당자 정보를 바로 볼 수 있어요.'}</p>
+                  </div>
+                  {changingCustomer && (
+                    <button onClick={() => setChangingCustomer(false)} className="text-xs text-gray-400 hover:text-gray-700">취소</button>
+                  )}
+                </div>
+              </div>
+              <div className="px-4 py-3">
+                {linkingCustomer || changingCustomer ? (
+                  renderCustomerLinkUI(() => { setLinkingCustomer(false); setChangingCustomer(false) })
+                ) : (
+                  <button onClick={() => setLinkingCustomer(true)}
+                    className="w-full py-2 text-xs font-medium text-gray-500 border border-gray-200 rounded-lg hover:border-yellow-400 hover:text-gray-800 transition-colors">
+                    + 고객 연결
+                  </button>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* 재무 요약 */}
+          <div className="bg-white border border-gray-100 rounded-xl overflow-hidden">
+            <div className="px-4 py-3 border-b border-gray-50">
+              <h2 className="text-sm font-semibold text-gray-800">프로젝트 재무 요약</h2>
+              <p className="text-xs text-gray-400 mt-0.5">{localContracts.length}개 계약 합산</p>
+            </div>
+            <div className="px-4 py-3 space-y-3">
+              {localContracts.map((c, i) => (
+                <div key={c.id}>
+                  <div className="flex justify-between items-center mb-1">
+                    <span className="text-xs text-gray-500 truncate flex-1 mr-2">계약 {i + 1} · {c.name.length > 10 ? c.name.slice(0, 10) + '…' : c.name}</span>
+                    <span className="text-xs font-medium text-gray-800 flex-shrink-0">{fmtMoney(c.revenue ?? 0)}</span>
+                  </div>
+                  <div className="h-1.5 bg-gray-100 rounded-full overflow-hidden">
+                    <div className="h-full bg-blue-300 rounded-full" style={{ width: totalRevenue > 0 ? `${Math.round((c.revenue ?? 0) / totalRevenue * 100)}%` : '0%' }} />
+                  </div>
+                </div>
+              ))}
+              {localContracts.length > 0 && (
+                <div className="pt-2 border-t border-gray-100 space-y-1.5 text-xs">
+                  {[
+                    { label: '총 매출', value: fmtMoney(totalRevenue) + '원', cls: 'font-bold text-gray-900' },
+                    { label: '수령 완료', value: fmtMoney(totalReceived) + '원', cls: 'font-bold text-green-600' },
+                    { label: '미수령', value: fmtMoney(totalRevenue - totalReceived) + '원', cls: 'font-bold text-orange-500' },
+                    { label: `총 이익 (${margin}%)`, value: fmtMoney(profit) + '원', cls: `font-bold ${profit >= 0 ? 'text-green-600' : 'text-red-500'}` },
+                  ].map(r => (
+                    <div key={r.label} className="flex justify-between">
+                      <span className="text-gray-500">{r.label}</span>
+                      <span className={r.cls}>{r.value}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* 기본 정보 */}
+          <div className="bg-white border border-gray-100 rounded-xl overflow-hidden">
+            <div className="px-4 py-3 border-b border-gray-50"><h2 className="text-sm font-semibold text-gray-800">기본 정보</h2></div>
+            <div className="px-4 py-3 space-y-2 text-xs">
+              {project.service_type && <div className="flex justify-between gap-2"><span className="text-gray-400">서비스</span><span className="text-gray-700">{project.service_type}</span></div>}
+              {project.department && <div className="flex justify-between gap-2"><span className="text-gray-400">사업부</span><span className="text-gray-700">{project.department}</span></div>}
+              <div className="flex items-start justify-between gap-2">
+                <span className="text-gray-400 flex-shrink-0 pt-0.5">Dropbox</span>
+                <div className="flex-1 min-w-0 text-right">
+                  {editingDropbox ? (
+                    <div className="space-y-1.5">
+                      <input value={dropboxUrl} onChange={e => setDropboxUrl(e.target.value)} placeholder="Dropbox URL 입력"
+                        className="w-full text-xs border border-yellow-300 rounded-lg px-2 py-1.5 focus:outline-none focus:border-yellow-400 text-left" />
+                      <div className="flex gap-1 justify-end">
+                        <button onClick={() => startTransition(async () => { await updateProjectDropbox(project.id, dropboxUrl); setEditingDropbox(false) })}
+                          disabled={isPending} className="px-2 py-1 text-xs font-medium rounded hover:opacity-80" style={{ backgroundColor: '#FFCE00', color: '#121212' }}>저장</button>
+                        <button onClick={() => { setEditingDropbox(false); setDropboxUrl(project.dropbox_url ?? '') }}
+                          className="px-2 py-1 text-xs border border-gray-200 rounded text-gray-500">취소</button>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="flex items-center gap-1.5 justify-end">
+                      {project.dropbox_url ? <a href={project.dropbox_url} target="_blank" rel="noopener noreferrer" className="text-blue-500 hover:underline">연결됨 ↗</a> : <span className="text-gray-300">미연결</span>}
+                      <button onClick={() => setEditingDropbox(true)} className="text-gray-300 hover:text-gray-600 ml-1">✏</button>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+          </div>
+
+        </div>
+      </div>
+    </div>
+  )
+}
