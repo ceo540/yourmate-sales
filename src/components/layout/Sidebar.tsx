@@ -6,119 +6,45 @@ import { createClient } from '@/lib/supabase/client'
 import { useRouter } from 'next/navigation'
 import { useEffect, useState } from 'react'
 
-interface NavItem {
-  href: string
-  label: string
-  icon: string
-  pageKey: string
-  adminOnly?: boolean
-  demo?: boolean
-}
+type NavItem = { href: string; label: string; icon: string; pageKey?: string; adminOnly?: boolean }
 
-// ─────────────────────────────────────────────────────────────────
-// 메뉴 구조
-// 새 카테고리 추가: 아래 객체에 키와 아이템 배열 추가하면 끝
-// ─────────────────────────────────────────────────────────────────
-// 사업부별 서브 아이템 (해당 사업부 활성 시에만 표시)
-const DEPT_SUBITEMS: Record<string, NavItem[]> = {
-  sound_of_school: [
-    { href: '/sos', label: 'SOS 공연', icon: '🎤', pageKey: 'sos' },
-  ],
-  school_store: [
-    { href: '/rentals', label: '렌탈 관리', icon: '🎸', pageKey: 'rentals' },
-  ],
-}
+const NAV_ITEMS: NavItem[] = [
+  { href: '/dashboard',    label: '홈',    icon: '🏠' },
+  { href: '/leads',        label: '리드',  icon: '📥', pageKey: 'leads' },
+  { href: '/sales',        label: '매출',  icon: '💰', pageKey: 'sales' },
+  { href: '/contract-hub', label: '계약',  icon: '📋', pageKey: 'contract_hub' },
+  { href: '/rentals',      label: '렌탈',  icon: '📦', pageKey: 'rentals' },
+  { href: '/customers',    label: '고객',  icon: '🗂️', pageKey: 'customers' },
+]
 
-const TASKS_ITEM: NavItem = { href: '/tasks', label: '업무 관리', icon: '✅', pageKey: 'tasks' }
-
-const NAV_GROUPS: Record<string, NavItem[]> = {
-  사업부: [
-    { href: '/departments/artkiwoom',         label: '아트키움',         icon: '🎨', pageKey: 'departments' },
-    { href: '/departments/sound_of_school',   label: 'SOS',             icon: '🎵', pageKey: 'departments' },
-    { href: '/departments/school_store',      label: '학교상점',         icon: '🏫', pageKey: 'departments' },
-    { href: '/departments/002_creative',      label: '002 Creative',     icon: '🎬', pageKey: 'departments' },
-    { href: '/departments/002_entertainment', label: '002 ENT',          icon: '🎤', pageKey: 'departments' },
-    { href: '/departments/yourmate',          label: '유어메이트',       icon: '🏢', pageKey: 'departments' },
-  ],
-  영업: [
-    { href: '/pipeline',      label: '파이프라인', icon: '🔄', pageKey: 'pipeline' },
-    { href: '/sales',         label: '매출 현황', icon: '💰', pageKey: 'sales' },
-    { href: '/sales/report',  label: '계약 목록', icon: '📄', pageKey: 'sales_report' },
-    { href: '/contract-hub',  label: '계약 허브', icon: '📑', pageKey: 'contract_hub' },
-    { href: '/leads',         label: '리드 관리', icon: '📥', pageKey: 'leads' },
-  ],
-  재무: [
-    { href: '/receivables',  label: '미수금 현황', icon: '🔔', pageKey: 'receivables' },
-    { href: '/payments',     label: '지급 관리',   icon: '📋', pageKey: 'payments',    adminOnly: true },
-    { href: '/finance',      label: '재무 현황',   icon: '📈', pageKey: 'finance',     adminOnly: true },
-    { href: '/payroll',      label: '인건비 관리', icon: '💼', pageKey: 'payroll',     adminOnly: true },
-    { href: '/fixed-costs',  label: '고정비 관리', icon: '🔒', pageKey: 'fixed_costs', adminOnly: true },
-    { href: '/cashflow',     label: '자금일보',    icon: '📊', pageKey: 'cashflow',    adminOnly: true },
-  ],
-  팀: [
-    { href: '/notice',            label: '공지사항', icon: '📢', pageKey: 'notice' },
-    { href: '/calendar-demo',     label: '캘린더',   icon: '📅', pageKey: 'calendar',      demo: true },
-    { href: '/daily-report',      label: '일일업무표', icon: '📋', pageKey: 'daily_report' },
-    { href: '/weekly-report',     label: '주간보고', icon: '📝', pageKey: 'weekly_report' },
-    { href: '/attendance',        label: '근태 관리', icon: '⏰', pageKey: 'attendance' },
-    { href: '/hr',                label: '연차 관리', icon: '🏖️', pageKey: 'hr' },
-    { href: '/expenses',          label: '경비 처리', icon: '💳', pageKey: 'expenses' },
-  ],
-  관리: [
-    { href: '/customers',    label: '고객 DB',   icon: '🗂️', pageKey: 'customers' },
-    { href: '/vendors',      label: '거래처 DB', icon: '🏢', pageKey: 'vendors' },
-    { href: '/admin',        label: '팀원 관리', icon: '⚙️', pageKey: 'admin_panel', adminOnly: true },
-  ],
-}
-
-const CATEGORIES = Object.keys(NAV_GROUPS)
-
-function detectCategory(pathname: string): string {
-  for (const cat of CATEGORIES) {
-    const items = NAV_GROUPS[cat]
-    const sorted = [...items].sort((a, b) => b.href.length - a.href.length)
-    if (sorted.some(item => pathname === item.href || pathname.startsWith(item.href + '/'))) {
-      return cat
-    }
-  }
-  // /departments/* → 사업부 카테고리 폴백
-  if (pathname.startsWith('/departments')) return '사업부'
-  return CATEGORIES[0]
-}
+const NAV_BOTTOM: NavItem[] = [
+  { href: '/notice',   label: '공지',  icon: '📢', pageKey: 'notice' },
+  { href: '/tasks',    label: '업무',  icon: '✅', pageKey: 'tasks' },
+  { href: '/finance',  label: '재무',  icon: '📊', pageKey: 'finance',    adminOnly: true },
+  { href: '/admin',    label: '관리',  icon: '⚙️', pageKey: 'admin_panel', adminOnly: true },
+]
 
 const ROLE_LABELS: Record<string, string> = {
   admin: '관리자', manager: '팀장', member: '팀원',
 }
-const ROLE_COLORS: Record<string, string> = {
-  admin: 'bg-yellow-100 text-yellow-800',
-  manager: 'bg-blue-100 text-blue-700',
-  member: 'bg-gray-100 text-gray-500',
+
+function isActive(pathname: string, href: string) {
+  if (href === '/dashboard') return pathname === href
+  return pathname === href || pathname.startsWith(href + '/')
 }
 
 export default function Sidebar() {
   const pathname = usePathname()
   const router = useRouter()
 
-  const [activeCategory, setActiveCategory] = useState(() => detectCategory(pathname))
-  const [isAdmin, setIsAdmin] = useState(() => {
-    if (typeof window === 'undefined') return false
-    return localStorage.getItem('ym_is_admin') === '1'
-  })
+  const [isAdmin, setIsAdmin] = useState(false)
   const [userName, setUserName] = useState('')
   const [userRole, setUserRole] = useState('')
-  const [permissions, setPermissions] = useState<Record<string, string>>(() => {
-    if (typeof window === 'undefined') return {}
-    try { return JSON.parse(localStorage.getItem('ym_perms') ?? '{}') } catch { return {} }
-  })
+  const [permissions, setPermissions] = useState<Record<string, string>>({})
   const [mobileOpen, setMobileOpen] = useState(false)
   const [badgeCounts, setBadgeCounts] = useState<Record<string, number>>({})
 
-  // pathname 바뀌면 카테고리 자동 전환
-  useEffect(() => {
-    const cat = detectCategory(pathname)
-    setActiveCategory(cat)
-    setMobileOpen(false)
-  }, [pathname])
+  useEffect(() => { setMobileOpen(false) }, [pathname])
 
   useEffect(() => {
     const supabase = createClient()
@@ -131,35 +57,25 @@ export default function Sidebar() {
           setIsAdmin(admin)
           setUserName(data?.name ?? '')
           setUserRole(role)
-          localStorage.setItem('ym_is_admin', admin ? '1' : '0')
-          if (admin) {
-            localStorage.setItem('ym_perms', JSON.stringify({}))
-            setPermissions({})
-          } else {
+
+          if (!admin) {
             supabase.from('role_permissions').select('page_key, access_level').eq('role', role)
               .then(({ data: perms }) => {
                 const map: Record<string, string> = {}
                 for (const p of (perms ?? [])) map[p.page_key] = p.access_level
                 setPermissions(map)
-                localStorage.setItem('ym_perms', JSON.stringify(map))
               })
           }
 
-          // 배지 카운트 조회
           const today = new Date().toISOString().slice(0, 10)
           const sevenDays = new Date(Date.now() + 7 * 86400000).toISOString().slice(0, 10)
 
-          let taskQ = supabase.from('tasks')
-            .select('id', { count: 'exact', head: true })
-            .not('status', 'in', '(완료,보류)')
-            .not('due_date', 'is', null)
-            .lte('due_date', sevenDays)
+          let taskQ = supabase.from('tasks').select('id', { count: 'exact', head: true })
+            .not('status', 'in', '(완료,보류)').not('due_date', 'is', null).lte('due_date', sevenDays)
           if (!admin) taskQ = taskQ.eq('assignee_id', user.id)
 
-          let leadQ = supabase.from('leads')
-            .select('id', { count: 'exact', head: true })
-            .lte('remind_date', today)
-            .not('status', 'in', '(완료,취소)')
+          let leadQ = supabase.from('leads').select('id', { count: 'exact', head: true })
+            .lte('remind_date', today).not('status', 'in', '(완료,취소)')
           if (!admin) leadQ = leadQ.eq('assignee_id', user.id)
 
           const [{ count: taskCount }, { count: leadCount }] = await Promise.all([taskQ, leadQ])
@@ -175,165 +91,86 @@ export default function Sidebar() {
     router.refresh()
   }
 
-  function isItemVisible(item: NavItem) {
+  function canSee(item: { pageKey?: string; adminOnly?: boolean }) {
+    if (!item.pageKey) return true
+    if (item.adminOnly && !isAdmin) return false
     return isAdmin || (permissions[item.pageKey] ?? 'off') !== 'off'
   }
 
-  function isItemActive(item: NavItem, allItems: NavItem[]) {
-    const sorted = [...allItems].sort((a, b) => b.href.length - a.href.length)
-    const activeItem = sorted.find(i => pathname === i.href || pathname.startsWith(i.href + '/'))
-    return activeItem?.href === item.href
+  function NavLink({ href, label, icon, pageKey }: { href: string; label: string; icon: string; pageKey?: string }) {
+    const active = isActive(pathname, href)
+    const badge = pageKey ? (badgeCounts[pageKey] ?? 0) : 0
+    return (
+      <Link href={href}
+        className={`flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-colors ${
+          active ? 'font-semibold text-gray-900' : 'text-gray-400 hover:text-white hover:bg-white/10'
+        }`}
+        style={active ? { backgroundColor: '#FFCE00' } : {}}>
+        <span className="text-base w-5 text-center flex-shrink-0">{icon}</span>
+        <span>{label}</span>
+        {badge > 0 && (
+          <span className="ml-auto text-[10px] px-1.5 py-0.5 rounded-full bg-red-500 text-white font-bold min-w-[18px] text-center">{badge}</span>
+        )}
+      </Link>
+    )
   }
 
-  const subItems = (NAV_GROUPS[activeCategory] ?? []).filter(isItemVisible)
+  const SidebarContent = () => (
+    <div className="flex flex-col h-full">
+      {/* 로고 */}
+      <div className="flex items-center gap-2.5 px-4 py-4 border-b border-white/10 flex-shrink-0">
+        <div className="w-7 h-7 rounded-lg flex items-center justify-center flex-shrink-0" style={{ backgroundColor: '#FFCE00' }}>
+          <span className="text-xs font-black" style={{ color: '#121212' }}>Y</span>
+        </div>
+        <span className="text-sm font-bold text-white">유어메이트</span>
+      </div>
 
-  // 현재 활성 사업부 감지 (사업부 카테고리일 때만)
-  const activeDept = activeCategory === '사업부'
-    ? Object.keys(DEPT_SUBITEMS).find(d => pathname.startsWith(`/departments/${d}`)) ?? null
-    : null
+      {/* 메인 내비게이션 */}
+      <nav className="flex-1 px-2 py-3 space-y-0.5 overflow-y-auto">
+        {NAV_ITEMS.filter(canSee).map(item => (
+          <NavLink key={item.href} {...item} />
+        ))}
+
+        <div className="pt-3 mt-3 border-t border-white/10 space-y-0.5">
+          {NAV_BOTTOM.filter(canSee).map(item => (
+            <NavLink key={item.href} {...item} />
+          ))}
+        </div>
+      </nav>
+
+      {/* 하단: 유저 정보 */}
+      <div className="px-3 py-3 border-t border-white/10 space-y-1">
+        {userName && (
+          <div className="flex items-center gap-2.5 px-2 py-2 rounded-lg">
+            <div className="w-7 h-7 rounded-full bg-white/20 flex items-center justify-center flex-shrink-0">
+              <span className="text-xs font-semibold text-white">{userName[0]}</span>
+            </div>
+            <div className="min-w-0 flex-1">
+              <p className="text-xs font-medium text-gray-200 truncate">{userName}</p>
+              <p className="text-[10px] text-gray-500">{ROLE_LABELS[userRole] ?? '팀원'}</p>
+            </div>
+          </div>
+        )}
+        <Link href="/profile" className="flex items-center gap-3 px-3 py-2 rounded-lg text-xs text-gray-500 hover:text-white hover:bg-white/10 transition-colors">
+          <span>🔑</span><span>비밀번호 변경</span>
+        </Link>
+        <button onClick={handleLogout} className="flex items-center gap-3 px-3 py-2 rounded-lg text-xs text-gray-500 hover:text-white hover:bg-white/10 w-full transition-colors">
+          <span>🚪</span><span>로그아웃</span>
+        </button>
+      </div>
+    </div>
+  )
 
   return (
     <>
-      {/* ── 데스크탑: 상단 탭 바 ───────────────────────────────── */}
-      <header className="hidden md:flex fixed top-0 left-0 right-0 h-12 z-40 items-center px-4 gap-0" style={{ backgroundColor: '#121212' }}>
-        {/* 로고 */}
-        <div className="flex items-center gap-2 pr-5 border-r border-white/10 mr-3 flex-shrink-0">
-          <div className="w-7 h-7 rounded-lg flex items-center justify-center" style={{ backgroundColor: '#FFCE00' }}>
-            <span className="text-xs font-black" style={{ color: '#121212' }}>Y</span>
-          </div>
-          <p className="text-sm font-bold text-white">유어메이트</p>
-        </div>
-
-        {/* 홈 버튼 */}
-        <Link
-          href="/dashboard"
-          className={`flex items-center justify-center w-9 h-9 rounded-lg mr-2 transition-colors flex-shrink-0 ${
-            pathname === '/dashboard' ? 'text-gray-900' : 'text-gray-400 hover:text-white hover:bg-white/10'
-          }`}
-          style={pathname === '/dashboard' ? { backgroundColor: '#FFCE00' } : {}}
-          title="홈"
-        >
-          <span className="text-base">🏠</span>
-        </Link>
-
-        {/* 카테고리 탭 */}
-        <nav className="flex items-center h-full">
-          {CATEGORIES.map(cat => (
-            <button
-              key={cat}
-              onClick={() => setActiveCategory(cat)}
-              className={`px-4 h-full text-sm font-medium border-b-2 transition-all ${
-                activeCategory === cat
-                  ? 'border-yellow-400 text-yellow-400'
-                  : 'border-transparent text-gray-500 hover:text-gray-200 hover:border-white/20'
-              }`}
-            >
-              {cat}
-            </button>
-          ))}
-        </nav>
-
-        {/* 유저 정보 */}
-        <div className="ml-auto flex items-center gap-3">
-          {userName && (
-            <div className="flex items-center gap-2">
-              <div className="w-6 h-6 rounded-full bg-white/20 flex items-center justify-center flex-shrink-0">
-                <span className="text-[10px] font-semibold text-white">{userName[0]}</span>
-              </div>
-              <span className="text-xs text-gray-300">{userName}</span>
-              <span className={`text-[10px] px-1.5 py-0.5 rounded font-medium ${ROLE_COLORS[userRole] ?? ROLE_COLORS.member}`}>
-                {ROLE_LABELS[userRole] ?? '팀원'}
-              </span>
-            </div>
-          )}
-          <Link href="/profile" className="text-sm text-gray-500 hover:text-white transition-colors" title="비밀번호 변경">🔑</Link>
-          <button onClick={handleLogout} className="text-sm text-gray-500 hover:text-white transition-colors" title="로그아웃">🚪</button>
-        </div>
-      </header>
-
-      {/* ── 데스크탑: 서브 사이드바 ────────────────────────────── */}
-      <aside className="hidden md:flex w-44 flex-col fixed left-0 top-12 bottom-0 border-r border-white/10" style={{ backgroundColor: '#121212' }}>
-        <nav className="flex-1 px-2 py-3 space-y-0.5 overflow-y-auto">
-          {subItems.map(item => {
-            const active = isItemActive(item, subItems)
-            const badge = badgeCounts[item.pageKey] ?? 0
-            const deptKey = item.href.replace('/departments/', '')
-            const deptSubs = activeDept === deptKey ? (DEPT_SUBITEMS[deptKey] ?? []) : []
-            return (
-              <div key={item.href}>
-                <Link
-                  href={item.href}
-                  className={`flex items-center gap-2.5 px-3 py-2.5 rounded-lg text-sm transition-colors ${
-                    active ? 'font-semibold text-gray-900' : 'text-gray-400 hover:text-white hover:bg-white/10'
-                  }`}
-                  style={active ? { backgroundColor: '#FFCE00' } : {}}
-                >
-                  <span className="text-sm">{item.icon}</span>
-                  <span>{item.label}</span>
-                  {item.demo && <span className="ml-auto text-[9px] px-1 py-0.5 rounded bg-white/10 text-gray-400 font-medium">데모</span>}
-                  {!item.demo && badge > 0 && (
-                    <span className="ml-auto text-[10px] px-1.5 py-0.5 rounded-full bg-red-500 text-white font-bold min-w-[18px] text-center">{badge}</span>
-                  )}
-                </Link>
-                {deptSubs.map(sub => {
-                  const subActive = pathname === sub.href || pathname.startsWith(sub.href + '/')
-                  return (
-                    <Link
-                      key={sub.href}
-                      href={sub.href}
-                      className={`flex items-center gap-2 pl-8 pr-3 py-2 rounded-lg text-xs transition-colors ${
-                        subActive ? 'font-semibold text-gray-900' : 'text-gray-500 hover:text-white hover:bg-white/10'
-                      }`}
-                      style={subActive ? { backgroundColor: '#FFCE00' } : {}}
-                    >
-                      <span>{sub.icon}</span>
-                      <span>{sub.label}</span>
-                    </Link>
-                  )
-                })}
-              </div>
-            )
-          })}
-        </nav>
-        <div className="px-2 pb-3 border-t border-white/10 pt-2 space-y-0.5">
-          {isItemVisible(TASKS_ITEM) && (() => {
-            const active = pathname === TASKS_ITEM.href || pathname.startsWith(TASKS_ITEM.href + '/')
-            const badge = badgeCounts[TASKS_ITEM.pageKey] ?? 0
-            return (
-              <Link
-                href={TASKS_ITEM.href}
-                className={`flex items-center gap-2.5 px-3 py-2.5 rounded-lg text-sm transition-colors ${
-                  active ? 'font-semibold text-gray-900' : 'text-gray-400 hover:text-white hover:bg-white/10'
-                }`}
-                style={active ? { backgroundColor: '#FFCE00' } : {}}
-              >
-                <span className="text-sm">{TASKS_ITEM.icon}</span>
-                <span>{TASKS_ITEM.label}</span>
-                {badge > 0 && (
-                  <span className="ml-auto text-[10px] px-1.5 py-0.5 rounded-full bg-red-500 text-white font-bold min-w-[18px] text-center">{badge}</span>
-                )}
-              </Link>
-            )
-          })()}
-          <Link
-            href="/about"
-            className={`flex items-center gap-2.5 px-3 py-2 rounded-lg text-xs transition-colors ${
-              pathname === '/about' ? 'font-semibold text-gray-900' : 'text-gray-500 hover:text-white hover:bg-white/10'
-            }`}
-            style={pathname === '/about' ? { backgroundColor: '#FFCE00' } : {}}
-          >
-            <span>❓</span>
-            <span>시스템 소개</span>
-          </Link>
-        </div>
+      {/* ── 데스크탑 사이드바 ── */}
+      <aside className="hidden md:flex w-44 flex-col fixed left-0 top-0 bottom-0 z-40" style={{ backgroundColor: '#121212' }}>
+        <SidebarContent />
       </aside>
 
-      {/* ── 모바일: 상단 바 ─────────────────────────────────────── */}
+      {/* ── 모바일: 상단 바 ── */}
       <div className="md:hidden fixed top-0 left-0 right-0 z-40 flex items-center px-4 h-12" style={{ backgroundColor: '#121212' }}>
-        <button
-          onClick={() => setMobileOpen(true)}
-          className="p-2 rounded-lg text-gray-400 hover:bg-white/10"
-        >
+        <button onClick={() => setMobileOpen(true)} className="p-2 rounded-lg text-gray-400 hover:bg-white/10">
           <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
           </svg>
@@ -346,110 +183,22 @@ export default function Sidebar() {
         </div>
       </div>
 
-      {/* ── 모바일: 드로어 (카테고리별 그룹 표시) ──────────────── */}
+      {/* ── 모바일: 드로어 ── */}
       {mobileOpen && (
         <>
-          <div className="md:hidden fixed inset-0 z-40 bg-black/40" onClick={() => setMobileOpen(false)} />
-          <aside className="md:hidden fixed left-0 top-0 bottom-0 z-50 w-64 flex flex-col shadow-xl" style={{ backgroundColor: '#121212' }}>
-            <div className="flex items-center justify-between px-5 py-3 border-b border-white/10">
+          <div className="md:hidden fixed inset-0 z-40 bg-black/50" onClick={() => setMobileOpen(false)} />
+          <aside className="md:hidden fixed left-0 top-0 bottom-0 z-50 w-56 shadow-2xl" style={{ backgroundColor: '#121212' }}>
+            <div className="flex items-center justify-between px-4 py-3 border-b border-white/10">
               <div className="flex items-center gap-2">
                 <div className="w-7 h-7 rounded-lg flex items-center justify-center" style={{ backgroundColor: '#FFCE00' }}>
                   <span className="text-xs font-black" style={{ color: '#121212' }}>Y</span>
                 </div>
                 <span className="text-sm font-bold text-white">유어메이트</span>
               </div>
-              <button onClick={() => setMobileOpen(false)} className="text-gray-400 hover:text-white hover:bg-white/10 rounded transition-colors text-xl px-1">×</button>
+              <button onClick={() => setMobileOpen(false)} className="text-gray-400 hover:text-white text-xl px-1">×</button>
             </div>
-            <nav className="flex-1 px-3 py-3 overflow-y-auto space-y-4">
-              {CATEGORIES.map(cat => {
-                const items = (NAV_GROUPS[cat] ?? []).filter(isItemVisible)
-                if (items.length === 0) return null
-                return (
-                  <div key={cat}>
-                    <p className="text-[10px] font-semibold text-gray-600 uppercase tracking-wider px-2 mb-1">{cat}</p>
-                    {items.map(item => {
-                      const active = isItemActive(item, items)
-                      const badge = badgeCounts[item.pageKey] ?? 0
-                      const deptKey = item.href.replace('/departments/', '')
-                      const deptSubs = cat === '사업부' && activeDept === deptKey ? (DEPT_SUBITEMS[deptKey] ?? []) : []
-                      return (
-                        <div key={item.href}>
-                          <Link
-                            href={item.href}
-                            className={`flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-colors ${
-                              active ? 'font-semibold text-gray-900' : 'text-gray-400 hover:text-white hover:bg-white/10'
-                            }`}
-                            style={active ? { backgroundColor: '#FFCE00' } : {}}
-                          >
-                            <span>{item.icon}</span>
-                            <span>{item.label}</span>
-                            {item.demo && <span className="ml-auto text-[9px] px-1 py-0.5 rounded bg-white/10 text-gray-400 font-medium">데모</span>}
-                            {!item.demo && badge > 0 && (
-                              <span className="ml-auto text-[10px] px-1.5 py-0.5 rounded-full bg-red-500 text-white font-bold min-w-[18px] text-center">{badge}</span>
-                            )}
-                          </Link>
-                          {deptSubs.map(sub => {
-                            const subActive = pathname === sub.href || pathname.startsWith(sub.href + '/')
-                            return (
-                              <Link
-                                key={sub.href}
-                                href={sub.href}
-                                className={`flex items-center gap-2 pl-9 pr-3 py-2 rounded-lg text-xs transition-colors ${
-                                  subActive ? 'font-semibold text-gray-900' : 'text-gray-500 hover:text-white hover:bg-white/10'
-                                }`}
-                                style={subActive ? { backgroundColor: '#FFCE00' } : {}}
-                              >
-                                <span>{sub.icon}</span>
-                                <span>{sub.label}</span>
-                              </Link>
-                            )
-                          })}
-                        </div>
-                      )
-                    })}
-                    {cat === '사업부' && isItemVisible(TASKS_ITEM) && (() => {
-                      const active = pathname === TASKS_ITEM.href || pathname.startsWith(TASKS_ITEM.href + '/')
-                      const badge = badgeCounts[TASKS_ITEM.pageKey] ?? 0
-                      return (
-                        <Link
-                          href={TASKS_ITEM.href}
-                          className={`flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-colors mt-1 ${
-                            active ? 'font-semibold text-gray-900' : 'text-gray-500 hover:text-gray-900 hover:bg-gray-50'
-                          }`}
-                          style={active ? { backgroundColor: '#FFCE00' } : {}}
-                        >
-                          <span>{TASKS_ITEM.icon}</span>
-                          <span>{TASKS_ITEM.label}</span>
-                          {badge > 0 && (
-                            <span className="ml-auto text-[10px] px-1.5 py-0.5 rounded-full bg-red-500 text-white font-bold min-w-[18px] text-center">{badge}</span>
-                          )}
-                        </Link>
-                      )
-                    })()}
-                  </div>
-                )
-              })}
-            </nav>
-            <div className="px-3 py-3 border-t border-white/10 space-y-1">
-              {userName && (
-                <div className="flex items-center gap-2 px-3 py-2">
-                  <div className="w-7 h-7 rounded-full bg-white/20 flex items-center justify-center flex-shrink-0">
-                    <span className="text-xs font-semibold text-white">{userName[0]}</span>
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium text-gray-200 truncate">{userName}</p>
-                    <span className={`text-xs px-1.5 py-0.5 rounded font-medium ${ROLE_COLORS[userRole] ?? ROLE_COLORS.member}`}>
-                      {ROLE_LABELS[userRole] ?? '팀원'}
-                    </span>
-                  </div>
-                </div>
-              )}
-              <Link href="/profile" className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm text-gray-500 hover:text-white hover:bg-white/10 transition-colors">
-                <span>🔑</span><span>비밀번호 변경</span>
-              </Link>
-              <button onClick={handleLogout} className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm text-gray-500 hover:text-white hover:bg-white/10 w-full transition-colors">
-                <span>🚪</span><span>로그아웃</span>
-              </button>
+            <div className="flex-1 overflow-y-auto">
+              <SidebarContent />
             </div>
           </aside>
         </>

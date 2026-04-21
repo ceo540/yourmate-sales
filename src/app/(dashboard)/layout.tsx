@@ -18,7 +18,7 @@ export default async function DashboardLayout({
   return (
     <div className="flex min-h-screen bg-gray-50">
       <Sidebar />
-      <main className="flex-1 md:ml-44 pt-16 px-4 pb-4 md:px-8 md:pb-8 min-h-screen">
+      <main className="flex-1 md:ml-44 pt-12 md:pt-4 px-4 pb-4 md:px-8 md:pb-8 min-h-screen">
         {children}
       </main>
       <AiChat />
