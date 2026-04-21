@@ -1,7 +1,6 @@
 'use server'
 import { createClient } from '@/lib/supabase/server'
 import { revalidatePath } from 'next/cache'
-import { createSaleFolder } from '@/lib/dropbox'
 
 const STATUS_FLOW = ['유입', '견적발송', '렌탈확정', '진행중', '수거완료', '검수중', '완료']
 function statusIdx(s: string) { return STATUS_FLOW.indexOf(s) }
@@ -40,22 +39,6 @@ export async function createRental(data: {
   }).select('id').single()
   if (error) return { error: error.message }
 
-  // 드롭박스 폴더명: title이 있으면 title 우선, 없으면 customer_name 사용
-  const folderName = data.title?.trim() || data.customer_name
-
-  let dropboxUrl: string | null = null
-  try {
-    const folderUrl = await createSaleFolder({
-      service_type: '교구대여',
-      name: folderName,
-      inflow_date: data.rental_start ?? null,
-    })
-    if (folderUrl) {
-      dropboxUrl = folderUrl
-      await supabase.from('rentals').update({ dropbox_url: folderUrl }).eq('id', rental.id)
-    }
-  } catch (_) {}
-
   const { data: newSale } = await supabase.from('sales').insert({
     name: `${data.customer_name} 교구대여`,
     service_type: '교구대여',
@@ -66,7 +49,6 @@ export async function createRental(data: {
     customer_id: data.customer_id ?? null,
     assignee_id: data.assignee_id ?? null,
     inflow_date: data.rental_start ?? null,
-    dropbox_url: dropboxUrl,
   }).select('id').single()
 
   if (newSale) {
@@ -269,10 +251,19 @@ export async function updateDeliveryChecklist(id: string, rentalId: string, chec
 
 export async function linkRentalToParent(childId: string, parentId: string) {
   const supabase = await createClient()
+
+  // 하위 렌탈에 연결된 sale 레코드를 영업 목록에서 제외하기 위해 삭제
+  const { data: childRental } = await supabase.from('rentals').select('sale_id').eq('id', childId).single()
+  if (childRental?.sale_id) {
+    await supabase.from('rentals').update({ sale_id: null }).eq('id', childId)
+    await supabase.from('sales').delete().eq('id', childRental.sale_id)
+  }
+
   const { error } = await supabase.from('rentals').update({ parent_rental_id: parentId }).eq('id', childId)
   if (error) return { error: error.message }
   revalidatePath(`/rentals/${parentId}`)
   revalidatePath('/rentals')
+  revalidatePath('/sales')
   return { success: true }
 }
 

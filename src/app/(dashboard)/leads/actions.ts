@@ -3,7 +3,7 @@ import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { revalidatePath } from 'next/cache'
 import { SERVICE_TO_DEPT } from '@/types'
-import { createSaleFolder } from '@/lib/dropbox'
+import { createSaleFolder, renameDropboxFolder } from '@/lib/dropbox'
 import { syncLeadToCustomerDB } from '@/lib/customer-sync'
 import { notifyLeadConverted } from '@/lib/channeltalk'
 import { createOrUpdateLeadBrief } from '@/lib/brief-generator'
@@ -177,9 +177,10 @@ export async function convertLeadToSale(leadId: string) {
 
   if (error) return { error: error.message }
 
-  // Dropbox 폴더 자동 생성
+  // Dropbox 폴더 — 리드에 이미 URL이 있으면 재사용, 없으면 새로 생성
   if (sale && serviceType) {
-    const dropboxUrl = await createSaleFolder({
+    const existingUrl = lead.dropbox_url as string | null
+    const dropboxUrl = existingUrl || await createSaleFolder({
       service_type: serviceType,
       name: displayName || '(리드전환)',
       inflow_date: lead.inflow_date,
@@ -389,4 +390,18 @@ export async function updateLeadDropboxUrl(leadId: string, url: string): Promise
   const supabase = await createClient()
   await supabase.from('leads').update({ dropbox_url: url, updated_at: new Date().toISOString() }).eq('id', leadId)
   revalidatePath('/leads')
+}
+
+export async function syncLeadDropboxFolderName(
+  leadId: string,
+  currentDropboxUrl: string,
+  newProjectName: string,
+): Promise<{ newUrl: string } | { error: string }> {
+  const result = await renameDropboxFolder(currentDropboxUrl, newProjectName)
+  if ('error' in result) return result
+
+  const supabase = await createClient()
+  await supabase.from('leads').update({ dropbox_url: result.newUrl, updated_at: new Date().toISOString() }).eq('id', leadId)
+  revalidatePath('/leads')
+  return { newUrl: result.newUrl }
 }

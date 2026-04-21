@@ -310,13 +310,10 @@ export default function RentalsClient({ rentals: initialRentals, profiles, custo
 
   const calDays = getCalendarDays(calYear, calMonth)
 
-  // 연결된 하위 건은 기본 숨김 (부모 계약건 상세에서 확인)
-  const standaloneRentals = rentals.filter(r => !r.parent_rental_id)
-
   // 필터에 따라 표시할 렌탈 목록과 기준 날짜 필드 결정
-  const filteredCalRentals = standaloneRentals.filter(r => {
+  const filteredCalRentals = rentals.filter(r => {
     if (calFilter === '전체') return !['취소','보류'].includes(r.status)
-    if (calFilter === '배송') return ['유입','견적발송','렌탈확정'].includes(r.status)
+    if (calFilter === '배송') return ['유입','견적발송','렌탈확정','진행중'].includes(r.status)
     if (calFilter === '수거') return ['진행중','수거완료','검수중'].includes(r.status)
     if (calFilter === '완료') return r.status === '완료'
     return false
@@ -340,7 +337,7 @@ export default function RentalsClient({ rentals: initialRentals, profiles, custo
   }
 
   // 전체 활성 건 (취소/보류 제외) — 이달 건수 표시용
-  const activeRentals = standaloneRentals.filter(r => !['취소','보류'].includes(r.status))
+  const activeRentals = rentals.filter(r => !['취소','보류'].includes(r.status))
 
   const todayStr = today.toISOString().slice(0, 10)
 
@@ -449,7 +446,7 @@ export default function RentalsClient({ rentals: initialRentals, profiles, custo
                     {day}
                   </div>
                   <div className="space-y-0.5">
-                    {dayRentals.slice(0,3).map(r => (
+                    {dayRentals.map(r => (
                       <div key={r.id}
                         onClick={() => setSelected(r)}
                         className={`text-[10px] leading-tight px-1 py-0.5 rounded cursor-pointer truncate
@@ -740,6 +737,10 @@ function DetailPanel({
           </div>
         </div>
         <div className="flex gap-1">
+          <a href={`/rentals/${rental.id}`}
+            className="text-xs text-gray-600 hover:text-gray-900 border border-gray-200 rounded px-2 py-1 hover:bg-gray-50">
+            상세 보기
+          </a>
           {rental.dropbox_url && (
             <a href={rental.dropbox_url} target="_blank" rel="noopener noreferrer"
               className="text-xs text-blue-500 hover:text-blue-700 border border-blue-200 rounded px-2 py-1">

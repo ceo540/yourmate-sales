@@ -1,8 +1,9 @@
 'use client'
 import { useState, useTransition, useEffect, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
+import ReactMarkdown from 'react-markdown'
 import { Lead, LeadStatus, LEAD_STATUSES, LEAD_CHANNELS, LEAD_SOURCES } from '@/types'
-import { createLead, updateLead, deleteLead, convertLeadToSale, addSaleToLead, createLeadFolder, updateLeadDropboxUrl, createPerson, updateLeadPersonAndCustomer } from './actions'
+import { createLead, updateLead, deleteLead, convertLeadToSale, addSaleToLead, createLeadFolder, updateLeadDropboxUrl, syncLeadDropboxFolderName, createPerson, updateLeadPersonAndCustomer } from './actions'
 import { createLeadLog, getLeadLogs, deleteLeadLog } from './lead-log-actions'
 import ProjectClaudeChat from '@/components/ProjectClaudeChat'
 
@@ -625,28 +626,43 @@ export default function LeadsClient({ leads, profiles, persons, currentUserId, i
     setCreatingFolder(true)
     const result = await createLeadFolder(leadId)
     setCreatingFolder(false)
-    if (result.error) alert('폴더 생성 실패: ' + result.error)
+    if (result.error) { alert('폴더 생성 실패: ' + result.error); return }
+    if (result.url) {
+      setSelectedLead(prev => prev ? { ...prev, dropbox_url: result.url } : prev)
+      router.refresh()
+    }
   }
 
   async function handleSaveDropboxUrl(leadId: string) {
     if (!dropboxInput.trim()) return
-    await updateLeadDropboxUrl(leadId, dropboxInput.trim())
+    const newUrl = dropboxInput.trim()
+    await updateLeadDropboxUrl(leadId, newUrl)
+    setSelectedLead(prev => prev ? { ...prev, dropbox_url: newUrl } : prev)
     setDropboxInput('')
     setShowDropboxInput(false)
+    router.refresh()
   }
 
   async function handleSyncDropboxUrl() {
     if (!selectedLead?.dropbox_url || !selectedLead.project_name) return
     setDropboxSyncing(true)
-    const url = selectedLead.dropbox_url
-    const lastSlash = url.lastIndexOf('/')
-    const parent = url.substring(0, lastSlash)
-    const oldFolder = url.substring(lastSlash + 1)
-    const dateMatch = oldFolder.match(/^(\d{6})\s/)
-    const datePrefix = dateMatch ? dateMatch[1] + ' ' : ''
-    const newUrl = `${parent}/${datePrefix}${selectedLead.project_name}`
-    await updateLeadDropboxUrl(selectedLead.id, newUrl)
+    const result = await syncLeadDropboxFolderName(
+      selectedLead.id,
+      selectedLead.dropbox_url,
+      selectedLead.project_name,
+    )
     setDropboxSyncing(false)
+    if ('error' in result) {
+      const isDeleted = result.error.includes('deleted') || result.error.includes('삭제')
+      if (isDeleted) {
+        alert('드롭박스에서 폴더를 찾을 수 없어요.\n폴더가 이동되었거나 삭제된 것 같아요.\n아래 URL 입력창에 현재 폴더 URL을 다시 입력해주세요.')
+      } else {
+        alert('드롭박스 폴더 이름 변경 실패: ' + result.error)
+      }
+      return
+    }
+    setSelectedLead(prev => prev ? { ...prev, dropbox_url: result.newUrl } : prev)
+    router.refresh()
     setDropboxSyncDone(true)
     setTimeout(() => setDropboxSyncDone(false), 2000)
   }
@@ -1076,20 +1092,59 @@ export default function LeadsClient({ leads, profiles, persons, currentUserId, i
                       <div className="bg-white rounded-2xl border border-gray-200 p-5">
                         <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2.5">요약</p>
                         {selectedLead.notes ? (
-                          <p className="text-sm text-gray-700 leading-relaxed whitespace-pre-line">{selectedLead.notes}</p>
+                          <div className="prose prose-sm max-w-none text-gray-700
+                            [&_h1]:text-base [&_h1]:font-bold [&_h1]:mt-3 [&_h1]:mb-1
+                            [&_h2]:text-sm [&_h2]:font-bold [&_h2]:mt-3 [&_h2]:mb-1
+                            [&_h3]:text-sm [&_h3]:font-semibold [&_h3]:mt-2 [&_h3]:mb-0.5
+                            [&_p]:leading-relaxed [&_p]:mb-1
+                            [&_ul]:pl-4 [&_ul]:list-disc [&_ul]:space-y-0.5
+                            [&_ol]:pl-4 [&_ol]:list-decimal [&_ol]:space-y-0.5
+                            [&_li]:text-sm
+                            [&_hr]:border-gray-200 [&_hr]:my-2
+                            [&_strong]:font-semibold
+                            [&_table]:w-full [&_table]:text-xs [&_table]:border-collapse [&_table]:overflow-x-auto [&_table]:block
+                            [&_th]:bg-gray-50 [&_th]:px-2 [&_th]:py-1 [&_th]:border [&_th]:border-gray-200 [&_th]:font-medium [&_th]:whitespace-nowrap
+                            [&_td]:px-2 [&_td]:py-1 [&_td]:border [&_td]:border-gray-100 [&_td]:whitespace-nowrap">
+                            <ReactMarkdown>{selectedLead.notes}</ReactMarkdown>
+                          </div>
                         ) : (
                           <p className="text-sm text-gray-400 italic">요약 없음 — 수정 탭에서 추가하세요.</p>
                         )}
+                        {selectedLead.initial_content && (
+                          <div className="mt-3 pt-3 border-t border-gray-100">
+                            <p className="text-[11px] font-semibold text-gray-400 mb-1">최초 문의 내용</p>
+                            <p className="text-sm text-gray-600 leading-relaxed whitespace-pre-line">{selectedLead.initial_content}</p>
+                          </div>
+                        )}
                         {(loadingSummary || leadSummary) && (
-                          <div className="mt-3 bg-violet-50 border border-violet-100 rounded-xl p-3">
-                            <p className="text-[11px] font-semibold text-violet-500 mb-1.5">✦ AI 요약</p>
+                          <div className="mt-3 bg-violet-50 border border-violet-100 rounded-xl p-3.5">
+                            <p className="text-[11px] font-semibold text-violet-500 mb-2.5">✦ AI 요약</p>
                             {loadingSummary ? (
-                              <div className="space-y-1.5">
+                              <div className="space-y-2">
                                 <div className="h-3 bg-violet-100 rounded animate-pulse w-full" />
                                 <div className="h-3 bg-violet-100 rounded animate-pulse w-4/5" />
+                                <div className="h-3 bg-violet-100 rounded animate-pulse w-3/5" />
                               </div>
                             ) : (
-                              <p className="text-sm text-gray-700 leading-relaxed">{leadSummary}</p>
+                              <div className="space-y-2">
+                                {(leadSummary ?? '').split('\n').filter(l => l.trim()).map((line, i) => {
+                                  const colonIdx = line.indexOf(':')
+                                  if (colonIdx === -1) return <p key={i} className="text-sm text-gray-600 leading-relaxed">{line}</p>
+                                  const label = line.slice(0, colonIdx).trim()
+                                  const body = line.slice(colonIdx + 1).trim()
+                                  const labelStyle: Record<string, string> = {
+                                    '현황': 'bg-blue-100 text-blue-700',
+                                    '반응': 'bg-yellow-100 text-yellow-700',
+                                    '다음': 'bg-green-100 text-green-700',
+                                  }
+                                  return (
+                                    <div key={i} className="flex gap-2 items-start">
+                                      <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded shrink-0 mt-0.5 ${labelStyle[label] ?? 'bg-gray-100 text-gray-500'}`}>{label}</span>
+                                      <p className="text-sm text-gray-700 leading-relaxed">{body}</p>
+                                    </div>
+                                  )
+                                })}
+                              </div>
                             )}
                           </div>
                         )}
@@ -1456,20 +1511,23 @@ export default function LeadsClient({ leads, profiles, persons, currentUserId, i
                         profiles={profiles} persons={persons}
                       />
 
-                      {/* 드롭박스 URL 직접 입력 */}
-                      {!selectedLead.dropbox_url && (
-                        <div className="mt-4 pt-4 border-t border-gray-100">
-                          <p className="text-xs text-gray-400 mb-2">드롭박스 URL 직접 입력</p>
-                          <div className="flex gap-2">
-                            <input value={dropboxInput} onChange={e => setDropboxInput(e.target.value)}
-                              placeholder="https://www.dropbox.com/..."
-                              className="flex-1 text-xs border border-gray-200 rounded-lg px-2 py-1.5 focus:outline-none focus:border-yellow-400" />
-                            <button onClick={() => handleSaveDropboxUrl(selectedLead.id)}
-                              className="text-xs px-3 py-1.5 rounded-lg font-medium"
-                              style={{ backgroundColor: '#FFCE00', color: '#121212' }}>저장</button>
-                          </div>
+                      {/* 드롭박스 URL 입력/수정 */}
+                      <div className="mt-4 pt-4 border-t border-gray-100">
+                        <p className="text-xs text-gray-400 mb-2">
+                          드롭박스 URL {selectedLead.dropbox_url ? '수정' : '직접 입력'}
+                        </p>
+                        <div className="flex gap-2">
+                          <input
+                            value={dropboxInput !== '' ? dropboxInput : (selectedLead.dropbox_url || '')}
+                            onFocus={() => { if (!dropboxInput) setDropboxInput(selectedLead.dropbox_url || '') }}
+                            onChange={e => setDropboxInput(e.target.value)}
+                            placeholder="https://www.dropbox.com/..."
+                            className="flex-1 text-xs border border-gray-200 rounded-lg px-2 py-1.5 focus:outline-none focus:border-yellow-400" />
+                          <button onClick={() => handleSaveDropboxUrl(selectedLead.id)}
+                            className="text-xs px-3 py-1.5 rounded-lg font-medium"
+                            style={{ backgroundColor: '#FFCE00', color: '#121212' }}>저장</button>
                         </div>
-                      )}
+                      </div>
 
                       {/* 추가 계약건 */}
                       {isAdmin && (

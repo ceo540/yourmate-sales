@@ -213,7 +213,7 @@ export async function renameDropboxFolder(
   const WEB_BASE = 'https://www.dropbox.com/home'
   if (!dropboxUrl.startsWith(WEB_BASE)) return { error: '지원하지 않는 Dropbox URL 형식' }
 
-  const fullPath = dropboxUrl.replace(WEB_BASE, '')
+  const fullPath = decodeURIComponent(dropboxUrl.replace(WEB_BASE, ''))
   const lastSlash = fullPath.lastIndexOf('/')
   if (lastSlash < 0) return { error: '잘못된 경로 형식' }
 

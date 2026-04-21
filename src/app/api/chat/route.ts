@@ -462,11 +462,12 @@ const TOOLS: OpenAI.Chat.ChatCompletionTool[] = [
         type: 'object' as const,
         properties: {
           client_org: { type: 'string', description: '기관명 (필수)' },
+          project_name: { type: 'string', description: '프로젝트명/건명 (예: 260610 서울중학교 렌탈). 없으면 생략.' },
           contact_name: { type: 'string', description: '담당자 이름/직급' },
           phone: { type: 'string', description: '연락처' },
           email: { type: 'string', description: '이메일' },
           service_type: { type: 'string', description: '서비스 분류: SOS/교육프로그램/납품설치/유지보수/교구대여/제작인쇄/콘텐츠제작/행사운영/행사대여/프로젝트/002ENT' },
-          initial_content: { type: 'string', description: '문의 내용 요약' },
+          initial_content: { type: 'string', description: '문의 내용 요약 2~3줄' },
           inflow_date: { type: 'string', description: '최초 유입일 YYYY-MM-DD (없으면 오늘)' },
           remind_date: { type: 'string', description: '리마인드 날짜 YYYY-MM-DD' },
           channel: { type: 'string', description: '소통 경로: 전화/이메일/카카오/채널톡/기타' },
@@ -1065,6 +1066,7 @@ async function executeTool(name: string, input: Record<string, unknown>, userRol
     const { data: lead, error } = await supabase.from('leads').insert({
       lead_id,
       client_org: clientOrg,
+      project_name: (input.project_name as string) || null,
       contact_name: (input.contact_name as string) || null,
       phone: (input.phone as string) || null,
       email: (input.email as string) || null,

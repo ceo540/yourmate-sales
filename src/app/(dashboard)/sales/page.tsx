@@ -33,15 +33,19 @@ export default async function SalesPage() {
     }
   }
 
-  const [{ data: vendors }, { data: entities }, { data: profiles }, { data: salesRaw }] = await Promise.all([
+  const [{ data: vendors }, { data: entities }, { data: profiles }, { data: salesRaw }, { data: childRentalRows }] = await Promise.all([
     supabase.from('vendors').select('id, name, type').order('name'),
     supabase.from('business_entities').select('id, name, entity_type, business_number').order('name'),
     supabase.from('profiles').select('id, name').order('name'),
     salesQuery,
+    // 하위 렌탈(배송일정)의 sale_id 목록 — 영업 목록에서 제외
+    supabase.from('rentals').select('sale_id').not('parent_rental_id', 'is', null).not('sale_id', 'is', null),
   ])
 
+  const childSaleIds = new Set((childRentalRows ?? []).map((r: any) => r.sale_id as string))
+
   // 로드된 매출 건에 해당하는 원가만 조회 (전체 X)
-  const saleIds = (salesRaw ?? []).map((s: any) => s.id)
+  const saleIds = (salesRaw ?? []).filter((s: any) => !childSaleIds.has(s.id)).map((s: any) => s.id)
   const { data: allCosts } = saleIds.length > 0
     ? await supabase.from('sale_costs').select('*').in('sale_id', saleIds)
     : { data: [] }
@@ -54,7 +58,7 @@ export default async function SalesPage() {
     costsMap[cost.sale_id].push(cost)
   }
 
-  const sales = (salesRaw ?? []).map((s: any) => ({
+  const sales = (salesRaw ?? []).filter((s: any) => !childSaleIds.has(s.id)).map((s: any) => ({
     ...s,
     assignee: s.assignee_id ? (profileMap[s.assignee_id] ?? null) : null,
     entity: s.entity_id ? (entityMap[s.entity_id] ?? null) : null,

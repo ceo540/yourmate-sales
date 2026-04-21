@@ -15,14 +15,17 @@ export async function POST(req: Request) {
     .map((l: any) => `- [${l.log_type}] ${l.content} (${l.contacted_at?.slice(0, 10) || '날짜 없음'})`)
     .join('\n')
 
-  const prompt = `당신은 영업 어시스턴트입니다. 아래 리드(잠재고객)의 소통 내역을 분석해 현재 상황을 2~3문장으로 간결하게 한국어로 요약해주세요.
+  const prompt = `영업 어시스턴트야. 아래 리드의 소통 내역을 분석해서 아래 형식으로만 답해. 각 항목은 한 문장씩, 없으면 "없음"으로.
 
 최초 유입 내용: ${initial_content || '없음'}
 
 소통 내역 (${logs.length}건):
 ${logsText}
 
-현재 상황, 고객 반응, 다음 단계(있다면)를 포함해 요약하세요. JSON 없이 텍스트만 응답하세요.`
+형식 (이 형식 그대로, 다른 말 없이):
+현황: [현재 진행 상황 한 문장]
+반응: [고객 반응 또는 온도 한 문장]
+다음: [다음에 해야 할 액션 한 문장]`
 
   try {
     const message = await client.messages.create({
