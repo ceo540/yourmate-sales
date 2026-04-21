@@ -703,8 +703,10 @@ export default function DeptClient({ dept, deptLabel, deptIcon, sales, goals, ta
                     className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-yellow-400" />
                   <input name="description" defaultValue={editingGoal?.description ?? ''} placeholder="설명 (선택)"
                     className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-yellow-400" />
-                  <div className="grid grid-cols-2 gap-3">
+                  <div className="grid grid-cols-3 gap-3">
                     <input name="target_value" type="number" defaultValue={editingGoal?.target_value ?? ''} placeholder="목표값"
+                      className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-yellow-400" />
+                    <input name="current_value" type="number" defaultValue={editingGoal?.current_value ?? 0} placeholder="현재값"
                       className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-yellow-400" />
                     <input name="unit" defaultValue={editingGoal?.unit ?? ''} placeholder="단위 (원, 건, %)"
                       className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-yellow-400" />

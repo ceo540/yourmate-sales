@@ -23,7 +23,7 @@ export default async function DeptPage({ params }: { params: Promise<{ dept: str
   if (!user) redirect('/login')
 
   const { data: profile } = await supabase.from('profiles').select('role').eq('id', user.id).single()
-  const isAdmin = profile?.role === 'admin'
+  const isAdmin = profile?.role === 'admin' || profile?.role === 'manager'
 
   const currentYear = new Date().getFullYear()
 
