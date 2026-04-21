@@ -49,7 +49,7 @@ export async function createGoal(formData: FormData) {
   if (!user) throw new Error('Unauthorized')
 
   const { data: profile } = await supabase.from('profiles').select('role').eq('id', user.id).single()
-  if (profile?.role !== 'admin') throw new Error('Admin only')
+  if (profile?.role !== 'admin' && profile?.role !== 'manager') throw new Error('Admin only')
 
   const admin = createAdminClient()
   const dept = formData.get('department') as string
@@ -77,7 +77,7 @@ export async function updateGoal(formData: FormData) {
   if (!user) throw new Error('Unauthorized')
 
   const { data: profile } = await supabase.from('profiles').select('role').eq('id', user.id).single()
-  if (profile?.role !== 'admin') throw new Error('Admin only')
+  if (profile?.role !== 'admin' && profile?.role !== 'manager') throw new Error('Admin only')
 
   const admin = createAdminClient()
   const id = formData.get('id') as string
@@ -104,7 +104,7 @@ export async function deleteGoal(id: string, dept: string) {
   if (!user) throw new Error('Unauthorized')
 
   const { data: profile } = await supabase.from('profiles').select('role').eq('id', user.id).single()
-  if (profile?.role !== 'admin') throw new Error('Admin only')
+  if (profile?.role !== 'admin' && profile?.role !== 'manager') throw new Error('Admin only')
 
   const admin = createAdminClient()
   await admin.from('department_goals').delete().eq('id', id)
