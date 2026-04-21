@@ -207,11 +207,11 @@ export async function updateContractInfo(
 }
 
 export async function createTaskForProject(
-  contractId: string, title: string, assigneeId: string | null, dueDate: string | null, priority: string, description: string | null,
-): Promise<{ id: string; title: string; status: string; priority: string | null; due_date: string | null; assignee: { id: string; name: string } | null; project_id: string; description: string | null } | null> {
+  contractId: string | null, title: string, assigneeId: string | null, dueDate: string | null, priority: string, description: string | null,
+): Promise<{ id: string; title: string; status: string; priority: string | null; due_date: string | null; assignee: { id: string; name: string } | null; project_id: string | null; description: string | null } | null> {
   const admin = createAdminClient()
   const { data } = await admin.from('tasks').insert({
-    project_id: contractId, title, status: '할 일', priority, assignee_id: assigneeId || null, due_date: dueDate || null, description: description || null,
+    project_id: contractId || null, title, status: '할 일', priority, assignee_id: assigneeId || null, due_date: dueDate || null, description: description || null,
   }).select('id, title, status, priority, due_date, project_id, description, assignee_id').single()
   if (!data) return null
   let assignee: { id: string; name: string } | null = null

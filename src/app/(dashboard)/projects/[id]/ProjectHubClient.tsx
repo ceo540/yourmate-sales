@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useTransition, useRef, useEffect } from 'react'
+import { useRouter } from 'next/navigation'
 import {
   createProjectLog, deleteProjectLog, getProjectLogs,
   updateProjectMemo, updateProjectNotes, updateProjectStatus,
@@ -14,10 +15,10 @@ import { updateTaskStatus, deleteTask, updateTask } from '../../sales/tasks/acti
 import ProjectClaudeChat from '@/components/ProjectClaudeChat'
 
 // ── 상수 ──────────────────────────────────────────────────────────────────────
-type LogType = '통화' | '이메일' | '방문' | '미팅' | '출장' | '내부회의' | '메모'
+type LogType = '통화' | '이메일' | '방문' | '미팅' | '출장' | '내부회의' | '메모' | '기타'
 const LOG_CATEGORY: Record<LogType, '외부' | '내부'> = {
   통화: '외부', 이메일: '외부', 방문: '외부', 미팅: '외부', 출장: '외부',
-  내부회의: '내부', 메모: '내부',
+  내부회의: '내부', 메모: '내부', 기타: '외부',
 }
 const LOG_TYPE_STYLE: Record<string, { badge: string; bar: string; label: string }> = {
   통화:     { badge: 'bg-blue-50 text-blue-700 border-blue-100',        bar: 'bg-blue-300',    label: '📞 통화' },
@@ -27,6 +28,7 @@ const LOG_TYPE_STYLE: Record<string, { badge: string; bar: string; label: string
   출장:     { badge: 'bg-cyan-50 text-cyan-700 border-cyan-100',        bar: 'bg-cyan-300',    label: '🚗 출장' },
   내부회의: { badge: 'bg-orange-50 text-orange-700 border-orange-100',  bar: 'bg-orange-300',  label: '💬 내부회의' },
   메모:     { badge: 'bg-yellow-50 text-yellow-700 border-yellow-100',  bar: 'bg-yellow-300',  label: '📝 메모' },
+  기타:     { badge: 'bg-gray-50 text-gray-600 border-gray-100',        bar: 'bg-gray-300',    label: '· 기타' },
 }
 const STAGE_COLORS: Record<string, string> = {
   계약: 'bg-blue-100 text-blue-700', 착수: 'bg-purple-100 text-purple-700',
@@ -554,7 +556,7 @@ function LogForm({ contracts, onSubmit, isPending }: {
       <div className="flex gap-1.5 flex-wrap mb-2">
         <div className="flex items-center gap-1">
           <span className="text-xs text-gray-400 mr-1">외부</span>
-          {(['통화', '이메일', '방문', '미팅', '출장'] as LogType[]).map(t => (
+          {(['통화', '이메일', '방문', '미팅', '출장', '기타'] as LogType[]).map(t => (
             <button key={t} onClick={() => setType(t)}
               className={`text-xs px-2.5 py-1 rounded-full border transition-all ${type === t ? 'bg-gray-900 text-white border-gray-900' : 'border-gray-200 text-gray-500 hover:border-gray-400'}`}>
               {t}
@@ -613,6 +615,7 @@ export default function ProjectHubClient({
   project, members, contracts: initialContracts, tasks: initialTasks, logs: initialLogs,
   costs: initialCosts, profiles, customers, customer, leads, salesOptions, entities, isAdmin,
 }: Props) {
+  const router = useRouter()
   const [localContracts, setLocalContracts] = useState(initialContracts)
   const [localCosts, setLocalCosts] = useState<CostItem[]>(initialCosts)
   const [tasks, setTasks] = useState(initialTasks)
@@ -898,7 +901,7 @@ export default function ProjectHubClient({
       </div>
 
       {/* ── 본문 ── */}
-      <div className="max-w-7xl mx-auto px-6 py-5 flex gap-5 items-start">
+      <div className="max-w-7xl mx-auto px-6 py-5 flex flex-col md:flex-row gap-5 items-start">
 
         {/* ─── 좌측 ─────────────────────────────────────── */}
         <div className="flex-1 min-w-0 space-y-4">
@@ -978,40 +981,35 @@ export default function ProjectHubClient({
 
                 {showTaskForm && (
                   <div className="px-4 py-3 bg-yellow-50 border-b border-yellow-100 space-y-2">
-                    {localContracts.length === 0 ? (
-                      <p className="text-xs text-gray-400">계약이 연결되어야 업무를 추가할 수 있습니다.</p>
-                    ) : (
-                      <>
-                        <input autoFocus value={newTaskTitle} onChange={e => setNewTaskTitle(e.target.value)} placeholder="업무명 *"
-                          className="w-full text-sm bg-white border border-yellow-200 rounded-lg px-3 py-2 focus:outline-none focus:border-yellow-400" />
-                        <textarea value={newTaskDesc} onChange={e => setNewTaskDesc(e.target.value)} placeholder="상세 내용 (선택)" rows={2}
-                          className="w-full text-sm bg-white border border-yellow-200 rounded-lg px-3 py-2 focus:outline-none focus:border-yellow-400 resize-none" />
-                        <div className="flex gap-2 flex-wrap">
-                          {localContracts.length > 1 && (
-                            <select value={newTaskContractId} onChange={e => setNewTaskContractId(e.target.value)}
-                              className="flex-1 text-xs border border-gray-200 rounded-lg px-2 py-1.5 bg-white min-w-[120px]">
-                              {localContracts.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-                            </select>
-                          )}
-                          <select value={newTaskAssignee} onChange={e => setNewTaskAssignee(e.target.value)}
-                            className="flex-1 text-xs border border-gray-200 rounded-lg px-2 py-1.5 bg-white min-w-[100px]">
-                            <option value="">담당자</option>
-                            {profiles.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
-                          </select>
-                          <select value={newTaskPriority} onChange={e => setNewTaskPriority(e.target.value)}
-                            className="text-xs border border-gray-200 rounded-lg px-2 py-1.5 bg-white">
-                            {['긴급', '높음', '보통', '낮음'].map(p => <option key={p} value={p}>{p}</option>)}
-                          </select>
-                          <input type="date" value={newTaskDue} onChange={e => setNewTaskDue(e.target.value)}
-                            className="text-xs border border-gray-200 rounded-lg px-2 py-1.5 min-w-[110px]" />
-                          <button onClick={handleAddTask} disabled={isPending || !newTaskTitle.trim()}
-                            className="px-3 py-1.5 text-xs font-semibold rounded-lg hover:opacity-80 disabled:opacity-40"
-                            style={{ backgroundColor: '#FFCE00', color: '#121212' }}>추가</button>
-                          <button onClick={() => setShowTaskForm(false)}
-                            className="px-3 py-1.5 text-xs border border-gray-200 rounded-lg text-gray-500">취소</button>
-                        </div>
-                      </>
-                    )}
+                    <input autoFocus value={newTaskTitle} onChange={e => setNewTaskTitle(e.target.value)} placeholder="업무명 *"
+                      className="w-full text-sm bg-white border border-yellow-200 rounded-lg px-3 py-2 focus:outline-none focus:border-yellow-400" />
+                    <textarea value={newTaskDesc} onChange={e => setNewTaskDesc(e.target.value)} placeholder="상세 내용 (선택)" rows={2}
+                      className="w-full text-sm bg-white border border-yellow-200 rounded-lg px-3 py-2 focus:outline-none focus:border-yellow-400 resize-none" />
+                    <div className="flex gap-2 flex-wrap">
+                      {localContracts.length > 1 && (
+                        <select value={newTaskContractId} onChange={e => setNewTaskContractId(e.target.value)}
+                          className="flex-1 text-xs border border-gray-200 rounded-lg px-2 py-1.5 bg-white min-w-[120px]">
+                          <option value="">계약 미연결</option>
+                          {localContracts.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                        </select>
+                      )}
+                      <select value={newTaskAssignee} onChange={e => setNewTaskAssignee(e.target.value)}
+                        className="flex-1 text-xs border border-gray-200 rounded-lg px-2 py-1.5 bg-white min-w-[100px]">
+                        <option value="">담당자</option>
+                        {profiles.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+                      </select>
+                      <select value={newTaskPriority} onChange={e => setNewTaskPriority(e.target.value)}
+                        className="text-xs border border-gray-200 rounded-lg px-2 py-1.5 bg-white">
+                        {['긴급', '높음', '보통', '낮음'].map(p => <option key={p} value={p}>{p}</option>)}
+                      </select>
+                      <input type="date" value={newTaskDue} onChange={e => setNewTaskDue(e.target.value)}
+                        className="text-xs border border-gray-200 rounded-lg px-2 py-1.5 min-w-[110px]" />
+                      <button onClick={handleAddTask} disabled={isPending || !newTaskTitle.trim()}
+                        className="px-3 py-1.5 text-xs font-semibold rounded-lg hover:opacity-80 disabled:opacity-40"
+                        style={{ backgroundColor: '#FFCE00', color: '#121212' }}>추가</button>
+                      <button onClick={() => setShowTaskForm(false)}
+                        className="px-3 py-1.5 text-xs border border-gray-200 rounded-lg text-gray-500">취소</button>
+                    </div>
                   </div>
                 )}
 
@@ -1209,7 +1207,23 @@ export default function ProjectHubClient({
                         <option value="">매출 건 선택...</option>
                         {salesOptions.map(s => <option key={s.id} value={s.id}>{s.name}{s.revenue ? ` (${fmtMoney(s.revenue)}원)` : ''}</option>)}
                       </select>
-                      <button onClick={() => startTransition(async () => { if (selectedSaleId) { await linkSaleToProject(project.id, selectedSaleId); setLinkingSale(false); setSelectedSaleId('') } })}
+                      <button onClick={() => startTransition(async () => {
+                        if (selectedSaleId) {
+                          await linkSaleToProject(project.id, selectedSaleId)
+                          // 연결된 매출 건을 localContracts에 낙관적 추가 (리로드 없이 즉시 반영)
+                          const newSale = salesOptions.find(s => s.id === selectedSaleId)
+                          if (newSale) {
+                            setLocalContracts(prev => [...prev, {
+                              id: newSale.id, name: newSale.name, revenue: newSale.revenue,
+                              contract_stage: null, progress_status: null, inflow_date: null,
+                              payment_date: null, client_org: null, contract_split_reason: null,
+                              dropbox_url: null, payment_schedules: [],
+                              assignee_name: null, entity_name: null, assignee_id: null, entity_id: null,
+                            }])
+                          }
+                          setLinkingSale(false); setSelectedSaleId('')
+                        }
+                      })}
                         disabled={!selectedSaleId || isPending}
                         className="px-3 py-1.5 text-xs font-semibold rounded-lg hover:opacity-80 disabled:opacity-40" style={{ backgroundColor: '#FFCE00', color: '#121212' }}>연결</button>
                       <button onClick={() => { setLinkingSale(false); setSelectedSaleId('') }}
@@ -1316,7 +1330,7 @@ export default function ProjectHubClient({
         </div>
 
         {/* ─── 우측 사이드바 ─────────────────────────────── */}
-        <div className="w-72 flex-shrink-0 sticky top-[120px] space-y-4">
+        <div className="w-full md:w-72 flex-shrink-0 md:sticky md:top-[120px] space-y-4">
 
           {/* 고객 카드 */}
           {localCustomer && !changingCustomer ? (

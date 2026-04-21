@@ -192,16 +192,23 @@ function LeadForm({ form, setForm, onSubmit, onCancel, isPending, isAdmin, profi
             <input className={INPUT_CLS} value={form.phone} onChange={e => setForm(f => ({ ...f, phone: e.target.value }))} />
           )}
         </div>
-        <div>
-          <label className={LABEL_CLS}>이메일</label>
-          {selectedPerson ? (
-            <div className={INPUT_CLS + ' bg-gray-50 text-gray-500 cursor-default text-sm'}>
-              {selectedPerson.email || '미등록'}<span className="ml-2 text-xs text-blue-400">DB 연결됨</span>
-            </div>
-          ) : (
-            <input className={INPUT_CLS} type="email" value={form.email} onChange={e => setForm(f => ({ ...f, email: e.target.value }))} />
-          )}
-        </div>
+        {/* 사무실 번호 — 직접 입력 시만 노출 (PersonDB 연결 시 불필요) */}
+        {!selectedPerson && (
+          <div>
+            <label className={LABEL_CLS}>사무실 번호</label>
+            <input className={INPUT_CLS} value={form.office_phone} onChange={e => setForm(f => ({ ...f, office_phone: e.target.value }))} />
+          </div>
+        )}
+      </div>
+      <div>
+        <label className={LABEL_CLS}>이메일</label>
+        {selectedPerson ? (
+          <div className={INPUT_CLS + ' bg-gray-50 text-gray-500 cursor-default text-sm'}>
+            {selectedPerson.email || '미등록'}<span className="ml-2 text-xs text-blue-400">DB 연결됨</span>
+          </div>
+        ) : (
+          <input className={INPUT_CLS} type="email" value={form.email} onChange={e => setForm(f => ({ ...f, email: e.target.value }))} />
+        )}
       </div>
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <div><label className={LABEL_CLS}>서비스 분류</label>
@@ -272,7 +279,8 @@ const SERVICE_TYPES = [
 
 const LOG_TYPE_COLORS: Record<string, string> = {
   통화: 'bg-blue-50 text-blue-600', 이메일: 'bg-purple-50 text-purple-600',
-  방문: 'bg-green-50 text-green-600', 메모: 'bg-yellow-50 text-yellow-700',
+  방문: 'bg-green-50 text-green-600', 미팅: 'bg-teal-50 text-teal-600',
+  출장: 'bg-cyan-50 text-cyan-600', 메모: 'bg-yellow-50 text-yellow-700',
   내부회의: 'bg-orange-50 text-orange-600', 기타: 'bg-gray-100 text-gray-500',
   최초유입: 'bg-teal-50 text-teal-600',
 }
@@ -755,13 +763,11 @@ export default function LeadsClient({ leads, profiles, persons, currentUserId, i
             <input type="text" placeholder="검색..."
               value={searchTerm} onChange={e => setSearchTerm(e.target.value)}
               className="border border-gray-200 rounded-lg px-3 py-1.5 text-sm w-36 focus:outline-none focus:ring-2 focus:ring-yellow-300" />
-            {isAdmin && (
-              <button onClick={openCreate}
-                className="px-4 py-1.5 text-sm font-semibold rounded-lg whitespace-nowrap"
-                style={{ backgroundColor: '#FFCE00', color: '#121212' }}>
-                + 새 리드
-              </button>
-            )}
+            <button onClick={openCreate}
+              className="px-4 py-1.5 text-sm font-semibold rounded-lg whitespace-nowrap"
+              style={{ backgroundColor: '#FFCE00', color: '#121212' }}>
+              + 새 리드
+            </button>
           </div>
         </div>
       </div>
@@ -839,7 +845,13 @@ export default function LeadsClient({ leads, profiles, persons, currentUserId, i
                               {SERVICE_TYPES.map(s => (
                                 <button key={s} type="button" onClick={e => {
                                   e.stopPropagation()
-                                  startTransition(async () => { await updateLead(lead.id, { service_type: s }) })
+                                  startTransition(async () => {
+                                    await updateLead(lead.id, { service_type: s })
+                                    // 현재 선택된 리드라면 우측 패널도 즉시 업데이트
+                                    if (selectedLead?.id === lead.id) {
+                                      setSelectedLead(prev => prev ? { ...prev, service_type: s } : prev)
+                                    }
+                                  })
                                   setQuickServiceLeadId(null)
                                 }} className={`w-full text-left px-3 py-2 text-xs hover:bg-gray-50 ${s === lead.service_type ? 'bg-gray-50 font-bold text-gray-900' : 'text-gray-600'}`}>
                                   {s}
@@ -1028,15 +1040,13 @@ export default function LeadsClient({ leads, profiles, persons, currentUserId, i
                         <span>📁</span><span className="hidden sm:inline">{creatingFolder ? '생성 중...' : '폴더 생성'}</span>
                       </button>
                     )}
-                    {isAdmin && (
-                      <button
-                        onClick={() => handleConvert(selectedLead.id)}
-                        disabled={convertingId === selectedLead.id}
-                        className="text-sm font-semibold px-3 py-1.5 rounded-xl transition-colors disabled:opacity-50"
-                        style={{ backgroundColor: '#FFCE00', color: '#121212' }}>
-                        {convertingId === selectedLead.id ? '전환 중...' : '계약 전환'}
-                      </button>
-                    )}
+                    <button
+                      onClick={() => handleConvert(selectedLead.id)}
+                      disabled={convertingId === selectedLead.id}
+                      className="text-sm font-semibold px-3 py-1.5 rounded-xl transition-colors disabled:opacity-50"
+                      style={{ backgroundColor: '#FFCE00', color: '#121212' }}>
+                      {convertingId === selectedLead.id ? '전환 중...' : '계약 전환'}
+                    </button>
                   </div>
                 </div>
 
@@ -1119,7 +1129,7 @@ export default function LeadsClient({ leads, profiles, persons, currentUserId, i
                             <span className="text-xs text-gray-400">내용 입력 후 클릭하면 바로 저장</span>
                           </div>
                           <div className="flex gap-1.5 flex-wrap">
-                            {['통화', '이메일', '방문', '내부회의', '메모', '기타'].map(type => (
+                            {['통화', '이메일', '방문', '미팅', '출장', '내부회의', '메모', '기타'].map(type => (
                               <button key={type}
                                 onClick={() => handleAddLeadLog(type)}
                                 disabled={isPending || !newLeadLog.trim()}
