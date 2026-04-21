@@ -1130,7 +1130,7 @@ export default function LeadsClient({ leads, profiles, persons, currentUserId, i
                             <span className="text-xs text-gray-400">내용 입력 후 클릭하면 바로 저장</span>
                           </div>
                           <div className="flex gap-1.5 flex-wrap">
-                            {['통화', '이메일', '방문', '미팅', '출장', '내부회의', '메모', '기타'].map(type => (
+                            {['통화', '이메일', '방문', '미팅', '내부회의', '메모', '기타'].map(type => (
                               <button key={type}
                                 onClick={() => handleAddLeadLog(type)}
                                 disabled={isPending || !newLeadLog.trim()}
