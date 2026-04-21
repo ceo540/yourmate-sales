@@ -78,16 +78,43 @@ export default async function ProjectPage({ params }: { params: Promise<{ id: st
     assignee: t.assignee_id ? (profileMap[t.assignee_id] ?? null) : null,
   }))
 
-  const authorIds = [...new Set((logsRaw ?? []).map((l: any) => l.author_id).filter(Boolean))]
+  // 이 프로젝트에 연결된 리드들의 소통내역도 함께 조회 (계약 전환 전 히스토리 보존)
+  const leadIds = (leadsRaw ?? []).map((l: any) => l.id)
+  let leadLogsRaw: any[] = []
+  if (leadIds.length > 0) {
+    const { data } = await admin.from('project_logs')
+      .select('id, content, log_type, log_category, contacted_at, created_at, author_id, location, participants, outcome, sale_id, lead_id')
+      .in('lead_id', leadIds)
+      .order('contacted_at', { ascending: false })
+      .limit(200)
+    leadLogsRaw = data ?? []
+  }
+
+  // 프로젝트 로그 + 리드 로그 모두 합산하여 author 조회
+  const authorIds = [...new Set([
+    ...(logsRaw ?? []).map((l: any) => l.author_id),
+    ...leadLogsRaw.map((l: any) => l.author_id),
+  ].filter(Boolean))]
   let logAuthorMap: Record<string, string> = {}
   if (authorIds.length > 0) {
     const { data: logProfiles } = await admin.from('profiles').select('id, name').in('id', authorIds)
     logAuthorMap = Object.fromEntries((logProfiles ?? []).map(p => [p.id, p.name]))
   }
-  const logs = (logsRaw ?? []).map((l: any) => ({
+
+  // 프로젝트 로그와 리드 로그를 합쳐 contacted_at 기준 내림차순 정렬
+  const projectLogs = (logsRaw ?? []).map((l: any) => ({
+    ...l, lead_id: null,
+    author: l.author_id ? { name: logAuthorMap[l.author_id] ?? '알 수 없음' } : null,
+  }))
+  const leadLogs = leadLogsRaw.map((l: any) => ({
     ...l,
     author: l.author_id ? { name: logAuthorMap[l.author_id] ?? '알 수 없음' } : null,
   }))
+  const logs = [...projectLogs, ...leadLogs].sort((a, b) => {
+    const da = new Date(a.contacted_at ?? a.created_at).getTime()
+    const db = new Date(b.contacted_at ?? b.created_at).getTime()
+    return db - da
+  })
 
   const customer = project.customer_id
     ? (customers ?? []).find(c => c.id === project.customer_id) ?? null

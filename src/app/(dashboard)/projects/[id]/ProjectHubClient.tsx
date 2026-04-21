@@ -97,7 +97,7 @@ interface Log {
   id: string; content: string; log_type: string; log_category: string | null
   contacted_at: string | null; created_at: string; author: { name: string } | null
   location?: string | null; participants?: string[] | null; outcome?: string | null
-  sale_id?: string | null
+  sale_id?: string | null; lead_id?: string | null
 }
 interface CostItem { id: string; item: string; amount: number; category: string; sale_id: string }
 interface Project {
@@ -1138,11 +1138,17 @@ export default function ProjectHubClient({
                                 <span className={`text-xs px-1.5 py-0.5 rounded border ${style.badge}`}>{style.label}</span>
                                 <span className="text-xs text-gray-400">{fmtDatetime(l.contacted_at ?? l.created_at)}</span>
                                 {l.author && <div className="flex items-center gap-1"><Avatar name={l.author.name} size="sm" /><span className="text-xs text-gray-400">{l.author.name}</span></div>}
-                                {linkedContract
-                                  ? <span className="ml-auto text-xs bg-blue-50 text-blue-600 px-2 py-0.5 rounded-full">{linkedContract.name.length > 10 ? linkedContract.name.slice(0, 10) + '…' : linkedContract.name}</span>
-                                  : <span className="ml-auto text-xs bg-gray-50 text-gray-400 px-2 py-0.5 rounded-full">공통</span>
+                                {/* 리드 소통내역 출처 배지 — 계약 전 히스토리 */}
+                                {l.lead_id
+                                  ? <span className="ml-auto text-xs bg-purple-50 text-purple-500 px-2 py-0.5 rounded-full border border-purple-100">리드</span>
+                                  : linkedContract
+                                    ? <span className="ml-auto text-xs bg-blue-50 text-blue-600 px-2 py-0.5 rounded-full">{linkedContract.name.length > 10 ? linkedContract.name.slice(0, 10) + '…' : linkedContract.name}</span>
+                                    : <span className="ml-auto text-xs bg-gray-50 text-gray-400 px-2 py-0.5 rounded-full">공통</span>
                                 }
-                                <button onClick={() => handleDeleteLog(l.id)} className="text-gray-300 hover:text-red-400 text-xs opacity-0 group-hover:opacity-100">✕</button>
+                                {/* 리드 소통내역은 리드 페이지에서만 삭제 가능 */}
+                                {!l.lead_id && (
+                                  <button onClick={() => handleDeleteLog(l.id)} className="text-gray-300 hover:text-red-400 text-xs opacity-0 group-hover:opacity-100">✕</button>
+                                )}
                               </div>
                               <p className="text-sm text-gray-700 leading-relaxed whitespace-pre-wrap">{l.content}</p>
                               {(l.location || (l.participants && l.participants.length > 0)) && (
