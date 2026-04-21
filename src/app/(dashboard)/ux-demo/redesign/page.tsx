@@ -74,11 +74,27 @@ const SOS_PROJECTS = [
   { id: '26-006', name: '강남구청 행사운영', client: '강남구청', date: '2026-06-05', dday: 45, size: 300, venue: '강남구민회관', assignee: '조민현', stage: '초기단계', checklist: { '아티스트 섭외': false, '계약서 수령': false, '기획서 작성': false, '음향장비 확인': false, '현장 리허설': false, '정산 완료': false } },
 ]
 
+const EDU_PROGRAMS = [
+  { id: '26-003', name: '경기도교육청 특수교육원 가족지원 연수', client: '경기도교육청 특수교육원', date: '2026-05-16', dday: 25, venue: 'YBM연수원 분당', count: 86, instructors: ['김강사', '이강사', '박강사'], status: '강사확정', budget: 20000000, checklist: { '강사 계약 완료': true, '커리큘럼 확정': true, '장소 예약': true, '교재 발송': false, '사전 설문': false, '수료증 준비': false } },
+  { id: '26-013', name: '용인교육지원청 음악치료 연수', client: '용인교육지원청', date: '2026-07-10', dday: 80, venue: '미정', count: 40, instructors: ['최치료사'], status: '초기단계', budget: 22510000, checklist: { '강사 계약 완료': false, '커리큘럼 확정': false, '장소 예약': false, '교재 발송': false, '사전 설문': false, '수료증 준비': false } },
+]
+
+const INSTALL_PROJECTS = [
+  { id: '26-002', name: '광교청소년수련관 납품설치', client: '광교청소년수련관', date: '2026-05-20', dday: 29, status: '설치준비', items: [{ name: '85인치 TV', qty: 3, status: '입고완료' }, { name: '사운드바', qty: 3, status: '발주중' }, { name: '브래킷', qty: 3, status: '입고완료' }, { name: 'HDMI 케이블', qty: 10, status: '입고완료' }], checklist: { '견적서 확정': true, '계약서 서명': true, '자재 발주': true, '자재 입고 완료': false, '설치 일정 확정': false, '설치 완료': false, 'A/S 점검': false } },
+]
+
+const CHANNELTALK_ALERTS = [
+  { id: 1, from: '김교육 (이화여대)', content: '공연 날짜 확인 부탁드립니다', time: '10분 전', type: '문의', urgent: true },
+  { id: 2, from: '이과장 (성남시청)', content: '견적서 검토 완료, 계약 진행 가능합니다', time: '1시간 전', type: '계약', urgent: true },
+  { id: 3, from: '박선생 (분당중)', content: '아이패드 배송 언제 출발하나요?', time: '2시간 전', type: '문의', urgent: false },
+  { id: 4, from: '채널톡 빵빵이', content: '한국예술종합학교 리드 신규 접수됨', time: '3시간 전', type: '알림', urgent: false },
+]
+
 const SERVICES_CATALOG = [
   { id: 'rental', name: '교구/장비 대여', icon: '📦', color: '#D97706', desc: '아이패드, VR, 음향 장비 대여 관리', count: RENTALS.length, alert: RENTALS.filter(r => r.dday <= 0).length },
   { id: 'sos', name: 'SOS 공연', icon: '🎵', color: '#7C3AED', desc: '공연 기획·아티스트·현장 운영 관리', count: SOS_PROJECTS.length, alert: SOS_PROJECTS.filter(s => s.dday <= 14).length },
-  { id: 'edu', name: '교육프로그램', icon: '📚', color: '#059669', desc: '연수·교육 일정, 강사, 커리큘럼 관리', count: 2, alert: 1 },
-  { id: 'install', name: '납품설치', icon: '🔧', color: '#2563EB', desc: '납품·설치 일정, 자재, A/S 관리', count: 1, alert: 0 },
+  { id: 'edu', name: '교육프로그램', icon: '📚', color: '#059669', desc: '연수·교육 일정, 강사, 커리큘럼 관리', count: EDU_PROGRAMS.length, alert: EDU_PROGRAMS.filter(e => e.dday <= 30).length },
+  { id: 'install', name: '납품설치', icon: '🔧', color: '#2563EB', desc: '납품·설치 일정, 자재, A/S 관리', count: INSTALL_PROJECTS.length, alert: 0 },
   { id: 'content', name: '콘텐츠제작', icon: '🎬', color: '#EC4899', desc: '영상·인쇄·디자인 제작 관리', count: 1, alert: 0 },
   { id: 'ent', name: '002ENT', icon: '🎤', color: '#EF4444', desc: '아티스트 음원유통 및 계약 관리', count: 1, alert: 0 },
 ]
@@ -164,6 +180,8 @@ export default function RedesignDemo() {
   const [selectedCustomer, setSelectedCustomer] = useState<typeof CUSTOMERS[0] | null>(null)
   const [selectedRental, setSelectedRental] = useState<typeof RENTALS[0] | null>(null)
   const [selectedSos, setSelectedSos] = useState<typeof SOS_PROJECTS[0] | null>(SOS_PROJECTS[0])
+  const [selectedEdu, setSelectedEdu] = useState<typeof EDU_PROGRAMS[0] | null>(EDU_PROGRAMS[0])
+  const [selectedInstall, setSelectedInstall] = useState<typeof INSTALL_PROJECTS[0] | null>(INSTALL_PROJECTS[0])
   const [servicePage, setServicePage] = useState<string | null>(null)
   const [projectTab, setProjectTab] = useState('overview')
   const [deptFilter, setDeptFilter] = useState('전체')
@@ -330,20 +348,37 @@ export default function RedesignDemo() {
               </div>
             </div>
 
-            {/* 메모 위젯 (full width) */}
-            <div style={{ background: '#FEFCE8', borderRadius: 12, padding: 20, boxShadow: '0 1px 4px rgba(0,0,0,0.06)', border: '1px solid #FEF08A' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
-                <span style={{ fontSize: 16 }}>📝</span>
-                <h3 style={{ margin: 0, fontSize: 14, fontWeight: 700, color: '#854D0E' }}>메모</h3>
-                <span style={{ fontSize: 11, color: '#A16207', marginLeft: 'auto' }}>나만 보임</span>
+            {/* 채널톡 알림 + 메모 */}
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20, marginBottom: 20 }}>
+              <div style={{ background: '#fff', borderRadius: 12, padding: 20, boxShadow: '0 1px 4px rgba(0,0,0,0.06)' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 14 }}>
+                  <h3 style={{ margin: 0, fontSize: 14, fontWeight: 700 }}>💬 채널톡 알림</h3>
+                  <span style={{ background: '#EF4444', color: '#fff', borderRadius: '50%', width: 18, height: 18, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 700 }}>2</span>
+                </div>
+                {CHANNELTALK_ALERTS.map(a => (
+                  <div key={a.id} style={{ display: 'flex', gap: 10, padding: '10px 0', borderBottom: '1px solid #F3F4F6', cursor: 'pointer' }}>
+                    <div style={{ width: 8, height: 8, borderRadius: '50%', background: a.urgent ? '#EF4444' : '#D1D5DB', marginTop: 5, flexShrink: 0 }} />
+                    <div style={{ flex: 1 }}>
+                      <div style={{ fontSize: 12, fontWeight: 700, marginBottom: 2 }}>{a.from}</div>
+                      <div style={{ fontSize: 12, color: '#6B7280' }}>{a.content}</div>
+                    </div>
+                    <div style={{ fontSize: 11, color: '#9CA3AF', whiteSpace: 'nowrap' }}>{a.time}</div>
+                  </div>
+                ))}
+                <button style={{ width: '100%', marginTop: 10, padding: '8px', background: '#F9FAFB', border: 'none', borderRadius: 8, fontSize: 12, color: '#6B7280', cursor: 'pointer' }}>채널톡 열기 →</button>
               </div>
-              <textarea
-                value={memo}
-                onChange={e => setMemo(e.target.value)}
-                style={{ width: '100%', minHeight: 80, border: 'none', background: 'transparent', resize: 'vertical', fontSize: 13, color: '#374151', outline: 'none', lineHeight: 1.6, fontFamily: 'inherit', boxSizing: 'border-box' }}
-                placeholder="메모를 입력하세요..."
-              />
+
+              <div style={{ background: '#FEFCE8', borderRadius: 12, padding: 20, boxShadow: '0 1px 4px rgba(0,0,0,0.06)', border: '1px solid #FEF08A' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
+                  <h3 style={{ margin: 0, fontSize: 14, fontWeight: 700, color: '#854D0E' }}>📝 메모</h3>
+                  <span style={{ fontSize: 11, color: '#A16207', marginLeft: 'auto' }}>나만 보임</span>
+                </div>
+                <textarea value={memo} onChange={e => setMemo(e.target.value)}
+                  style={{ width: '100%', minHeight: 100, border: 'none', background: 'transparent', resize: 'none', fontSize: 13, color: '#374151', outline: 'none', lineHeight: 1.7, fontFamily: 'inherit', boxSizing: 'border-box' }}
+                  placeholder="메모를 입력하세요..." />
+              </div>
             </div>
+
           </div>
         )}
 
@@ -708,13 +743,183 @@ export default function RedesignDemo() {
           </div>
         )}
 
-        {/* OTHER SERVICE BOARDS (edu, install, content, ent) */}
-        {page === 'services' && servicePage && !['rental', 'sos'].includes(servicePage) && (
-          <div style={{ padding: 40, textAlign: 'center' }}>
+        {/* EDU BOARD */}
+        {page === 'services' && servicePage === 'edu' && (
+          <div style={{ display: 'flex', height: '100%', overflow: 'hidden' }}>
+            <div style={{ width: 300, borderRight: '1px solid #E5E7EB', background: '#fff', display: 'flex', flexDirection: 'column', flexShrink: 0 }}>
+              <div style={{ padding: '16px 16px 12px', borderBottom: '1px solid #F3F4F6' }}>
+                <button onClick={() => setServicePage(null)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#9CA3AF', fontSize: 12, padding: 0, marginBottom: 10 }}>← 서비스 목록</button>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <span style={{ fontSize: 20 }}>📚</span>
+                  <h2 style={{ margin: 0, fontSize: 16, fontWeight: 700 }}>교육프로그램</h2>
+                </div>
+              </div>
+              <div style={{ flex: 1, overflowY: 'auto' }}>
+                {[...EDU_PROGRAMS].sort((a, b) => a.dday - b.dday).map(e => (
+                  <div key={e.id} onClick={() => setSelectedEdu(e)}
+                    style={{ padding: '14px 16px', borderBottom: '1px solid #F3F4F6', cursor: 'pointer', background: selectedEdu?.id === e.id ? `${YELLOW}18` : 'transparent', borderLeft: selectedEdu?.id === e.id ? `3px solid ${YELLOW}` : '3px solid transparent' }}>
+                    <div style={{ display: 'flex', gap: 8, marginBottom: 6 }}>
+                      <DdayBadge dday={e.dday} />
+                      <span style={{ fontSize: 11, padding: '2px 8px', borderRadius: 20, background: '#F0FDF4', color: '#059669', fontWeight: 600 }}>{e.status}</span>
+                    </div>
+                    <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 2 }}>{e.name}</div>
+                    <div style={{ fontSize: 12, color: '#9CA3AF' }}>{e.date} · {e.count}명 · {e.venue}</div>
+                  </div>
+                ))}
+              </div>
+            </div>
+            {selectedEdu && (
+              <div style={{ flex: 1, overflowY: 'auto', padding: 24 }}>
+                <div style={{ background: '#fff', borderRadius: 12, padding: 22, boxShadow: '0 1px 4px rgba(0,0,0,0.06)', marginBottom: 16 }}>
+                  <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 14 }}>
+                    <div>
+                      <div style={{ display: 'flex', gap: 8, marginBottom: 8 }}><DdayBadge dday={selectedEdu.dday} /><Badge label={selectedEdu.status} color="#059669" bg="#F0FDF4" /></div>
+                      <h2 style={{ margin: '0 0 6px', fontSize: 17, fontWeight: 800 }}>{selectedEdu.name}</h2>
+                      <div style={{ fontSize: 13, color: '#6B7280', display: 'flex', gap: 14 }}>
+                        <span>📅 {selectedEdu.date}</span><span>👥 {selectedEdu.count}명</span><span>📍 {selectedEdu.venue}</span>
+                      </div>
+                    </div>
+                    <div style={{ display: 'flex', gap: 8 }}>
+                      <button style={{ padding: '7px 14px', border: '1px solid #E5E7EB', borderRadius: 8, background: '#fff', fontSize: 12, cursor: 'pointer' }}>📁 드롭박스</button>
+                      <button style={{ padding: '7px 14px', border: '1px solid #E5E7EB', borderRadius: 8, background: '#fff', fontSize: 12, cursor: 'pointer' }}>📅 캘린더</button>
+                    </div>
+                  </div>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                    {[['예산', (selectedEdu.budget / 10000) + '만원'], ['강사 수', selectedEdu.instructors.length + '명'], ['수강인원', selectedEdu.count + '명']].map(([k, v]) => (
+                      <div key={k}><div style={{ fontSize: 11, color: '#9CA3AF', marginBottom: 2 }}>{k}</div><div style={{ fontWeight: 600, fontSize: 13 }}>{v}</div></div>
+                    ))}
+                  </div>
+                </div>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, marginBottom: 16 }}>
+                  <div style={{ background: '#fff', borderRadius: 12, padding: 18, boxShadow: '0 1px 4px rgba(0,0,0,0.06)' }}>
+                    <h3 style={{ margin: '0 0 12px', fontSize: 13, fontWeight: 700 }}>강사 배치</h3>
+                    {selectedEdu.instructors.map((inst, i) => (
+                      <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 0', borderBottom: '1px solid #F3F4F6' }}>
+                        <div style={{ width: 28, height: 28, background: '#F0FDF4', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, fontWeight: 700, color: '#059669' }}>{inst[0]}</div>
+                        <div style={{ flex: 1 }}>
+                          <div style={{ fontSize: 13, fontWeight: 600 }}>{inst}</div>
+                          <div style={{ fontSize: 11, color: '#9CA3AF' }}>계약 완료</div>
+                        </div>
+                        <Badge label="확정" color="#059669" bg="#F0FDF4" />
+                      </div>
+                    ))}
+                    <button style={{ width: '100%', marginTop: 10, padding: '7px', background: '#F9FAFB', border: '1px dashed #D1D5DB', borderRadius: 8, fontSize: 12, color: '#9CA3AF', cursor: 'pointer' }}>+ 강사 추가</button>
+                  </div>
+                  <div style={{ background: '#fff', borderRadius: 12, padding: 18, boxShadow: '0 1px 4px rgba(0,0,0,0.06)' }}>
+                    <h3 style={{ margin: '0 0 12px', fontSize: 13, fontWeight: 700 }}>준비 체크리스트</h3>
+                    {Object.entries(selectedEdu.checklist).map(([item, done]) => (
+                      <div key={item} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 0', borderBottom: '1px solid #F3F4F6' }}>
+                        <input type="checkbox" defaultChecked={done} style={{ accentColor: '#059669' }} />
+                        <span style={{ fontSize: 13, textDecoration: done ? 'line-through' : 'none', color: done ? '#9CA3AF' : '#374151' }}>{item}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+                <div style={{ background: '#fff', borderRadius: 12, padding: 18, boxShadow: '0 1px 4px rgba(0,0,0,0.06)' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
+                    <div style={{ width: 22, height: 22, background: DARK, borderRadius: 6, display: 'flex', alignItems: 'center', justifyContent: 'center', color: YELLOW, fontSize: 10 }}>✦</div>
+                    <span style={{ fontWeight: 700, fontSize: 13 }}>Claude 협업</span>
+                  </div>
+                  <div style={{ display: 'flex', gap: 8 }}>
+                    <input placeholder="교육 준비에 대해 물어보세요..." style={{ flex: 1, padding: '9px 12px', borderRadius: 8, border: '1px solid #E5E7EB', fontSize: 13, outline: 'none' }} />
+                    <button style={{ background: DARK, color: YELLOW, border: 'none', borderRadius: 8, padding: '9px 14px', fontWeight: 700, fontSize: 12, cursor: 'pointer' }}>전송</button>
+                  </div>
+                  <div style={{ marginTop: 8, display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                    {['강사 계약서 초안 작성', '공문 발송 문구 써줘', '수강생 안내문 작성'].map(q => (
+                      <button key={q} style={{ fontSize: 11, padding: '4px 10px', borderRadius: 20, border: `1px solid ${YELLOW}`, background: `${YELLOW}20`, cursor: 'pointer', color: DARK, fontWeight: 600 }}>{q}</button>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* INSTALL BOARD */}
+        {page === 'services' && servicePage === 'install' && (
+          <div style={{ display: 'flex', height: '100%', overflow: 'hidden' }}>
+            <div style={{ width: 300, borderRight: '1px solid #E5E7EB', background: '#fff', display: 'flex', flexDirection: 'column', flexShrink: 0 }}>
+              <div style={{ padding: '16px 16px 12px', borderBottom: '1px solid #F3F4F6' }}>
+                <button onClick={() => setServicePage(null)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#9CA3AF', fontSize: 12, padding: 0, marginBottom: 10 }}>← 서비스 목록</button>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <span style={{ fontSize: 20 }}>🔧</span>
+                  <h2 style={{ margin: 0, fontSize: 16, fontWeight: 700 }}>납품설치</h2>
+                </div>
+              </div>
+              <div style={{ flex: 1, overflowY: 'auto' }}>
+                {INSTALL_PROJECTS.map(p => (
+                  <div key={p.id} onClick={() => setSelectedInstall(p)}
+                    style={{ padding: '14px 16px', borderBottom: '1px solid #F3F4F6', cursor: 'pointer', background: selectedInstall?.id === p.id ? `${YELLOW}18` : 'transparent', borderLeft: selectedInstall?.id === p.id ? `3px solid ${YELLOW}` : '3px solid transparent' }}>
+                    <div style={{ display: 'flex', gap: 8, marginBottom: 6 }}><DdayBadge dday={p.dday} /><Badge label={p.status} color="#2563EB" bg="#EFF6FF" /></div>
+                    <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 2 }}>{p.name}</div>
+                    <div style={{ fontSize: 12, color: '#9CA3AF' }}>{p.date} · {p.client}</div>
+                  </div>
+                ))}
+              </div>
+            </div>
+            {selectedInstall && (
+              <div style={{ flex: 1, overflowY: 'auto', padding: 24 }}>
+                <div style={{ background: '#fff', borderRadius: 12, padding: 22, boxShadow: '0 1px 4px rgba(0,0,0,0.06)', marginBottom: 16 }}>
+                  <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 14 }}>
+                    <div>
+                      <div style={{ display: 'flex', gap: 8, marginBottom: 8 }}><DdayBadge dday={selectedInstall.dday} /><Badge label={selectedInstall.status} color="#2563EB" bg="#EFF6FF" /></div>
+                      <h2 style={{ margin: '0 0 6px', fontSize: 17, fontWeight: 800 }}>{selectedInstall.name}</h2>
+                      <div style={{ fontSize: 13, color: '#6B7280', display: 'flex', gap: 14 }}>
+                        <span>📅 설치일 {selectedInstall.date}</span><span>🏢 {selectedInstall.client}</span>
+                      </div>
+                    </div>
+                    <button style={{ padding: '7px 14px', border: '1px solid #E5E7EB', borderRadius: 8, background: '#fff', fontSize: 12, cursor: 'pointer' }}>📁 드롭박스</button>
+                  </div>
+                  <div style={{ display: 'flex', gap: 0, marginTop: 16 }}>
+                    {['견적확정', '계약완료', '자재발주', '자재입고', '설치완료', 'A/S점검'].map((st, i, arr) => {
+                      const done = i <= 2
+                      return (
+                        <div key={st} style={{ display: 'flex', alignItems: 'center', flex: i < arr.length - 1 ? 1 : 'none' }}>
+                          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4 }}>
+                            <div style={{ width: 22, height: 22, borderRadius: '50%', background: done ? '#2563EB' : '#F3F4F6', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 10, fontWeight: 700, color: done ? '#fff' : '#9CA3AF' }}>{done ? '✓' : i + 1}</div>
+                            <span style={{ fontSize: 10, color: done ? '#2563EB' : '#9CA3AF', fontWeight: done ? 700 : 400, whiteSpace: 'nowrap' }}>{st}</span>
+                          </div>
+                          {i < arr.length - 1 && <div style={{ flex: 1, height: 2, background: done ? '#2563EB' : '#E5E7EB', margin: '0 4px', marginBottom: 16 }} />}
+                        </div>
+                      )
+                    })}
+                  </div>
+                </div>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
+                  <div style={{ background: '#fff', borderRadius: 12, padding: 18, boxShadow: '0 1px 4px rgba(0,0,0,0.06)' }}>
+                    <h3 style={{ margin: '0 0 12px', fontSize: 13, fontWeight: 700 }}>자재 현황</h3>
+                    {selectedInstall.items.map((item, i) => (
+                      <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '9px 0', borderBottom: '1px solid #F3F4F6' }}>
+                        <div style={{ flex: 1 }}>
+                          <div style={{ fontSize: 13, fontWeight: 600 }}>{item.name}</div>
+                          <div style={{ fontSize: 11, color: '#9CA3AF' }}>수량 {item.qty}개</div>
+                        </div>
+                        <Badge label={item.status} color={item.status === '입고완료' ? '#059669' : '#F59E0B'} bg={item.status === '입고완료' ? '#F0FDF4' : '#FFFBEB'} />
+                      </div>
+                    ))}
+                  </div>
+                  <div style={{ background: '#fff', borderRadius: 12, padding: 18, boxShadow: '0 1px 4px rgba(0,0,0,0.06)' }}>
+                    <h3 style={{ margin: '0 0 12px', fontSize: 13, fontWeight: 700 }}>설치 체크리스트</h3>
+                    {Object.entries(selectedInstall.checklist).map(([item, done]) => (
+                      <div key={item} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 0', borderBottom: '1px solid #F3F4F6' }}>
+                        <input type="checkbox" defaultChecked={done} style={{ accentColor: '#2563EB' }} />
+                        <span style={{ fontSize: 13, textDecoration: done ? 'line-through' : 'none', color: done ? '#9CA3AF' : '#374151' }}>{item}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* OTHER SERVICE BOARDS (content, ent) */}
+        {page === 'services' && servicePage && !['rental', 'sos', 'edu', 'install'].includes(servicePage) && (
+          <div style={{ padding: 40, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100%' }}>
             <button onClick={() => setServicePage(null)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#9CA3AF', fontSize: 13, marginBottom: 24 }}>← 서비스 목록</button>
             <div style={{ fontSize: 48, marginBottom: 16 }}>{SERVICES_CATALOG.find(s => s.id === servicePage)?.icon}</div>
             <h2 style={{ fontSize: 20, fontWeight: 700, marginBottom: 8 }}>{SERVICES_CATALOG.find(s => s.id === servicePage)?.name} 관리판</h2>
-            <p style={{ color: '#9CA3AF', fontSize: 14 }}>서비스별 전용 트래킹 보드 — 실제 구현 시 각 서비스 특성에 맞게 설계됩니다</p>
+            <p style={{ color: '#9CA3AF', fontSize: 14, textAlign: 'center', maxWidth: 320 }}>서비스 특성에 맞는 전용 트래킹 보드가 구현됩니다.<br />렌탈/SOS/교육/납품 보드를 참고해 확장 설계 예정.</p>
           </div>
         )}
 
@@ -1285,16 +1490,70 @@ export default function RedesignDemo() {
                 </div>
               ))}
             </div>
-            <div style={{ background: '#fff', borderRadius: 12, padding: 20, boxShadow: '0 1px 4px rgba(0,0,0,0.06)' }}>
-              <h3 style={{ margin: '0 0 16px', fontSize: 14, fontWeight: 700 }}>월별 매출 현황 (2026)</h3>
-              <div style={{ display: 'flex', alignItems: 'flex-end', gap: 8, height: 120 }}>
-                {[{ month: '1월', val: 45 }, { month: '2월', val: 30 }, { month: '3월', val: 65 }, { month: '4월', val: 75 }, { month: '5월', val: 0 }, { month: '6월', val: 0 }].map(m => (
-                  <div key={m.month} style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4 }}>
-                    <div style={{ width: '70%', background: m.val ? YELLOW : '#F3F4F6', borderRadius: '4px 4px 0 0', height: m.val ? `${m.val}%` : '4px' }} />
-                    <span style={{ fontSize: 11, color: '#9CA3AF' }}>{m.month}</span>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, marginBottom: 16 }}>
+              <div style={{ background: '#fff', borderRadius: 12, padding: 20, boxShadow: '0 1px 4px rgba(0,0,0,0.06)' }}>
+                <h3 style={{ margin: '0 0 16px', fontSize: 14, fontWeight: 700 }}>월별 매출 현황 (2026)</h3>
+                <div style={{ display: 'flex', alignItems: 'flex-end', gap: 8, height: 100 }}>
+                  {[{ month: '1월', val: 45 }, { month: '2월', val: 30 }, { month: '3월', val: 65 }, { month: '4월', val: 75 }, { month: '5월', val: 0 }, { month: '6월', val: 0 }].map(m => (
+                    <div key={m.month} style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4 }}>
+                      <div style={{ width: '70%', background: m.val ? YELLOW : '#F3F4F6', borderRadius: '4px 4px 0 0', height: m.val ? `${m.val}%` : '4px' }} />
+                      <span style={{ fontSize: 11, color: '#9CA3AF' }}>{m.month}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+              <div style={{ background: '#fff', borderRadius: 12, padding: 20, boxShadow: '0 1px 4px rgba(0,0,0,0.06)' }}>
+                <h3 style={{ margin: '0 0 14px', fontSize: 14, fontWeight: 700 }}>사업부별 매출</h3>
+                {[
+                  { name: '교육프로그램', val: 2000, max: 3780, color: '#059669' },
+                  { name: 'SOS/행사', val: 1030, max: 3780, color: '#7C3AED' },
+                  { name: '교구대여', val: 380, max: 3780, color: '#D97706' },
+                  { name: '납품설치', val: 280, max: 3780, color: '#2563EB' },
+                  { name: '002ENT', val: 90, max: 3780, color: '#EF4444' },
+                ].map(d => (
+                  <div key={d.name} style={{ marginBottom: 10 }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, marginBottom: 4 }}>
+                      <span style={{ color: '#374151' }}>{d.name}</span>
+                      <span style={{ fontWeight: 700 }}>{d.val}만</span>
+                    </div>
+                    <div style={{ background: '#F3F4F6', borderRadius: 4, height: 8 }}>
+                      <div style={{ width: `${(d.val / d.max) * 100}%`, background: d.color, borderRadius: 4, height: '100%' }} />
+                    </div>
                   </div>
                 ))}
               </div>
+            </div>
+
+            {/* 수의계약 한도 현황 */}
+            <div style={{ background: '#fff', borderRadius: 12, padding: 20, boxShadow: '0 1px 4px rgba(0,0,0,0.06)' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 14 }}>
+                <h3 style={{ margin: 0, fontSize: 14, fontWeight: 700 }}>수의계약 한도 현황</h3>
+                <span style={{ fontSize: 11, color: '#6B7280', background: '#F3F4F6', padding: '2px 10px', borderRadius: 20 }}>공공기관 계약 기준 2,000만원</span>
+              </div>
+              {PROJECTS.filter(p => p.revenue && p.client).map(p => {
+                const limit = 20000000
+                const pct = p.revenue ? Math.min((p.revenue / limit) * 100, 100) : 0
+                const over = p.revenue ? p.revenue >= limit : false
+                return (
+                  <div key={p.id} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 0', borderBottom: '1px solid #F3F4F6' }}>
+                    <div style={{ width: 52, fontSize: 11, fontWeight: 700, color: '#9CA3AF' }}>{p.id}</div>
+                    <div style={{ flex: 1 }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, marginBottom: 4 }}>
+                        <span style={{ fontWeight: 600 }}>{p.name}</span>
+                        <span style={{ color: over ? '#EF4444' : '#374151', fontWeight: 700 }}>{p.revenue ? (p.revenue / 10000).toFixed(0) + '만' : '—'}</span>
+                      </div>
+                      <div style={{ background: '#F3F4F6', borderRadius: 4, height: 6 }}>
+                        <div style={{ width: `${pct}%`, background: over ? '#EF4444' : pct > 80 ? '#F59E0B' : '#059669', borderRadius: 4, height: '100%' }} />
+                      </div>
+                    </div>
+                    {over ? (
+                      <span style={{ fontSize: 11, color: '#EF4444', background: '#FEF2F2', padding: '2px 8px', borderRadius: 20, fontWeight: 700, whiteSpace: 'nowrap' }}>한도초과 ⚠️</span>
+                    ) : (
+                      <span style={{ fontSize: 11, color: '#059669', background: '#F0FDF4', padding: '2px 8px', borderRadius: 20, fontWeight: 600, whiteSpace: 'nowrap' }}>수의 가능</span>
+                    )}
+                  </div>
+                )
+              })}
             </div>
           </div>
         )}
