@@ -77,6 +77,17 @@ function DdayBadge({ dday }: { dday: number | null }) {
   return <span style={{ color, background: bg, fontSize: 11, padding: '2px 8px', borderRadius: 20, fontWeight: 700 }}>{dday < 0 ? `D+${Math.abs(dday)}` : dday === 0 ? 'D-DAY' : `D-${dday}`}</span>
 }
 
+const LEADS = [
+  { id: 'L-001', name: '한국예술종합학교 SOS 공연', client: '한국예술종합학교', service: 'SOS', source: '채널톡', assignee: '조민현', date: '2026-04-20', status: '검토중' },
+  { id: 'L-002', name: '성남시청 행사 운영', client: '성남시청', service: '행사운영', source: '이메일', assignee: '유제민', date: '2026-04-18', status: '견적발송' },
+  { id: 'L-003', name: '용인교육지원청 홍보영상', client: '용인교육지원청', service: '콘텐츠제작', source: '소개', assignee: '유제민', date: '2026-04-15', status: '미응답' },
+  { id: 'L-004', name: '분당중학교 교구대여', client: '분당중학교', service: '교구대여', source: '채널톡', assignee: '조민현', date: '2026-04-21', status: '상담중' },
+  { id: 'L-005', name: '경기아트센터 음향설치', client: '경기아트센터', service: '납품설치', source: '재거래', assignee: '방준영', date: '2026-04-19', status: '검토중' },
+]
+
+const LEAD_STATUS_COLOR: Record<string, string> = { '상담중': '#2563EB', '검토중': '#F59E0B', '견적발송': '#7C3AED', '미응답': '#EF4444', '계약전환': '#059669' }
+const LEAD_STATUS_BG: Record<string, string> = { '상담중': '#EFF6FF', '검토중': '#FFFBEB', '견적발송': '#F5F3FF', '미응답': '#FEF2F2', '계약전환': '#F0FDF4' }
+
 export default function RedesignDemo() {
   const [page, setPage] = useState('home')
   const [selectedProject, setSelectedProject] = useState<typeof PROJECTS[0] | null>(null)
@@ -89,10 +100,11 @@ export default function RedesignDemo() {
 
   const nav = [
     { id: 'home', icon: '⌂', label: '홈' },
+    { id: 'leads', icon: '◎', label: '리드' },
     { id: 'projects', icon: '◈', label: '프로젝트' },
     { id: 'customers', icon: '♟', label: '고객' },
     { id: 'calendar', icon: '◷', label: '캘린더' },
-    { id: 'finance', icon: '◎', label: '재무' },
+    { id: 'finance', icon: '▤', label: '재무' },
     { id: 'team', icon: '◉', label: '팀' },
   ]
 
@@ -120,7 +132,7 @@ export default function RedesignDemo() {
         <nav style={{ flex: 1, padding: '8px 8px' }}>
           {nav.map(n => (
             <button key={n.id} onClick={() => setPage(n.id)}
-              style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 10, padding: '10px 12px', borderRadius: 8, border: 'none', cursor: 'pointer', background: page === n.id || (page === 'project-detail' && n.id === 'projects') || (page === 'customer-detail' && n.id === 'customers') ? 'rgba(255,206,0,0.15)' : 'transparent', color: page === n.id || (page === 'project-detail' && n.id === 'projects') || (page === 'customer-detail' && n.id === 'customers') ? YELLOW : '#9CA3AF', fontWeight: page === n.id ? 600 : 400, fontSize: 14, marginBottom: 2, textAlign: 'left' }}>
+              style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 10, padding: '10px 12px', borderRadius: 8, border: 'none', cursor: 'pointer', background: page === n.id || (page === 'project-detail' && n.id === 'projects') ? 'rgba(255,206,0,0.15)' : 'transparent', color: page === n.id || (page === 'project-detail' && n.id === 'projects') ? YELLOW : '#9CA3AF', fontWeight: page === n.id ? 600 : 400, fontSize: 14, marginBottom: 2, textAlign: 'left' }}>
               <span style={{ fontSize: 16, flexShrink: 0 }}>{n.icon}</span>
               {sidebarOpen && <span>{n.label}</span>}
             </button>
@@ -252,102 +264,162 @@ export default function RedesignDemo() {
           </div>
         )}
 
+        {/* LEADS */}
+        {page === 'leads' && (
+          <div style={{ padding: 28 }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20 }}>
+              <div>
+                <h1 style={{ fontSize: 20, fontWeight: 700, margin: 0 }}>리드 관리</h1>
+                <p style={{ color: '#6B7280', margin: '4px 0 0', fontSize: 13 }}>총 {LEADS.length}건 · 이번 주 신규 3건</p>
+              </div>
+              <button style={{ background: YELLOW, color: DARK, border: 'none', borderRadius: 8, padding: '9px 18px', fontWeight: 700, fontSize: 13, cursor: 'pointer' }}>+ 리드 등록</button>
+            </div>
+
+            {/* 상태별 카운트 */}
+            <div style={{ display: 'flex', gap: 10, marginBottom: 20 }}>
+              {[
+                { label: '전체', count: LEADS.length, color: '#6B7280', bg: '#F9FAFB' },
+                { label: '상담중', count: LEADS.filter(l => l.status === '상담중').length, color: '#2563EB', bg: '#EFF6FF' },
+                { label: '견적발송', count: LEADS.filter(l => l.status === '견적발송').length, color: '#7C3AED', bg: '#F5F3FF' },
+                { label: '검토중', count: LEADS.filter(l => l.status === '검토중').length, color: '#F59E0B', bg: '#FFFBEB' },
+                { label: '미응답', count: LEADS.filter(l => l.status === '미응답').length, color: '#EF4444', bg: '#FEF2F2' },
+              ].map(s => (
+                <div key={s.label} style={{ background: s.bg, borderRadius: 10, padding: '10px 16px', display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer' }}>
+                  <span style={{ fontSize: 18, fontWeight: 800, color: s.color }}>{s.count}</span>
+                  <span style={{ fontSize: 12, color: s.color, fontWeight: 600 }}>{s.label}</span>
+                </div>
+              ))}
+            </div>
+
+            <div style={{ display: 'flex', gap: 10, marginBottom: 16 }}>
+              <input placeholder="리드명, 고객, 담당자 검색..." style={{ padding: '8px 14px', borderRadius: 8, border: '1px solid #E5E7EB', fontSize: 13, width: 260, outline: 'none' }} />
+            </div>
+
+            <div style={{ background: '#fff', borderRadius: 12, boxShadow: '0 1px 4px rgba(0,0,0,0.06)', overflow: 'hidden' }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                <thead>
+                  <tr style={{ background: '#F9FAFB', borderBottom: '1px solid #F3F4F6' }}>
+                    {['리드명', '고객', '서비스', '유입경로', '상태', '담당자', '등록일', ''].map(h => (
+                      <th key={h} style={{ padding: '12px 16px', textAlign: 'left', fontSize: 12, fontWeight: 600, color: '#6B7280' }}>{h}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {LEADS.map(l => (
+                    <tr key={l.id}
+                      style={{ borderBottom: '1px solid #F3F4F6', cursor: 'pointer' }}
+                      onMouseEnter={e => (e.currentTarget.style.background = '#FAFAFA')}
+                      onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}>
+                      <td style={{ padding: '14px 16px', fontWeight: 600 }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                          <div style={{ width: 3, height: 20, background: SERVICE_COLOR[l.service] || '#E5E7EB', borderRadius: 2 }} />
+                          {l.name}
+                        </div>
+                      </td>
+                      <td style={{ padding: '14px 16px', color: '#6B7280', fontSize: 13 }}>{l.client}</td>
+                      <td style={{ padding: '14px 16px' }}>
+                        <Badge label={l.service} color={SERVICE_COLOR[l.service] || '#6B7280'} bg={`${SERVICE_COLOR[l.service]}18`} />
+                      </td>
+                      <td style={{ padding: '14px 16px', fontSize: 12, color: '#6B7280' }}>{l.source}</td>
+                      <td style={{ padding: '14px 16px' }}>
+                        <Badge label={l.status} color={LEAD_STATUS_COLOR[l.status]} bg={LEAD_STATUS_BG[l.status]} />
+                      </td>
+                      <td style={{ padding: '14px 16px', fontSize: 13 }}>{l.assignee}</td>
+                      <td style={{ padding: '14px 16px', fontSize: 12, color: '#9CA3AF' }}>{l.date}</td>
+                      <td style={{ padding: '14px 16px' }}>
+                        <button style={{ background: YELLOW, border: 'none', borderRadius: 6, padding: '5px 12px', fontSize: 11, fontWeight: 700, cursor: 'pointer', whiteSpace: 'nowrap' }}>계약 전환 →</button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+
         {/* PROJECTS */}
         {page === 'projects' && (
-          <div style={{ display: 'flex', height: '100%' }}>
-            {/* 사업부 사이드바 */}
-            <div style={{ width: 180, background: '#fff', borderRight: '1px solid #F3F4F6', padding: '20px 12px', flexShrink: 0 }}>
-              <div style={{ fontSize: 11, fontWeight: 700, color: '#9CA3AF', marginBottom: 10, paddingLeft: 8 }}>사업부</div>
+          <div style={{ padding: 24, overflow: 'auto', flex: 1 }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
+              <div>
+                <h1 style={{ fontSize: 20, fontWeight: 700, margin: 0 }}>프로젝트</h1>
+                <p style={{ color: '#6B7280', margin: '4px 0 0', fontSize: 13 }}>
+                  {filtered.length}건 · 진행중 {filtered.filter(p => p.status === '진행중').length}건
+                </p>
+              </div>
+              <button style={{ background: YELLOW, color: DARK, border: 'none', borderRadius: 8, padding: '9px 18px', fontWeight: 700, fontSize: 13, cursor: 'pointer' }}>+ 새 프로젝트</button>
+            </div>
+
+            {/* 사업부 탭 (상단) */}
+            <div style={{ display: 'flex', gap: 4, marginBottom: 12, overflowX: 'auto', paddingBottom: 2 }}>
               {DEPTS.map(d => (
                 <button key={d} onClick={() => setDeptFilter(d)}
-                  style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 8, padding: '9px 10px', borderRadius: 8, border: 'none', cursor: 'pointer', background: deptFilter === d ? `${YELLOW}30` : 'transparent', color: deptFilter === d ? DARK : '#6B7280', fontWeight: deptFilter === d ? 700 : 400, fontSize: 13, marginBottom: 2, textAlign: 'left' }}>
+                  style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '7px 14px', borderRadius: 20, border: `1px solid ${deptFilter === d ? DARK : '#E5E7EB'}`, background: deptFilter === d ? DARK : '#fff', color: deptFilter === d ? '#fff' : '#6B7280', fontWeight: deptFilter === d ? 700 : 400, fontSize: 12, cursor: 'pointer', whiteSpace: 'nowrap', flexShrink: 0 }}>
                   <span>{DEPT_ICONS[d]}</span>
                   <span>{d}</span>
-                  <span style={{ marginLeft: 'auto', fontSize: 11, color: '#9CA3AF' }}>
+                  <span style={{ fontSize: 11, opacity: 0.7 }}>
                     {d === '전체' ? PROJECTS.length : PROJECTS.filter(p => DEPT_MAP[p.service] === d).length}
                   </span>
                 </button>
               ))}
-              <div style={{ borderTop: '1px solid #F3F4F6', marginTop: 12, paddingTop: 12 }}>
-                <div style={{ fontSize: 11, fontWeight: 700, color: '#9CA3AF', marginBottom: 8, paddingLeft: 8 }}>전용 관리</div>
-                {[
-                  { label: '렌탈 관리판', icon: '📦', soon: false },
-                  { label: 'SOS 공연판', icon: '🎵', soon: false },
-                  { label: '교육 일정판', icon: '📚', soon: true },
-                ].map(m => (
-                  <button key={m.label}
-                    style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 8, padding: '9px 10px', borderRadius: 8, border: 'none', cursor: m.soon ? 'default' : 'pointer', background: 'transparent', color: m.soon ? '#C4B5FD' : '#6B7280', fontSize: 12, marginBottom: 2, textAlign: 'left' }}>
-                    <span>{m.icon}</span>
-                    <span>{m.label}</span>
-                    {m.soon && <span style={{ marginLeft: 'auto', fontSize: 10, color: '#C4B5FD', background: '#F5F3FF', padding: '1px 6px', borderRadius: 10 }}>준비중</span>}
+              <div style={{ marginLeft: 'auto', display: 'flex', gap: 6, flexShrink: 0 }}>
+                <button style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '7px 12px', borderRadius: 8, border: '1px dashed #D1D5DB', background: '#fff', color: '#9CA3AF', fontSize: 11, cursor: 'pointer' }}>
+                  📦 렌탈 관리판
+                </button>
+                <button style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '7px 12px', borderRadius: 8, border: '1px dashed #D1D5DB', background: '#fff', color: '#9CA3AF', fontSize: 11, cursor: 'pointer' }}>
+                  🎵 SOS 공연판
+                </button>
+              </div>
+            </div>
+
+            <div style={{ display: 'flex', gap: 8, marginBottom: 16 }}>
+              <input placeholder="프로젝트명, 고객, 번호 검색..." style={{ padding: '8px 14px', borderRadius: 8, border: '1px solid #E5E7EB', fontSize: 13, width: 240, outline: 'none' }} />
+              <div style={{ display: 'flex', gap: 6 }}>
+                {['전체', '계약', '진행중', '완료'].map(s => (
+                  <button key={s} onClick={() => setFilterStatus(s)}
+                    style={{ padding: '7px 14px', borderRadius: 20, border: `1px solid ${filterStatus === s ? YELLOW : '#E5E7EB'}`, background: filterStatus === s ? YELLOW : '#fff', fontWeight: filterStatus === s ? 700 : 400, fontSize: 12, cursor: 'pointer', color: DARK }}>
+                    {s}
                   </button>
                 ))}
               </div>
             </div>
 
-            {/* 프로젝트 메인 */}
-            <div style={{ flex: 1, padding: 24, overflow: 'auto' }}>
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
-                <div>
-                  <h1 style={{ fontSize: 20, fontWeight: 700, margin: 0 }}>
-                    {DEPT_ICONS[deptFilter]} {deptFilter === '전체' ? '전체 프로젝트' : deptFilter}
-                  </h1>
-                  <p style={{ color: '#6B7280', margin: '4px 0 0', fontSize: 13 }}>
-                    {filtered.length}건 · 진행중 {filtered.filter(p => p.status === '진행중').length}건
-                  </p>
-                </div>
-                <button style={{ background: YELLOW, color: DARK, border: 'none', borderRadius: 8, padding: '9px 18px', fontWeight: 700, fontSize: 13, cursor: 'pointer' }}>+ 새 프로젝트</button>
-              </div>
-
-              <div style={{ display: 'flex', gap: 8, marginBottom: 16 }}>
-                <input placeholder="프로젝트명, 고객, 번호 검색..." style={{ padding: '8px 14px', borderRadius: 8, border: '1px solid #E5E7EB', fontSize: 13, width: 240, outline: 'none' }} />
-                <div style={{ display: 'flex', gap: 6 }}>
-                  {['전체', '리드', '계약', '진행중', '완료'].map(s => (
-                    <button key={s} onClick={() => setFilterStatus(s)}
-                      style={{ padding: '7px 14px', borderRadius: 20, border: `1px solid ${filterStatus === s ? YELLOW : '#E5E7EB'}`, background: filterStatus === s ? YELLOW : '#fff', fontWeight: filterStatus === s ? 700 : 400, fontSize: 12, cursor: 'pointer', color: DARK }}>
-                      {s}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              <div style={{ background: '#fff', borderRadius: 12, boxShadow: '0 1px 4px rgba(0,0,0,0.06)', overflow: 'hidden' }}>
-                <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-                  <thead>
-                    <tr style={{ background: '#F9FAFB', borderBottom: '1px solid #F3F4F6' }}>
-                      {['번호', '프로젝트명', '고객', '서비스', '상태', '담당자', 'D-day', '매출'].map(h => (
-                        <th key={h} style={{ padding: '12px 16px', textAlign: 'left', fontSize: 12, fontWeight: 600, color: '#6B7280' }}>{h}</th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {filtered.map(p => (
-                      <tr key={p.id} onClick={() => openProject(p)}
-                        style={{ borderBottom: '1px solid #F3F4F6', cursor: 'pointer' }}
-                        onMouseEnter={e => (e.currentTarget.style.background = '#FAFAFA')}
-                        onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}>
-                        <td style={{ padding: '14px 16px', fontWeight: 700, color: '#6B7280', fontSize: 12 }}>{p.id}</td>
-                        <td style={{ padding: '14px 16px', fontWeight: 600 }}>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                            <div style={{ width: 3, height: 20, background: SERVICE_COLOR[p.service] || '#E5E7EB', borderRadius: 2 }} />
-                            {p.name}
-                          </div>
-                        </td>
-                        <td style={{ padding: '14px 16px', color: '#6B7280', fontSize: 13 }}>{p.client}</td>
-                        <td style={{ padding: '14px 16px' }}>
-                          <Badge label={p.service} color={SERVICE_COLOR[p.service] || '#6B7280'} bg={`${SERVICE_COLOR[p.service]}18`} />
-                        </td>
-                        <td style={{ padding: '14px 16px' }}>
-                          <Badge label={p.status} color={STATUS_COLOR[p.status]} bg={STATUS_BG[p.status]} />
-                        </td>
-                        <td style={{ padding: '14px 16px', fontSize: 13 }}>{p.assignee}</td>
-                        <td style={{ padding: '14px 16px' }}><DdayBadge dday={p.dday} /></td>
-                        <td style={{ padding: '14px 16px', fontSize: 13, fontWeight: 600 }}>{p.revenue ? (p.revenue / 10000).toFixed(0) + '만' : '—'}</td>
-                      </tr>
+            <div style={{ background: '#fff', borderRadius: 12, boxShadow: '0 1px 4px rgba(0,0,0,0.06)', overflow: 'hidden' }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                <thead>
+                  <tr style={{ background: '#F9FAFB', borderBottom: '1px solid #F3F4F6' }}>
+                    {['번호', '프로젝트명', '고객', '서비스', '상태', '담당자', 'D-day', '매출'].map(h => (
+                      <th key={h} style={{ padding: '12px 16px', textAlign: 'left', fontSize: 12, fontWeight: 600, color: '#6B7280' }}>{h}</th>
                     ))}
-                  </tbody>
-                </table>
-              </div>
+                  </tr>
+                </thead>
+                <tbody>
+                  {filtered.map(p => (
+                    <tr key={p.id} onClick={() => openProject(p)}
+                      style={{ borderBottom: '1px solid #F3F4F6', cursor: 'pointer' }}
+                      onMouseEnter={e => (e.currentTarget.style.background = '#FAFAFA')}
+                      onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}>
+                      <td style={{ padding: '14px 16px', fontWeight: 700, color: '#6B7280', fontSize: 12 }}>{p.id}</td>
+                      <td style={{ padding: '14px 16px', fontWeight: 600 }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                          <div style={{ width: 3, height: 20, background: SERVICE_COLOR[p.service] || '#E5E7EB', borderRadius: 2 }} />
+                          {p.name}
+                        </div>
+                      </td>
+                      <td style={{ padding: '14px 16px', color: '#6B7280', fontSize: 13 }}>{p.client}</td>
+                      <td style={{ padding: '14px 16px' }}>
+                        <Badge label={p.service} color={SERVICE_COLOR[p.service] || '#6B7280'} bg={`${SERVICE_COLOR[p.service]}18`} />
+                      </td>
+                      <td style={{ padding: '14px 16px' }}>
+                        <Badge label={p.status} color={STATUS_COLOR[p.status]} bg={STATUS_BG[p.status]} />
+                      </td>
+                      <td style={{ padding: '14px 16px', fontSize: 13 }}>{p.assignee}</td>
+                      <td style={{ padding: '14px 16px' }}><DdayBadge dday={p.dday} /></td>
+                      <td style={{ padding: '14px 16px', fontSize: 13, fontWeight: 600 }}>{p.revenue ? (p.revenue / 10000).toFixed(0) + '만' : '—'}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             </div>
           </div>
         )}
