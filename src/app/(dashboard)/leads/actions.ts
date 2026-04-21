@@ -3,10 +3,26 @@ import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { revalidatePath } from 'next/cache'
 import { SERVICE_TO_DEPT } from '@/types'
-import { createSaleFolder, renameDropboxFolder } from '@/lib/dropbox'
+import { createSaleFolder, renameDropboxFolder, renameDropboxFolderFull, moveDropboxToCancel } from '@/lib/dropbox'
 import { syncLeadToCustomerDB } from '@/lib/customer-sync'
 import { notifyLeadConverted } from '@/lib/channeltalk'
 import { createOrUpdateLeadBrief } from '@/lib/brief-generator'
+
+// YY-NNN 형식 고유번호 생성 (예: 26-009)
+async function generateProjectNumber(): Promise<string> {
+  const admin = createAdminClient()
+  const year = new Date().getFullYear()
+  const yy = String(year).slice(2)
+  const { count } = await admin.from('sales')
+    .select('id', { count: 'exact', head: true })
+    .gte('created_at', `${year}-01-01`)
+  const num = (count ?? 0) + 1
+  return `${yy}-${String(num).padStart(3, '0')}`
+}
+
+export async function previewProjectNumber(): Promise<string> {
+  return generateProjectNumber()
+}
 
 // LEAD{YYYYMMDD}-{NNNN} 형식 ID 생성
 async function generateLeadId(): Promise<string> {
@@ -121,6 +137,17 @@ export async function updateLead(id: string, data: Partial<{
       email: data.email ?? null,
     })
   }
+  // 취소 상태로 변경 시 드롭박스 폴더를 999999.취소 폴더로 이동
+  if (data.status === '취소') {
+    const admin = createAdminClient()
+    const { data: lead } = await admin.from('leads').select('dropbox_url').eq('id', id).single()
+    if (lead?.dropbox_url) {
+      const result = await moveDropboxToCancel(lead.dropbox_url)
+      if ('newUrl' in result) {
+        await admin.from('leads').update({ dropbox_url: result.newUrl }).eq('id', id)
+      }
+    }
+  }
   // 주요 필드 변경 시 brief.md 갱신 (Dropbox 폴더가 있을 때만)
   const shouldRefreshBrief = BRIEF_TRIGGER_FIELDS.some(f => f in data)
   if (shouldRefreshBrief) {
@@ -182,8 +209,11 @@ export async function convertLeadToSale(leadId: string) {
   }
 
   const displayName = (lead.project_name || lead.client_org) as string | null
+  const projectNumber = await generateProjectNumber()
+  const saleFullName = displayName ? `${projectNumber} ${displayName}` : projectNumber
+
   const { data: sale, error } = await supabase.from('sales').insert({
-    name: displayName ?? '(이름 없음)',
+    name: saleFullName,
     client_org: lead.client_org,
     customer_id: customerId,
     service_type: serviceType,
@@ -195,36 +225,49 @@ export async function convertLeadToSale(leadId: string) {
     notes: (lead.notes as string | null) ?? null,
     inflow_date: lead.inflow_date || new Date().toISOString().slice(0, 10),
     lead_id: leadId,
+    project_number: projectNumber,
   }).select('id').single()
 
   if (error) return { error: error.message }
 
-  // Dropbox 폴더 — 리드에 이미 URL이 있으면 재사용, 없으면 새로 생성
+  // Dropbox 폴더: 리드 폴더 있으면 고유번호로 rename, 없으면 새로 생성
+  let finalDropboxUrl: string | null = null
   if (sale && serviceType) {
     const existingUrl = lead.dropbox_url as string | null
-    const dropboxUrl = existingUrl || await createSaleFolder({
-      service_type: serviceType,
-      name: displayName || '(리드전환)',
-      inflow_date: lead.inflow_date,
-    })
-    if (dropboxUrl) {
-      await supabase.from('sales').update({ dropbox_url: dropboxUrl }).eq('id', sale.id)
+    const folderDisplayName = `${projectNumber} ${displayName || '(이름없음)'}`
+    if (existingUrl) {
+      const renamed = await renameDropboxFolderFull(existingUrl, folderDisplayName)
+      finalDropboxUrl = 'newUrl' in renamed ? renamed.newUrl : existingUrl
+    } else {
+      const newUrl = await createSaleFolder({
+        service_type: serviceType,
+        name: folderDisplayName,
+        inflow_date: lead.inflow_date,
+      }).catch(() => null)
+      finalDropboxUrl = newUrl
+    }
+    if (finalDropboxUrl) {
+      await supabase.from('sales').update({ dropbox_url: finalDropboxUrl }).eq('id', sale.id)
     }
   }
 
   // project 자동 생성
   const { data: project } = await adminDb.from('projects').insert({
-    name: displayName ?? '(이름 없음)',
+    name: saleFullName,
     service_type: serviceType,
     department,
     pm_id: lead.assignee_id ?? null,
     customer_id: customerId,
     status: '진행중',
     _source_sale_id: sale!.id,
+    project_number: projectNumber,
   }).select('id').single()
 
   if (project) {
     await adminDb.from('sales').update({ project_id: project.id }).eq('id', sale!.id)
+    if (finalDropboxUrl) {
+      await adminDb.from('projects').update({ dropbox_url: finalDropboxUrl }).eq('id', project.id)
+    }
     if (lead.assignee_id) {
       await adminDb.from('project_members').insert({ project_id: project.id, profile_id: lead.assignee_id, role: 'PM' }).single()
     }
@@ -243,7 +286,7 @@ export async function convertLeadToSale(leadId: string) {
   notifyLeadConverted({
     clientOrg: lead.client_org,
     serviceType: lead.service_type,
-    saleName: displayName ?? '(이름 없음)',
+    saleName: saleFullName,
     saleId: sale!.id,
   }).catch(console.error)
 
@@ -251,7 +294,7 @@ export async function convertLeadToSale(leadId: string) {
   revalidatePath('/sales/report')
   revalidatePath('/pipeline')
 
-  return { success: true, sale_id: sale!.id, project_id: project?.id ?? null }
+  return { success: true, sale_id: sale!.id, project_id: project?.id ?? null, project_number: projectNumber }
 }
 
 export async function addSaleToLead(leadId: string, data: {

@@ -3,7 +3,7 @@ import { useState, useTransition, useEffect, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import ReactMarkdown from 'react-markdown'
 import { Lead, LeadStatus, LEAD_STATUSES, LEAD_CHANNELS, LEAD_SOURCES } from '@/types'
-import { createLead, updateLead, deleteLead, convertLeadToSale, addSaleToLead, createLeadFolder, updateLeadDropboxUrl, syncLeadDropboxFolderName, createPerson, updateLeadPersonAndCustomer } from './actions'
+import { createLead, updateLead, deleteLead, convertLeadToSale, addSaleToLead, createLeadFolder, updateLeadDropboxUrl, syncLeadDropboxFolderName, createPerson, updateLeadPersonAndCustomer, previewProjectNumber } from './actions'
 import { createLeadLog, getLeadLogs, deleteLeadLog } from './lead-log-actions'
 import ProjectClaudeChat from '@/components/ProjectClaudeChat'
 
@@ -418,6 +418,10 @@ export default function LeadsClient({ leads, profiles, persons, currentUserId, i
   const [form, setForm] = useState({ ...EMPTY_FORM, ...(initialClientOrg ? { client_org: initialClientOrg } : {}) })
   const [isPending, startTransition] = useTransition()
   const [convertingId, setConvertingId] = useState<string | null>(null)
+  const [showConvertModal, setShowConvertModal] = useState(false)
+  const [convertPreviewNum, setConvertPreviewNum] = useState('')
+  const [convertDone, setConvertDone] = useState(false)
+  const [convertResult, setConvertResult] = useState<{ sale_id: string; project_id: string | null; project_number: string } | null>(null)
 
   // Tab / inline editing
   const [tab, setTab] = useState<'main' | 'customer' | 'edit'>('main')
@@ -626,13 +630,25 @@ export default function LeadsClient({ leads, profiles, persons, currentUserId, i
     setSelectedLead(null)
   }
 
+  async function openConvertModal() {
+    const num = await previewProjectNumber()
+    setConvertPreviewNum(num)
+    setConvertDone(false)
+    setConvertResult(null)
+    setShowConvertModal(true)
+  }
+
   async function handleConvert(leadId: string) {
-    if (!confirm('매출건으로 전환할까요?')) return
     setConvertingId(leadId)
     const result = await convertLeadToSale(leadId)
     setConvertingId(null)
-    if ('error' in result) { alert('전환 실패: ' + result.error) }
-    else { router.push(result.project_id ? `/projects/${result.project_id}` : `/sales/${result.sale_id}`) }
+    if ('error' in result) {
+      alert('전환 실패: ' + result.error)
+      setShowConvertModal(false)
+    } else {
+      setConvertResult({ sale_id: result.sale_id, project_id: result.project_id ?? null, project_number: result.project_number })
+      setConvertDone(true)
+    }
   }
 
   async function handleCreateLeadFolder(leadId: string) {
@@ -765,8 +781,90 @@ export default function LeadsClient({ leads, profiles, persons, currentUserId, i
   }
 
   // ── Render ───────────────────────────────────────────────────────
+
+  const SERVICE_BOARD_LABEL: Record<string, string> = {
+    '교구대여':    '📦 렌탈 관리판',
+    'SOS':        '🎵 SOS 공연판',
+    '교육프로그램': '📚 교육프로그램',
+    '납품설치':    '🔧 납품설치',
+    '콘텐츠제작':  '🎬 콘텐츠제작',
+    '002ENT':     '🎤 002ENT',
+    '행사운영':    '🎭 행사운영',
+    '행사대여':    '🎪 행사대여',
+    '제작인쇄':    '🖨 제작인쇄',
+    '유지보수':    '🔩 유지보수',
+    '프로젝트':    '📋 프로젝트',
+  }
+
   return (
     <div>
+
+      {/* ── 계약 전환 모달 ── */}
+      {showConvertModal && selectedLead && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl p-7 w-full max-w-[460px] shadow-2xl">
+            {!convertDone ? (
+              <>
+                <h2 className="text-lg font-black text-gray-900 mb-1">계약 전환</h2>
+                <p className="text-sm text-gray-400 mb-5">리드를 프로젝트로 전환합니다. 고유번호가 자동 부여됩니다.</p>
+                {/* 고유번호 프리뷰 */}
+                <div className="rounded-xl p-4 mb-5 border" style={{ background: '#FFFDE7', borderColor: '#FFCE00' }}>
+                  <p className="text-xs text-gray-400 mb-1">자동 부여될 고유번호</p>
+                  <p className="text-3xl font-black text-gray-900 leading-none">{convertPreviewNum}</p>
+                  <p className="text-xs text-gray-500 mt-1.5">프로젝트명, 드롭박스 폴더명에 자동 적용됩니다</p>
+                </div>
+                {/* 리드 정보 */}
+                {[
+                  ['리드명', selectedLead.project_name || selectedLead.client_org || '(없음)'],
+                  ['고객', selectedLead.client_org || '—'],
+                  ['서비스', selectedLead.service_type || '—'],
+                  ['담당자', (selectedLead.assignee as { name?: string })?.name || '—'],
+                  ['이동될 서비스 보드', SERVICE_BOARD_LABEL[selectedLead.service_type ?? ''] ?? '📋 프로젝트 목록'],
+                ].map(([k, v]) => (
+                  <div key={k} className="flex justify-between py-2.5 border-b border-gray-100 text-sm last:border-0">
+                    <span className="text-gray-500">{k}</span>
+                    <span className="font-semibold text-gray-900">{v}</span>
+                  </div>
+                ))}
+                <div className="flex gap-2.5 mt-5">
+                  <button onClick={() => setShowConvertModal(false)}
+                    className="flex-1 py-2.5 border border-gray-200 rounded-xl text-sm text-gray-500 hover:bg-gray-50 transition-colors">
+                    취소
+                  </button>
+                  <button
+                    onClick={() => handleConvert(selectedLead.id)}
+                    disabled={!!convertingId}
+                    className="flex-[2] py-2.5 rounded-xl text-sm font-black transition-colors disabled:opacity-50"
+                    style={{ backgroundColor: '#FFCE00', color: '#121212' }}>
+                    {convertingId ? '전환 중...' : '전환 확정'}
+                  </button>
+                </div>
+              </>
+            ) : (
+              <div className="text-center py-2">
+                <div className="text-5xl mb-4">✅</div>
+                <h2 className="text-xl font-black text-gray-900 mb-2">계약 전환 완료!</h2>
+                <p className="text-3xl font-black text-gray-900 mb-3">{convertResult?.project_number}</p>
+                <p className="text-sm text-gray-500 mb-6">
+                  드롭박스 폴더명이 고유번호로 업데이트되었습니다.<br />
+                  서비스 보드에 자동으로 추가됐습니다.
+                </p>
+                <button
+                  onClick={() => {
+                    setShowConvertModal(false)
+                    setConvertDone(false)
+                    if (convertResult?.project_id) router.push(`/projects/${convertResult.project_id}`)
+                    else if (convertResult?.sale_id) router.push(`/sales/${convertResult.sale_id}`)
+                  }}
+                  className="w-full py-3 rounded-xl text-sm font-black transition-colors"
+                  style={{ backgroundColor: '#121212', color: '#FFCE00' }}>
+                  프로젝트로 이동 →
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* 스플릿 뷰 */}
       <div className="flex gap-3 md:h-[calc(100vh-130px)] min-h-[520px]">
@@ -1072,7 +1170,7 @@ export default function LeadsClient({ leads, profiles, persons, currentUserId, i
                         </button>
                       )}
                       <button
-                        onClick={() => handleConvert(selectedLead.id)}
+                        onClick={openConvertModal}
                         disabled={convertingId === selectedLead.id}
                         className="text-sm font-semibold px-4 py-1.5 rounded-xl transition-colors disabled:opacity-50"
                         style={{ backgroundColor: '#FFCE00', color: '#121212' }}>
