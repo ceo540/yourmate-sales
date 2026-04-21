@@ -192,13 +192,10 @@ function LeadForm({ form, setForm, onSubmit, onCancel, isPending, isAdmin, profi
             <input className={INPUT_CLS} value={form.phone} onChange={e => setForm(f => ({ ...f, phone: e.target.value }))} />
           )}
         </div>
-        {/* 사무실 번호 — 직접 입력 시만 노출 (PersonDB 연결 시 불필요) */}
-        {!selectedPerson && (
-          <div>
-            <label className={LABEL_CLS}>사무실 번호</label>
-            <input className={INPUT_CLS} value={form.office_phone} onChange={e => setForm(f => ({ ...f, office_phone: e.target.value }))} />
-          </div>
-        )}
+        <div>
+          <label className={LABEL_CLS}>사무실 번호</label>
+          <input className={INPUT_CLS} value={form.office_phone} onChange={e => setForm(f => ({ ...f, office_phone: e.target.value }))} />
+        </div>
       </div>
       <div>
         <label className={LABEL_CLS}>이메일</label>
@@ -283,6 +280,10 @@ const LOG_TYPE_COLORS: Record<string, string> = {
   출장: 'bg-cyan-50 text-cyan-600', 메모: 'bg-yellow-50 text-yellow-700',
   내부회의: 'bg-orange-50 text-orange-600', 기타: 'bg-gray-100 text-gray-500',
   최초유입: 'bg-teal-50 text-teal-600',
+}
+// 한국어 조사: 받침 있으면 '으로', 없거나 ㄹ 받침이면 '로'
+const LOG_TYPE_PARTICLE: Record<string, string> = {
+  방문: '으로', 미팅: '으로', 출장: '으로',
 }
 
 interface LeadLog {
@@ -1135,7 +1136,7 @@ export default function LeadsClient({ leads, profiles, persons, currentUserId, i
                                 disabled={isPending || !newLeadLog.trim()}
                                 className={`px-2.5 py-1 text-xs rounded-lg border transition-all disabled:opacity-40 ${
                                   newLeadLogType === type ? 'border-yellow-400 bg-yellow-50 text-gray-800' : 'border-gray-200 text-gray-500 hover:border-yellow-300'
-                                }`}>{type}로 저장</button>
+                                }`}>{type}{LOG_TYPE_PARTICLE[type] ?? '로'} 저장</button>
                             ))}
                           </div>
                           {leadLogError && <p className="text-xs text-red-500 mt-1">{leadLogError}</p>}
@@ -1496,7 +1497,7 @@ export default function LeadsClient({ leads, profiles, persons, currentUserId, i
                         </div>
                       )}
 
-                      {/* 견적서 + 삭제 */}
+                      {/* 견적서 생성 — 어드민 전용 */}
                       {isAdmin && (
                         <div className="mt-4 pt-4 border-t border-gray-100 flex gap-2">
                           <button
@@ -1504,19 +1505,22 @@ export default function LeadsClient({ leads, profiles, persons, currentUserId, i
                             className="px-3 py-2 text-sm font-medium border border-gray-200 rounded-lg hover:bg-gray-50">
                             견적서 생성
                           </button>
-                          {selectedLead.status !== '취소' ? (
-                            <button onClick={() => handleDelete(selectedLead.id)}
-                              className="px-3 py-2 text-sm text-red-400 hover:text-red-600 border border-red-100 rounded-lg hover:bg-red-50">
-                              삭제
-                            </button>
-                          ) : (
-                            <button onClick={() => handleDelete(selectedLead.id)}
-                              className="px-3 py-2 text-xs text-gray-300 hover:text-red-400 border border-gray-100 rounded-lg hover:bg-red-50">
-                              ···
-                            </button>
-                          )}
                         </div>
                       )}
+                      {/* 리드 삭제 — 모든 팀원 사용 가능, confirm 창으로 실수 방지 */}
+                      <div className={isAdmin ? 'mt-2 flex gap-2' : 'mt-4 pt-4 border-t border-gray-100 flex gap-2'}>
+                        {selectedLead.status !== '취소' ? (
+                          <button onClick={() => handleDelete(selectedLead.id)}
+                            className="px-3 py-2 text-sm text-red-400 hover:text-red-600 border border-red-100 rounded-lg hover:bg-red-50">
+                            삭제
+                          </button>
+                        ) : (
+                          <button onClick={() => handleDelete(selectedLead.id)}
+                            className="px-3 py-2 text-xs text-gray-300 hover:text-red-400 border border-gray-100 rounded-lg hover:bg-red-50">
+                            ···
+                          </button>
+                        )}
+                      </div>
                     </div>
                   )}
 
