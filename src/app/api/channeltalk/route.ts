@@ -1,13 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { waitUntil } from '@vercel/functions'
-import OpenAI from 'openai'
+import Anthropic from '@anthropic-ai/sdk'
 import { createAdminClient } from '@/lib/supabase/admin'
 import crypto from 'crypto'
 import { logApiUsage } from '@/lib/api-usage'
 import { searchDropbox, listDropboxFolder, readDropboxFile } from '@/lib/dropbox'
 import { sendGroupMessage, notifyLeadConverted } from '@/lib/channeltalk'
 
-const openai = new OpenAI()
+const MODEL = 'claude-haiku-4-5-20251001'
+const anthropic = new Anthropic()
 
 const SYSTEM_PROMPT = `너는 유어메이트(yourmate) 사내 시스템 "빵빵이"야.
 채널톡 내부 그룹채팅에서 팀원들 업무를 돕고 있어.
@@ -31,261 +32,210 @@ const SYSTEM_PROMPT = `너는 유어메이트(yourmate) 사내 시스템 "빵빵
 데이터 관련 질문 오면 무조건 도구 써서 실제 데이터로 답변해.
 상태 변경 요청 시: 어떤 건인지 조회해서 확인 후 변경. 변경 완료되면 전/후 상태 알려줘.`
 
-const TOOLS: OpenAI.ChatCompletionTool[] = [
+const TOOLS: Anthropic.Tool[] = [
   {
-    type: 'function',
-    function: {
-      name: 'get_sales',
-      description: '계약 목록을 조회합니다.',
-      parameters: {
-        type: 'object',
-        properties: {
-          search: { type: 'string', description: '건명 또는 발주처 검색어' },
-          contract_stage: { type: 'string', description: '계약 | 착수 | 선금 | 중도금 | 완수 | 계산서발행 | 잔금' },
-          service_type: { type: 'string', description: '서비스 타입 필터' },
-          year_month: { type: 'string', description: '월별 조회 (예: 2026-04)' },
-          limit: { type: 'number', description: '최대 조회 건수 (기본 20)' },
-        },
+    name: 'get_sales',
+    description: '계약 목록을 조회합니다.',
+    input_schema: {
+      type: 'object' as const,
+      properties: {
+        search: { type: 'string', description: '건명 또는 발주처 검색어' },
+        contract_stage: { type: 'string', description: '계약 | 착수 | 선금 | 중도금 | 완수 | 계산서발행 | 잔금' },
+        service_type: { type: 'string', description: '서비스 타입 필터' },
+        year_month: { type: 'string', description: '월별 조회 (예: 2026-04)' },
+        limit: { type: 'number', description: '최대 조회 건수 (기본 20)' },
       },
     },
   },
   {
-    type: 'function',
-    function: {
-      name: 'get_monthly_summary',
-      description: '월별 매출 요약을 조회합니다.',
-      parameters: {
-        type: 'object',
-        properties: {
-          year: { type: 'number', description: '연도 (예: 2026)' },
-        },
+    name: 'get_monthly_summary',
+    description: '월별 매출 요약을 조회합니다.',
+    input_schema: {
+      type: 'object' as const,
+      properties: {
+        year: { type: 'number', description: '연도 (예: 2026)' },
       },
     },
   },
   {
-    type: 'function',
-    function: {
-      name: 'get_receivables',
-      description: '미수금 현황을 조회합니다.',
-      parameters: { type: 'object', properties: {} },
+    name: 'get_receivables',
+    description: '미수금 현황을 조회합니다.',
+    input_schema: { type: 'object' as const, properties: {} },
+  },
+  {
+    name: 'get_sale_detail',
+    description: '특정 계약의 상세 정보를 조회합니다.',
+    input_schema: {
+      type: 'object' as const,
+      properties: {
+        search: { type: 'string', description: '건명 또는 발주처 검색어' },
+      },
+      required: ['search'],
     },
   },
   {
-    type: 'function',
-    function: {
-      name: 'get_sale_detail',
-      description: '특정 계약의 상세 정보를 조회합니다.',
-      parameters: {
-        type: 'object',
-        properties: {
-          search: { type: 'string', description: '건명 또는 발주처 검색어' },
-        },
-        required: ['search'],
+    name: 'create_sale',
+    description: '새 계약건을 등록합니다.',
+    input_schema: {
+      type: 'object' as const,
+      properties: {
+        name: { type: 'string', description: '건명 (필수)' },
+        client_org: { type: 'string', description: '발주처' },
+        service_type: { type: 'string', description: '서비스 타입' },
+        revenue: { type: 'number', description: '매출액 (원 단위)' },
+        memo: { type: 'string', description: '메모' },
+        inflow_date: { type: 'string', description: '유입일 YYYY-MM-DD' },
+      },
+      required: ['name', 'service_type'],
+    },
+  },
+  {
+    name: 'update_sale_status',
+    description: '계약의 계약 단계를 변경합니다.',
+    input_schema: {
+      type: 'object' as const,
+      properties: {
+        search: { type: 'string', description: '건명 또는 발주처 검색어' },
+        contract_stage: { type: 'string', description: '새 단계: 계약 | 착수 | 선금 | 중도금 | 완수 | 계산서발행 | 잔금' },
+      },
+      required: ['search', 'contract_stage'],
+    },
+  },
+  {
+    name: 'get_tasks',
+    description: '업무 목록을 조회합니다.',
+    input_schema: {
+      type: 'object' as const,
+      properties: {
+        search: { type: 'string', description: '업무명 또는 관련 건명 검색어' },
+        status: { type: 'string', description: '할 일 | 진행중 | 완료' },
+        assignee_name: { type: 'string', description: '담당자 이름' },
+        limit: { type: 'number', description: '최대 조회 건수 (기본 15)' },
       },
     },
   },
   {
-    type: 'function',
-    function: {
-      name: 'create_sale',
-      description: '새 계약건을 등록합니다.',
-      parameters: {
-        type: 'object',
-        properties: {
-          name: { type: 'string', description: '건명 (필수)' },
-          client_org: { type: 'string', description: '발주처' },
-          service_type: { type: 'string', description: '서비스 타입' },
-          revenue: { type: 'number', description: '매출액 (원 단위)' },
-          memo: { type: 'string', description: '메모' },
-          inflow_date: { type: 'string', description: '유입일 YYYY-MM-DD' },
-        },
-        required: ['name', 'service_type'],
+    name: 'create_task',
+    description: '새 업무를 등록합니다.',
+    input_schema: {
+      type: 'object' as const,
+      properties: {
+        title: { type: 'string', description: '업무명 (필수)' },
+        sale_search: { type: 'string', description: '연결할 계약건 검색어 (없으면 내부 업무)' },
+        assignee_name: { type: 'string', description: '담당자 이름' },
+        due_date: { type: 'string', description: '마감일 YYYY-MM-DD' },
+        priority: { type: 'string', description: '낮음 | 보통 | 높음' },
+        description: { type: 'string', description: '업무 메모' },
+      },
+      required: ['title'],
+    },
+  },
+  {
+    name: 'search_leads',
+    description: '리드(잠재 고객) 목록을 검색합니다.',
+    input_schema: {
+      type: 'object' as const,
+      properties: {
+        search: { type: 'string', description: '기관명 또는 담당자명 검색어' },
+        status: { type: 'string', description: '유입 | 회신대기 | 견적발송 | 조율중 | 진행중 | 완료 | 취소' },
       },
     },
   },
   {
-    type: 'function',
-    function: {
-      name: 'update_sale_status',
-      description: '계약의 계약 단계를 변경합니다.',
-      parameters: {
-        type: 'object',
-        properties: {
-          search: { type: 'string', description: '건명 또는 발주처 검색어' },
-          contract_stage: { type: 'string', description: '새 단계: 계약 | 착수 | 선금 | 중도금 | 완수 | 계산서발행 | 잔금' },
-        },
-        required: ['search', 'contract_stage'],
+    name: 'create_lead',
+    description: '새 리드를 등록합니다. 같은 기관/담당자도 서비스가 다르거나 별개 문의면 별도 건으로 등록 가능합니다.',
+    input_schema: {
+      type: 'object' as const,
+      properties: {
+        client_org: { type: 'string', description: '기관명 (필수)' },
+        contact_name: { type: 'string', description: '담당자 이름' },
+        phone: { type: 'string', description: '연락처' },
+        service_type: { type: 'string', description: '서비스 분류' },
+        initial_content: { type: 'string', description: '문의 내용 요약' },
+        remind_date: { type: 'string', description: '리마인드 날짜 YYYY-MM-DD' },
+        channel: { type: 'string', description: '전화/이메일/카카오/채널톡/기타' },
+        assignee_name: { type: 'string', description: '담당 직원 이름' },
+      },
+      required: ['client_org'],
+    },
+  },
+  {
+    name: 'update_lead',
+    description: '리드의 상태, 소통 내용 등을 업데이트합니다. 같은 기관에 여러 건이 있을 수 있으므로, 복수 결과 반환 시 lead_id로 특정해서 재호출합니다.',
+    input_schema: {
+      type: 'object' as const,
+      properties: {
+        search: { type: 'string', description: '기관명 또는 담당자명 검색어 (lead_id 없을 때 필수)' },
+        lead_id: { type: 'string', description: '특정 리드 ID (예: LEAD20260413-0001). 같은 기관에 여러 건이 있을 때 명시.' },
+        status: { type: 'string', description: '유입 | 회신대기 | 견적발송 | 조율중 | 진행중 | 완료 | 취소' },
+        remind_date: { type: 'string', description: '리마인드 날짜 YYYY-MM-DD' },
+        contact_log: { type: 'string', description: '새 소통 내용' },
+        notes: { type: 'string', description: '메모' },
       },
     },
   },
   {
-    type: 'function',
-    function: {
-      name: 'get_tasks',
-      description: '업무 목록을 조회합니다.',
-      parameters: {
-        type: 'object',
-        properties: {
-          search: { type: 'string', description: '업무명 또는 관련 건명 검색어' },
-          status: { type: 'string', description: '할 일 | 진행중 | 완료' },
-          assignee_name: { type: 'string', description: '담당자 이름' },
-          limit: { type: 'number', description: '최대 조회 건수 (기본 15)' },
-        },
+    name: 'convert_lead_to_sale',
+    description: '리드를 매출건으로 전환합니다. 같은 기관에 여러 건이 있을 수 있으므로, 복수 결과 반환 시 lead_id로 특정해서 재호출합니다.',
+    input_schema: {
+      type: 'object' as const,
+      properties: {
+        search: { type: 'string', description: '기관명 검색어 (lead_id 없을 때 필수)' },
+        lead_id: { type: 'string', description: '특정 리드 ID (예: LEAD20260413-0001). 같은 기관에 여러 건이 있을 때 명시.' },
       },
     },
   },
   {
-    type: 'function',
-    function: {
-      name: 'create_task',
-      description: '새 업무를 등록합니다.',
-      parameters: {
-        type: 'object',
-        properties: {
-          title: { type: 'string', description: '업무명 (필수)' },
-          sale_search: { type: 'string', description: '연결할 계약건 검색어 (없으면 내부 업무)' },
-          assignee_name: { type: 'string', description: '담당자 이름' },
-          due_date: { type: 'string', description: '마감일 YYYY-MM-DD' },
-          priority: { type: 'string', description: '낮음 | 보통 | 높음' },
-          description: { type: 'string', description: '업무 메모' },
-        },
-        required: ['title'],
+    name: 'search_customers',
+    description: '고객 DB를 검색합니다.',
+    input_schema: {
+      type: 'object' as const,
+      properties: {
+        query: { type: 'string', description: '기관명 또는 담당자명' },
       },
     },
   },
   {
-    type: 'function',
-    function: {
-      name: 'search_leads',
-      description: '리드(잠재 고객) 목록을 검색합니다.',
-      parameters: {
-        type: 'object',
-        properties: {
-          search: { type: 'string', description: '기관명 또는 담당자명 검색어' },
-          status: { type: 'string', description: '유입 | 회신대기 | 견적발송 | 조율중 | 진행중 | 완료 | 취소' },
-        },
+    name: 'search_dropbox',
+    description: '드롭박스에서 프로젝트 폴더나 파일을 검색합니다. 건명이나 기관명으로 관련 폴더/파일을 찾을 때 사용.',
+    input_schema: {
+      type: 'object' as const,
+      properties: {
+        query: { type: 'string', description: '검색어 (프로젝트명, 기관명 등)' },
       },
+      required: ['query'],
     },
   },
   {
-    type: 'function',
-    function: {
-      name: 'create_lead',
-      description: '새 리드를 등록합니다. 같은 기관/담당자도 서비스가 다르거나 별개 문의면 별도 건으로 등록 가능합니다.',
-      parameters: {
-        type: 'object',
-        properties: {
-          client_org: { type: 'string', description: '기관명 (필수)' },
-          contact_name: { type: 'string', description: '담당자 이름' },
-          phone: { type: 'string', description: '연락처' },
-          service_type: { type: 'string', description: '서비스 분류' },
-          initial_content: { type: 'string', description: '문의 내용 요약' },
-          remind_date: { type: 'string', description: '리마인드 날짜 YYYY-MM-DD' },
-          channel: { type: 'string', description: '전화/이메일/카카오/채널톡/기타' },
-          assignee_name: { type: 'string', description: '담당 직원 이름' },
-        },
-        required: ['client_org'],
+    name: 'list_dropbox_folder',
+    description: '드롭박스 폴더 안의 파일 목록을 조회합니다. search_dropbox로 폴더 경로를 찾은 뒤 사용.',
+    input_schema: {
+      type: 'object' as const,
+      properties: {
+        path: { type: 'string', description: '★ DB 기준 상대경로 (예: /3 학교상점/1 납품 설치/260223 광교청소년수련관)' },
       },
+      required: ['path'],
     },
   },
   {
-    type: 'function',
-    function: {
-      name: 'update_lead',
-      description: '리드의 상태, 소통 내용 등을 업데이트합니다. 같은 기관에 여러 건이 있을 수 있으므로, 복수 결과 반환 시 lead_id로 특정해서 재호출합니다.',
-      parameters: {
-        type: 'object',
-        properties: {
-          search: { type: 'string', description: '기관명 또는 담당자명 검색어 (lead_id 없을 때 필수)' },
-          lead_id: { type: 'string', description: '특정 리드 ID (예: LEAD20260413-0001). 같은 기관에 여러 건이 있을 때 명시.' },
-          status: { type: 'string', description: '유입 | 회신대기 | 견적발송 | 조율중 | 진행중 | 완료 | 취소' },
-          remind_date: { type: 'string', description: '리마인드 날짜 YYYY-MM-DD' },
-          contact_log: { type: 'string', description: '새 소통 내용' },
-          notes: { type: 'string', description: '메모' },
-        },
+    name: 'read_dropbox_file',
+    description: '드롭박스 파일 내용을 읽습니다. PDF 견적서, 계약서 등의 텍스트를 추출할 때 사용. list_dropbox_folder로 파일 경로를 먼저 확인 후 사용.',
+    input_schema: {
+      type: 'object' as const,
+      properties: {
+        path: { type: 'string', description: '★ DB 기준 상대경로 (예: /3 학교상점/1 납품 설치/260223 광교청소년수련관/0 행정/견적서.pdf)' },
       },
+      required: ['path'],
     },
   },
   {
-    type: 'function',
-    function: {
-      name: 'convert_lead_to_sale',
-      description: '리드를 매출건으로 전환합니다. 같은 기관에 여러 건이 있을 수 있으므로, 복수 결과 반환 시 lead_id로 특정해서 재호출합니다.',
-      parameters: {
-        type: 'object',
-        properties: {
-          search: { type: 'string', description: '기관명 검색어 (lead_id 없을 때 필수)' },
-          lead_id: { type: 'string', description: '특정 리드 ID (예: LEAD20260413-0001). 같은 기관에 여러 건이 있을 때 명시.' },
-        },
-      },
-    },
-  },
-  {
-    type: 'function',
-    function: {
-      name: 'search_customers',
-      description: '고객 DB를 검색합니다.',
-      parameters: {
-        type: 'object',
-        properties: {
-          query: { type: 'string', description: '기관명 또는 담당자명' },
-        },
-      },
-    },
-  },
-  {
-    type: 'function',
-    function: {
-      name: 'search_dropbox',
-      description: '드롭박스에서 프로젝트 폴더나 파일을 검색합니다. 건명이나 기관명으로 관련 폴더/파일을 찾을 때 사용.',
-      parameters: {
-        type: 'object',
-        properties: {
-          query: { type: 'string', description: '검색어 (프로젝트명, 기관명 등)' },
-        },
-        required: ['query'],
-      },
-    },
-  },
-  {
-    type: 'function',
-    function: {
-      name: 'list_dropbox_folder',
-      description: '드롭박스 폴더 안의 파일 목록을 조회합니다. search_dropbox로 폴더 경로를 찾은 뒤 사용.',
-      parameters: {
-        type: 'object',
-        properties: {
-          path: { type: 'string', description: '★ DB 기준 상대경로 (예: /3 학교상점/1 납품 설치/260223 광교청소년수련관)' },
-        },
-        required: ['path'],
-      },
-    },
-  },
-  {
-    type: 'function',
-    function: {
-      name: 'read_dropbox_file',
-      description: '드롭박스 파일 내용을 읽습니다. PDF 견적서, 계약서 등의 텍스트를 추출할 때 사용. list_dropbox_folder로 파일 경로를 먼저 확인 후 사용.',
-      parameters: {
-        type: 'object',
-        properties: {
-          path: { type: 'string', description: '★ DB 기준 상대경로 (예: /3 학교상점/1 납품 설치/260223 광교청소년수련관/0 행정/견적서.pdf)' },
-        },
-        required: ['path'],
-      },
-    },
-  },
-  {
-    type: 'function',
-    function: {
-      name: 'search_notion_projects',
-      description: '노션 프로젝트를 검색합니다.',
-      parameters: {
-        type: 'object',
-        properties: {
-          search: { type: 'string', description: '프로젝트명 검색어' },
-          status: { type: 'string', description: '진행 전 | 진행 중 | 완료 | 보류' },
-        },
+    name: 'search_notion_projects',
+    description: '노션 프로젝트를 검색합니다.',
+    input_schema: {
+      type: 'object' as const,
+      properties: {
+        search: { type: 'string', description: '프로젝트명 검색어' },
+        status: { type: 'string', description: '진행 전 | 진행 중 | 완료 | 보류' },
       },
     },
   },
@@ -406,7 +356,6 @@ async function executeTool(name: string, input: Record<string, unknown>): Promis
     const { data: tasks, error } = await query
     if (error) return { error: error.message }
 
-    // 담당자 이름 조인
     if (input.assignee_name && tasks) {
       const { data: profiles } = await supabase.from('profiles').select('id, name').ilike('name', `%${input.assignee_name}%`)
       const ids = (profiles || []).map(p => p.id)
@@ -466,7 +415,6 @@ async function executeTool(name: string, input: Record<string, unknown>): Promis
   if (name === 'create_lead') {
     const clientOrg = ((input.client_org as string) || '').trim()
     if (!clientOrg) return { error: '기관명은 필수야.' }
-    // 기존 리드 참고용 조회 (차단 없음 — 같은 기관도 별도 건 허용)
     const { data: existing } = await supabase.from('leads').select('lead_id, status, service_type').ilike('client_org', clientOrg).neq('status', '취소').limit(5)
     const today = new Date().toISOString().slice(0, 10).replace(/-/g, '')
     const prefix = `LEAD${today}-`
@@ -497,7 +445,6 @@ async function executeTool(name: string, input: Record<string, unknown>): Promis
   }
 
   if (name === 'update_lead') {
-    // lead_id 직접 지정 시 우선 사용, 없으면 search로 조회
     let lead: { id: string; lead_id: string; client_org: string; status: string; contact_1: string | null; contact_2: string | null; contact_3: string | null } | null = null
     if (input.lead_id) {
       const { data, error: e } = await supabase
@@ -653,47 +600,49 @@ async function executeTool(name: string, input: Record<string, unknown>): Promis
 }
 
 
-async function processWithGPT(chatKey: string, userMessage: string) {
+async function processWithClaude(chatKey: string, userMessage: string) {
   const today = new Date().toLocaleDateString('ko-KR', { year: 'numeric', month: 'long', day: 'numeric', timeZone: 'Asia/Seoul' })
+  const systemPrompt = `오늘 날짜: ${today}\n${SYSTEM_PROMPT}`
 
-  const messages: OpenAI.ChatCompletionMessageParam[] = [
-    { role: 'system', content: `오늘 날짜: ${today}\n${SYSTEM_PROMPT}` },
+  const messages: Anthropic.MessageParam[] = [
     { role: 'user', content: userMessage },
   ]
 
   let maxRounds = 6
   while (maxRounds-- > 0) {
-    const response = await openai.chat.completions.create({
-      model: 'gpt-4o-mini',
+    const response = await anthropic.messages.create({
+      model: MODEL,
       max_tokens: 800,
+      system: systemPrompt,
       tools: TOOLS,
       messages,
     })
-    logApiUsage({ model: 'gpt-4o-mini', endpoint: 'channeltalk', userId: null, inputTokens: response.usage?.prompt_tokens ?? 0, outputTokens: response.usage?.completion_tokens ?? 0 }).catch(() => {})
+    logApiUsage({ model: MODEL, endpoint: 'channeltalk', userId: null, inputTokens: response.usage.input_tokens, outputTokens: response.usage.output_tokens }).catch(() => {})
 
-    const choice = response.choices[0]
-    if (!choice) break
-
-    if (choice.finish_reason === 'stop') {
-      const text = choice.message.content?.trim()
+    if (response.stop_reason === 'end_turn') {
+      const textBlock = response.content.find((b): b is Anthropic.TextBlock => b.type === 'text')
+      const text = textBlock?.text?.trim()
       if (text) await sendGroupMessage(chatKey, text)
       break
     }
 
-    if (choice.finish_reason === 'tool_calls') {
-      messages.push(choice.message)
-      const toolCalls = choice.message.tool_calls ?? []
-      for (const toolCall of toolCalls) {
-        if (toolCall.type !== 'function') continue
+    if (response.stop_reason === 'tool_use') {
+      const toolUseBlocks = response.content.filter((b): b is Anthropic.ToolUseBlock => b.type === 'tool_use')
+
+      messages.push({ role: 'assistant', content: response.content as Anthropic.ContentBlockParam[] })
+
+      const toolResults: Anthropic.ToolResultBlockParam[] = []
+      for (const tu of toolUseBlocks) {
         let input: Record<string, unknown> = {}
-        try { input = JSON.parse(toolCall.function.arguments) } catch { /* empty args */ }
-        const result = await executeTool(toolCall.function.name, input)
-        messages.push({
-          role: 'tool',
-          tool_call_id: toolCall.id,
+        try { input = tu.input as Record<string, unknown> } catch { /* empty args */ }
+        const result = await executeTool(tu.name, input)
+        toolResults.push({
+          type: 'tool_result' as const,
+          tool_use_id: tu.id,
           content: JSON.stringify(result),
         })
       }
+      messages.push({ role: 'user', content: toolResults })
     } else {
       break
     }
@@ -701,13 +650,10 @@ async function processWithGPT(chatKey: string, userMessage: string) {
 }
 
 export async function POST(req: NextRequest) {
-  // ── 봇 활성화 여부 체크 ─────────────────────────────────────
   // Vercel 환경변수 CHANNELTALK_BOT_ENABLED=true 로 설정해야 활성화됨
-  // 기본값: 비활성 (고객 채널 답변 방지)
   if (process.env.CHANNELTALK_BOT_ENABLED !== 'true') {
     return NextResponse.json({ result: 'bot disabled' })
   }
-  // ────────────────────────────────────────────────────────────
 
   const body = await req.text()
 
@@ -731,44 +677,34 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'invalid json' }, { status: 400 })
   }
 
-  // 디버깅용 로그 — 민감정보 제외
   console.log('[ChannelTalk] event received, entity type:', (payload.entity as any)?.type)
 
   const entity = payload.entity as Record<string, unknown> | undefined
 
-  // 봇 메시지 무시 (무한루프 방지)
   if (entity?.personType === 'bot') {
     return NextResponse.json({ result: 'ignored' })
   }
 
   const personId = entity?.personId as string | undefined
   const messageText = ((entity?.plainText || entity?.content || '') as string).trim()
-  // chatKey 우선 사용 (예: "group-556532"), 없으면 chatId fallback
   const chatKey = (entity?.chatKey || entity?.chatId) as string | undefined
 
-  // personId 항상 로그 (Vercel 로그에서 ID 확인용)
   console.log('[ChannelTalk] personId:', personId, '| chatKey:', chatKey)
 
   if (!messageText || !chatKey) {
     return NextResponse.json({ result: 'no content' })
   }
 
-  // 빵빵이 언급될 때만 응답
   if (!messageText.includes('빵빵이')) {
     return NextResponse.json({ result: 'not mentioned' })
   }
 
-  // ── 권한 체크 ──────────────────────────────────────────────
-  // CHANNELTALK_ALLOWED_IDS: 쉼표 구분된 허용 personId 목록
-  // 예) "mgr_abc123,mgr_def456"
-  // 비어있으면 모든 접근 차단 (배포 직후 ID 확인 전 안전 모드)
   const allowedIds = (process.env.CHANNELTALK_ALLOWED_IDS || '')
     .split(',')
     .map(id => id.trim())
     .filter(Boolean)
 
   if (allowedIds.length === 0) {
-    // 아직 허용 ID 미설정 — 메시지 발신자 ID를 채팅방에 알려주고 차단
     await sendGroupMessage(chatKey,
       `빵빵이 권한 설정 필요!\n\n발신자 ID: ${personId || '확인불가'}\n\nVercel 환경변수 CHANNELTALK_ALLOWED_IDS에 이 ID를 추가해줘.`
     ).catch(console.error)
@@ -776,15 +712,13 @@ export async function POST(req: NextRequest) {
   }
 
   if (!personId || !allowedIds.includes(personId)) {
-    // 허용되지 않은 사용자 — 조용히 무시
     console.warn('[ChannelTalk] Unauthorized personId:', personId)
     return NextResponse.json({ result: 'unauthorized' })
   }
-  // ────────────────────────────────────────────────────────────
 
-  // waitUntil: 200 먼저 반환하고 Claude 처리 완료까지 함수 유지
+  // waitUntil: 200 먼저 반환하고 처리 완료까지 함수 유지
   waitUntil(
-    processWithGPT(chatKey, messageText).catch(async (err) => {
+    processWithClaude(chatKey, messageText).catch(async (err) => {
       console.error('[ChannelTalk bot error]', err)
       await sendGroupMessage(chatKey, '오류 발생했어. 잠시 후 다시 해봐.').catch(console.error)
     })

@@ -1,4 +1,4 @@
-import OpenAI from 'openai'
+import Anthropic from '@anthropic-ai/sdk'
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
@@ -7,8 +7,10 @@ import { logApiUsage } from '@/lib/api-usage'
 
 export const maxDuration = 60
 
-let _openaiClient: OpenAI | null = null
-const getClient = () => { if (!_openaiClient) _openaiClient = new OpenAI(); return _openaiClient }
+const MODEL = 'claude-haiku-4-5-20251001'
+
+let _client: Anthropic | null = null
+const getClient = () => { if (!_client) _client = new Anthropic(); return _client }
 
 const SYSTEM_PROMPT = `너는 유어메이트(yourmate) 사내 시스템 "빵빵이"야.
 유어메이트는 SOS 공연, 아트키움 교육프로그램, 학교상점(납품설치/유지보수/교구대여/제작인쇄), 002 Creative(콘텐츠제작/행사운영/행사대여), 002 Entertainment(음원유통) 등을 하는 회사야.
@@ -246,296 +248,239 @@ service_type은 반드시 위 목록 중 정확히 하나만.
 revenue는 금액 있으면 숫자(원 단위), 없으면 null.
 한국어로 답변.`
 
-const TOOLS: OpenAI.Chat.ChatCompletionTool[] = [
+const TOOLS: Anthropic.Tool[] = [
   {
-    type: 'function' as const,
-    function: {
-      name: 'get_sales',
-      description: '계약 목록을 조회합니다. 검색어, 상태, 서비스 타입, 월별 필터 사용 가능.',
-      parameters: {
-        type: 'object' as const,
-        properties: {
-          search: { type: 'string', description: '건명 또는 발주처 검색어' },
-          contract_stage: { type: 'string', description: '계약 | 착수 | 선금 | 중도금 | 완수 | 계산서발행 | 잔금' },
-          service_type: { type: 'string', description: '서비스 타입 필터' },
-          year_month: { type: 'string', description: '월별 조회 (예: 2026-04)' },
-          limit: { type: 'number', description: '최대 조회 건수 (기본 20)' },
-        },
+    name: 'get_sales',
+    description: '계약 목록을 조회합니다. 검색어, 상태, 서비스 타입, 월별 필터 사용 가능.',
+    input_schema: {
+      type: 'object' as const,
+      properties: {
+        search: { type: 'string', description: '건명 또는 발주처 검색어' },
+        contract_stage: { type: 'string', description: '계약 | 착수 | 선금 | 중도금 | 완수 | 계산서발행 | 잔금' },
+        service_type: { type: 'string', description: '서비스 타입 필터' },
+        year_month: { type: 'string', description: '월별 조회 (예: 2026-04)' },
+        limit: { type: 'number', description: '최대 조회 건수 (기본 20)' },
       },
     },
   },
   {
-    type: 'function' as const,
-    function: {
-      name: 'get_monthly_summary',
-      description: '월별 매출 요약 (건수, 총 매출, 총 원가, 순이익)을 조회합니다.',
-      parameters: {
-        type: 'object' as const,
-        properties: {
-          year: { type: 'number', description: '연도 (예: 2026)' },
-        },
+    name: 'get_monthly_summary',
+    description: '월별 매출 요약 (건수, 총 매출, 총 원가, 순이익)을 조회합니다.',
+    input_schema: {
+      type: 'object' as const,
+      properties: {
+        year: { type: 'number', description: '연도 (예: 2026)' },
       },
     },
   },
   {
-    type: 'function' as const,
-    function: {
-      name: 'get_receivables',
-      description: '미수금 현황을 조회합니다. 계약 이후 아직 잔금이 완료되지 않은 건들.',
-      parameters: {
-        type: 'object' as const,
-        properties: {},
+    name: 'get_receivables',
+    description: '미수금 현황을 조회합니다. 계약 이후 아직 잔금이 완료되지 않은 건들.',
+    input_schema: {
+      type: 'object' as const,
+      properties: {},
+    },
+  },
+  {
+    name: 'get_sale_detail',
+    description: '특정 계약의 상세 정보와 원가 내역을 조회합니다.',
+    input_schema: {
+      type: 'object' as const,
+      properties: {
+        search: { type: 'string', description: '건명 또는 발주처 검색어' },
+      },
+      required: ['search'],
+    },
+  },
+  {
+    name: 'create_sale',
+    description: '새 계약건을 시스템에 등록하고 노션 프로젝트를 생성합니다. PDF 분석 결과나 사용자 제공 정보로 등록.',
+    input_schema: {
+      type: 'object' as const,
+      properties: {
+        name: { type: 'string', description: '건명 (필수)' },
+        client_org: { type: 'string', description: '발주처' },
+        service_type: { type: 'string', description: '서비스 타입: 교육프로그램/납품설치/유지보수/교구대여/제작인쇄/콘텐츠제작/행사운영/행사대여/프로젝트/SOS/002ENT 중 하나' },
+        revenue: { type: 'number', description: '매출액 (원 단위)' },
+        memo: { type: 'string', description: '메모' },
+        dropbox_url: { type: 'string', description: '기존 Dropbox 폴더 URL (이미 폴더가 있는 경우)' },
+        inflow_date: { type: 'string', description: '유입일 YYYY-MM-DD (없으면 오늘)' },
+        create_notion: { type: 'boolean', description: '노션 프로젝트도 생성할지 (기본 true)' },
+      },
+      required: ['name', 'service_type'],
+    },
+  },
+  {
+    name: 'update_notion_title',
+    description: '노션 프로젝트 페이지 제목을 변경합니다.',
+    input_schema: {
+      type: 'object' as const,
+      properties: {
+        page_id: { type: 'string', description: '노션 페이지 ID' },
+        title: { type: 'string', description: '새 제목' },
+      },
+      required: ['page_id', 'title'],
+    },
+  },
+  {
+    name: 'read_dropbox_pdf',
+    description: '드롭박스 프로젝트 폴더의 PDF(견적서/계약서)를 읽고 금액, 내용 등을 추출합니다.',
+    input_schema: {
+      type: 'object' as const,
+      properties: {
+        sale_search: { type: 'string', description: '건명 또는 발주처 검색어' },
+        path: { type: 'string', description: '직접 드롭박스 폴더 경로' },
       },
     },
   },
   {
-    type: 'function' as const,
-    function: {
-      name: 'get_sale_detail',
-      description: '특정 계약의 상세 정보와 원가 내역을 조회합니다.',
-      parameters: {
-        type: 'object' as const,
-        properties: {
-          search: { type: 'string', description: '건명 또는 발주처 검색어' },
-        },
-        required: ['search'],
+    name: 'update_sale_revenue',
+    description: '계약의 매출액을 업데이트합니다.',
+    input_schema: {
+      type: 'object' as const,
+      properties: {
+        search: { type: 'string', description: '건명 또는 발주처 검색어' },
+        revenue: { type: 'number', description: '새 매출액 (원 단위)' },
+      },
+      required: ['search', 'revenue'],
+    },
+  },
+  {
+    name: 'update_sale_status',
+    description: '계약의 결제 상태를 변경합니다. 변경 전에 반드시 사용자에게 확인받을 것.',
+    input_schema: {
+      type: 'object' as const,
+      properties: {
+        search: { type: 'string', description: '건명 또는 발주처 검색어' },
+        contract_stage: { type: 'string', description: '새 단계: 계약 | 착수 | 선금 | 중도금 | 완수 | 계산서발행 | 잔금' },
+      },
+      required: ['search', 'contract_stage'],
+    },
+  },
+  {
+    name: 'update_notion_status',
+    description: '노션 프로젝트 상태를 변경합니다. 변경 전에 반드시 사용자에게 확인받을 것.',
+    input_schema: {
+      type: 'object' as const,
+      properties: {
+        page_id: { type: 'string', description: '노션 페이지 ID' },
+        status: { type: 'string', description: '새 상태: 진행 전 | 진행 중 | 완료 | 보류' },
+      },
+      required: ['page_id', 'status'],
+    },
+  },
+  {
+    name: 'search_notion_projects',
+    description: '노션 프로젝트 DB를 검색합니다. 프로젝트 이름, 상태, PM, 기간 조회 가능.',
+    input_schema: {
+      type: 'object' as const,
+      properties: {
+        search: { type: 'string', description: '프로젝트명 검색어' },
+        status: { type: 'string', description: '상태 필터 (진행 전 | 진행 중 | 완료 | 보류)' },
       },
     },
   },
   {
-    type: 'function' as const,
-    function: {
-      name: 'create_sale',
-      description: '새 계약건을 시스템에 등록하고 노션 프로젝트를 생성합니다. PDF 분석 결과나 사용자 제공 정보로 등록.',
-      parameters: {
-        type: 'object' as const,
-        properties: {
-          name: { type: 'string', description: '건명 (필수)' },
-          client_org: { type: 'string', description: '발주처' },
-          service_type: { type: 'string', description: '서비스 타입: 교육프로그램/납품설치/유지보수/교구대여/제작인쇄/콘텐츠제작/행사운영/행사대여/프로젝트/SOS/002ENT 중 하나' },
-          revenue: { type: 'number', description: '매출액 (원 단위)' },
-          memo: { type: 'string', description: '메모' },
-          dropbox_url: { type: 'string', description: '기존 Dropbox 폴더 URL (이미 폴더가 있는 경우)' },
-          inflow_date: { type: 'string', description: '유입일 YYYY-MM-DD (없으면 오늘)' },
-          create_notion: { type: 'boolean', description: '노션 프로젝트도 생성할지 (기본 true)' },
-        },
-        required: ['name', 'service_type'],
+    name: 'get_notion_project_content',
+    description: '특정 노션 프로젝트 페이지의 상세 내용(TODO, 업무순서, GOAL 등)을 조회합니다.',
+    input_schema: {
+      type: 'object' as const,
+      properties: {
+        page_id: { type: 'string', description: '노션 페이지 ID (search_notion_projects 결과에서 가져옴)' },
+      },
+      required: ['page_id'],
+    },
+  },
+  {
+    name: 'search_dropbox',
+    description: '키워드로 Dropbox 파일/폴더를 검색합니다. 경로를 모를 때 사용.',
+    input_schema: {
+      type: 'object' as const,
+      properties: {
+        query: { type: 'string', description: '검색 키워드 (예: 용인청, 행사운영, 견적서)' },
+      },
+      required: ['query'],
+    },
+  },
+  {
+    name: 'search_leads',
+    description: '리드(잠재 고객) 목록을 검색합니다. 기관명, 담당자, 상태로 필터 가능.',
+    input_schema: {
+      type: 'object' as const,
+      properties: {
+        search: { type: 'string', description: '기관명 또는 담당자명 검색어' },
+        status: { type: 'string', description: '상태 필터: 유입 | 회신대기 | 견적발송 | 조율중 | 진행중 | 완료 | 취소' },
       },
     },
   },
   {
-    type: 'function' as const,
-    function: {
-      name: 'update_notion_title',
-      description: '노션 프로젝트 페이지 제목을 변경합니다.',
-      parameters: {
-        type: 'object' as const,
-        properties: {
-          page_id: { type: 'string', description: '노션 페이지 ID' },
-          title: { type: 'string', description: '새 제목' },
-        },
-        required: ['page_id', 'title'],
+    name: 'create_lead',
+    description: '새 리드(잠재 고객 문의)를 등록합니다. 같은 기관이 이미 있으면 알려줍니다.',
+    input_schema: {
+      type: 'object' as const,
+      properties: {
+        client_org: { type: 'string', description: '기관명 (필수)' },
+        project_name: { type: 'string', description: '프로젝트명/건명 (예: 260610 서울중학교 렌탈). 없으면 생략.' },
+        contact_name: { type: 'string', description: '담당자 이름/직급' },
+        phone: { type: 'string', description: '연락처' },
+        email: { type: 'string', description: '이메일' },
+        service_type: { type: 'string', description: '서비스 분류: SOS/교육프로그램/납품설치/유지보수/교구대여/제작인쇄/콘텐츠제작/행사운영/행사대여/프로젝트/002ENT' },
+        initial_content: { type: 'string', description: '문의 내용 요약 2~3줄' },
+        inflow_date: { type: 'string', description: '최초 유입일 YYYY-MM-DD (없으면 오늘)' },
+        remind_date: { type: 'string', description: '리마인드 날짜 YYYY-MM-DD' },
+        channel: { type: 'string', description: '소통 경로: 전화/이메일/카카오/채널톡/기타' },
+        inflow_source: { type: 'string', description: '유입 경로: 네이버/인스타/유튜브/지인/기존고객/기타' },
+        assignee_name: { type: 'string', description: '담당 직원 이름 (없으면 미지정)' },
+      },
+      required: ['client_org'],
+    },
+  },
+  {
+    name: 'update_lead',
+    description: '리드의 상태, 소통 내용, 리마인드 날짜 등을 업데이트합니다. 같은 기관에 여러 건이 있을 수 있으므로, 복수 결과 반환 시 lead_id로 특정해서 재호출합니다.',
+    input_schema: {
+      type: 'object' as const,
+      properties: {
+        search: { type: 'string', description: '기관명 또는 담당자명 검색어 (lead_id 없을 때 필수)' },
+        lead_id: { type: 'string', description: '특정 리드 ID (예: LEAD20260413-0001). 같은 기관에 여러 건이 있을 때 명시.' },
+        status: { type: 'string', description: '새 상태: 유입 | 회신대기 | 견적발송 | 조율중 | 진행중 | 완료 | 취소' },
+        service_type: { type: 'string', description: '서비스 유형: 교육프로그램 | 납품설치 | 유지보수 | 교구대여 | 제작인쇄 | 콘텐츠제작 | 행사운영 | 행사대여 | 프로젝트 | SOS | 002ENT' },
+        remind_date: { type: 'string', description: '리마인드 날짜 YYYY-MM-DD' },
+        contact_log: { type: 'string', description: '새 소통 내용 (1→2→3차 순서로 빈 칸에 자동 저장)' },
+        notes: { type: 'string', description: '메모 업데이트' },
       },
     },
   },
   {
-    type: 'function' as const,
-    function: {
-      name: 'read_dropbox_pdf',
-      description: '드롭박스 프로젝트 폴더의 PDF(견적서/계약서)를 읽고 금액, 내용 등을 추출합니다.',
-      parameters: {
-        type: 'object' as const,
-        properties: {
-          sale_search: { type: 'string', description: '건명 또는 발주처 검색어' },
-          path: { type: 'string', description: '직접 드롭박스 폴더 경로' },
-        },
+    name: 'convert_lead_to_sale',
+    description: '리드를 매출건으로 전환합니다. 계약이 성사됐을 때 사용. 같은 기관에 여러 건이 있을 수 있으므로, 복수 결과 반환 시 lead_id로 특정해서 재호출합니다.',
+    input_schema: {
+      type: 'object' as const,
+      properties: {
+        search: { type: 'string', description: '기관명 또는 담당자명 검색어 (lead_id 없을 때 필수)' },
+        lead_id: { type: 'string', description: '특정 리드 ID (예: LEAD20260413-0001). 같은 기관에 여러 건이 있을 때 명시.' },
       },
     },
   },
   {
-    type: 'function' as const,
-    function: {
-      name: 'update_sale_revenue',
-      description: '계약의 매출액을 업데이트합니다.',
-      parameters: {
-        type: 'object' as const,
-        properties: {
-          search: { type: 'string', description: '건명 또는 발주처 검색어' },
-          revenue: { type: 'number', description: '새 매출액 (원 단위)' },
-        },
-        required: ['search', 'revenue'],
+    name: 'search_customers',
+    description: '고객 DB를 검색합니다. 기관(학교/기업 등)과 담당자(개인) 정보, 거래 이력을 조회할 수 있습니다.',
+    input_schema: {
+      type: 'object' as const,
+      properties: {
+        query: { type: 'string', description: '기관명 또는 담당자명 검색어' },
+        type: { type: 'string', description: '기관 유형 필터: 학교 | 공공기관 | 기업 | 개인 | 기타' },
       },
     },
   },
   {
-    type: 'function' as const,
-    function: {
-      name: 'update_sale_status',
-      description: '계약의 결제 상태를 변경합니다. 변경 전에 반드시 사용자에게 확인받을 것.',
-      parameters: {
-        type: 'object' as const,
-        properties: {
-          search: { type: 'string', description: '건명 또는 발주처 검색어' },
-          contract_stage: { type: 'string', description: '새 단계: 계약 | 착수 | 선금 | 중도금 | 완수 | 계산서발행 | 잔금' },
-        },
-        required: ['search', 'contract_stage'],
-      },
-    },
-  },
-  {
-    type: 'function' as const,
-    function: {
-      name: 'update_notion_status',
-      description: '노션 프로젝트 상태를 변경합니다. 변경 전에 반드시 사용자에게 확인받을 것.',
-      parameters: {
-        type: 'object' as const,
-        properties: {
-          page_id: { type: 'string', description: '노션 페이지 ID' },
-          status: { type: 'string', description: '새 상태: 진행 전 | 진행 중 | 완료 | 보류' },
-        },
-        required: ['page_id', 'status'],
-      },
-    },
-  },
-  {
-    type: 'function' as const,
-    function: {
-      name: 'search_notion_projects',
-      description: '노션 프로젝트 DB를 검색합니다. 프로젝트 이름, 상태, PM, 기간 조회 가능.',
-      parameters: {
-        type: 'object' as const,
-        properties: {
-          search: { type: 'string', description: '프로젝트명 검색어' },
-          status: { type: 'string', description: '상태 필터 (진행 전 | 진행 중 | 완료 | 보류)' },
-        },
-      },
-    },
-  },
-  {
-    type: 'function' as const,
-    function: {
-      name: 'get_notion_project_content',
-      description: '특정 노션 프로젝트 페이지의 상세 내용(TODO, 업무순서, GOAL 등)을 조회합니다.',
-      parameters: {
-        type: 'object' as const,
-        properties: {
-          page_id: { type: 'string', description: '노션 페이지 ID (search_notion_projects 결과에서 가져옴)' },
-        },
-        required: ['page_id'],
-      },
-    },
-  },
-  {
-    type: 'function' as const,
-    function: {
-      name: 'search_dropbox',
-      description: '키워드로 Dropbox 파일/폴더를 검색합니다. 경로를 모를 때 사용.',
-      parameters: {
-        type: 'object' as const,
-        properties: {
-          query: { type: 'string', description: '검색 키워드 (예: 용인청, 행사운영, 견적서)' },
-        },
-        required: ['query'],
-      },
-    },
-  },
-  {
-    type: 'function' as const,
-    function: {
-      name: 'search_leads',
-      description: '리드(잠재 고객) 목록을 검색합니다. 기관명, 담당자, 상태로 필터 가능.',
-      parameters: {
-        type: 'object' as const,
-        properties: {
-          search: { type: 'string', description: '기관명 또는 담당자명 검색어' },
-          status: { type: 'string', description: '상태 필터: 유입 | 회신대기 | 견적발송 | 조율중 | 진행중 | 완료 | 취소' },
-        },
-      },
-    },
-  },
-  {
-    type: 'function' as const,
-    function: {
-      name: 'create_lead',
-      description: '새 리드(잠재 고객 문의)를 등록합니다. 같은 기관이 이미 있으면 알려줍니다.',
-      parameters: {
-        type: 'object' as const,
-        properties: {
-          client_org: { type: 'string', description: '기관명 (필수)' },
-          project_name: { type: 'string', description: '프로젝트명/건명 (예: 260610 서울중학교 렌탈). 없으면 생략.' },
-          contact_name: { type: 'string', description: '담당자 이름/직급' },
-          phone: { type: 'string', description: '연락처' },
-          email: { type: 'string', description: '이메일' },
-          service_type: { type: 'string', description: '서비스 분류: SOS/교육프로그램/납품설치/유지보수/교구대여/제작인쇄/콘텐츠제작/행사운영/행사대여/프로젝트/002ENT' },
-          initial_content: { type: 'string', description: '문의 내용 요약 2~3줄' },
-          inflow_date: { type: 'string', description: '최초 유입일 YYYY-MM-DD (없으면 오늘)' },
-          remind_date: { type: 'string', description: '리마인드 날짜 YYYY-MM-DD' },
-          channel: { type: 'string', description: '소통 경로: 전화/이메일/카카오/채널톡/기타' },
-          inflow_source: { type: 'string', description: '유입 경로: 네이버/인스타/유튜브/지인/기존고객/기타' },
-          assignee_name: { type: 'string', description: '담당 직원 이름 (없으면 미지정)' },
-        },
-        required: ['client_org'],
-      },
-    },
-  },
-  {
-    type: 'function' as const,
-    function: {
-      name: 'update_lead',
-      description: '리드의 상태, 소통 내용, 리마인드 날짜 등을 업데이트합니다. 같은 기관에 여러 건이 있을 수 있으므로, 복수 결과 반환 시 lead_id로 특정해서 재호출합니다.',
-      parameters: {
-        type: 'object' as const,
-        properties: {
-          search: { type: 'string', description: '기관명 또는 담당자명 검색어 (lead_id 없을 때 필수)' },
-          lead_id: { type: 'string', description: '특정 리드 ID (예: LEAD20260413-0001). 같은 기관에 여러 건이 있을 때 명시.' },
-          status: { type: 'string', description: '새 상태: 유입 | 회신대기 | 견적발송 | 조율중 | 진행중 | 완료 | 취소' },
-          service_type: { type: 'string', description: '서비스 유형: 교육프로그램 | 납품설치 | 유지보수 | 교구대여 | 제작인쇄 | 콘텐츠제작 | 행사운영 | 행사대여 | 프로젝트 | SOS | 002ENT' },
-          remind_date: { type: 'string', description: '리마인드 날짜 YYYY-MM-DD' },
-          contact_log: { type: 'string', description: '새 소통 내용 (1→2→3차 순서로 빈 칸에 자동 저장)' },
-          notes: { type: 'string', description: '메모 업데이트' },
-        },
-      },
-    },
-  },
-  {
-    type: 'function' as const,
-    function: {
-      name: 'convert_lead_to_sale',
-      description: '리드를 매출건으로 전환합니다. 계약이 성사됐을 때 사용. 같은 기관에 여러 건이 있을 수 있으므로, 복수 결과 반환 시 lead_id로 특정해서 재호출합니다.',
-      parameters: {
-        type: 'object' as const,
-        properties: {
-          search: { type: 'string', description: '기관명 또는 담당자명 검색어 (lead_id 없을 때 필수)' },
-          lead_id: { type: 'string', description: '특정 리드 ID (예: LEAD20260413-0001). 같은 기관에 여러 건이 있을 때 명시.' },
-        },
-      },
-    },
-  },
-  {
-    type: 'function' as const,
-    function: {
-      name: 'search_customers',
-      description: '고객 DB를 검색합니다. 기관(학교/기업 등)과 담당자(개인) 정보, 거래 이력을 조회할 수 있습니다.',
-      parameters: {
-        type: 'object' as const,
-        properties: {
-          query: { type: 'string', description: '기관명 또는 담당자명 검색어' },
-          type: { type: 'string', description: '기관 유형 필터: 학교 | 공공기관 | 기업 | 개인 | 기타' },
-        },
-      },
-    },
-  },
-  {
-    type: 'function' as const,
-    function: {
-      name: 'list_dropbox_files',
-      description: '프로젝트의 Dropbox 폴더 파일 목록을 조회합니다.',
-      parameters: {
-        type: 'object' as const,
-        properties: {
-          sale_search: { type: 'string', description: '건명 또는 발주처 검색어 (sales 테이블에서 dropbox 경로 찾기)' },
-          path: { type: 'string', description: '직접 Dropbox 폴더 경로 (예: /방 준영/1. 가업/★ DB/...)' },
-        },
+    name: 'list_dropbox_files',
+    description: '프로젝트의 Dropbox 폴더 파일 목록을 조회합니다.',
+    input_schema: {
+      type: 'object' as const,
+      properties: {
+        sale_search: { type: 'string', description: '건명 또는 발주처 검색어 (sales 테이블에서 dropbox 경로 찾기)' },
+        path: { type: 'string', description: '직접 Dropbox 폴더 경로 (예: /방 준영/1. 가업/★ DB/...)' },
       },
     },
   },
@@ -650,15 +595,16 @@ async function executeTool(name: string, input: Record<string, unknown>, userRol
     const notionToken = process.env.NOTION_TOKEN
     if (!notionToken) return { success: true, id: saleRow.id, notionError: 'NOTION_TOKEN not set' }
 
-    // gpt-4o-mini로 프로젝트 제안 생성
+    // claude-haiku로 프로젝트 제안 생성
     let proposal = { about: '', prep_steps: [] as string[], exec_steps: [] as string[], todos: [] as string[], goal: '', deliverables: [] as string[] }
     try {
-      const propRes = await getClient().chat.completions.create({
-        model: 'gpt-4o-mini', max_tokens: 800,
+      const propRes = await getClient().messages.create({
+        model: MODEL,
+        max_tokens: 800,
         messages: [{ role: 'user', content: `계약건 프로젝트 페이지를 JSON으로만 작성:\n건명:${saleName}\n발주처:${clientOrg||'미정'}\n서비스:${serviceType||'미정'}\n금액:${revenue?revenue.toLocaleString()+'원':'미정'}\n메모:${memo||'없음'}\n\n{"about":"2~3문장","prep_steps":["준비1","준비2","준비3"],"exec_steps":["실행1","실행2","실행3"],"todos":["TODO1","TODO2","TODO3","TODO4","TODO5"],"goal":"목표","deliverables":["산출물1","산출물2"]}` }],
       })
-      logApiUsage({ model: 'gpt-4o-mini', endpoint: 'chat', userId, inputTokens: propRes.usage?.prompt_tokens ?? 0, outputTokens: propRes.usage?.completion_tokens ?? 0 }).catch(() => {})
-      const pt = propRes.choices[0].message.content || ''
+      logApiUsage({ model: MODEL, endpoint: 'chat', userId, inputTokens: propRes.usage.input_tokens, outputTokens: propRes.usage.output_tokens }).catch(() => {})
+      const pt = propRes.content[0].type === 'text' ? propRes.content[0].text : ''
       const pm = pt.match(/\{[\s\S]*\}/)
       if (pm) proposal = JSON.parse(pm[0])
     } catch { /* 기본값 유지 */ }
@@ -742,7 +688,6 @@ async function executeTool(name: string, input: Record<string, unknown>, userRol
     let folderPath = input.path as string | undefined
     let saleName = ''
 
-    // admin 외에는 직접 경로 입력 불가
     if (userRole !== 'admin' && input.path) return { error: '직접 경로로 드롭박스 접근은 불가능해. 건명으로 검색해줘.' }
 
     if (!folderPath && input.sale_search) {
@@ -762,18 +707,15 @@ async function executeTool(name: string, input: Record<string, unknown>, userRol
 
     if (!folderPath) return { error: 'sale_search 또는 path가 필요해.' }
 
-    // trailing slash 제거 (Dropbox API 요구사항)
     folderPath = folderPath.replace(/\/$/, '')
 
     const toAsciiSafe = (obj: object) =>
       JSON.stringify(obj).replace(/[^\x00-\x7F]/g, c => `\\u${c.charCodeAt(0).toString(16).padStart(4, '0')}`)
 
-    // 직접 파일 경로인 경우 (확장자로 판단)
     let pdfFile: { name: string; path_display: string }
     if (folderPath.toLowerCase().endsWith('.pdf')) {
       pdfFile = { name: folderPath.split('/').pop() ?? 'file.pdf', path_display: folderPath }
     } else {
-      // 폴더 내 PDF 목록 조회 (재귀)
       const listRes = await fetch('https://api.dropboxapi.com/2/files/list_folder', {
         method: 'POST',
         headers: {
@@ -794,6 +736,7 @@ async function executeTool(name: string, input: Record<string, unknown>, userRol
       if (pdfs.length > 1) return { error: `폴더에 PDF가 ${pdfs.length}개 있어: ${pdfs.map(p => p.name).join(', ')}\n어떤 파일 읽을지 알려줘.` }
       pdfFile = pdfs[0]
     }
+
     const dlRes = await fetch('https://content.dropboxapi.com/2/files/download', {
       method: 'POST',
       headers: {
@@ -805,28 +748,33 @@ async function executeTool(name: string, input: Record<string, unknown>, userRol
     if (!dlRes.ok) return { error: `PDF 다운로드 실패: ${dlRes.status}` }
 
     const pdfBuffer = await dlRes.arrayBuffer()
+    const base64Data = Buffer.from(pdfBuffer).toString('base64')
 
-    // GPT-4o로 PDF 분석 (Files API)
-    const pdfFileObj = new File([pdfBuffer], 'document.pdf', { type: 'application/pdf' })
-    const uploaded = await getClient().files.create({ file: pdfFileObj, purpose: 'user_data' })
-    const analysisRes = await getClient().chat.completions.create({
-      model: 'gpt-4o',
+    // Claude로 PDF 직접 분석 (base64 document)
+    const analysisRes = await getClient().messages.create({
+      model: MODEL,
       max_tokens: 1024,
       messages: [{
         role: 'user',
         content: [
           {
+            type: 'document',
+            source: {
+              type: 'base64',
+              media_type: 'application/pdf',
+              data: base64Data,
+            },
+          } as unknown as Anthropic.ContentBlockParam,
+          {
             type: 'text',
             text: '이 문서에서 다음 정보를 JSON으로만 추출해줘:\n{"total_amount": 총금액(숫자,원단위,없으면null), "summary": "핵심내용 2~3줄", "date": "날짜(YYYY-MM-DD,없으면null)", "items": ["주요항목1","항목2"]}',
           },
-          { type: 'file', file: { file_id: uploaded.id } } as unknown as OpenAI.Chat.ChatCompletionContentPartText,
         ],
       }],
     })
-    await getClient().files.delete(uploaded.id).catch(() => {})
-    logApiUsage({ model: 'gpt-4o', endpoint: 'chat', userId, inputTokens: analysisRes.usage?.prompt_tokens ?? 0, outputTokens: analysisRes.usage?.completion_tokens ?? 0 }).catch(() => {})
+    logApiUsage({ model: MODEL, endpoint: 'chat', userId, inputTokens: analysisRes.usage.input_tokens, outputTokens: analysisRes.usage.output_tokens }).catch(() => {})
 
-    const analysisText = analysisRes.choices[0].message.content || ''
+    const analysisText = analysisRes.content[0].type === 'text' ? analysisRes.content[0].text : ''
     const jsonMatch = analysisText.match(/\{[\s\S]*\}/)
     let extracted = null
     try { if (jsonMatch) extracted = JSON.parse(jsonMatch[0]) } catch { /* ignore */ }
@@ -862,7 +810,6 @@ async function executeTool(name: string, input: Record<string, unknown>, userRol
       return { error: `유효하지 않은 단계야. 가능한 값: ${validStatuses.join(', ')}` }
     }
 
-    // 먼저 해당 건 조회
     let findQuery = supabase
       .from('sales')
       .select('id, name, contract_stage')
@@ -969,7 +916,6 @@ async function executeTool(name: string, input: Record<string, unknown>, userRol
     if (!token) return { error: 'Dropbox 토큰 발급 실패.' }
     const rootNs = process.env.DROPBOX_ROOT_NAMESPACE ?? '3265523555'
 
-    // admin 외에는 ★DB 폴더 내에서만 검색
     const searchPath = userRole === 'admin' ? '' : '/방 준영/1. 가업/★ DB'
 
     const res = await fetch('https://api.dropboxapi.com/2/files/search_v2', {
@@ -994,7 +940,6 @@ async function executeTool(name: string, input: Record<string, unknown>, userRol
       path: m.metadata.metadata.path_display,
     }))
 
-    // member는 본인 담당 건 폴더 경로만 표시
     if (isMember) {
       const { data: mySales } = await supabase
         .from('sales')
@@ -1032,7 +977,6 @@ async function executeTool(name: string, input: Record<string, unknown>, userRol
     const clientOrg = ((input.client_org as string) || '').trim()
     if (!clientOrg) return { error: '기관명은 필수야.' }
 
-    // 동일 기관 기존 리드 확인 (차단하지 않고 참고용으로만)
     const { data: existing } = await supabase
       .from('leads')
       .select('id, lead_id, status, client_org, service_type')
@@ -1040,7 +984,6 @@ async function executeTool(name: string, input: Record<string, unknown>, userRol
       .neq('status', '취소')
       .limit(5)
 
-    // lead_id 생성
     const today = new Date().toISOString().slice(0, 10).replace(/-/g, '')
     const prefix = `LEAD${today}-`
     const { data: lastId } = await supabase
@@ -1052,7 +995,6 @@ async function executeTool(name: string, input: Record<string, unknown>, userRol
     const num = lastId && lastId.length > 0 ? parseInt(lastId[0].lead_id.slice(-4)) + 1 : 1
     const lead_id = `${prefix}${String(num).padStart(4, '0')}`
 
-    // 담당자 이름으로 ID 찾기
     let assignee_id: string | null = null
     if (input.assignee_name) {
       const { data: assignee } = await supabase
@@ -1197,7 +1139,6 @@ async function executeTool(name: string, input: Record<string, unknown>, userRol
     const query = input.query as string | undefined
     const typeFilter = input.type as string | undefined
 
-    // 기관 검색
     let orgQuery = adminDb
       .from('customers')
       .select('*')
@@ -1206,7 +1147,6 @@ async function executeTool(name: string, input: Record<string, unknown>, userRol
     if (query) orgQuery = orgQuery.ilike('name', `%${query}%`)
     if (typeFilter) orgQuery = orgQuery.eq('type', typeFilter)
 
-    // 담당자 검색
     let personQuery = adminDb
       .from('persons')
       .select('*')
@@ -1236,7 +1176,6 @@ async function executeTool(name: string, input: Record<string, unknown>, userRol
 
     const isNonAdmin = userRole !== 'admin'
 
-    // admin 외에는 직접 경로 입력 불가 — 반드시 건명 검색 기준으로만 접근
     if (isNonAdmin && input.path) return { error: '직접 경로로 드롭박스 접근은 불가능해. 건명으로 검색해줘.' }
 
     if (!folderPath && input.sale_search) {
@@ -1289,7 +1228,6 @@ export async function POST(req: NextRequest) {
 
     const { messages, mode } = await req.json()
 
-    // 사용자 프로필 조회
     const { data: profile } = await supabase.from('profiles').select('name, role').eq('id', user.id).single()
     const userName = profile?.name || '팀원'
     const userRole = profile?.role || 'member'
@@ -1304,7 +1242,8 @@ export async function POST(req: NextRequest) {
 
     const today = new Date().toLocaleDateString('ko-KR', { year: 'numeric', month: 'long', day: 'numeric', timeZone: 'Asia/Seoul' })
     const systemWithDate = `오늘 날짜: ${today}\n현재 사용자: ${userName} (권한: ${userRole})\n${userRole === 'member' ? '※ 이 사용자는 팀원 권한이라 본인 담당 건만 조회 가능해.\n' : ''}${modeCtx}\n${SYSTEM_PROMPT}`
-    const apiMessages: OpenAI.Chat.ChatCompletionMessageParam[] = messages.map((m: {
+
+    const apiMessages: Anthropic.MessageParam[] = messages.map((m: {
       role: string
       content: string
       imageData?: { base64: string; mediaType: string }
@@ -1314,9 +1253,11 @@ export async function POST(req: NextRequest) {
           role: m.role as 'user' | 'assistant',
           content: [
             {
-              type: 'image_url' as const,
-              image_url: {
-                url: `data:${m.imageData.mediaType || 'image/jpeg'};base64,${m.imageData.base64}`,
+              type: 'image' as const,
+              source: {
+                type: 'base64' as const,
+                media_type: (m.imageData.mediaType || 'image/jpeg') as 'image/jpeg' | 'image/png' | 'image/gif' | 'image/webp',
+                data: m.imageData.base64,
               },
             },
             { type: 'text' as const, text: m.content },
@@ -1330,44 +1271,46 @@ export async function POST(req: NextRequest) {
     })
 
     // tool_use 루프
-    let response = await getClient().chat.completions.create({
-      model: 'gpt-4o',
+    let response = await getClient().messages.create({
+      model: MODEL,
       max_tokens: 2048,
+      system: systemWithDate,
       tools: TOOLS,
-      messages: [{ role: 'system', content: systemWithDate }, ...apiMessages],
+      messages: apiMessages,
     })
-    logApiUsage({ model: 'gpt-4o', endpoint: 'chat', userId: user.id, inputTokens: response.usage?.prompt_tokens ?? 0, outputTokens: response.usage?.completion_tokens ?? 0 }).catch(() => {})
+    logApiUsage({ model: MODEL, endpoint: 'chat', userId: user.id, inputTokens: response.usage.input_tokens, outputTokens: response.usage.output_tokens }).catch(() => {})
 
-    while (response.choices[0].finish_reason === 'tool_calls') {
-      const message = response.choices[0].message
-      const toolCalls = message.tool_calls || []
+    while (response.stop_reason === 'tool_use') {
+      const toolUseBlocks = response.content.filter((b): b is Anthropic.ToolUseBlock => b.type === 'tool_use')
 
-      const toolResults: OpenAI.Chat.ChatCompletionToolMessageParam[] = await Promise.all(
-        toolCalls.map(async (tc) => {
-          const fn = (tc as OpenAI.Chat.ChatCompletionMessageFunctionToolCall).function
-          const args = JSON.parse(fn.arguments) as Record<string, unknown>
-          const result = await executeTool(fn.name, args, userRole, user.id)
+      const toolResults: Anthropic.ToolResultBlockParam[] = await Promise.all(
+        toolUseBlocks.map(async (tu) => {
+          const result = await executeTool(tu.name, tu.input as Record<string, unknown>, userRole, user.id)
           return {
-            role: 'tool' as const,
-            tool_call_id: tc.id,
+            type: 'tool_result' as const,
+            tool_use_id: tu.id,
             content: JSON.stringify(result),
           }
         })
       )
 
-      apiMessages.push(message as OpenAI.Chat.ChatCompletionMessageParam)
-      apiMessages.push(...toolResults)
+      apiMessages.push({ role: 'assistant', content: response.content as Anthropic.ContentBlockParam[] })
+      apiMessages.push({ role: 'user', content: toolResults })
 
-      response = await getClient().chat.completions.create({
-        model: 'gpt-4o',
+      response = await getClient().messages.create({
+        model: MODEL,
         max_tokens: 2048,
+        system: systemWithDate,
         tools: TOOLS,
-        messages: [{ role: 'system', content: systemWithDate }, ...apiMessages],
+        messages: apiMessages,
       })
-      logApiUsage({ model: 'gpt-4o', endpoint: 'chat', userId: user.id, inputTokens: response.usage?.prompt_tokens ?? 0, outputTokens: response.usage?.completion_tokens ?? 0 }).catch(() => {})
+      logApiUsage({ model: MODEL, endpoint: 'chat', userId: user.id, inputTokens: response.usage.input_tokens, outputTokens: response.usage.output_tokens }).catch(() => {})
     }
 
-    const rawText = response.choices[0].message.content || ''
+    const rawText = response.content
+      .filter((b): b is Anthropic.TextBlock => b.type === 'text')
+      .map(b => b.text)
+      .join('')
 
     // <sale-data> 블록 파싱
     const saleMatch = rawText.match(/<sale-data>([\s\S]*?)<\/sale-data>/)
