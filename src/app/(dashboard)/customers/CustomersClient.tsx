@@ -72,7 +72,7 @@ export default function CustomersClient({ customers, persons, isAdmin }: Props) 
   const router = useRouter()
   const [listView,    setListView]    = useState<'org'|'person'>('org')
   const [detailType,  setDetailType]  = useState<'org'|'person'>('org')
-  const [detailId,    setDetailId]    = useState<string|null>(customers[0]?.id ?? null)
+  const [detailId,    setDetailId]    = useState<string|null>(null)
   const [orgSearch,   setOrgSearch]   = useState('')
   const [pSearch,     setPSearch]     = useState('')
   const [collapsed,   setCollapsed]   = useState<Set<string>>(new Set())
@@ -348,154 +348,154 @@ export default function CustomersClient({ customers, persons, isAdmin }: Props) 
         </div>
       )}
 
-      {/* 스플릿 뷰 */}
-      <div className="flex flex-col md:flex-row gap-4 md:h-[calc(100vh-320px)] md:min-h-[540px]">
-
-        {/* 왼쪽: 목록 — 모바일에서 상세 선택 시 숨김 */}
-        <div className={`${detailId ? 'hidden md:flex' : 'flex'} md:w-[44%] flex-col border border-gray-200 rounded-xl bg-white overflow-hidden min-h-[400px] md:min-h-0`}>
-          <div className="px-3 py-2.5 border-b border-gray-100 space-y-2 shrink-0">
-            <div className="flex bg-gray-100 rounded-lg p-0.5 gap-0.5">
-              <button onClick={()=>setListView('org')}
-                className={`flex-1 py-1.5 rounded-md text-xs font-medium transition-all ${listView==='org'?'bg-white text-gray-900 shadow-sm':'text-gray-500 hover:text-gray-700'}`}>
-                🏛️ 기관 ({customers.length})
-              </button>
-              <button onClick={()=>setListView('person')}
-                className={`flex-1 py-1.5 rounded-md text-xs font-medium transition-all ${listView==='person'?'bg-white text-gray-900 shadow-sm':'text-gray-500 hover:text-gray-700'}`}>
-                👤 담당자 ({persons.length})
-              </button>
-            </div>
-            <div className="flex gap-2">
-              {listView==='org'
-                ?<input type="text" placeholder="기관명, 지역 검색..." value={orgSearch} onChange={e=>setOrgSearch(e.target.value)} className={`flex-1 ${inp} py-1.5`}/>
-                :<input type="text" placeholder="담당자명 검색..." value={pSearch} onChange={e=>setPSearch(e.target.value)} className={`flex-1 ${inp} py-1.5`}/>}
-              {isAdmin && (
-                <button
-                  onClick={()=>{ if(listView==='org'){setOrgForm({});setShowNewOrg(true)}else{setPerForm({});setPerOrgSearch('');setShowNewPerson(true)} }}
-                  className="px-3 py-1.5 text-xs font-semibold rounded-lg shrink-0"
-                  style={{backgroundColor:'#FFCE00',color:'#121212'}}>
-                  + 추가
-                </button>
-              )}
-            </div>
-            <div className="flex items-center justify-between">
-              {listView==='person' ? (
-                <button onClick={()=>setFilterMoved(f=>!f)}
-                  className={`text-xs px-2.5 py-1 rounded-full border transition-colors ${filterMoved?'bg-orange-100 text-orange-700 border-orange-200 font-medium':'border-gray-200 text-gray-400 hover:border-gray-300'}`}>
-                  이직자만 보기 {filterMoved&&`(${filteredPersons.length}명)`}
-                </button>
-              ) : <span/>}
-              <button onClick={listView==='org'?handleExportOrgs:handleExportPersons}
-                className="text-xs text-gray-400 hover:text-gray-600 flex items-center gap-0.5">
-                ↓ CSV
-              </button>
-            </div>
-          </div>
-
-          {/* 기관 목록 */}
-          {listView==='org' && (
-            <div className="overflow-y-auto flex-1">
-              {customers.length===0 ? (
-                <div className="flex flex-col items-center justify-center h-full text-gray-400 gap-2 py-12">
-                  <p className="text-sm">등록된 기관이 없어요.</p>
-                  {isAdmin && <button onClick={()=>setShowNewOrg(true)} className="text-xs text-yellow-600 underline">+ 첫 기관 추가</button>}
-                </div>
-              ) : (
-                <table className="w-full text-sm">
-                  <thead className="sticky top-0 bg-gray-50 z-10">
-                    <tr className="border-b border-gray-100">
-                      <th className="text-left px-3 py-2.5 text-xs font-semibold text-gray-500">기관명</th>
-                      <th className="text-right px-3 py-2.5 text-xs font-semibold text-gray-500 whitespace-nowrap">총 매출</th>
-                      <th className="text-right px-3 py-2.5 text-xs font-semibold text-gray-500 whitespace-nowrap">건수</th>
-                    </tr>
-                  </thead>
-                  {tierGroups.map(({tier,orgs})=>{
-                    const tc=TIER_COL[tier]; const isC=collapsed.has(tier)
-                    const tierTotal=orgs.reduce((s,o)=>s+o.total_sales,0)
-                    return (
-                      <tbody key={tier}>
-                        <tr className={`${tc.hdr} cursor-pointer select-none`}
-                          onClick={()=>setCollapsed(p=>{const n=new Set(p);n.has(tier)?n.delete(tier):n.add(tier);return n})}>
-                          <td colSpan={3} className="px-3 py-1.5">
-                            <div className="flex items-center gap-1.5">
-                              <span>{tc.emoji}</span>
-                              <span className={`text-xs font-bold ${tc.txt}`}>{tc.label}</span>
-                              <span className={`text-xs ${tc.txt} opacity-70`}>{orgs.length}개{tierTotal>0?` · ${fmt(tierTotal)}`:''}</span>
-                              <span className="ml-auto text-gray-400 text-xs">{isC?'▶':'▼'}</span>
-                            </div>
-                          </td>
-                        </tr>
-                        {!isC && orgs.map(o=>{
-                          const isSel=detailType==='org'&&detailId===o.id
-                          return (
-                            <tr key={o.id}
-                              className={`border-t border-gray-50 cursor-pointer transition-colors ${isSel?'bg-yellow-50 ring-1 ring-inset ring-yellow-200':'hover:bg-gray-50'}`}
-                              onClick={()=>goToOrg(o.id)}>
-                              <td className="px-3 py-2.5">
-                                <div className="flex items-center gap-1.5">
-                                  <div className={`w-1.5 h-1.5 rounded-full ${tc.dot} shrink-0`}/>
-                                  <div>
-                                    <p className="font-medium text-gray-900 text-sm">{o.name}</p>
-                                    <p className="text-xs text-gray-400">{o.region}{o.region&&o.type?' · ':''}<span className={TYPE_COL[o.type]?.text||'text-gray-500'}>{o.type}</span></p>
-                                  </div>
-                                </div>
-                              </td>
-                              <td className="px-3 py-2.5 text-right">
-                                {o.total_sales>0?<span className="text-sm font-bold text-gray-800">{fmt(o.total_sales)}</span>:<span className="text-xs text-gray-300">-</span>}
-                              </td>
-                              <td className="px-3 py-2.5 text-right text-xs text-gray-500">{o.sales_count||'-'}</td>
-                            </tr>
-                          )
-                        })}
-                      </tbody>
-                    )
-                  })}
-                </table>
-              )}
-            </div>
-          )}
-
-          {/* 담당자 목록 */}
-          {listView==='person' && (
-            <div className="overflow-y-auto flex-1">
-              {persons.length===0 ? (
-                <div className="flex flex-col items-center justify-center h-full text-gray-400 gap-2 py-12">
-                  <p className="text-sm">등록된 담당자가 없어요.</p>
-                  {isAdmin && <button onClick={()=>setShowNewPerson(true)} className="text-xs text-yellow-600 underline">+ 첫 담당자 추가</button>}
-                </div>
-              ) : filteredPersons.map(p=>{
-                const cur=p.job_history.find(j=>j.is_current)
-                const hasMoved=p.job_history.length>1
-                const isSel=detailType==='person'&&detailId===p.id
+      {/* ── 카드 그리드 (기관 선택 전) ── */}
+      {!detailId && listView === 'org' && (
+        <div>
+          {/* 검색 + 타입 필터 + 추가 버튼 */}
+          <div className="flex items-center gap-3 mb-4 flex-wrap">
+            <input type="text" placeholder="기관명, 지역 검색..." value={orgSearch} onChange={e=>setOrgSearch(e.target.value)}
+              className="border border-gray-200 rounded-lg px-3 py-2 text-sm w-64 focus:outline-none focus:ring-2 focus:ring-yellow-300" />
+            <div className="flex gap-1.5">
+              {['전체','학교','교육청','공공기관','기업','기타'].map(t => {
+                const cnt = t === '전체' ? customers.length : customers.filter(c => c.type === t).length
+                const active = t === '전체' ? !orgSearch && true : false
                 return (
-                  <div key={p.id}
-                    className={`px-4 py-3 border-b border-gray-50 cursor-pointer transition-colors ${isSel?'bg-yellow-50 ring-1 ring-inset ring-yellow-200':'hover:bg-gray-50'}`}
-                    onClick={()=>goToPerson(p.id)}>
-                    <div className="flex items-center gap-3">
-                      <div className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold shrink-0 ${hasMoved?'bg-orange-100 text-orange-700':'bg-gray-100 text-gray-600'}`}>
-                        {p.name[0]}
+                  <button key={t}
+                    onClick={() => setOrgSearch(t === '전체' ? '' : t)}
+                    className="px-2.5 py-1.5 rounded-full text-xs font-medium border transition-all"
+                    style={orgSearch === t ? { background: '#121212', color: '#FFCE00', borderColor: '#121212' } : { background: '#fff', color: '#6B7280', borderColor: '#E5E7EB' }}>
+                    {t} <span className="opacity-60">({cnt})</span>
+                  </button>
+                )
+              })}
+            </div>
+            {isAdmin && (
+              <button onClick={() => { setOrgForm({}); setShowNewOrg(true) }}
+                className="ml-auto px-4 py-2 text-sm font-semibold rounded-lg"
+                style={{ backgroundColor: '#FFCE00', color: '#121212' }}>
+                + 기관 등록
+              </button>
+            )}
+          </div>
+          {/* 탭 전환 */}
+          <div className="flex items-center gap-2 mb-4">
+            <button onClick={() => setListView('org')}
+              className="px-3 py-1.5 text-xs font-medium rounded-full border"
+              style={{background:'#121212',color:'#FFCE00',borderColor:'#121212'}}>
+              🏛️ 기관 ({customers.length})
+            </button>
+            <button onClick={() => setListView('person')}
+              className="px-3 py-1.5 text-xs font-medium rounded-full border"
+              style={{background:'#fff',color:'#6B7280',borderColor:'#E5E7EB'}}>
+              👤 담당자 ({persons.length})
+            </button>
+          </div>
+          {/* 카드 그리드 */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+            {customers
+              .filter(o => !orgSearch || o.name.includes(orgSearch) || o.region.includes(orgSearch) || o.type === orgSearch)
+              .map(o => {
+                const currentContacts = o.contacts.filter(c => c.is_current)
+                return (
+                  <div key={o.id} onClick={() => goToOrg(o.id)}
+                    className="bg-white rounded-xl p-5 cursor-pointer hover:shadow-md transition-shadow"
+                    style={{ boxShadow: '0 1px 4px rgba(0,0,0,0.06)' }}>
+                    <div className="flex items-center gap-3 mb-3">
+                      <div className="w-10 h-10 bg-gray-100 rounded-xl flex items-center justify-center text-xl flex-shrink-0">🏢</div>
+                      <div className="min-w-0 flex-1">
+                        <p className="font-bold text-gray-900 text-sm truncate">{o.name}</p>
+                        <p className="text-xs text-gray-400">{o.type}{o.region ? ` · ${o.region}` : ''}</p>
                       </div>
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-1.5">
-                          <span className="font-semibold text-gray-900 text-sm">{p.name}</span>
-                          {hasMoved&&<span className="text-xs px-1.5 py-0.5 bg-orange-100 text-orange-600 rounded-full">이직</span>}
+                    </div>
+                    <div className="border-t border-gray-100 pt-3 mb-3">
+                      <p className="text-xs text-gray-400 mb-1.5">담당자</p>
+                      {currentContacts.length === 0 ? (
+                        <p className="text-xs text-gray-300">미등록</p>
+                      ) : currentContacts.slice(0, 2).map(ct => (
+                        <div key={ct.id} className="flex items-center gap-2 text-xs mb-1">
+                          <span className="font-semibold text-gray-800">{ct.person_name}</span>
+                          {ct.title && <span className="text-gray-400">{ct.title}</span>}
+                          {ct.person_phone && <span className="text-gray-500 ml-auto">{ct.person_phone}</span>}
                         </div>
-                        <p className="text-xs text-gray-400 mt-0.5 truncate">{cur?`${cur.customer_name} · ${cur.title||''}`:p.job_history.length===0?'소속 없음':'전직'}</p>
-                      </div>
+                      ))}
+                      {currentContacts.length > 2 && <p className="text-xs text-gray-400">+{currentContacts.length - 2}명 더</p>}
+                    </div>
+                    <div className="flex items-center gap-3 text-xs text-gray-500">
+                      <span>거래 <strong className="text-gray-800">{o.sales_count}건</strong></span>
+                      {o.total_sales > 0 && <span>누적 <strong className="text-green-700">{fmt(o.total_sales)}</strong></span>}
                     </div>
                   </div>
                 )
               })}
-            </div>
-          )}
+          </div>
         </div>
+      )}
 
-        {/* 오른쪽: 상세 — 모바일에서 선택 시만 표시 */}
-        <div className={`${detailId ? 'flex' : 'hidden md:flex'} flex-1 flex-col border border-gray-200 rounded-xl bg-white overflow-hidden min-h-[400px] md:min-h-0`}>
-          {!detailId&&(
-            <div className="flex flex-col items-center justify-center h-full text-gray-400 gap-2">
-              <span className="text-3xl">🔗</span><p className="text-sm">기관 또는 담당자를 선택하세요</p>
-            </div>
-          )}
+      {/* ── 담당자 탭 (기관 선택 전) ── */}
+      {!detailId && listView === 'person' && (
+        <div>
+          <div className="flex items-center gap-3 mb-4">
+            <button onClick={() => setListView('org')}
+              className="px-3 py-1.5 text-xs font-medium rounded-full border"
+              style={{background:'#fff',color:'#6B7280',borderColor:'#E5E7EB'}}>
+              🏛️ 기관 ({customers.length})
+            </button>
+            <button onClick={() => setListView('person')}
+              className="px-3 py-1.5 text-xs font-medium rounded-full border"
+              style={{background:'#121212',color:'#FFCE00',borderColor:'#121212'}}>
+              👤 담당자 ({persons.length})
+            </button>
+            <input type="text" placeholder="담당자명 검색..." value={pSearch} onChange={e=>setPSearch(e.target.value)}
+              className="border border-gray-200 rounded-lg px-3 py-2 text-sm w-52 focus:outline-none focus:ring-2 focus:ring-yellow-300 ml-4" />
+            {isAdmin && (
+              <button onClick={() => { setPerForm({}); setPerOrgSearch(''); setShowNewPerson(true) }}
+                className="ml-auto px-4 py-2 text-sm font-semibold rounded-lg"
+                style={{ backgroundColor: '#FFCE00', color: '#121212' }}>
+                + 담당자 등록
+              </button>
+            )}
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+            {filteredPersons.map(p => {
+              const cur = p.job_history.find(j => j.is_current)
+              return (
+                <div key={p.id} onClick={() => goToPerson(p.id)}
+                  className="bg-white rounded-xl p-5 cursor-pointer hover:shadow-md transition-shadow"
+                  style={{ boxShadow: '0 1px 4px rgba(0,0,0,0.06)' }}>
+                  <div className="flex items-center gap-3 mb-3">
+                    <div className="w-10 h-10 rounded-full flex items-center justify-center text-sm font-bold flex-shrink-0" style={{ background: '#121212', color: '#FFCE00' }}>
+                      {p.name[0]}
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <p className="font-bold text-gray-900 text-sm">{p.name}</p>
+                      <p className="text-xs text-gray-400">{cur?.customer_name || '소속 없음'}{cur?.title ? ` · ${cur.title}` : ''}</p>
+                    </div>
+                  </div>
+                  <div className="text-xs text-gray-500 space-y-1">
+                    {p.phone && <p>📞 {p.phone}</p>}
+                    {p.email && <p>✉ {p.email}</p>}
+                  </div>
+                  {p.total_sales > 0 && (
+                    <div className="mt-3 pt-2 border-t border-gray-100 text-xs text-gray-500">
+                      누적 매출 <strong className="text-green-700">{fmt(p.total_sales)}</strong>
+                    </div>
+                  )}
+                </div>
+              )
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* ── 상세 뷰 (기관/담당자 선택 후) ── */}
+      {detailId && (
+        <div>
+          <button onClick={() => setDetailId(null)}
+            className="flex items-center gap-1 text-sm text-gray-400 hover:text-gray-700 mb-4 transition-colors">
+            ← 고객 목록
+          </button>
+          <div className="border border-gray-200 rounded-xl bg-white overflow-hidden" style={{ minHeight: '600px' }}>
+
 
           {/* 기관 상세 */}
           {currentOrg&&(()=>{
@@ -966,8 +966,10 @@ export default function CustomersClient({ customers, persons, isAdmin }: Props) 
               </>
             )
           })()}
+          </div>
         </div>
-      </div>
+      )}
+
 
       {/* ── 모달: 새 기관 ── */}
       {showNewOrg&&(

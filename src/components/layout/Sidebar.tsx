@@ -11,7 +11,7 @@ type NavItem = { href: string; label: string; icon: string; pageKey?: string; ad
 const NAV_ITEMS: NavItem[] = [
   { href: '/dashboard',  label: '홈',      icon: '🏠' },
   { href: '/leads',      label: '리드',    icon: '📥', pageKey: 'leads' },
-  { href: '/sales',      label: '프로젝트', icon: '◈', pageKey: 'sales' },
+  { href: '/projects',   label: '프로젝트', icon: '◈', activePrefixes: ['/sales'] },
   { href: '/services',   label: '서비스',   icon: '⬡', activePrefixes: ['/rentals', '/sos', '/departments'] },
   { href: '/customers',  label: '고객',    icon: '🗂️', pageKey: 'customers' },
   { href: '/calendar',   label: '캘린더',   icon: '📅' },
