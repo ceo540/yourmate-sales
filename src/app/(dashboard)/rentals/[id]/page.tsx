@@ -8,10 +8,11 @@ export default async function RentalDetailPage({ params }: { params: Promise<{ i
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) redirect('/login')
 
-  const [{ data: rental }, { data: items }, { data: profilesRaw }] = await Promise.all([
+  const [{ data: rental }, { data: items }, { data: profilesRaw }, { data: deliveries }] = await Promise.all([
     supabase.from('rentals').select('*').eq('id', id).single(),
     supabase.from('rental_items').select('*').eq('rental_id', id).order('created_at'),
     supabase.from('profiles').select('id, name').order('name'),
+    supabase.from('rental_deliveries').select('*').eq('rental_id', id).order('delivery_date', { ascending: true }),
   ])
 
   if (!rental) notFound()
@@ -29,6 +30,7 @@ export default async function RentalDetailPage({ params }: { params: Promise<{ i
         contact_2:     rental.contact_2 ?? null,
         contact_3:     rental.contact_3 ?? null,
         items:         items ?? [],
+        deliveries:    deliveries ?? [],
       }}
       profiles={profilesRaw ?? []}
     />

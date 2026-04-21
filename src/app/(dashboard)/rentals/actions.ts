@@ -201,6 +201,72 @@ export async function updateRentalChecklist(id: string, checklist: Record<string
   return { success: true, newStatus }
 }
 
+export async function addRentalDelivery(rentalId: string, data: {
+  location: string
+  contact_name?: string
+  phone?: string
+  delivery_date?: string | null
+  pickup_date?: string | null
+  delivery_method?: string
+  notes?: string
+}): Promise<{ id: string } | { error: string }> {
+  const supabase = await createClient()
+  const { data: row, error } = await supabase.from('rental_deliveries').insert({
+    rental_id: rentalId,
+    location: data.location,
+    contact_name: data.contact_name || null,
+    phone: data.phone || null,
+    delivery_date: data.delivery_date || null,
+    pickup_date: data.pickup_date || null,
+    delivery_method: data.delivery_method || null,
+    notes: data.notes || null,
+    status: '대기',
+    checklist: {},
+  }).select('id').single()
+  if (error) return { error: error.message }
+  revalidatePath(`/rentals/${rentalId}`)
+  return { id: row.id }
+}
+
+export async function updateRentalDelivery(id: string, rentalId: string, data: Record<string, unknown>) {
+  const supabase = await createClient()
+  const { error } = await supabase.from('rental_deliveries')
+    .update({ ...data, updated_at: new Date().toISOString() }).eq('id', id)
+  if (error) return { error: error.message }
+  revalidatePath(`/rentals/${rentalId}`)
+  return { success: true }
+}
+
+export async function deleteRentalDelivery(id: string, rentalId: string) {
+  const supabase = await createClient()
+  await supabase.from('rental_deliveries').delete().eq('id', id)
+  revalidatePath(`/rentals/${rentalId}`)
+  return { success: true }
+}
+
+const DELIVERY_STATUS_FLOW = ['대기', '배송완료', '수거완료', '검수완료']
+
+export async function updateDeliveryChecklist(id: string, rentalId: string, checklist: Record<string, boolean>) {
+  const supabase = await createClient()
+  const { data: delivery } = await supabase.from('rental_deliveries').select('status').eq('id', id).single()
+  if (!delivery) return { error: '배송 건을 찾을 수 없습니다.' }
+
+  const curIdx = DELIVERY_STATUS_FLOW.indexOf(delivery.status)
+  let newStatus: string | null = null
+
+  if (checklist.delivered && curIdx < DELIVERY_STATUS_FLOW.indexOf('배송완료')) newStatus = '배송완료'
+  if (checklist.returned && curIdx < DELIVERY_STATUS_FLOW.indexOf('수거완료')) newStatus = '수거완료'
+  if (checklist.inspection_done && (checklist.no_issue || checklist.issue_resolved) && curIdx < DELIVERY_STATUS_FLOW.indexOf('검수완료')) newStatus = '검수완료'
+
+  const updates: Record<string, unknown> = { checklist, updated_at: new Date().toISOString() }
+  if (newStatus) updates.status = newStatus
+
+  const { error } = await supabase.from('rental_deliveries').update(updates).eq('id', id)
+  if (error) return { error: error.message }
+  revalidatePath(`/rentals/${rentalId}`)
+  return { success: true, newStatus }
+}
+
 export async function addRentalContact(rentalId: string, text: string) {
   const supabase = await createClient()
   const { data: rental } = await supabase

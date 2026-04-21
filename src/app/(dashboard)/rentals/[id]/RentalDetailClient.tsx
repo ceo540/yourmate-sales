@@ -1,7 +1,7 @@
 'use client'
 import { useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
-import { updateRental, updateRentalStatus, deleteRental, addRentalItem, removeRentalItem } from '../actions'
+import { updateRental, updateRentalStatus, deleteRental, addRentalItem, removeRentalItem, addRentalDelivery, updateRentalDelivery, deleteRentalDelivery, updateDeliveryChecklist } from '../actions'
 import { RENTAL_STATUSES } from '../RentalsClient'
 
 const STATUS_STYLE: Record<string, string> = {
@@ -36,6 +36,19 @@ interface RentalItem {
   notes: string | null
 }
 
+interface RentalDelivery {
+  id: string
+  location: string
+  contact_name: string | null
+  phone: string | null
+  delivery_date: string | null
+  pickup_date: string | null
+  delivery_method: string | null
+  status: string
+  checklist: Record<string, boolean>
+  notes: string | null
+}
+
 interface Rental {
   id: string
   customer_name: string
@@ -58,6 +71,7 @@ interface Rental {
   notes: string | null
   content: string | null
   items: RentalItem[]
+  deliveries: RentalDelivery[]
 }
 
 interface Props {
@@ -65,12 +79,56 @@ interface Props {
   profiles: { id: string; name: string }[]
 }
 
+const DELIVERY_STATUS_BADGE: Record<string, string> = {
+  '대기':    'bg-gray-100 text-gray-500',
+  '배송완료': 'bg-blue-100 text-blue-700',
+  '수거완료': 'bg-teal-100 text-teal-700',
+  '검수완료': 'bg-green-100 text-green-700',
+}
+
+const DELIVERY_CHECKLIST_GROUPS = [
+  {
+    label: '배송', color: 'text-blue-600',
+    items: [
+      { key: 'outbound_inspection', label: '출고 전 검수' },
+      { key: 'packed',              label: '포장 완료' },
+      { key: 'shipping_ready',      label: '발송 준비' },
+      { key: 'delivered',           label: '배송 완료' },
+      { key: 'delivery_confirmed',  label: '수령 확인' },
+    ],
+  },
+  {
+    label: '반납', color: 'text-teal-600',
+    items: [
+      { key: 'return_notified', label: '반납 안내' },
+      { key: 'returned',        label: '수거 완료' },
+    ],
+  },
+  {
+    label: '검수', color: 'text-orange-600',
+    items: [
+      { key: 'inspection_done', label: '검수 완료' },
+      { key: 'no_issue',        label: '이상 없음' },
+      { key: 'issue_resolved',  label: '이슈 조치 완료' },
+    ],
+  },
+]
+
 export default function RentalDetailClient({ rental, profiles }: Props) {
   const router = useRouter()
   const [isPending, startTransition] = useTransition()
   const [editing, setEditing] = useState(false)
   const [content, setContent] = useState(rental.content ?? '')
   const [contentSaved, setContentSaved] = useState(true)
+
+  // 배송일정
+  const [deliveries, setDeliveries] = useState<RentalDelivery[]>(rental.deliveries)
+  const [showAddDelivery, setShowAddDelivery] = useState(false)
+  const [expandedDelivery, setExpandedDelivery] = useState<string | null>(null)
+  const [editingDeliveryId, setEditingDeliveryId] = useState<string | null>(null)
+  const emptyDeliveryForm = { location: '', contact_name: '', phone: '', delivery_date: '', pickup_date: '', delivery_method: '', notes: '' }
+  const [deliveryForm, setDeliveryForm] = useState(emptyDeliveryForm)
+  const [editDeliveryForm, setEditDeliveryForm] = useState(emptyDeliveryForm)
 
   async function handleContentSave() {
     await updateRental(rental.id, { content })
@@ -412,6 +470,263 @@ export default function RentalDetailClient({ rental, profiles }: Props) {
               <span className="text-sm font-bold text-gray-800">{fmt(itemsTotal)}원</span>
             </div>
           </>
+        )}
+      </div>
+
+      {/* 배송일정 */}
+      <div className="bg-white border border-gray-200 rounded-2xl p-5 mb-4">
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="text-sm font-semibold text-gray-700">배송일정 <span className="text-gray-400 font-normal">({deliveries.length})</span></h2>
+          <button onClick={() => setShowAddDelivery(v => !v)}
+            className="text-xs px-3 py-1.5 bg-gray-900 text-white rounded-lg hover:bg-gray-800">
+            + 배송지 추가
+          </button>
+        </div>
+
+        {showAddDelivery && (
+          <div className="border border-yellow-200 rounded-xl p-4 mb-4 bg-yellow-50 space-y-3">
+            <p className="text-xs font-semibold text-gray-700">새 배송지</p>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="col-span-2">
+                <label className="block text-xs text-gray-500 mb-1">배송지명 *</label>
+                <input value={deliveryForm.location} onChange={e => setDeliveryForm(f => ({...f, location: e.target.value}))}
+                  className="w-full border border-gray-200 rounded-lg px-3 py-1.5 text-sm bg-white" placeholder="예: 서울중학교" />
+              </div>
+              <div>
+                <label className="block text-xs text-gray-500 mb-1">현장 담당자</label>
+                <input value={deliveryForm.contact_name} onChange={e => setDeliveryForm(f => ({...f, contact_name: e.target.value}))}
+                  className="w-full border border-gray-200 rounded-lg px-3 py-1.5 text-sm bg-white" />
+              </div>
+              <div>
+                <label className="block text-xs text-gray-500 mb-1">연락처</label>
+                <input value={deliveryForm.phone} onChange={e => setDeliveryForm(f => ({...f, phone: e.target.value}))}
+                  className="w-full border border-gray-200 rounded-lg px-3 py-1.5 text-sm bg-white" />
+              </div>
+              <div>
+                <label className="block text-xs text-gray-500 mb-1">배송일</label>
+                <input type="date" value={deliveryForm.delivery_date} onChange={e => setDeliveryForm(f => ({...f, delivery_date: e.target.value}))}
+                  className="w-full border border-gray-200 rounded-lg px-3 py-1.5 text-sm bg-white" />
+              </div>
+              <div>
+                <label className="block text-xs text-gray-500 mb-1">수거일</label>
+                <input type="date" value={deliveryForm.pickup_date} onChange={e => setDeliveryForm(f => ({...f, pickup_date: e.target.value}))}
+                  className="w-full border border-gray-200 rounded-lg px-3 py-1.5 text-sm bg-white" />
+              </div>
+              <div className="col-span-2">
+                <label className="block text-xs text-gray-500 mb-1">배송방법</label>
+                <select value={deliveryForm.delivery_method} onChange={e => setDeliveryForm(f => ({...f, delivery_method: e.target.value}))}
+                  className="w-full border border-gray-200 rounded-lg px-3 py-1.5 text-sm bg-white">
+                  <option value="">선택</option>
+                  {DELIVERY_METHODS.map(m => <option key={m}>{m}</option>)}
+                </select>
+              </div>
+              <div className="col-span-2">
+                <label className="block text-xs text-gray-500 mb-1">메모</label>
+                <input value={deliveryForm.notes} onChange={e => setDeliveryForm(f => ({...f, notes: e.target.value}))}
+                  className="w-full border border-gray-200 rounded-lg px-3 py-1.5 text-sm bg-white" />
+              </div>
+            </div>
+            <div className="flex gap-2">
+              <button onClick={() => { setShowAddDelivery(false); setDeliveryForm(emptyDeliveryForm) }}
+                className="flex-1 py-1.5 border border-gray-200 rounded-lg text-sm text-gray-500 bg-white">취소</button>
+              <button
+                disabled={!deliveryForm.location.trim()}
+                onClick={async () => {
+                  const result = await addRentalDelivery(rental.id, {
+                    location: deliveryForm.location,
+                    contact_name: deliveryForm.contact_name || undefined,
+                    phone: deliveryForm.phone || undefined,
+                    delivery_date: deliveryForm.delivery_date || null,
+                    pickup_date: deliveryForm.pickup_date || null,
+                    delivery_method: deliveryForm.delivery_method || undefined,
+                    notes: deliveryForm.notes || undefined,
+                  })
+                  if ('error' in result) { alert(result.error); return }
+                  setDeliveries(prev => [...prev, {
+                    id: result.id, location: deliveryForm.location,
+                    contact_name: deliveryForm.contact_name || null,
+                    phone: deliveryForm.phone || null,
+                    delivery_date: deliveryForm.delivery_date || null,
+                    pickup_date: deliveryForm.pickup_date || null,
+                    delivery_method: deliveryForm.delivery_method || null,
+                    status: '대기', checklist: {}, notes: deliveryForm.notes || null,
+                  }])
+                  setDeliveryForm(emptyDeliveryForm)
+                  setShowAddDelivery(false)
+                  setExpandedDelivery(result.id)
+                }}
+                className="flex-1 py-1.5 bg-gray-900 text-white rounded-lg text-sm disabled:opacity-50">추가</button>
+            </div>
+          </div>
+        )}
+
+        {deliveries.length === 0 && !showAddDelivery ? (
+          <p className="text-sm text-gray-400 text-center py-6">배송지를 추가하면 각각의 배송·수거 체크리스트를 관리할 수 있어요.</p>
+        ) : (
+          <div className="space-y-2">
+            {deliveries.map(d => {
+              const isExpanded = expandedDelivery === d.id
+              const isEditing = editingDeliveryId === d.id
+              const cl = d.checklist ?? {}
+              const doneCount = Object.values(cl).filter(Boolean).length
+              const totalCount = DELIVERY_CHECKLIST_GROUPS.flatMap(g => g.items).length
+              return (
+                <div key={d.id} className="border border-gray-100 rounded-xl overflow-hidden">
+                  <div
+                    className="flex items-center gap-3 px-4 py-3 bg-gray-50 cursor-pointer hover:bg-gray-100 transition-colors"
+                    onClick={() => setExpandedDelivery(isExpanded ? null : d.id)}
+                  >
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <p className="text-sm font-semibold text-gray-800">{d.location}</p>
+                        <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium ${DELIVERY_STATUS_BADGE[d.status] ?? 'bg-gray-100 text-gray-500'}`}>{d.status}</span>
+                      </div>
+                      <div className="flex items-center gap-3 mt-0.5 text-xs text-gray-400">
+                        {d.delivery_date && <span>배송 {d.delivery_date}</span>}
+                        {d.pickup_date && <span>수거 {d.pickup_date}</span>}
+                        {d.contact_name && <span>{d.contact_name}</span>}
+                        <span className="text-gray-300">{doneCount}/{totalCount} 완료</span>
+                      </div>
+                    </div>
+                    <span className="text-gray-300 text-xs">{isExpanded ? '▲' : '▼'}</span>
+                  </div>
+
+                  {isExpanded && (
+                    <div className="px-4 py-4 space-y-4 bg-white">
+                      {isEditing ? (
+                        <div className="space-y-3">
+                          <div className="grid grid-cols-2 gap-3">
+                            <div className="col-span-2">
+                              <label className="block text-xs text-gray-500 mb-1">배송지명</label>
+                              <input value={editDeliveryForm.location} onChange={e => setEditDeliveryForm(f => ({...f, location: e.target.value}))}
+                                className="w-full border border-gray-200 rounded-lg px-3 py-1.5 text-sm" />
+                            </div>
+                            <div>
+                              <label className="block text-xs text-gray-500 mb-1">현장 담당자</label>
+                              <input value={editDeliveryForm.contact_name} onChange={e => setEditDeliveryForm(f => ({...f, contact_name: e.target.value}))}
+                                className="w-full border border-gray-200 rounded-lg px-3 py-1.5 text-sm" />
+                            </div>
+                            <div>
+                              <label className="block text-xs text-gray-500 mb-1">연락처</label>
+                              <input value={editDeliveryForm.phone} onChange={e => setEditDeliveryForm(f => ({...f, phone: e.target.value}))}
+                                className="w-full border border-gray-200 rounded-lg px-3 py-1.5 text-sm" />
+                            </div>
+                            <div>
+                              <label className="block text-xs text-gray-500 mb-1">배송일</label>
+                              <input type="date" value={editDeliveryForm.delivery_date} onChange={e => setEditDeliveryForm(f => ({...f, delivery_date: e.target.value}))}
+                                className="w-full border border-gray-200 rounded-lg px-3 py-1.5 text-sm" />
+                            </div>
+                            <div>
+                              <label className="block text-xs text-gray-500 mb-1">수거일</label>
+                              <input type="date" value={editDeliveryForm.pickup_date} onChange={e => setEditDeliveryForm(f => ({...f, pickup_date: e.target.value}))}
+                                className="w-full border border-gray-200 rounded-lg px-3 py-1.5 text-sm" />
+                            </div>
+                            <div className="col-span-2">
+                              <label className="block text-xs text-gray-500 mb-1">배송방법</label>
+                              <select value={editDeliveryForm.delivery_method} onChange={e => setEditDeliveryForm(f => ({...f, delivery_method: e.target.value}))}
+                                className="w-full border border-gray-200 rounded-lg px-3 py-1.5 text-sm bg-white">
+                                <option value="">선택</option>
+                                {DELIVERY_METHODS.map(m => <option key={m}>{m}</option>)}
+                              </select>
+                            </div>
+                            <div className="col-span-2">
+                              <label className="block text-xs text-gray-500 mb-1">메모</label>
+                              <input value={editDeliveryForm.notes} onChange={e => setEditDeliveryForm(f => ({...f, notes: e.target.value}))}
+                                className="w-full border border-gray-200 rounded-lg px-3 py-1.5 text-sm" />
+                            </div>
+                          </div>
+                          <div className="flex gap-2">
+                            <button onClick={() => setEditingDeliveryId(null)}
+                              className="flex-1 py-1.5 border border-gray-200 rounded-lg text-sm text-gray-500">취소</button>
+                            <button onClick={async () => {
+                              await updateRentalDelivery(d.id, rental.id, {
+                                location: editDeliveryForm.location,
+                                contact_name: editDeliveryForm.contact_name || null,
+                                phone: editDeliveryForm.phone || null,
+                                delivery_date: editDeliveryForm.delivery_date || null,
+                                pickup_date: editDeliveryForm.pickup_date || null,
+                                delivery_method: editDeliveryForm.delivery_method || null,
+                                notes: editDeliveryForm.notes || null,
+                              })
+                              setDeliveries(prev => prev.map(x => x.id === d.id ? {
+                                ...x,
+                                location: editDeliveryForm.location,
+                                contact_name: editDeliveryForm.contact_name || null,
+                                phone: editDeliveryForm.phone || null,
+                                delivery_date: editDeliveryForm.delivery_date || null,
+                                pickup_date: editDeliveryForm.pickup_date || null,
+                                delivery_method: editDeliveryForm.delivery_method || null,
+                                notes: editDeliveryForm.notes || null,
+                              } : x))
+                              setEditingDeliveryId(null)
+                            }} className="flex-1 py-1.5 bg-gray-900 text-white rounded-lg text-sm">저장</button>
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="flex items-start justify-between">
+                          <div className="text-xs text-gray-500 space-y-1">
+                            {d.delivery_method && <p>배송방법: {d.delivery_method}</p>}
+                            {d.notes && <p>메모: {d.notes}</p>}
+                          </div>
+                          <div className="flex gap-2">
+                            <button onClick={() => {
+                              setEditDeliveryForm({
+                                location: d.location,
+                                contact_name: d.contact_name ?? '',
+                                phone: d.phone ?? '',
+                                delivery_date: d.delivery_date ?? '',
+                                pickup_date: d.pickup_date ?? '',
+                                delivery_method: d.delivery_method ?? '',
+                                notes: d.notes ?? '',
+                              })
+                              setEditingDeliveryId(d.id)
+                            }} className="text-xs text-gray-400 hover:text-gray-700 px-2 py-1 border border-gray-200 rounded-lg">수정</button>
+                            <button onClick={async () => {
+                              if (!confirm(`"${d.location}" 배송일정을 삭제할까요?`)) return
+                              await deleteRentalDelivery(d.id, rental.id)
+                              setDeliveries(prev => prev.filter(x => x.id !== d.id))
+                            }} className="text-xs text-gray-400 hover:text-red-500 px-2 py-1 border border-gray-200 rounded-lg">삭제</button>
+                          </div>
+                        </div>
+                      )}
+
+                      {/* 체크리스트 */}
+                      {!isEditing && (
+                        <div className="space-y-3 pt-2 border-t border-gray-100">
+                          {DELIVERY_CHECKLIST_GROUPS.map(group => (
+                            <div key={group.label}>
+                              <p className={`text-xs font-semibold mb-1.5 ${group.color}`}>{group.label}</p>
+                              <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-3">
+                                {group.items.map(item => {
+                                  const checked = cl[item.key] ?? false
+                                  return (
+                                    <label key={item.key} className={`flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-xs cursor-pointer transition-colors ${checked ? 'bg-gray-900 text-white' : 'bg-gray-50 text-gray-600 hover:bg-gray-100'}`}>
+                                      <input type="checkbox" checked={checked} className="hidden"
+                                        onChange={async () => {
+                                          const newCl = { ...cl, [item.key]: !checked }
+                                          const result = await updateDeliveryChecklist(d.id, rental.id, newCl)
+                                          const newStatus = ('newStatus' in result && result.newStatus) ? result.newStatus : d.status
+                                          setDeliveries(prev => prev.map(x => x.id === d.id ? { ...x, checklist: newCl, status: newStatus } : x))
+                                        }}
+                                      />
+                                      <span className={`w-3 h-3 rounded border flex-shrink-0 flex items-center justify-center ${checked ? 'bg-white border-white' : 'border-gray-300'}`}>
+                                        {checked && <span className="text-gray-900 text-[8px] font-bold">✓</span>}
+                                      </span>
+                                      {item.label}
+                                    </label>
+                                  )
+                                })}
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )
+            })}
+          </div>
         )}
       </div>
 
