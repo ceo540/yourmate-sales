@@ -457,85 +457,78 @@ export default function RedesignDemo() {
           </div>
         )}
 
-        {/* PROJECTS */}
+        {/* PROJECTS — flat list */}
         {page === 'projects' && (
           <div style={{ padding: 24, overflow: 'auto', flex: 1 }}>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20 }}>
               <div>
                 <h1 style={{ fontSize: 20, fontWeight: 700, margin: 0 }}>프로젝트</h1>
                 <p style={{ color: '#6B7280', margin: '4px 0 0', fontSize: 13 }}>
-                  {filtered.length}건 · 진행중 {filtered.filter(p => p.status === '진행중').length}건
+                  총 {PROJECTS.length}건 · 진행중 {PROJECTS.filter(p => p.status === '진행중').length}건
                 </p>
               </div>
               <button style={{ background: YELLOW, color: DARK, border: 'none', borderRadius: 8, padding: '9px 18px', fontWeight: 700, fontSize: 13, cursor: 'pointer' }}>+ 새 프로젝트</button>
             </div>
 
-            {/* 사업부 탭 (상단) */}
-            <div style={{ display: 'flex', gap: 4, marginBottom: 12, overflowX: 'auto', paddingBottom: 2 }}>
-              {DEPTS.map(d => (
-                <button key={d} onClick={() => setDeptFilter(d)}
-                  style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '7px 14px', borderRadius: 20, border: `1px solid ${deptFilter === d ? DARK : '#E5E7EB'}`, background: deptFilter === d ? DARK : '#fff', color: deptFilter === d ? '#fff' : '#6B7280', fontWeight: deptFilter === d ? 700 : 400, fontSize: 12, cursor: 'pointer', whiteSpace: 'nowrap', flexShrink: 0 }}>
-                  <span>{DEPT_ICONS[d]}</span>
-                  <span>{d}</span>
-                  <span style={{ fontSize: 11, opacity: 0.7 }}>
-                    {d === '전체' ? PROJECTS.length : PROJECTS.filter(p => DEPT_MAP[p.service] === d).length}
-                  </span>
-                </button>
-              ))}
-              <div style={{ marginLeft: 'auto', display: 'flex', gap: 6, flexShrink: 0 }}>
-                <button style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '7px 12px', borderRadius: 8, border: '1px dashed #D1D5DB', background: '#fff', color: '#9CA3AF', fontSize: 11, cursor: 'pointer' }}>
-                  📦 렌탈 관리판
-                </button>
-                <button style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '7px 12px', borderRadius: 8, border: '1px dashed #D1D5DB', background: '#fff', color: '#9CA3AF', fontSize: 11, cursor: 'pointer' }}>
-                  🎵 SOS 공연판
-                </button>
-              </div>
-            </div>
-
-            <div style={{ display: 'flex', gap: 8, marginBottom: 16 }}>
-              <input placeholder="프로젝트명, 고객, 번호 검색..." style={{ padding: '8px 14px', borderRadius: 8, border: '1px solid #E5E7EB', fontSize: 13, width: 240, outline: 'none' }} />
+            {/* 검색 + 상태 필터만 */}
+            <div style={{ display: 'flex', gap: 10, marginBottom: 16, alignItems: 'center' }}>
+              <input placeholder="프로젝트명, 고객, 번호, 서비스 검색..." style={{ padding: '9px 14px', borderRadius: 8, border: '1px solid #E5E7EB', fontSize: 13, width: 300, outline: 'none' }} />
               <div style={{ display: 'flex', gap: 6 }}>
                 {['전체', '계약', '진행중', '완료'].map(s => (
                   <button key={s} onClick={() => setFilterStatus(s)}
-                    style={{ padding: '7px 14px', borderRadius: 20, border: `1px solid ${filterStatus === s ? YELLOW : '#E5E7EB'}`, background: filterStatus === s ? YELLOW : '#fff', fontWeight: filterStatus === s ? 700 : 400, fontSize: 12, cursor: 'pointer', color: DARK }}>
+                    style={{ padding: '7px 16px', borderRadius: 20, border: `1px solid ${filterStatus === s ? YELLOW : '#E5E7EB'}`, background: filterStatus === s ? YELLOW : '#fff', fontWeight: filterStatus === s ? 700 : 400, fontSize: 12, cursor: 'pointer', color: DARK }}>
                     {s}
+                    {s !== '전체' && <span style={{ marginLeft: 4, fontSize: 11, opacity: 0.7 }}>{PROJECTS.filter(p => p.status === s).length}</span>}
                   </button>
                 ))}
               </div>
+              <span style={{ marginLeft: 'auto', fontSize: 12, color: '#9CA3AF' }}>D-day 임박순</span>
             </div>
 
             <div style={{ background: '#fff', borderRadius: 12, boxShadow: '0 1px 4px rgba(0,0,0,0.06)', overflow: 'hidden' }}>
               <table style={{ width: '100%', borderCollapse: 'collapse' }}>
                 <thead>
                   <tr style={{ background: '#F9FAFB', borderBottom: '1px solid #F3F4F6' }}>
-                    {['번호', '프로젝트명', '고객', '서비스', '상태', '담당자', 'D-day', '매출'].map(h => (
-                      <th key={h} style={{ padding: '12px 16px', textAlign: 'left', fontSize: 12, fontWeight: 600, color: '#6B7280' }}>{h}</th>
+                    {['번호', '프로젝트명', '고객', '서비스', '상태', '단계', '담당자', 'D-day', '매출'].map(h => (
+                      <th key={h} style={{ padding: '11px 16px', textAlign: 'left', fontSize: 12, fontWeight: 600, color: '#6B7280' }}>{h}</th>
                     ))}
                   </tr>
                 </thead>
                 <tbody>
-                  {filtered.map(p => (
+                  {[...PROJECTS]
+                    .filter(p => filterStatus === '전체' || p.status === filterStatus)
+                    .sort((a, b) => {
+                      // D-day 있는 것 먼저, 없으면 뒤로
+                      if (a.dday === null && b.dday === null) return 0
+                      if (a.dday === null) return 1
+                      if (b.dday === null) return -1
+                      return a.dday - b.dday
+                    })
+                    .map(p => (
                     <tr key={p.id} onClick={() => openProject(p)}
                       style={{ borderBottom: '1px solid #F3F4F6', cursor: 'pointer' }}
                       onMouseEnter={e => (e.currentTarget.style.background = '#FAFAFA')}
                       onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}>
-                      <td style={{ padding: '14px 16px', fontWeight: 700, color: '#6B7280', fontSize: 12 }}>{p.id}</td>
-                      <td style={{ padding: '14px 16px', fontWeight: 600 }}>
+                      <td style={{ padding: '13px 16px', fontWeight: 700, color: '#9CA3AF', fontSize: 12 }}>{p.id}</td>
+                      <td style={{ padding: '13px 16px', fontWeight: 600 }}>
                         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                          <div style={{ width: 3, height: 20, background: SERVICE_COLOR[p.service] || '#E5E7EB', borderRadius: 2 }} />
+                          <div style={{ width: 3, height: 22, background: SERVICE_COLOR[p.service] || '#E5E7EB', borderRadius: 2, flexShrink: 0 }} />
                           {p.name}
                         </div>
                       </td>
-                      <td style={{ padding: '14px 16px', color: '#6B7280', fontSize: 13 }}>{p.client}</td>
-                      <td style={{ padding: '14px 16px' }}>
+                      <td style={{ padding: '13px 16px', color: '#6B7280', fontSize: 13 }}>{p.client}</td>
+                      <td style={{ padding: '13px 16px' }}>
                         <Badge label={p.service} color={SERVICE_COLOR[p.service] || '#6B7280'} bg={`${SERVICE_COLOR[p.service]}18`} />
                       </td>
-                      <td style={{ padding: '14px 16px' }}>
+                      <td style={{ padding: '13px 16px' }}>
                         <Badge label={p.status} color={STATUS_COLOR[p.status]} bg={STATUS_BG[p.status]} />
                       </td>
-                      <td style={{ padding: '14px 16px', fontSize: 13 }}>{p.assignee}</td>
-                      <td style={{ padding: '14px 16px' }}><DdayBadge dday={p.dday} /></td>
-                      <td style={{ padding: '14px 16px', fontSize: 13, fontWeight: 600 }}>{p.revenue ? (p.revenue / 10000).toFixed(0) + '만' : '—'}</td>
+                      <td style={{ padding: '13px 16px', fontSize: 12, color: '#6B7280' }}>{p.stage || '—'}</td>
+                      <td style={{ padding: '13px 16px', fontSize: 13 }}>{p.assignee}</td>
+                      <td style={{ padding: '13px 16px' }}><DdayBadge dday={p.dday} /></td>
+                      <td style={{ padding: '13px 16px', fontSize: 13, fontWeight: 600, color: p.revenue ? '#374151' : '#D1D5DB' }}>
+                        {p.revenue ? (p.revenue / 10000).toFixed(0) + '만' : '—'}
+                      </td>
                     </tr>
                   ))}
                 </tbody>
