@@ -319,6 +319,18 @@ const SVC_CLR: Record<string, string> = {
   '002ENT':     'text-rose-700 bg-rose-50 border-rose-200',
 }
 
+const STATUS_CLR: Record<string, string> = {
+  '활성':    '#374151',
+  '전체':    '#6B7280',
+  '유입':    '#3B82F6',
+  '회신대기': '#F59E0B',
+  '견적발송': '#F97316',
+  '조율중':   '#8B5CF6',
+  '진행중':   '#10B981',
+  '완료':    '#059669',
+  '취소':    '#EF4444',
+}
+
 // ── Utility ──────────────────────────────────────────────────────
 function daysFromToday(dateStr: string): number {
   const today = new Date(); today.setHours(0, 0, 0, 0)
@@ -754,49 +766,54 @@ export default function LeadsClient({ leads, profiles, persons, currentUserId, i
 
   // ── Render ───────────────────────────────────────────────────────
   return (
-    <div className="flex flex-col gap-3">
-
-      {/* 필터 + 검색 + 버튼 */}
-      <div className="bg-white border border-gray-200 rounded-xl px-4 py-3">
-        <div className="flex items-center justify-between gap-3">
-          <div className="flex items-center gap-2 flex-wrap">
-            {(['활성', '전체', ...LEAD_STATUSES] as string[]).map(s => {
-              const count = s === '전체' ? leads.length
-                : s === '활성' ? leads.filter(l => !['완료', '취소'].includes(l.status)).length
-                : leads.filter(l => l.status === s).length
-              return (
-                <button key={s} onClick={() => setStatusFilter(s)}
-                  className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
-                    statusFilter === s ? 'bg-gray-900 text-white' : 'text-gray-500 hover:bg-gray-100'
-                  }`}>
-                  {s} <span className="opacity-60 ml-0.5">({count})</span>
-                </button>
-              )
-            })}
-          </div>
-          <div className="flex items-center gap-2 flex-shrink-0">
-            {remindCount > 0 && (
-              <span className="text-xs bg-red-500 text-white rounded-full px-2 py-0.5 font-semibold">{remindCount} 리마인드</span>
-            )}
-            <input type="text" placeholder="검색..."
-              value={searchTerm} onChange={e => setSearchTerm(e.target.value)}
-              className="border border-gray-200 rounded-lg px-3 py-1.5 text-sm w-36 focus:outline-none focus:ring-2 focus:ring-yellow-300" />
-            <button onClick={openCreate}
-              className="px-4 py-1.5 text-sm font-semibold rounded-lg whitespace-nowrap"
-              style={{ backgroundColor: '#FFCE00', color: '#121212' }}>
-              + 새 리드
-            </button>
-          </div>
-        </div>
-      </div>
+    <div>
 
       {/* 스플릿 뷰 */}
-      <div className="flex gap-3 md:h-[calc(100vh-200px)] min-h-[520px]">
+      <div className="flex gap-3 md:h-[calc(100vh-130px)] min-h-[520px]">
 
         {/* ── 왼쪽 카드 목록 ── */}
         {quickServiceLeadId && <div className="fixed inset-0 z-20" onClick={() => setQuickServiceLeadId(null)} />}
         <div className={`${selectedLead ? 'hidden md:flex' : 'flex'} md:w-[360px] flex-shrink-0 flex-col border border-gray-200 rounded-xl bg-white overflow-hidden`}>
-          <div className="overflow-y-auto flex-1 p-2 space-y-1">
+          {/* 헤더 */}
+          <div className="px-4 pt-4 pb-3 border-b border-gray-100 flex-shrink-0">
+            <div className="flex items-center justify-between mb-3">
+              <h2 className="text-sm font-bold text-gray-900">
+                리드 관리
+                {remindCount > 0 && (
+                  <span className="ml-2 text-[10px] px-1.5 py-0.5 rounded-full bg-red-500 text-white font-bold">{remindCount}</span>
+                )}
+              </h2>
+              <button onClick={openCreate}
+                className="text-xs px-3 py-1.5 rounded-lg font-semibold"
+                style={{ backgroundColor: '#FFCE00', color: '#121212' }}>
+                + 등록
+              </button>
+            </div>
+            <input type="text" placeholder="이름, 기관, 프로젝트 검색..."
+              value={searchTerm} onChange={e => setSearchTerm(e.target.value)}
+              className="w-full border border-gray-200 rounded-lg px-3 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-yellow-300" />
+          </div>
+          {/* 상태 필터 */}
+          <div className="px-3 py-2.5 border-b border-gray-100 flex gap-1.5 overflow-x-auto flex-shrink-0 scrollbar-none">
+            {(['활성', '전체', ...LEAD_STATUSES] as string[]).map(s => {
+              const count = s === '전체' ? leads.length
+                : s === '활성' ? leads.filter(l => !['완료', '취소'].includes(l.status)).length
+                : leads.filter(l => l.status === s).length
+              const clr = STATUS_CLR[s] ?? '#6B7280'
+              const isActive = statusFilter === s
+              return (
+                <button key={s} onClick={() => setStatusFilter(s)}
+                  className="px-2.5 py-1 rounded-full text-[11px] font-semibold whitespace-nowrap flex-shrink-0 transition-all border"
+                  style={isActive
+                    ? { backgroundColor: clr, color: '#fff', borderColor: clr }
+                    : { backgroundColor: 'transparent', color: clr, borderColor: clr + '60' }
+                  }>
+                  {s} <span className="opacity-70">({count})</span>
+                </button>
+              )
+            })}
+          </div>
+          <div className="overflow-y-auto flex-1">
             {filtered.length === 0 ? (
               <div className="flex items-center justify-center h-full py-16">
                 <p className="text-sm text-gray-400">
@@ -811,77 +828,69 @@ export default function LeadsClient({ leads, profiles, persons, currentUserId, i
               return (
                 <button key={lead.id}
                   onClick={() => setSelectedLead(isSelected ? null : lead)}
-                  className={`w-full text-left rounded-xl transition-all overflow-hidden border ${
-                    isSelected ? 'border-yellow-200 bg-yellow-50' : 'border-transparent hover:bg-gray-50'
+                  className={`w-full text-left px-3 py-2.5 transition-all border-l-2 ${
+                    isSelected ? 'bg-yellow-50 border-yellow-400' : 'border-transparent hover:bg-gray-50'
                   }`}>
-                  <div className="flex items-stretch">
-                    {/* D-day 세로 블록 */}
-                    <div className={`w-14 flex-shrink-0 flex items-center justify-center ${
-                      dday === null ? 'bg-gray-50' :
-                      dday === 0   ? 'bg-red-500' :
-                      dday < 0    ? 'bg-red-100' :
-                      dday <= 3   ? 'bg-orange-100' :
-                      dday <= 7   ? 'bg-yellow-100' : 'bg-gray-100'
-                    }`}>
-                      {dday === null ? (
-                        <span className="text-gray-300 text-xs">—</span>
-                      ) : (
-                        <span className={`font-black text-sm leading-none ${
-                          dday === 0 ? 'text-white' : dday < 0 ? 'text-red-600' :
-                          dday <= 3 ? 'text-orange-600' : dday <= 7 ? 'text-yellow-700' : 'text-gray-500'
+                  {/* Row 1: D-day pill + status pill + assignee */}
+                  <div className="flex items-center gap-1.5 mb-1">
+                    {dday !== null && (
+                      <span className="text-[10px] px-1.5 py-0.5 rounded-full font-bold flex-shrink-0"
+                        style={dday === 0
+                          ? { background: '#EF4444', color: '#fff' }
+                          : dday < 0
+                          ? { background: '#FEE2E2', color: '#DC2626' }
+                          : dday <= 3
+                          ? { background: '#FFEDD5', color: '#EA580C' }
+                          : dday <= 7
+                          ? { background: '#FEF9C3', color: '#CA8A04' }
+                          : { background: '#F3F4F6', color: '#6B7280' }
+                        }>
+                        {dday === 0 ? 'D-DAY' : dday < 0 ? `D+${Math.abs(dday)}` : `D-${dday}`}
+                      </span>
+                    )}
+                    <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium flex-shrink-0 ${cfg.badge}`}>
+                      {lead.status}
+                    </span>
+                    <span className="text-[10px] text-gray-400 ml-auto flex-shrink-0">
+                      {(lead.assignee as { name?: string })?.name || '—'}
+                    </span>
+                  </div>
+                  {/* Row 2: project name */}
+                  <p className="text-sm font-semibold text-gray-900 truncate leading-snug">
+                    {lead.project_name || lead.client_org || '(프로젝트명 없음)'}
+                  </p>
+                  {/* Row 3: client org + service badge */}
+                  <div className="flex items-center gap-1.5 mt-0.5">
+                    <span className="text-[11px] text-gray-400 truncate flex-1">
+                      {lead.client_org || lead.contact_name || '—'}
+                    </span>
+                    {/* 서비스 배지 */}
+                    <div className="relative flex-shrink-0">
+                      <span
+                        onClick={e => { e.stopPropagation(); setSelectedLead(lead); setQuickServiceLeadId(lead.id === quickServiceLeadId ? null : lead.id) }}
+                        className={`text-[10px] px-1.5 py-0.5 rounded border font-medium cursor-pointer hover:opacity-70 transition-opacity ${
+                          lead.service_type ? (SVC_CLR[lead.service_type] || 'text-gray-400 bg-gray-50 border-gray-200') : 'text-gray-300 bg-white border-dashed border-gray-300'
                         }`}>
-                          {dday === 0 ? 'D-DAY' : dday < 0 ? `D+${Math.abs(dday)}` : `D-${dday}`}
-                        </span>
-                      )}
-                    </div>
-                    {/* 카드 내용 */}
-                    <div className="flex-1 min-w-0 px-3 py-2.5">
-                      <p className="text-sm font-bold text-gray-900 truncate">
-                        {lead.project_name || lead.client_org || '(프로젝트명 없음)'}
-                      </p>
-                      <div className="flex items-center gap-1.5 mt-0.5">
-                        <div className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${cfg.dot}`} />
-                        <span className="text-xs text-gray-600 truncate">{lead.contact_name || '—'}</span>
-                        {lead.client_org && lead.project_name && <>
-                          <span className="text-gray-300 text-xs flex-shrink-0">·</span>
-                          <span className="text-xs text-gray-400 truncate">{lead.client_org}</span>
-                        </>}
-                      </div>
-                      <div className="flex items-center gap-1.5 mt-1.5 flex-wrap">
-                        <span className={`text-xs px-1.5 py-0.5 rounded-full font-medium flex-shrink-0 ${cfg.badge}`}>{lead.status}</span>
-                        {/* 서비스 배지 — 없어도 클릭 가능하게 항상 표시 */}
-                        <div className="relative flex-shrink-0">
-                          <span
-                            onClick={e => { e.stopPropagation(); setSelectedLead(lead); setQuickServiceLeadId(lead.id === quickServiceLeadId ? null : lead.id) }}
-                            className={`text-xs px-1.5 py-0.5 rounded border font-medium cursor-pointer hover:opacity-70 transition-opacity ${
-                              lead.service_type ? (SVC_CLR[lead.service_type] || 'text-gray-400 bg-gray-50 border-gray-200') : 'text-gray-300 bg-white border-dashed border-gray-300'
-                            }`}>
-                            {lead.service_type || '서비스?'}
-                          </span>
-                          {quickServiceLeadId === lead.id && (
-                            <div className="absolute left-0 top-full mt-1 bg-white border border-gray-200 rounded-xl shadow-lg z-30 overflow-hidden min-w-[110px]">
-                              {SERVICE_TYPES.map(s => (
-                                <button key={s} type="button" onClick={e => {
-                                  e.stopPropagation()
-                                  startTransition(async () => {
-                                    await updateLead(lead.id, { service_type: s })
-                                    // 현재 선택된 리드라면 우측 패널도 즉시 업데이트
-                                    if (selectedLead?.id === lead.id) {
-                                      setSelectedLead(prev => prev ? { ...prev, service_type: s } : prev)
-                                    }
-                                  })
-                                  setQuickServiceLeadId(null)
-                                }} className={`w-full text-left px-3 py-2 text-xs hover:bg-gray-50 ${s === lead.service_type ? 'bg-gray-50 font-bold text-gray-900' : 'text-gray-600'}`}>
-                                  {s}
-                                </button>
-                              ))}
-                            </div>
-                          )}
+                        {lead.service_type || '서비스?'}
+                      </span>
+                      {quickServiceLeadId === lead.id && (
+                        <div className="absolute right-0 top-full mt-1 bg-white border border-gray-200 rounded-xl shadow-lg z-30 overflow-hidden min-w-[110px]">
+                          {SERVICE_TYPES.map(s => (
+                            <button key={s} type="button" onClick={e => {
+                              e.stopPropagation()
+                              startTransition(async () => {
+                                await updateLead(lead.id, { service_type: s })
+                                if (selectedLead?.id === lead.id) {
+                                  setSelectedLead(prev => prev ? { ...prev, service_type: s } : prev)
+                                }
+                              })
+                              setQuickServiceLeadId(null)
+                            }} className={`w-full text-left px-3 py-2 text-xs hover:bg-gray-50 ${s === lead.service_type ? 'bg-gray-50 font-bold text-gray-900' : 'text-gray-600'}`}>
+                              {s}
+                            </button>
+                          ))}
                         </div>
-                        <span className="text-xs text-gray-400 flex-shrink-0 ml-auto">
-                          {(lead.assignee as { name?: string })?.name || '—'}
-                        </span>
-                      </div>
+                      )}
                     </div>
                   </div>
                 </button>
