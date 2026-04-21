@@ -6,31 +6,33 @@ import { createClient } from '@/lib/supabase/client'
 import { useRouter } from 'next/navigation'
 import { useEffect, useState } from 'react'
 
-type NavItem = { href: string; label: string; icon: string; pageKey?: string; adminOnly?: boolean }
+type NavItem = { href: string; label: string; icon: string; pageKey?: string; adminOnly?: boolean; activePrefixes?: string[] }
 
 const NAV_ITEMS: NavItem[] = [
-  { href: '/dashboard',    label: '홈',    icon: '🏠' },
-  { href: '/leads',        label: '리드',  icon: '📥', pageKey: 'leads' },
-  { href: '/sales',        label: '매출',  icon: '💰', pageKey: 'sales' },
-  { href: '/contract-hub', label: '계약',  icon: '📋', pageKey: 'contract_hub' },
-  { href: '/rentals',      label: '렌탈',  icon: '📦', pageKey: 'rentals' },
-  { href: '/customers',    label: '고객',  icon: '🗂️', pageKey: 'customers' },
+  { href: '/dashboard',  label: '홈',      icon: '🏠' },
+  { href: '/leads',      label: '리드',    icon: '📥', pageKey: 'leads' },
+  { href: '/sales',      label: '프로젝트', icon: '◈', pageKey: 'sales' },
+  { href: '/services',   label: '서비스',   icon: '⬡', activePrefixes: ['/rentals', '/sos', '/departments'] },
+  { href: '/customers',  label: '고객',    icon: '🗂️', pageKey: 'customers' },
+  { href: '/calendar',   label: '캘린더',   icon: '📅' },
+  { href: '/finance',    label: '재무',    icon: '📊', pageKey: 'finance', adminOnly: true },
+  { href: '/team',       label: '팀',      icon: '👥', activePrefixes: ['/hr', '/attendance'] },
 ]
 
 const NAV_BOTTOM: NavItem[] = [
-  { href: '/notice',   label: '공지',  icon: '📢', pageKey: 'notice' },
-  { href: '/tasks',    label: '업무',  icon: '✅', pageKey: 'tasks' },
-  { href: '/finance',  label: '재무',  icon: '📊', pageKey: 'finance',    adminOnly: true },
-  { href: '/admin',    label: '관리',  icon: '⚙️', pageKey: 'admin_panel', adminOnly: true },
+  { href: '/notice',  label: '공지', icon: '📢', pageKey: 'notice' },
+  { href: '/tasks',   label: '업무', icon: '✅', pageKey: 'tasks' },
+  { href: '/admin',   label: '관리', icon: '⚙️', pageKey: 'admin_panel', adminOnly: true },
 ]
 
 const ROLE_LABELS: Record<string, string> = {
   admin: '관리자', manager: '팀장', member: '팀원',
 }
 
-function isActive(pathname: string, href: string) {
+function isActive(pathname: string, href: string, activePrefixes?: string[]) {
   if (href === '/dashboard') return pathname === href
-  return pathname === href || pathname.startsWith(href + '/')
+  if (pathname === href || pathname.startsWith(href + '/')) return true
+  return (activePrefixes ?? []).some(p => pathname === p || pathname.startsWith(p + '/'))
 }
 
 export default function Sidebar() {
@@ -97,8 +99,8 @@ export default function Sidebar() {
     return isAdmin || (permissions[item.pageKey] ?? 'off') !== 'off'
   }
 
-  function NavLink({ href, label, icon, pageKey }: { href: string; label: string; icon: string; pageKey?: string }) {
-    const active = isActive(pathname, href)
+  function NavLink({ href, label, icon, pageKey, activePrefixes }: NavItem) {
+    const active = isActive(pathname, href, activePrefixes)
     const badge = pageKey ? (badgeCounts[pageKey] ?? 0) : 0
     return (
       <Link href={href}
