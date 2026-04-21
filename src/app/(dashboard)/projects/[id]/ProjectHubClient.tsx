@@ -1048,10 +1048,8 @@ export default function ProjectHubClient({
                             <div className="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
                               {t.priority && <span className={`w-1.5 h-1.5 rounded-full ${PRIORITY_DOT[t.priority] ?? 'bg-gray-200'}`} />}
                               <span className={`text-xs px-1.5 py-0.5 rounded-full ${STATUS_STYLE[t.status] ?? 'bg-gray-100 text-gray-500'}`}>{t.status}</span>
-                              {isAdmin && (
-                                <button onClick={e => { e.stopPropagation(); startTransition(async () => { await deleteTask(t.id, null); setTasks(prev => prev.filter(x => x.id !== t.id)) }) }}
-                                  className="text-gray-300 hover:text-red-400 text-xs">✕</button>
-                              )}
+                              <button onClick={e => { e.stopPropagation(); startTransition(async () => { await deleteTask(t.id, null); setTasks(prev => prev.filter(x => x.id !== t.id)) }) }}
+                                className="text-gray-300 hover:text-red-400 text-xs">✕</button>
                             </div>
                           </div>
                           {isExpanded && (
@@ -1144,7 +1142,7 @@ export default function ProjectHubClient({
                                   ? <span className="ml-auto text-xs bg-blue-50 text-blue-600 px-2 py-0.5 rounded-full">{linkedContract.name.length > 10 ? linkedContract.name.slice(0, 10) + '…' : linkedContract.name}</span>
                                   : <span className="ml-auto text-xs bg-gray-50 text-gray-400 px-2 py-0.5 rounded-full">공통</span>
                                 }
-                                {isAdmin && <button onClick={() => handleDeleteLog(l.id)} className="text-gray-300 hover:text-red-400 text-xs opacity-0 group-hover:opacity-100">✕</button>}
+                                <button onClick={() => handleDeleteLog(l.id)} className="text-gray-300 hover:text-red-400 text-xs opacity-0 group-hover:opacity-100">✕</button>
                               </div>
                               <p className="text-sm text-gray-700 leading-relaxed whitespace-pre-wrap">{l.content}</p>
                               {(l.location || (l.participants && l.participants.length > 0)) && (
