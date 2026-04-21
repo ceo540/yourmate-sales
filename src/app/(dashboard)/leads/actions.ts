@@ -152,17 +152,38 @@ export async function convertLeadToSale(leadId: string) {
   const serviceType = lead.service_type as string | null
   const department = (serviceType && SERVICE_TO_DEPT[serviceType]) || null
 
-  // 고객 DB에서 customer_id 조회 (createLead 시 sync됨)
+  const adminDb = createAdminClient()
+
+  // 고객 DB 조회 + 연락처 동기화
   let customerId: string | null = null
   if (lead.client_org) {
-    const adminDb = createAdminClient()
-    const { data: cust } = await adminDb.from('customers').select('id').ilike('name', lead.client_org.trim()).limit(1).single()
-    customerId = cust?.id ?? null
+    const { data: cust } = await adminDb.from('customers').select('id, contact_name, phone, contact_email').ilike('name', lead.client_org.trim()).limit(1).single()
+    if (cust) {
+      customerId = cust.id
+      // 고객에 연락처 없으면 리드 정보로 채움
+      const patch: Record<string, string> = {}
+      if (!cust.contact_name && lead.contact_name) patch.contact_name = lead.contact_name as string
+      if (!cust.phone && (lead.phone || lead.office_phone)) patch.phone = (lead.phone || lead.office_phone) as string
+      if (!cust.contact_email && lead.email) patch.contact_email = lead.email as string
+      if (Object.keys(patch).length > 0) {
+        await adminDb.from('customers').update(patch).eq('id', cust.id)
+      }
+    } else {
+      // 고객 레코드 없으면 신규 생성
+      const { data: newCust } = await adminDb.from('customers').insert({
+        name: (lead.client_org as string).trim(),
+        type: '기관',
+        contact_name: (lead.contact_name as string | null) ?? null,
+        phone: ((lead.phone || lead.office_phone) as string | null) ?? null,
+        contact_email: (lead.email as string | null) ?? null,
+      }).select('id').single()
+      customerId = newCust?.id ?? null
+    }
   }
 
   const displayName = (lead.project_name || lead.client_org) as string | null
   const { data: sale, error } = await supabase.from('sales').insert({
-    name: displayName ? `${displayName} (리드전환)` : '(리드전환)',
+    name: displayName ?? '(이름 없음)',
     client_org: lead.client_org,
     customer_id: customerId,
     service_type: serviceType,
@@ -171,6 +192,7 @@ export async function convertLeadToSale(leadId: string) {
     revenue: 0,
     contract_stage: '계약',
     memo: lead.initial_content,
+    notes: (lead.notes as string | null) ?? null,
     inflow_date: lead.inflow_date || new Date().toISOString().slice(0, 10),
     lead_id: leadId,
   }).select('id').single()
@@ -191,9 +213,8 @@ export async function convertLeadToSale(leadId: string) {
   }
 
   // project 자동 생성
-  const adminDb2 = createAdminClient()
-  const { data: project } = await adminDb2.from('projects').insert({
-    name: displayName ?? '(리드전환)',
+  const { data: project } = await adminDb.from('projects').insert({
+    name: displayName ?? '(이름 없음)',
     service_type: serviceType,
     department,
     pm_id: lead.assignee_id ?? null,
@@ -203,9 +224,9 @@ export async function convertLeadToSale(leadId: string) {
   }).select('id').single()
 
   if (project) {
-    await adminDb2.from('sales').update({ project_id: project.id }).eq('id', sale!.id)
+    await adminDb.from('sales').update({ project_id: project.id }).eq('id', sale!.id)
     if (lead.assignee_id) {
-      await adminDb2.from('project_members').insert({ project_id: project.id, profile_id: lead.assignee_id, role: 'PM' }).single()
+      await adminDb.from('project_members').insert({ project_id: project.id, profile_id: lead.assignee_id, role: 'PM' }).single()
     }
   }
 
@@ -222,7 +243,7 @@ export async function convertLeadToSale(leadId: string) {
   notifyLeadConverted({
     clientOrg: lead.client_org,
     serviceType: lead.service_type,
-    saleName: displayName ? `${displayName} (리드전환)` : '(리드전환)',
+    saleName: displayName ?? '(이름 없음)',
     saleId: sale!.id,
   }).catch(console.error)
 
