@@ -432,6 +432,7 @@ export default function LeadsClient({ leads, profiles, persons, currentUserId, i
   type QuoteItem = { category: string; name: string; detail: string; qty: number; months: number; unit: string; price: number }
   const EMPTY_QUOTE_ITEM: QuoteItem = { category: '', name: '', detail: '', qty: 1, months: 1, unit: '식', price: 0 }
   const [showQuoteModal, setShowQuoteModal] = useState(false)
+  const [showEditModal, setShowEditModal] = useState(false)
   const [quoteType, setQuoteType] = useState<'렌탈' | '002크리에이티브'>('렌탈')
   const [quoteDate, setQuoteDate] = useState(new Date().toISOString().slice(0, 10))
   const [quoteItems, setQuoteItems] = useState<QuoteItem[]>([{ ...EMPTY_QUOTE_ITEM }])
@@ -562,7 +563,7 @@ export default function LeadsClient({ leads, profiles, persons, currentUserId, i
       status: (lead.status || '유입') as LeadStatus, channel: lead.channel || '',
       inflow_source: lead.inflow_source || '', notes: lead.notes || '',
     })
-    setTab('edit')
+    setShowEditModal(true)
   }
 
   function handleCreate(e: React.FormEvent) {
@@ -1067,535 +1068,496 @@ export default function LeadsClient({ leads, profiles, persons, currentUserId, i
                   </div>
                 </div>
 
-                {/* 탭 */}
-                <div className="flex border-b border-gray-200 mt-4 -mx-6 px-6">
-                  {(['main', 'customer', 'edit'] as const).map(t => (
-                    <button key={t}
-                      onClick={() => { if (t === 'edit') openEditTab(selectedLead); else setTab(t) }}
-                      className={`px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors ${
-                        tab === t ? 'border-yellow-400 text-gray-900' : 'border-transparent text-gray-400 hover:text-gray-600'
-                      }`}>
-                      {t === 'main' ? '요약 · 소통' : t === 'customer' ? '고객 카드' : '수정'}
+                {/* 액션 버튼 strip */}
+                <div className="flex items-center gap-2 mt-4 pt-3 border-t border-gray-100">
+                  <button
+                    onClick={() => openEditTab(selectedLead)}
+                    className="text-xs px-3 py-1.5 border border-gray-200 rounded-lg hover:bg-gray-50 text-gray-500 transition-colors">
+                    수정하기
+                  </button>
+                  {isAdmin && (
+                    <button
+                      onClick={() => setShowAddSaleForm(v => !v)}
+                      className="text-xs px-3 py-1.5 border border-yellow-300 bg-yellow-50 text-yellow-700 rounded-lg hover:bg-yellow-100 transition-colors">
+                      계약건 추가
                     </button>
-                  ))}
+                  )}
+                  {isAdmin && (
+                    <button
+                      onClick={() => { setShowQuoteModal(true); setGeneratedQuoteUrl(null); setQuoteItems([{ ...EMPTY_QUOTE_ITEM }]) }}
+                      className="text-xs px-3 py-1.5 border border-gray-200 rounded-lg hover:bg-gray-50 text-gray-500 transition-colors">
+                      견적서 생성
+                    </button>
+                  )}
+                  <button
+                    onClick={() => handleDelete(selectedLead.id)}
+                    className="text-xs px-3 py-1.5 text-red-400 hover:text-red-600 border border-red-100 rounded-lg hover:bg-red-50 transition-colors ml-auto">
+                    삭제
+                  </button>
                 </div>
               </div>
 
-              {/* 탭 콘텐츠 */}
+              {/* 단일 스크롤 바디 (탭 없이 전체 표시) */}
               <div className="flex-1 overflow-y-auto">
                 <div className="px-6 py-5 space-y-4">
 
-                  {/* ── 탭: 요약 · 소통 ── */}
-                  {tab === 'main' && (
-                    <>
-                      {/* 요약 카드 */}
-                      <div className="bg-white rounded-2xl border border-gray-200 p-5">
-                        <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2.5">요약</p>
-                        {selectedLead.notes ? (
-                          <div className="prose prose-sm max-w-none text-gray-700
-                            [&_h1]:text-base [&_h1]:font-bold [&_h1]:mt-3 [&_h1]:mb-1
-                            [&_h2]:text-sm [&_h2]:font-bold [&_h2]:mt-3 [&_h2]:mb-1
-                            [&_h3]:text-sm [&_h3]:font-semibold [&_h3]:mt-2 [&_h3]:mb-0.5
-                            [&_p]:leading-relaxed [&_p]:mb-1
-                            [&_ul]:pl-4 [&_ul]:list-disc [&_ul]:space-y-0.5
-                            [&_ol]:pl-4 [&_ol]:list-decimal [&_ol]:space-y-0.5
-                            [&_li]:text-sm
-                            [&_hr]:border-gray-200 [&_hr]:my-2
-                            [&_strong]:font-semibold
-                            [&_table]:w-full [&_table]:text-xs [&_table]:border-collapse [&_table]:overflow-x-auto [&_table]:block
-                            [&_th]:bg-gray-50 [&_th]:px-2 [&_th]:py-1 [&_th]:border [&_th]:border-gray-200 [&_th]:font-medium [&_th]:whitespace-nowrap
-                            [&_td]:px-2 [&_td]:py-1 [&_td]:border [&_td]:border-gray-100 [&_td]:whitespace-nowrap">
-                            <ReactMarkdown>{selectedLead.notes}</ReactMarkdown>
-                          </div>
-                        ) : (
-                          <p className="text-sm text-gray-400 italic">요약 없음 — 수정 탭에서 추가하세요.</p>
-                        )}
-                        {selectedLead.initial_content && (
-                          <div className="mt-3 pt-3 border-t border-gray-100">
-                            <p className="text-[11px] font-semibold text-gray-400 mb-1">최초 문의 내용</p>
-                            <p className="text-sm text-gray-600 leading-relaxed whitespace-pre-line">{selectedLead.initial_content}</p>
-                          </div>
-                        )}
-                        {(loadingSummary || leadSummary) && (
-                          <div className="mt-3 bg-violet-50 border border-violet-100 rounded-xl p-3.5">
-                            <p className="text-[11px] font-semibold text-violet-500 mb-2.5">✦ AI 요약</p>
-                            {loadingSummary ? (
-                              <div className="space-y-2">
-                                <div className="h-3 bg-violet-100 rounded animate-pulse w-full" />
-                                <div className="h-3 bg-violet-100 rounded animate-pulse w-4/5" />
-                                <div className="h-3 bg-violet-100 rounded animate-pulse w-3/5" />
-                              </div>
-                            ) : (
-                              <div className="space-y-2">
-                                {(leadSummary ?? '').split('\n').filter(l => l.trim()).map((line, i) => {
-                                  const colonIdx = line.indexOf(':')
-                                  if (colonIdx === -1) return <p key={i} className="text-sm text-gray-600 leading-relaxed">{line}</p>
-                                  const label = line.slice(0, colonIdx).trim()
-                                  const body = line.slice(colonIdx + 1).trim()
-                                  const labelStyle: Record<string, string> = {
-                                    '현황': 'bg-blue-100 text-blue-700',
-                                    '반응': 'bg-yellow-100 text-yellow-700',
-                                    '다음': 'bg-green-100 text-green-700',
-                                  }
-                                  return (
-                                    <div key={i} className="flex gap-2 items-start">
-                                      <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded shrink-0 mt-0.5 ${labelStyle[label] ?? 'bg-gray-100 text-gray-500'}`}>{label}</span>
-                                      <p className="text-sm text-gray-700 leading-relaxed">{body}</p>
-                                    </div>
-                                  )
-                                })}
-                              </div>
-                            )}
-                          </div>
+                  {/* ── 기본 정보 2열 카드 ── */}
+                  <div className="grid grid-cols-2 gap-4">
+
+                    {/* 담당자 카드 */}
+                    <div className="bg-white rounded-2xl border border-gray-200 p-4">
+                      <div className="flex items-center justify-between mb-3">
+                        <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider">담당자</p>
+                        {!editingPerson && (
+                          <button
+                            onClick={() => {
+                              if (selectedLead.person) {
+                                setPersonEditForm({
+                                  name: selectedLead.person.name,
+                                  phone: selectedLead.person.phone || '',
+                                  email: selectedLead.person.email || '',
+                                  title: selectedLead.person.title || '',
+                                  dept: selectedLead.person.dept || '',
+                                  orgName: selectedLead.person.currentOrg,
+                                  orgRegion: selectedLead.person.customerRegion,
+                                  orgType: selectedLead.person.customerType,
+                                })
+                              }
+                              setEditingPerson(true)
+                            }}
+                            className="text-xs text-gray-400 hover:text-blue-600 border border-gray-200 rounded px-2 py-0.5 hover:border-blue-300 transition-colors">
+                            편집
+                          </button>
                         )}
                       </div>
 
-                      {/* 소통 내역 카드 */}
-                      <div className="bg-white rounded-2xl border border-gray-200 p-5">
-                        <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-4">
-                          소통 내역 <span className="normal-case font-normal">{leadLogs.length}건</span>
-                        </p>
-
-                        {/* 소통 입력 폼 */}
-                        <div className="border border-gray-200 rounded-xl p-3.5 bg-gray-50 mb-4">
-                          <textarea
-                            value={newLeadLog}
-                            onChange={e => setNewLeadLog(e.target.value)}
-                            placeholder="소통 내용, 전화 전사록, 이메일 내용 등 자유롭게..."
-                            rows={2}
-                            className="w-full text-sm bg-white border border-gray-200 rounded-lg px-3 py-2 resize-none focus:outline-none focus:border-yellow-400 mb-2"
-                          />
-                          <div className="flex items-center gap-2 mb-2">
-                            <label className="text-xs text-gray-400 shrink-0">소통 일시</label>
-                            <input type="datetime-local" value={leadLogContactedAt}
-                              onChange={e => setLeadLogContactedAt(e.target.value)}
-                              className="text-xs border border-gray-200 rounded-lg px-2 py-1.5 bg-white focus:outline-none focus:border-yellow-400" />
-                          </div>
-                          <div className="flex items-center gap-2 mb-2">
-                            <button type="button"
-                              onClick={() => {
-                                const now = new Date(); const pad = (n: number) => String(n).padStart(2, '0')
-                                setLeadLogContactedAt(`${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}T${pad(now.getHours())}:${pad(now.getMinutes())}`)
-                                if (newLeadLog.trim()) handleAddLeadLog('통화')
-                              }}
-                              disabled={isPending}
-                              className="px-3 py-1.5 text-xs font-semibold rounded-lg bg-blue-500 text-white hover:bg-blue-600 disabled:opacity-50">
-                              📞 지금 통화
-                            </button>
-                            <span className="text-xs text-gray-400">내용 입력 후 클릭하면 바로 저장</span>
-                          </div>
-                          <div className="flex gap-1.5 flex-wrap">
-                            {['통화', '이메일', '방문', '미팅', '내부회의', '메모', '기타'].map(type => (
-                              <button key={type}
-                                onClick={() => handleAddLeadLog(type)}
-                                disabled={isPending || !newLeadLog.trim()}
-                                className={`px-2.5 py-1 text-xs rounded-lg border transition-all disabled:opacity-40 ${
-                                  newLeadLogType === type ? 'border-yellow-400 bg-yellow-50 text-gray-800' : 'border-gray-200 text-gray-500 hover:border-yellow-300'
-                                }`}>{type}{LOG_TYPE_PARTICLE[type] ?? '로'} 저장</button>
+                      {/* 고객DB 연결된 담당자 편집 */}
+                      {editingPerson && selectedLead.person ? (
+                        <div className="border border-blue-200 rounded-xl p-3 space-y-2 bg-blue-50">
+                          <p className="text-xs font-semibold text-blue-700">담당자 정보 수정</p>
+                          <div className="grid grid-cols-2 gap-2">
+                            {([
+                              { label: '이름', field: 'name', col: 1 },
+                              { label: '휴대폰', field: 'phone', col: 1 },
+                              { label: '이메일', field: 'email', col: 2, type: 'email' },
+                              { label: '직급', field: 'title', col: 1 },
+                              { label: '부서', field: 'dept', col: 1 },
+                            ] as { label: string; field: string; col: number; type?: string }[]).map(({ label, field, col, type }) => (
+                              <div key={field} className={col === 2 ? 'col-span-2' : ''}>
+                                <label className="text-xs text-gray-500 mb-0.5 block">{label}</label>
+                                <input type={type || 'text'}
+                                  value={personEditForm[field as keyof typeof personEditForm]}
+                                  onChange={e => setPersonEditForm(f => ({ ...f, [field]: e.target.value }))}
+                                  className="w-full text-xs border border-gray-200 rounded-lg px-2 py-1.5 focus:outline-none focus:border-blue-400" />
+                              </div>
                             ))}
                           </div>
-                          {leadLogError && <p className="text-xs text-red-500 mt-1">{leadLogError}</p>}
-                        </div>
-
-                        {/* 로그 목록 */}
-                        {loadingLogs ? (
-                          <p className="text-xs text-gray-300 text-center py-3">불러오는 중...</p>
-                        ) : leadLogs.length === 0 ? (
-                          <p className="text-sm text-gray-400 text-center py-6">소통 내역이 없습니다.</p>
-                        ) : (
-                          <>
-                            <div className="space-y-0">
-                              {(logsCollapsed && leadLogs.length > 3 ? leadLogs.slice(0, 3) : leadLogs).map(log => (
-                                <LogItem key={log.id} log={log} isAdmin={isAdmin} onDelete={() => handleDeleteLeadLog(log.id)} />
-                              ))}
-                            </div>
-                            {leadLogs.length > 3 && (
-                              <button
-                                onClick={() => setLogsCollapsed(c => !c)}
-                                className="w-full mt-1.5 text-xs text-gray-400 hover:text-gray-600 py-1.5 border border-dashed border-gray-200 rounded-lg hover:border-gray-300 transition-colors">
-                                {logsCollapsed ? `이전 ${leadLogs.length - 3}건 더 보기 ▾` : '접기 ▴'}
-                              </button>
-                            )}
-                          </>
-                        )}
-                      </div>
-
-                      {/* Claude 협업 */}
-                      <ProjectClaudeChat
-                        leadId={selectedLead.id}
-                        serviceType={selectedLead.service_type}
-                        projectName={selectedLead.project_name}
-                        dropboxUrl={selectedLead.dropbox_url}
-                      />
-                    </>
-                  )}
-
-                  {/* ── 탭: 고객 카드 ── */}
-                  {tab === 'customer' && (
-                    <div className="space-y-4">
-                      {/* 담당자 (고객 DB 연결 시) */}
-                      {selectedLead.person && (
-                        <div className="bg-white rounded-2xl border border-gray-200 p-5">
-                          <div className="flex items-center justify-between mb-3">
-                            <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider">담당자 · 연락처</p>
-                            <div className="flex items-center gap-2">
-                              <a href="/customers" className="text-xs text-blue-400 hover:text-blue-600">거래처DB →</a>
-                              {isAdmin && !editingPerson && (
-                                <button
-                                  onClick={() => {
-                                    setPersonEditForm({
-                                      name: selectedLead.person!.name,
-                                      phone: selectedLead.person!.phone || '',
-                                      email: selectedLead.person!.email || '',
-                                      title: selectedLead.person!.title || '',
-                                      dept: selectedLead.person!.dept || '',
-                                      orgName: selectedLead.person!.currentOrg,
-                                      orgRegion: selectedLead.person!.customerRegion,
-                                      orgType: selectedLead.person!.customerType,
-                                    })
-                                    setEditingPerson(true)
-                                  }}
-                                  className="text-xs text-gray-400 hover:text-blue-600 border border-gray-200 rounded px-2 py-0.5 hover:border-blue-300">
-                                  편집
-                                </button>
-                              )}
-                            </div>
+                          <div className="flex gap-2 pt-1">
+                            <button onClick={handleSavePersonAndCustomer} disabled={savingPerson}
+                              className="flex-1 py-1.5 text-xs font-semibold bg-blue-500 text-white rounded-lg hover:bg-blue-600 disabled:opacity-50">
+                              {savingPerson ? '저장 중...' : '저장'}
+                            </button>
+                            <button onClick={() => setEditingPerson(false)}
+                              className="px-3 py-1.5 text-xs border border-gray-200 rounded-lg text-gray-500">취소</button>
                           </div>
-
-                          {editingPerson ? (
-                            <div className="border border-blue-200 rounded-xl p-3 space-y-3 bg-blue-50">
-                              <p className="text-xs font-semibold text-blue-700">담당자 정보 수정</p>
-                              <div className="grid grid-cols-2 gap-2">
-                                {[
-                                  { label: '이름', field: 'name', col: 1 },
-                                  { label: '휴대폰', field: 'phone', col: 1 },
-                                  { label: '이메일', field: 'email', col: 2, type: 'email' },
-                                  { label: '직급', field: 'title', col: 1 },
-                                  { label: '부서', field: 'dept', col: 1 },
-                                ].map(({ label, field, col, type }) => (
-                                  <div key={field} className={col === 2 ? 'col-span-2' : ''}>
-                                    <label className="text-xs text-gray-500 mb-0.5 block">{label}</label>
-                                    <input type={type || 'text'}
-                                      value={personEditForm[field as keyof typeof personEditForm]}
-                                      onChange={e => setPersonEditForm(f => ({ ...f, [field]: e.target.value }))}
-                                      className="w-full text-xs border border-gray-200 rounded-lg px-2 py-1.5 focus:outline-none focus:border-blue-400" />
-                                  </div>
-                                ))}
-                              </div>
-                              {selectedLead.person.customerId && (
-                                <>
-                                  <p className="text-xs font-semibold text-blue-700 pt-1">기관 정보 수정</p>
-                                  <div className="grid grid-cols-2 gap-2">
-                                    <div className="col-span-2">
-                                      <label className="text-xs text-gray-500 mb-0.5 block">기관명</label>
-                                      <input value={personEditForm.orgName} onChange={e => setPersonEditForm(f => ({ ...f, orgName: e.target.value }))}
-                                        className="w-full text-xs border border-gray-200 rounded-lg px-2 py-1.5 focus:outline-none focus:border-blue-400" />
-                                    </div>
-                                    <div>
-                                      <label className="text-xs text-gray-500 mb-0.5 block">지역</label>
-                                      <input value={personEditForm.orgRegion} onChange={e => setPersonEditForm(f => ({ ...f, orgRegion: e.target.value }))}
-                                        className="w-full text-xs border border-gray-200 rounded-lg px-2 py-1.5 focus:outline-none focus:border-blue-400" />
-                                    </div>
-                                    <div>
-                                      <label className="text-xs text-gray-500 mb-0.5 block">유형</label>
-                                      <select value={personEditForm.orgType} onChange={e => setPersonEditForm(f => ({ ...f, orgType: e.target.value }))}
-                                        className="w-full text-xs border border-gray-200 rounded-lg px-2 py-1.5 bg-white focus:outline-none focus:border-blue-400">
-                                        <option value="">선택</option>
-                                        {['학교', '공공기관', '기업', '단체', '기타'].map(t => <option key={t} value={t}>{t}</option>)}
-                                      </select>
-                                    </div>
-                                  </div>
-                                </>
-                              )}
-                              <div className="flex gap-2 pt-1">
-                                <button onClick={handleSavePersonAndCustomer} disabled={savingPerson}
-                                  className="flex-1 text-xs px-3 py-1.5 font-semibold rounded-lg disabled:opacity-50"
-                                  style={{ backgroundColor: '#FFCE00', color: '#121212' }}>
-                                  {savingPerson ? '저장 중...' : '저장'}
-                                </button>
-                                <button onClick={() => setEditingPerson(false)}
-                                  className="text-xs px-3 py-1.5 border border-gray-200 rounded-lg text-gray-500 hover:bg-gray-50">취소</button>
-                              </div>
-                              <p className="text-xs text-gray-400">저장 시 고객 DB(거래처탭)에도 자동 반영됩니다.</p>
-                            </div>
-                          ) : (
-                            <div className="bg-blue-50 border border-blue-100 rounded-xl px-3 py-2.5 space-y-2">
-                              <div className="flex items-center gap-3">
-                                <div className="w-8 h-8 rounded-full bg-blue-200 flex items-center justify-center text-blue-700 font-bold text-sm shrink-0">
-                                  {selectedLead.person.name.charAt(0)}
-                                </div>
-                                <div className="flex-1 min-w-0">
-                                  <p className="text-sm font-semibold text-gray-900">{selectedLead.person.name}</p>
-                                  <p className="text-xs text-gray-500 truncate">
-                                    {selectedLead.person.currentOrg}
-                                    {selectedLead.person.dept ? ` · ${selectedLead.person.dept}` : ''}
-                                    {selectedLead.person.title ? ` · ${selectedLead.person.title}` : ''}
-                                  </p>
-                                </div>
-                              </div>
-                              <div className="grid grid-cols-2 gap-x-3 gap-y-1 text-xs pl-1 pt-0.5">
-                                {selectedLead.person.phone && (
-                                  <div><span className="text-gray-400">휴대폰</span><p className="text-gray-700 font-medium">{selectedLead.person.phone}</p></div>
-                                )}
-                                {selectedLead.person.email && (
-                                  <div><span className="text-gray-400">이메일</span><p className="text-gray-700 font-medium truncate">{selectedLead.person.email}</p></div>
-                                )}
-                                {selectedLead.person.customerRegion && (
-                                  <div><span className="text-gray-400">지역</span><p className="text-gray-700 font-medium">{selectedLead.person.customerRegion}</p></div>
-                                )}
-                                {selectedLead.person.customerType && (
-                                  <div><span className="text-gray-400">유형</span><p className="text-gray-700 font-medium">{selectedLead.person.customerType}</p></div>
-                                )}
-                              </div>
-                            </div>
-                          )}
                         </div>
-                      )}
 
-                      {/* 미연결 리드 연락처 */}
-                      {!selectedLead.person && (
-                        <div className="bg-white rounded-2xl border border-gray-200 p-5">
-                          <div className="flex items-center justify-between mb-3">
-                            <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider">연락처 <span className="text-gray-300 font-normal normal-case">(고객 DB 미연결)</span></p>
-                            <div className="relative">
-                              <button
-                                onClick={() => { setShowPersonLink(o => !o); setPersonLinkSearch('') }}
-                                className="text-xs border border-dashed border-blue-300 text-blue-500 rounded px-2 py-0.5 hover:bg-blue-50">
-                                고객 DB 연결
-                              </button>
-                              {showPersonLink && (
-                                <div className="absolute z-30 right-0 top-full mt-1 w-64 bg-white border border-gray-200 rounded-xl shadow-lg">
-                                  <input autoFocus value={personLinkSearch}
-                                    onChange={e => setPersonLinkSearch(e.target.value)}
-                                    placeholder="담당자 이름으로 검색..."
-                                    className="w-full px-3 py-2 text-xs border-b border-gray-100 focus:outline-none rounded-t-xl" />
-                                  <div className="max-h-52 overflow-y-auto">
-                                    {persons.filter(p => !personLinkSearch || p.name.includes(personLinkSearch) || p.currentOrg.includes(personLinkSearch)).slice(0, 8).map(p => (
-                                      <button key={p.id} className="w-full text-left px-3 py-2 hover:bg-yellow-50 border-b border-gray-50 last:border-0 text-xs"
-                                        onMouseDown={() => {
-                                          startTransition(async () => {
-                                            await updateLead(selectedLead.id, { person_id: p.id, contact_name: p.name, phone: p.phone || selectedLead.phone, email: p.email || selectedLead.email })
-                                          })
-                                          setShowPersonLink(false)
-                                        }}>
-                                        <p className="font-medium text-gray-800">{p.name}</p>
-                                        <p className="text-gray-400">{p.currentOrg}{p.title ? ` · ${p.title}` : ''}</p>
-                                      </button>
-                                    ))}
-                                  </div>
-                                </div>
-                              )}
-                            </div>
-                          </div>
-                          {contactDraft && (
-                            <>
-                              <div className="bg-gray-50 border border-gray-200 rounded-xl px-3 py-2.5 grid grid-cols-2 gap-x-3 gap-y-2">
-                                {([
-                                  { label: '담당자명', field: 'contact_name' as const, col: 2 },
-                                  { label: '휴대폰', field: 'phone' as const, col: 1 },
-                                  { label: '사무실', field: 'office_phone' as const, col: 1 },
-                                  { label: '이메일', field: 'email' as const, col: 2, type: 'email' },
-                                  { label: '기관명', field: 'client_org' as const, col: 2 },
-                                ]).map(({ label, field, col, type }) => (
-                                  <div key={field} className={col === 2 ? 'col-span-2' : ''}>
-                                    <label className="text-xs text-gray-400 mb-0.5 block">{label}</label>
-                                    <input type={type || 'text'} value={contactDraft[field]}
-                                      onChange={e => setContactDraft(d => d ? { ...d, [field]: e.target.value } : d)}
-                                      className="w-full text-xs border border-gray-200 rounded-lg px-2 py-1.5 bg-white focus:outline-none focus:border-yellow-400" />
-                                  </div>
-                                ))}
-                              </div>
-                              <button onClick={async () => {
-                                setSavingContact(true)
-                                await updateLead(selectedLead.id, {
-                                  contact_name: contactDraft.contact_name || null,
-                                  phone: contactDraft.phone || null,
-                                  office_phone: contactDraft.office_phone || null,
-                                  email: contactDraft.email || null,
-                                  client_org: contactDraft.client_org || null,
-                                } as Parameters<typeof updateLead>[1])
-                                setSelectedLead(prev => prev ? {
-                                  ...prev,
-                                  contact_name: contactDraft.contact_name || null,
-                                  phone: contactDraft.phone || null,
-                                  office_phone: contactDraft.office_phone || null,
-                                  email: contactDraft.email || null,
-                                  client_org: contactDraft.client_org || null,
-                                } : prev)
-                                setSavingContact(false)
-                              }} disabled={savingContact}
-                                className="mt-1.5 w-full py-1.5 rounded-lg text-xs font-semibold bg-yellow-400 text-gray-900 hover:bg-yellow-500 disabled:opacity-50">
-                                {savingContact ? '저장 중...' : '저장'}
-                              </button>
-                            </>
-                          )}
-                        </div>
-                      )}
-
-                      {/* 기본 정보 */}
-                      <div className="bg-white rounded-2xl border border-gray-200 p-5">
-                        <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">유입 정보</p>
-                        <div className="grid grid-cols-2 gap-x-8 gap-y-3">
-                          {[
-                            ['담당 직원', (selectedLead.assignee as { name?: string })?.name],
-                            ['유입 경로', selectedLead.inflow_source],
-                            ['소통 채널', selectedLead.channel],
-                            ['유입일', selectedLead.inflow_date],
-                            ...(selectedLead.office_phone ? [['사무실', selectedLead.office_phone]] : []),
-                          ].map(([k, v]) => (
-                            <div key={k as string}>
-                              <span className="text-xs text-gray-400">{k}</span>
-                              <p className="text-sm text-gray-800 font-medium mt-0.5">{(v as string) || '—'}</p>
+                      ) : editingPerson && !selectedLead.person && contactDraft ? (
+                        /* 고객DB 미연결 담당자 직접 편집 */
+                        <div className="space-y-2">
+                          {([
+                            { label: '이름', field: 'contact_name', col: 1 },
+                            { label: '휴대폰', field: 'phone', col: 1 },
+                            { label: '이메일', field: 'email', col: 2, type: 'email' },
+                            { label: '사무실', field: 'office_phone', col: 1 },
+                            { label: '기관명', field: 'client_org', col: 2 },
+                          ] as { label: string; field: string; col: number; type?: string }[]).map(({ label, field, col, type }) => (
+                            <div key={field} className={col === 2 ? 'col-span-2' : ''}>
+                              <label className="text-xs text-gray-400 mb-0.5 block">{label}</label>
+                              <input type={type || 'text'} value={contactDraft[field as keyof typeof contactDraft]}
+                                onChange={e => setContactDraft(d => d ? { ...d, [field]: e.target.value } : d)}
+                                className="w-full text-xs border border-gray-200 rounded-lg px-2 py-1.5 bg-white focus:outline-none focus:border-yellow-400" />
                             </div>
                           ))}
-                        </div>
-                      </div>
-
-                      {/* 연관 매출건 */}
-                      {selectedLead.relatedSales && selectedLead.relatedSales.length > 0 && (
-                        <div className="bg-white rounded-2xl border border-gray-200 p-5">
-                          <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">연관 매출건 ({selectedLead.relatedSales.length})</p>
-                          <div className="space-y-1.5">
-                            {selectedLead.relatedSales.map((sale: { id: string; name: string; revenue: number | null; contract_stage: string; progress_status?: string | null; project_id?: string | null }) => (
-                              <a key={sale.id} href={sale.project_id ? `/projects/${sale.project_id}` : `/sales/${sale.id}`}
-                                className="flex items-center justify-between bg-gray-50 border border-gray-100 rounded-xl px-3 py-2.5 hover:border-yellow-300 transition-colors group">
-                                <div>
-                                  <p className="text-sm font-medium text-gray-800 group-hover:text-yellow-700">{sale.name}</p>
-                                  {(sale.revenue ?? 0) > 0 && (
-                                    <p className="text-xs text-gray-400 mt-0.5">
-                                      {(sale.revenue ?? 0) >= 10000000 ? `${((sale.revenue ?? 0) / 10000000).toFixed(1)}천만` :
-                                       (sale.revenue ?? 0) >= 10000 ? `${Math.round((sale.revenue ?? 0) / 10000)}만` :
-                                       `${(sale.revenue ?? 0).toLocaleString()}원`}
-                                    </p>
-                                  )}
-                                </div>
-                                <div className="flex gap-1 shrink-0 ml-2">
-                                  <span className={`text-[10px] px-1.5 py-0.5 rounded-full ${
-                                    sale.contract_stage === '잔금' ? 'bg-gray-100 text-gray-400' :
-                                    sale.contract_stage === '계약' ? 'bg-yellow-100 text-yellow-700' :
-                                    'bg-green-100 text-green-700'
-                                  }`}>{sale.contract_stage}</span>
-                                  {sale.progress_status && sale.progress_status !== '착수전' && (
-                                    <span className={`text-[10px] px-1.5 py-0.5 rounded-full ${
-                                      sale.progress_status === '완수' ? 'bg-teal-100 text-teal-700' : 'bg-blue-100 text-blue-700'
-                                    }`}>{sale.progress_status}</span>
-                                  )}
-                                </div>
-                              </a>
-                            ))}
+                          <div className="flex gap-2 pt-1">
+                            <button onClick={async () => {
+                              setSavingContact(true)
+                              await updateLead(selectedLead.id, {
+                                contact_name: contactDraft.contact_name || null,
+                                phone: contactDraft.phone || null,
+                                office_phone: contactDraft.office_phone || null,
+                                email: contactDraft.email || null,
+                                client_org: contactDraft.client_org || null,
+                              } as Parameters<typeof updateLead>[1])
+                              setSelectedLead(prev => prev ? {
+                                ...prev,
+                                contact_name: contactDraft.contact_name || null,
+                                phone: contactDraft.phone || null,
+                                office_phone: contactDraft.office_phone || null,
+                                email: contactDraft.email || null,
+                                client_org: contactDraft.client_org || null,
+                              } : prev)
+                              setSavingContact(false)
+                              setEditingPerson(false)
+                            }} disabled={savingContact}
+                              className="flex-1 py-1.5 rounded-lg text-xs font-semibold bg-yellow-400 text-gray-900 hover:bg-yellow-500 disabled:opacity-50">
+                              {savingContact ? '저장 중...' : '저장'}
+                            </button>
+                            <button onClick={() => setEditingPerson(false)}
+                              className="px-3 py-1.5 text-xs border border-gray-200 rounded-lg text-gray-500">취소</button>
                           </div>
                         </div>
-                      )}
 
-                      {/* 견적서 */}
-                      {selectedLead.quotation_url && (
-                        <div className="bg-white rounded-2xl border border-gray-200 p-5">
-                          <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">견적서</p>
-                          <a href={selectedLead.quotation_url} target="_blank" rel="noopener noreferrer"
-                            className="flex items-center gap-2 text-sm text-green-700 hover:text-green-900 bg-green-50 rounded-lg px-3 py-2 border border-green-100">
-                            <span>📄</span>
-                            <span className="underline truncate">구글 시트 견적서 열기</span>
-                          </a>
+                      ) : (
+                        /* 읽기 모드 */
+                        <div className="space-y-2.5">
+                          {([
+                            ['이름', selectedLead.person?.name || selectedLead.contact_name],
+                            ['전화', selectedLead.person?.phone || selectedLead.phone],
+                            ['이메일', selectedLead.person?.email || selectedLead.email],
+                            ['기관', selectedLead.person?.currentOrg || selectedLead.client_org],
+                          ] as [string, string | null | undefined][]).map(([k, v]) => (
+                            <div key={k} className="flex gap-3">
+                              <span className="text-xs text-gray-400 w-10 flex-shrink-0">{k}</span>
+                              <span className="text-xs text-gray-800 font-medium break-all">{v || '—'}</span>
+                            </div>
+                          ))}
+                          {selectedLead.person && (
+                            <div className="mt-2 pt-2 border-t border-gray-50">
+                              <a href="/customers" className="text-[10px] text-blue-400 hover:text-blue-600">거래처DB →</a>
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </div>
+
+                    {/* 유입 정보 카드 */}
+                    <div className="bg-white rounded-2xl border border-gray-200 p-4">
+                      <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">유입 정보</p>
+                      <div className="space-y-2.5">
+                        {([
+                          ['담당 직원', (selectedLead.assignee as { name?: string })?.name],
+                          ['유입일', selectedLead.inflow_date],
+                          ['유입 경로', selectedLead.inflow_source],
+                          ['소통 채널', selectedLead.channel],
+                          ...(selectedLead.office_phone ? [['사무실', selectedLead.office_phone]] : []),
+                        ] as [string, string | null | undefined][]).map(([k, v]) => (
+                          <div key={k} className="flex gap-3">
+                            <span className="text-xs text-gray-400 w-14 flex-shrink-0">{k}</span>
+                            <span className="text-xs text-gray-800 font-medium">{v || '—'}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* ── 소통 내역 ── */}
+                  <div className="bg-white rounded-2xl border border-gray-200 p-5">
+                    <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-4">
+                      소통 내역 <span className="normal-case font-normal">{leadLogs.length}건</span>
+                    </p>
+
+                    {/* 소통 입력 폼 */}
+                    <div className="border border-gray-200 rounded-xl p-3.5 bg-gray-50 mb-4">
+                      <textarea
+                        value={newLeadLog}
+                        onChange={e => setNewLeadLog(e.target.value)}
+                        placeholder="소통 내용, 전화 전사록, 이메일 내용 등 자유롭게..."
+                        rows={2}
+                        className="w-full text-sm bg-white border border-gray-200 rounded-lg px-3 py-2 resize-none focus:outline-none focus:border-yellow-400 mb-2"
+                      />
+                      <div className="flex items-center gap-2 mb-2">
+                        <label className="text-xs text-gray-400 shrink-0">소통 일시</label>
+                        <input type="datetime-local" value={leadLogContactedAt}
+                          onChange={e => setLeadLogContactedAt(e.target.value)}
+                          className="text-xs border border-gray-200 rounded-lg px-2 py-1.5 bg-white focus:outline-none focus:border-yellow-400" />
+                      </div>
+                      <div className="flex items-center gap-2 mb-2">
+                        <button type="button"
+                          onClick={() => {
+                            const now = new Date(); const pad = (n: number) => String(n).padStart(2, '0')
+                            setLeadLogContactedAt(`${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}T${pad(now.getHours())}:${pad(now.getMinutes())}`)
+                            if (newLeadLog.trim()) handleAddLeadLog('통화')
+                          }}
+                          disabled={isPending}
+                          className="px-3 py-1.5 text-xs font-semibold rounded-lg bg-blue-500 text-white hover:bg-blue-600 disabled:opacity-50">
+                          📞 지금 통화
+                        </button>
+                        <span className="text-xs text-gray-400">내용 입력 후 클릭하면 바로 저장</span>
+                      </div>
+                      <div className="flex gap-1.5 flex-wrap">
+                        {['통화', '이메일', '방문', '미팅', '내부회의', '메모', '기타'].map(type => (
+                          <button key={type}
+                            onClick={() => handleAddLeadLog(type)}
+                            disabled={isPending || !newLeadLog.trim()}
+                            className={`px-2.5 py-1 text-xs rounded-lg border transition-all disabled:opacity-40 ${
+                              newLeadLogType === type ? 'border-yellow-400 bg-yellow-50 text-gray-800' : 'border-gray-200 text-gray-500 hover:border-yellow-300'
+                            }`}>{type}{LOG_TYPE_PARTICLE[type] ?? '로'} 저장</button>
+                        ))}
+                      </div>
+                      {leadLogError && <p className="text-xs text-red-500 mt-1">{leadLogError}</p>}
+                    </div>
+
+                    {/* 로그 목록 */}
+                    {loadingLogs ? (
+                      <p className="text-xs text-gray-300 text-center py-3">불러오는 중...</p>
+                    ) : leadLogs.length === 0 ? (
+                      <p className="text-sm text-gray-400 text-center py-6">소통 내역이 없습니다.</p>
+                    ) : (
+                      <>
+                        <div className="space-y-0">
+                          {(logsCollapsed && leadLogs.length > 3 ? leadLogs.slice(0, 3) : leadLogs).map(log => (
+                            <LogItem key={log.id} log={log} isAdmin={isAdmin} onDelete={() => handleDeleteLeadLog(log.id)} />
+                          ))}
+                        </div>
+                        {leadLogs.length > 3 && (
+                          <button
+                            onClick={() => setLogsCollapsed(c => !c)}
+                            className="w-full mt-1.5 text-xs text-gray-400 hover:text-gray-600 py-1.5 border border-dashed border-gray-200 rounded-lg hover:border-gray-300 transition-colors">
+                            {logsCollapsed ? `이전 ${leadLogs.length - 3}건 더 보기 ▾` : '접기 ▴'}
+                          </button>
+                        )}
+                      </>
+                    )}
+                  </div>
+
+                  {/* ── 리마인드 ── */}
+                  <div className="bg-white rounded-2xl border border-gray-200 p-4">
+                    <div className="flex items-center gap-2 mb-3">
+                      <span className="text-sm">🔔</span>
+                      <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider">리마인드</p>
+                    </div>
+                    {selectedLead.remind_date ? (
+                      <div className="flex items-center gap-3 p-3 bg-gray-50 rounded-xl">
+                        <div className="flex items-center gap-2 flex-1">
+                          {(() => {
+                            const d = getDdayBadge(selectedLead.remind_date)
+                            return d ? <span className={`text-xs px-2 py-0.5 rounded-lg font-bold ${d.color}`}>{d.label}</span> : null
+                          })()}
+                          <span className="text-xs text-gray-600">{selectedLead.remind_date}</span>
+                        </div>
+                        <input
+                          type="date"
+                          defaultValue={selectedLead.remind_date}
+                          onChange={e => {
+                            startTransition(async () => {
+                              await updateLead(selectedLead.id, { remind_date: e.target.value || null })
+                              setSelectedLead(prev => prev ? { ...prev, remind_date: e.target.value || null } : prev)
+                            })
+                          }}
+                          className="text-xs border border-gray-200 rounded-lg px-2 py-1 bg-white focus:outline-none focus:border-yellow-400"
+                        />
+                        <button
+                          onClick={() => {
+                            startTransition(async () => {
+                              await updateLead(selectedLead.id, { remind_date: null })
+                              setSelectedLead(prev => prev ? { ...prev, remind_date: null } : prev)
+                            })
+                          }}
+                          className="text-xs text-gray-300 hover:text-red-400 transition-colors">삭제</button>
+                      </div>
+                    ) : (
+                      <div className="flex items-center justify-between p-3 bg-gray-50 rounded-xl">
+                        <span className="text-xs text-gray-400">리마인드가 설정되어 있지 않습니다.</span>
+                        <input
+                          type="date"
+                          onChange={e => {
+                            if (!e.target.value) return
+                            startTransition(async () => {
+                              await updateLead(selectedLead.id, { remind_date: e.target.value })
+                              setSelectedLead(prev => prev ? { ...prev, remind_date: e.target.value } : prev)
+                            })
+                          }}
+                          className="text-xs border border-gray-200 rounded-lg px-2 py-1 bg-white focus:outline-none focus:border-yellow-400 cursor-pointer"
+                        />
+                      </div>
+                    )}
+                  </div>
+
+                  {/* ── Claude 협업 ── */}
+                  <ProjectClaudeChat
+                    leadId={selectedLead.id}
+                    serviceType={selectedLead.service_type}
+                    projectName={selectedLead.project_name}
+                    dropboxUrl={selectedLead.dropbox_url}
+                  />
+
+                  {/* ── 요약 · 메모 ── */}
+                  {(selectedLead.notes || selectedLead.initial_content || loadingSummary || leadSummary) && (
+                    <div className="bg-white rounded-2xl border border-gray-200 p-5">
+                      <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2.5">요약 · 메모</p>
+                      {selectedLead.notes ? (
+                        <div className="prose prose-sm max-w-none text-gray-700
+                          [&_h1]:text-base [&_h1]:font-bold [&_h1]:mt-3 [&_h1]:mb-1
+                          [&_h2]:text-sm [&_h2]:font-bold [&_h2]:mt-3 [&_h2]:mb-1
+                          [&_h3]:text-sm [&_h3]:font-semibold [&_h3]:mt-2 [&_h3]:mb-0.5
+                          [&_p]:leading-relaxed [&_p]:mb-1
+                          [&_ul]:pl-4 [&_ul]:list-disc [&_ul]:space-y-0.5
+                          [&_ol]:pl-4 [&_ol]:list-decimal [&_ol]:space-y-0.5
+                          [&_li]:text-sm
+                          [&_hr]:border-gray-200 [&_hr]:my-2
+                          [&_strong]:font-semibold
+                          [&_table]:w-full [&_table]:text-xs [&_table]:border-collapse [&_table]:overflow-x-auto [&_table]:block
+                          [&_th]:bg-gray-50 [&_th]:px-2 [&_th]:py-1 [&_th]:border [&_th]:border-gray-200 [&_th]:font-medium [&_th]:whitespace-nowrap
+                          [&_td]:px-2 [&_td]:py-1 [&_td]:border [&_td]:border-gray-100 [&_td]:whitespace-nowrap">
+                          <ReactMarkdown>{selectedLead.notes}</ReactMarkdown>
+                        </div>
+                      ) : (
+                        <p className="text-sm text-gray-400 italic">메모 없음 — 수정하기에서 추가하세요.</p>
+                      )}
+                      {selectedLead.initial_content && (
+                        <div className="mt-3 pt-3 border-t border-gray-100">
+                          <p className="text-[11px] font-semibold text-gray-400 mb-1">최초 문의 내용</p>
+                          <p className="text-sm text-gray-600 leading-relaxed whitespace-pre-line">{selectedLead.initial_content}</p>
+                        </div>
+                      )}
+                      {(loadingSummary || leadSummary) && (
+                        <div className="mt-3 bg-violet-50 border border-violet-100 rounded-xl p-3.5">
+                          <p className="text-[11px] font-semibold text-violet-500 mb-2.5">✦ AI 요약</p>
+                          {loadingSummary ? (
+                            <div className="space-y-2">
+                              <div className="h-3 bg-violet-100 rounded animate-pulse w-full" />
+                              <div className="h-3 bg-violet-100 rounded animate-pulse w-4/5" />
+                              <div className="h-3 bg-violet-100 rounded animate-pulse w-3/5" />
+                            </div>
+                          ) : (
+                            <div className="space-y-2">
+                              {(leadSummary ?? '').split('\n').filter(l => l.trim()).map((line, i) => {
+                                const colonIdx = line.indexOf(':')
+                                if (colonIdx === -1) return <p key={i} className="text-sm text-gray-600 leading-relaxed">{line}</p>
+                                const label = line.slice(0, colonIdx).trim()
+                                const body = line.slice(colonIdx + 1).trim()
+                                const labelStyle: Record<string, string> = {
+                                  '현황': 'bg-blue-100 text-blue-700',
+                                  '반응': 'bg-yellow-100 text-yellow-700',
+                                  '다음': 'bg-green-100 text-green-700',
+                                }
+                                return (
+                                  <div key={i} className="flex gap-2 items-start">
+                                    <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded shrink-0 mt-0.5 ${labelStyle[label] ?? 'bg-gray-100 text-gray-500'}`}>{label}</span>
+                                    <p className="text-sm text-gray-700 leading-relaxed">{body}</p>
+                                  </div>
+                                )
+                              })}
+                            </div>
+                          )}
                         </div>
                       )}
                     </div>
                   )}
 
-                  {/* ── 탭: 수정 ── */}
-                  {tab === 'edit' && (
+                  {/* ── 연관 매출건 ── */}
+                  {selectedLead.relatedSales && selectedLead.relatedSales.length > 0 && (
                     <div className="bg-white rounded-2xl border border-gray-200 p-5">
-                      <LeadForm
-                        form={form} setForm={setForm}
-                        onSubmit={handleUpdate} onCancel={() => setTab('main')}
-                        isPending={isPending} isAdmin={isAdmin}
-                        profiles={profiles} persons={persons}
-                      />
-
-                      {/* 드롭박스 URL 입력/수정 */}
-                      <div className="mt-4 pt-4 border-t border-gray-100">
-                        <p className="text-xs text-gray-400 mb-2">
-                          드롭박스 URL {selectedLead.dropbox_url ? '수정' : '직접 입력'}
-                        </p>
-                        <div className="flex gap-2">
-                          <input
-                            value={dropboxInput !== '' ? dropboxInput : (selectedLead.dropbox_url || '')}
-                            onFocus={() => { if (!dropboxInput) setDropboxInput(selectedLead.dropbox_url || '') }}
-                            onChange={e => setDropboxInput(e.target.value)}
-                            placeholder="https://www.dropbox.com/..."
-                            className="flex-1 text-xs border border-gray-200 rounded-lg px-2 py-1.5 focus:outline-none focus:border-yellow-400" />
-                          <button onClick={() => handleSaveDropboxUrl(selectedLead.id)}
-                            className="text-xs px-3 py-1.5 rounded-lg font-medium"
-                            style={{ backgroundColor: '#FFCE00', color: '#121212' }}>저장</button>
-                        </div>
-                      </div>
-
-                      {/* 추가 계약건 */}
-                      {isAdmin && (
-                        <div className="mt-4 pt-4 border-t border-gray-100">
-                          <button onClick={() => setShowAddSaleForm(!showAddSaleForm)}
-                            className="w-full text-sm font-semibold border border-yellow-300 bg-yellow-50 text-yellow-800 rounded-lg py-2 hover:bg-yellow-100">
-                            {showAddSaleForm ? '닫기' : '+ 계약건 추가'}
-                          </button>
-                          {showAddSaleForm && (
-                            <div className="mt-3 space-y-2">
-                              <input value={addSaleForm.name} onChange={e => setAddSaleForm(f => ({ ...f, name: e.target.value }))}
-                                placeholder="건명 *" className="w-full text-xs border border-gray-200 rounded-lg px-2 py-1.5 focus:outline-none focus:border-yellow-400" />
-                              <div className="flex gap-2">
-                                <select value={addSaleForm.service_type} onChange={e => setAddSaleForm(f => ({ ...f, service_type: e.target.value }))}
-                                  className="flex-1 text-xs border border-gray-200 rounded-lg px-2 py-1.5 bg-white focus:outline-none focus:border-yellow-400">
-                                  <option value="">서비스 (선택)</option>
-                                  {SERVICE_TYPES.map(s => <option key={s} value={s}>{s}</option>)}
-                                </select>
-                                <input type="number" value={addSaleForm.revenue} onChange={e => setAddSaleForm(f => ({ ...f, revenue: e.target.value }))}
-                                  placeholder="매출액" className="flex-1 text-xs border border-gray-200 rounded-lg px-2 py-1.5 focus:outline-none focus:border-yellow-400" />
-                              </div>
-                              <div className="flex gap-2">
-                                <button onClick={() => handleAddSale(selectedLead.id)} disabled={addingSale}
-                                  className="flex-1 text-xs px-3 py-1.5 font-semibold rounded-lg disabled:opacity-50"
-                                  style={{ backgroundColor: '#FFCE00', color: '#121212' }}>
-                                  {addingSale ? '등록 중...' : '등록'}
-                                </button>
-                                <button onClick={() => setShowAddSaleForm(false)}
-                                  className="text-xs px-3 py-1.5 border border-gray-200 rounded-lg text-gray-500">취소</button>
-                              </div>
+                      <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">연관 매출건 ({selectedLead.relatedSales.length})</p>
+                      <div className="space-y-1.5">
+                        {selectedLead.relatedSales.map((sale: { id: string; name: string; revenue: number | null; contract_stage: string; progress_status?: string | null; project_id?: string | null }) => (
+                          <a key={sale.id} href={sale.project_id ? `/projects/${sale.project_id}` : `/sales/${sale.id}`}
+                            className="flex items-center justify-between bg-gray-50 border border-gray-100 rounded-xl px-3 py-2.5 hover:border-yellow-300 transition-colors group">
+                            <div>
+                              <p className="text-sm font-medium text-gray-800 group-hover:text-yellow-700">{sale.name}</p>
+                              {(sale.revenue ?? 0) > 0 && (
+                                <p className="text-xs text-gray-400 mt-0.5">
+                                  {(sale.revenue ?? 0) >= 10000000 ? `${((sale.revenue ?? 0) / 10000000).toFixed(1)}천만` :
+                                   (sale.revenue ?? 0) >= 10000 ? `${Math.round((sale.revenue ?? 0) / 10000)}만` :
+                                   `${(sale.revenue ?? 0).toLocaleString()}원`}
+                                </p>
+                              )}
                             </div>
-                          )}
-                        </div>
-                      )}
+                            <div className="flex gap-1 shrink-0 ml-2">
+                              <span className={`text-[10px] px-1.5 py-0.5 rounded-full ${
+                                sale.contract_stage === '잔금' ? 'bg-gray-100 text-gray-400' :
+                                sale.contract_stage === '계약' ? 'bg-yellow-100 text-yellow-700' :
+                                'bg-green-100 text-green-700'
+                              }`}>{sale.contract_stage}</span>
+                              {sale.progress_status && sale.progress_status !== '착수전' && (
+                                <span className={`text-[10px] px-1.5 py-0.5 rounded-full ${
+                                  sale.progress_status === '완수' ? 'bg-teal-100 text-teal-700' : 'bg-blue-100 text-blue-700'
+                                }`}>{sale.progress_status}</span>
+                              )}
+                            </div>
+                          </a>
+                        ))}
+                      </div>
+                    </div>
+                  )}
 
-                      {/* 견적서 생성 — 어드민 전용 */}
-                      {isAdmin && (
-                        <div className="mt-4 pt-4 border-t border-gray-100 flex gap-2">
-                          <button
-                            onClick={() => { setShowQuoteModal(true); setGeneratedQuoteUrl(null); setQuoteItems([{ ...EMPTY_QUOTE_ITEM }]) }}
-                            className="px-3 py-2 text-sm font-medium border border-gray-200 rounded-lg hover:bg-gray-50">
-                            견적서 생성
-                          </button>
-                        </div>
-                      )}
-                      {/* 리드 삭제 — 모든 팀원 사용 가능, confirm 창으로 실수 방지 */}
-                      <div className={isAdmin ? 'mt-2 flex gap-2' : 'mt-4 pt-4 border-t border-gray-100 flex gap-2'}>
-                        {selectedLead.status !== '취소' ? (
-                          <button onClick={() => handleDelete(selectedLead.id)}
-                            className="px-3 py-2 text-sm text-red-400 hover:text-red-600 border border-red-100 rounded-lg hover:bg-red-50">
-                            삭제
-                          </button>
-                        ) : (
-                          <button onClick={() => handleDelete(selectedLead.id)}
-                            className="px-3 py-2 text-xs text-gray-300 hover:text-red-400 border border-gray-100 rounded-lg hover:bg-red-50">
-                            ···
-                          </button>
-                        )}
+                  {/* ── 견적서 ── */}
+                  {selectedLead.quotation_url && (
+                    <div className="bg-white rounded-2xl border border-gray-200 p-5">
+                      <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">견적서</p>
+                      <a href={selectedLead.quotation_url} target="_blank" rel="noopener noreferrer"
+                        className="flex items-center gap-2 text-sm text-green-700 hover:text-green-900 bg-green-50 rounded-lg px-3 py-2 border border-green-100">
+                        <span>📄</span>
+                        <span className="underline truncate">구글 시트 견적서 열기</span>
+                      </a>
+                    </div>
+                  )}
+
+                  {/* ── 계약건 추가 폼 (admin) ── */}
+                  {isAdmin && showAddSaleForm && (
+                    <div className="bg-white rounded-2xl border border-gray-200 p-4 space-y-2">
+                      <p className="text-xs font-semibold text-gray-600 mb-1">계약건 추가</p>
+                      <input value={addSaleForm.name} onChange={e => setAddSaleForm(f => ({ ...f, name: e.target.value }))}
+                        placeholder="건명 *" className="w-full text-xs border border-gray-200 rounded-lg px-2 py-1.5 focus:outline-none focus:border-yellow-400" />
+                      <div className="flex gap-2">
+                        <select value={addSaleForm.service_type} onChange={e => setAddSaleForm(f => ({ ...f, service_type: e.target.value }))}
+                          className="flex-1 text-xs border border-gray-200 rounded-lg px-2 py-1.5 bg-white focus:outline-none focus:border-yellow-400">
+                          <option value="">서비스 (선택)</option>
+                          {SERVICE_TYPES.map(s => <option key={s} value={s}>{s}</option>)}
+                        </select>
+                        <input type="number" value={addSaleForm.revenue} onChange={e => setAddSaleForm(f => ({ ...f, revenue: e.target.value }))}
+                          placeholder="매출액" className="flex-1 text-xs border border-gray-200 rounded-lg px-2 py-1.5 focus:outline-none focus:border-yellow-400" />
+                      </div>
+                      <div className="flex gap-2">
+                        <button onClick={() => handleAddSale(selectedLead.id)} disabled={addingSale}
+                          className="flex-1 text-xs px-3 py-1.5 font-semibold rounded-lg disabled:opacity-50"
+                          style={{ backgroundColor: '#FFCE00', color: '#121212' }}>
+                          {addingSale ? '등록 중...' : '등록'}
+                        </button>
+                        <button onClick={() => setShowAddSaleForm(false)}
+                          className="text-xs px-3 py-1.5 border border-gray-200 rounded-lg text-gray-500">취소</button>
                       </div>
                     </div>
                   )}
 
                 </div>
               </div>
+
             </div>
           )}
         </div>
       </div>
+
+      {/* 리드 수정 모달 */}
+      {showEditModal && selectedLead && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-black/40" onClick={() => setShowEditModal(false)} />
+          <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto p-6">
+            <h2 className="text-lg font-bold text-gray-900 mb-4">리드 수정</h2>
+            <LeadForm
+              form={form} setForm={setForm}
+              onSubmit={handleUpdate} onCancel={() => setShowEditModal(false)}
+              isPending={isPending} isAdmin={isAdmin}
+              profiles={profiles} persons={persons}
+            />
+            <div className="mt-4 pt-4 border-t border-gray-100">
+              <p className="text-xs text-gray-400 mb-2">드롭박스 URL {selectedLead.dropbox_url ? '수정' : '직접 입력'}</p>
+              <div className="flex gap-2">
+                <input
+                  value={dropboxInput !== '' ? dropboxInput : (selectedLead.dropbox_url || '')}
+                  onFocus={() => { if (!dropboxInput) setDropboxInput(selectedLead.dropbox_url || '') }}
+                  onChange={e => setDropboxInput(e.target.value)}
+                  placeholder="https://www.dropbox.com/..."
+                  className="flex-1 text-xs border border-gray-200 rounded-lg px-2 py-1.5 focus:outline-none focus:border-yellow-400" />
+                <button onClick={() => handleSaveDropboxUrl(selectedLead.id)}
+                  className="text-xs px-3 py-1.5 rounded-lg font-medium"
+                  style={{ backgroundColor: '#FFCE00', color: '#121212' }}>저장</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* 신규 리드 생성 모달 */}
       {showCreateModal && (
