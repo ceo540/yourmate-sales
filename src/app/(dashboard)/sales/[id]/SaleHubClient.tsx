@@ -73,9 +73,12 @@ const STATUS_COLORS: Record<string, string> = {
 }
 const LOG_TYPE_COLORS: Record<string, string> = {
   통화: 'bg-blue-50 text-blue-600', 이메일: 'bg-purple-50 text-purple-600',
-  방문: 'bg-green-50 text-green-600', 메모: 'bg-yellow-50 text-yellow-700',
+  방문: 'bg-green-50 text-green-600', 미팅: 'bg-teal-50 text-teal-600',
+  메모: 'bg-yellow-50 text-yellow-700',
   내부회의: 'bg-orange-50 text-orange-600', 기타: 'bg-gray-100 text-gray-500',
 }
+// 받침 있는 타입은 '으로', 없거나 ㄹ 받침은 '로'
+const LOG_SAVE_PARTICLE: Record<string, string> = { 방문: '으로', 미팅: '으로' }
 const CONTRACT_STAGES = ['계약', '착수', '선금', '중도금', '완수', '계산서발행', '잔금'] as const
 const CONTRACT_STAGE_MAP: Record<string, number> = {
   '계약': 0, '착수': 1, '선금': 2, '중도금': 3, '완수': 4, '계산서발행': 5, '잔금': 6,
@@ -133,11 +136,19 @@ export default function SaleHubClient({ sale, tasks: initialTasks, logs, profile
     fd.set('priority', newTaskPriority)
     if (newTaskAssignee) fd.set('assignee_id', newTaskAssignee)
     if (newTaskDue) fd.set('due_date', newTaskDue)
-    startTransition(async () => {
-      await createTask(fd)
-      setNewTaskTitle(''); setNewTaskAssignee(''); setNewTaskDue('')
-      setShowTaskForm(false)
-    })
+    // 낙관적 추가 — 서버 응답 전에 UI 즉시 반영
+    const assignee = profiles.find(p => p.id === newTaskAssignee)
+    const optimistic: Task = {
+      id: `optimistic-${Date.now()}`,
+      title: newTaskTitle, status: '할 일', priority: newTaskPriority,
+      due_date: newTaskDue || null, description: null, checklist: null,
+      assignee: assignee ? { id: assignee.id, name: assignee.name } : null,
+      project_id: sale.id,
+    }
+    setTasks(prev => [...prev, optimistic])
+    setNewTaskTitle(''); setNewTaskAssignee(''); setNewTaskDue('')
+    setShowTaskForm(false)
+    startTransition(async () => { await createTask(fd) })
   }
 
   function handleAddLog(type: string) {
@@ -288,13 +299,13 @@ export default function SaleHubClient({ sale, tasks: initialTasks, logs, profile
               <p className="text-xs text-red-500 mb-2">{logError}</p>
             )}
             <div className="flex gap-2 flex-wrap">
-              {['통화','이메일','방문','내부회의','메모','기타'].map(type => (
+              {['통화','이메일','방문','미팅','내부회의','메모','기타'].map(type => (
                 <button key={type}
                   onClick={() => handleAddLog(type)}
                   disabled={isPending || !newLog.trim()}
                   className={`px-3 py-1.5 text-xs rounded-lg border transition-all disabled:opacity-40 ${
                     newLogType === type ? 'border-yellow-400 bg-yellow-50 text-gray-800' : 'border-gray-200 text-gray-500 hover:border-yellow-300'
-                  }`}>{type}로 저장</button>
+                  }`}>{type}{LOG_SAVE_PARTICLE[type] ?? '로'} 저장</button>
               ))}
             </div>
           </div>
@@ -308,10 +319,8 @@ export default function SaleHubClient({ sale, tasks: initialTasks, logs, profile
                     <span className={`text-[11px] px-2 py-0.5 rounded-full font-medium ${LOG_TYPE_COLORS[log.log_type] ?? 'bg-gray-100 text-gray-500'}`}>{log.log_type}</span>
                     <span className="text-xs text-gray-400">{new Date(log.contacted_at || log.created_at).toLocaleDateString('ko-KR', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</span>
                     <span className="text-xs text-gray-400 ml-auto">{log.author?.name ?? '-'}</span>
-                    {isAdmin && (
-                      <button onClick={() => startTransition(async () => { await deleteLog(log.id, sale.id); const updated = await getSaleLogs(sale.id); setLocalLogs(updated) })}
-                        className="opacity-0 group-hover:opacity-100 text-xs text-gray-300 hover:text-red-400 transition-all">✕</button>
-                    )}
+                    <button onClick={() => startTransition(async () => { await deleteLog(log.id, sale.id); const updated = await getSaleLogs(sale.id); setLocalLogs(updated) })}
+                      className="opacity-0 group-hover:opacity-100 text-xs text-gray-300 hover:text-red-400 transition-all">✕</button>
                   </div>
                   <p className="text-sm text-gray-700 leading-relaxed whitespace-pre-wrap">{log.content}</p>
                 </div>
@@ -745,7 +754,7 @@ function OverviewTab({ sale, tasks, logs, notes, initialOverview, costs, showInt
               {dropboxFiles.map(f => (
                 <a
                   key={f.path}
-                  href={`https://www.dropbox.com/home/방 준영/1. 가업/★ DB${f.path}`}
+                  href={sale.dropbox_url ?? '#'}
                   target="_blank"
                   rel="noopener noreferrer"
                   className="flex items-center gap-2 px-2 py-1.5 rounded-lg hover:bg-gray-50 transition-colors group"
