@@ -1359,6 +1359,14 @@ export default function LeadsClient({ leads, profiles, persons, currentUserId, i
                                   email: contactDraft.email || null,
                                   client_org: contactDraft.client_org || null,
                                 } as Parameters<typeof updateLead>[1])
+                                setSelectedLead(prev => prev ? {
+                                  ...prev,
+                                  contact_name: contactDraft.contact_name || null,
+                                  phone: contactDraft.phone || null,
+                                  office_phone: contactDraft.office_phone || null,
+                                  email: contactDraft.email || null,
+                                  client_org: contactDraft.client_org || null,
+                                } : prev)
                                 setSavingContact(false)
                               }} disabled={savingContact}
                                 className="mt-1.5 w-full py-1.5 rounded-lg text-xs font-semibold bg-yellow-400 text-gray-900 hover:bg-yellow-500 disabled:opacity-50">
