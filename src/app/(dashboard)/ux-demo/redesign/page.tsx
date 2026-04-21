@@ -59,6 +59,30 @@ const CALENDAR_EVENTS = [
   { id: 4, title: '서울중학교 반납일 (26-004)', date: '2026-04-23', color: '#F44336', project: '26-004' },
 ]
 
+const RENTALS = [
+  { id: 'R-001', project: '26-004', client: '서울중학교', items: '아이패드 20대', pickup: '2026-04-15', returnDate: '2026-04-23', dday: -2, status: '반납예정', assignee: '조민현' },
+  { id: 'R-002', project: '26-009', client: '분당중학교', items: '아이패드 10대, 앱 포함', pickup: '2026-04-28', returnDate: '2026-05-05', dday: 7, status: '발송준비', assignee: '조민현' },
+  { id: 'R-003', project: '26-010', client: '수원여고', items: 'VR기기 15대', pickup: '2026-05-10', returnDate: '2026-05-17', dday: 19, status: '예약확정', assignee: '유제민' },
+  { id: 'R-004', project: '26-011', client: '안양예술고', items: '마이크세트 + 스피커', pickup: '2026-04-25', returnDate: '2026-04-27', dday: 4, status: '발송완료', assignee: '조민현' },
+]
+const RENTAL_STATUS_COLOR: Record<string, string> = { '예약확정': '#8B5CF6', '발송준비': '#F59E0B', '발송완료': '#2563EB', '반납예정': '#EF4444', '반납완료': '#059669' }
+const RENTAL_STATUS_BG: Record<string, string> = { '예약확정': '#F5F3FF', '발송준비': '#FFFBEB', '발송완료': '#EFF6FF', '반납예정': '#FEF2F2', '반납완료': '#F0FDF4' }
+
+const SOS_PROJECTS = [
+  { id: '26-001', name: '이화여대 SOS 공연', client: '이화여자대학교', date: '2026-05-03', dday: 12, size: 800, venue: '이화여대 대강당', assignee: '조민현', stage: '섭외완료', checklist: { '아티스트 섭외': true, '계약서 수령': true, '기획서 작성': true, '음향장비 확인': false, '현장 리허설': false, '정산 완료': false } },
+  { id: '26-012', name: '한국예술종합학교 공연', client: '한국예술종합학교', date: '2026-05-10', dday: 19, size: 500, venue: '예술극장', assignee: '조민현', stage: '계약협의', checklist: { '아티스트 섭외': true, '계약서 수령': false, '기획서 작성': false, '음향장비 확인': false, '현장 리허설': false, '정산 완료': false } },
+  { id: '26-006', name: '강남구청 행사운영', client: '강남구청', date: '2026-06-05', dday: 45, size: 300, venue: '강남구민회관', assignee: '조민현', stage: '초기단계', checklist: { '아티스트 섭외': false, '계약서 수령': false, '기획서 작성': false, '음향장비 확인': false, '현장 리허설': false, '정산 완료': false } },
+]
+
+const SERVICES_CATALOG = [
+  { id: 'rental', name: '교구/장비 대여', icon: '📦', color: '#D97706', desc: '아이패드, VR, 음향 장비 대여 관리', count: RENTALS.length, alert: RENTALS.filter(r => r.dday <= 0).length },
+  { id: 'sos', name: 'SOS 공연', icon: '🎵', color: '#7C3AED', desc: '공연 기획·아티스트·현장 운영 관리', count: SOS_PROJECTS.length, alert: SOS_PROJECTS.filter(s => s.dday <= 14).length },
+  { id: 'edu', name: '교육프로그램', icon: '📚', color: '#059669', desc: '연수·교육 일정, 강사, 커리큘럼 관리', count: 2, alert: 1 },
+  { id: 'install', name: '납품설치', icon: '🔧', color: '#2563EB', desc: '납품·설치 일정, 자재, A/S 관리', count: 1, alert: 0 },
+  { id: 'content', name: '콘텐츠제작', icon: '🎬', color: '#EC4899', desc: '영상·인쇄·디자인 제작 관리', count: 1, alert: 0 },
+  { id: 'ent', name: '002ENT', icon: '🎤', color: '#EF4444', desc: '아티스트 음원유통 및 계약 관리', count: 1, alert: 0 },
+]
+
 const SERVICE_COLOR: Record<string, string> = {
   'SOS': '#7C3AED', '교육프로그램': '#059669', '납품설치': '#2563EB',
   '교구대여': '#D97706', '유지보수': '#6B7280', '콘텐츠제작': '#EC4899',
@@ -138,21 +162,34 @@ export default function RedesignDemo() {
   const [selectedProject, setSelectedProject] = useState<typeof PROJECTS[0] | null>(null)
   const [selectedLead, setSelectedLead] = useState<typeof LEADS[0] | null>(LEADS[3])
   const [selectedCustomer, setSelectedCustomer] = useState<typeof CUSTOMERS[0] | null>(null)
+  const [selectedRental, setSelectedRental] = useState<typeof RENTALS[0] | null>(null)
+  const [selectedSos, setSelectedSos] = useState<typeof SOS_PROJECTS[0] | null>(SOS_PROJECTS[0])
+  const [servicePage, setServicePage] = useState<string | null>(null)
   const [projectTab, setProjectTab] = useState('overview')
   const [deptFilter, setDeptFilter] = useState('전체')
   const [filterStatus, setFilterStatus] = useState('전체')
   const [sidebarOpen, setSidebarOpen] = useState(true)
+  const [claudeInput, setClaudeInput] = useState('')
+  const [claudeMessages, setClaudeMessages] = useState([{ role: 'assistant', text: '안녕. 프로젝트 맥락이 자동 주입됐어. 뭐 도와줄까?' }])
   const [memo, setMemo] = useState('- 경기도교육청 연수 계약서 확인 필요\n- 이화여대 공연 아티스트 섭외 3팀 컨펌 대기\n- 5월 견적 마감 전 재무팀 공유')
 
   const nav = [
     { id: 'home', icon: '⌂', label: '홈' },
     { id: 'leads', icon: '◎', label: '리드' },
     { id: 'projects', icon: '◈', label: '프로젝트' },
+    { id: 'services', icon: '⬡', label: '서비스' },
     { id: 'customers', icon: '♟', label: '고객' },
     { id: 'calendar', icon: '◷', label: '캘린더' },
     { id: 'finance', icon: '▤', label: '재무' },
     { id: 'team', icon: '◉', label: '팀' },
   ]
+
+  const sendClaude = () => {
+    if (!claudeInput.trim()) return
+    const userMsg = claudeInput
+    setClaudeInput('')
+    setClaudeMessages(prev => [...prev, { role: 'user', text: userMsg }, { role: 'assistant', text: `"${userMsg}"에 대해 분석할게요. 현재 프로젝트 상태와 소통 내역을 기반으로 답변 중...` }])
+  }
 
   const filtered = PROJECTS.filter(p => {
     const deptMatch = deptFilter === '전체' || DEPT_MAP[p.service] === deptFilter
@@ -178,7 +215,7 @@ export default function RedesignDemo() {
         <nav style={{ flex: 1, padding: '8px 8px' }}>
           {nav.map(n => (
             <button key={n.id} onClick={() => setPage(n.id)}
-              style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 10, padding: '10px 12px', borderRadius: 8, border: 'none', cursor: 'pointer', background: page === n.id || (page === 'project-detail' && n.id === 'projects') ? 'rgba(255,206,0,0.15)' : 'transparent', color: page === n.id || (page === 'project-detail' && n.id === 'projects') ? YELLOW : '#9CA3AF', fontWeight: page === n.id ? 600 : 400, fontSize: 14, marginBottom: 2, textAlign: 'left' }}>
+              style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 10, padding: '10px 12px', borderRadius: 8, border: 'none', cursor: 'pointer', background: page === n.id || (page === 'project-detail' && n.id === 'projects') || (page === 'services' && n.id === 'services') ? 'rgba(255,206,0,0.15)' : 'transparent', color: page === n.id || (page === 'project-detail' && n.id === 'projects') || (page === 'services' && n.id === 'services') ? YELLOW : '#9CA3AF', fontWeight: page === n.id ? 600 : 400, fontSize: 14, marginBottom: 2, textAlign: 'left' }}>
               <span style={{ fontSize: 16, flexShrink: 0 }}>{n.icon}</span>
               {sidebarOpen && <span>{n.label}</span>}
             </button>
@@ -454,6 +491,230 @@ export default function RedesignDemo() {
                 리드를 선택하세요
               </div>
             )}
+          </div>
+        )}
+
+        {/* SERVICES HUB */}
+        {page === 'services' && !servicePage && (
+          <div style={{ padding: 28 }}>
+            <div style={{ marginBottom: 24 }}>
+              <h1 style={{ fontSize: 20, fontWeight: 700, margin: 0 }}>서비스 관리</h1>
+              <p style={{ color: '#6B7280', margin: '4px 0 0', fontSize: 13 }}>서비스별 전용 트래킹 보드 — 각 서비스마다 특화된 관리 도구</p>
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 16 }}>
+              {SERVICES_CATALOG.map(s => (
+                <div key={s.id} onClick={() => setServicePage(s.id)}
+                  style={{ background: '#fff', borderRadius: 14, padding: 22, boxShadow: '0 1px 4px rgba(0,0,0,0.06)', cursor: 'pointer', borderTop: `4px solid ${s.color}`, position: 'relative' }}
+                  onMouseEnter={e => (e.currentTarget.style.boxShadow = '0 6px 20px rgba(0,0,0,0.1)')}
+                  onMouseLeave={e => (e.currentTarget.style.boxShadow = '0 1px 4px rgba(0,0,0,0.06)')}>
+                  {s.alert > 0 && (
+                    <div style={{ position: 'absolute', top: 14, right: 14, background: '#EF4444', color: '#fff', borderRadius: '50%', width: 20, height: 20, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 700 }}>{s.alert}</div>
+                  )}
+                  <div style={{ fontSize: 32, marginBottom: 10 }}>{s.icon}</div>
+                  <div style={{ fontWeight: 800, fontSize: 15, marginBottom: 4 }}>{s.name}</div>
+                  <div style={{ fontSize: 12, color: '#9CA3AF', marginBottom: 14 }}>{s.desc}</div>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                    <span style={{ fontSize: 12, color: s.color, fontWeight: 700 }}>진행중 {s.count}건</span>
+                    <span style={{ fontSize: 12, color: '#9CA3AF' }}>→</span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* RENTAL BOARD */}
+        {page === 'services' && servicePage === 'rental' && (
+          <div style={{ display: 'flex', height: '100%', overflow: 'hidden' }}>
+            <div style={{ width: 340, borderRight: '1px solid #E5E7EB', background: '#fff', display: 'flex', flexDirection: 'column', flexShrink: 0 }}>
+              <div style={{ padding: '16px 16px 12px', borderBottom: '1px solid #F3F4F6' }}>
+                <button onClick={() => setServicePage(null)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#9CA3AF', fontSize: 12, padding: 0, marginBottom: 10 }}>← 서비스 목록</button>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <span style={{ fontSize: 20 }}>📦</span>
+                    <h2 style={{ margin: 0, fontSize: 16, fontWeight: 700 }}>교구/장비 대여</h2>
+                  </div>
+                  <button style={{ background: YELLOW, color: DARK, border: 'none', borderRadius: 7, padding: '6px 12px', fontWeight: 700, fontSize: 12, cursor: 'pointer' }}>+ 등록</button>
+                </div>
+              </div>
+              <div style={{ padding: '10px 12px', borderBottom: '1px solid #F3F4F6', display: 'flex', gap: 4 }}>
+                {['전체', '발송준비', '발송완료', '반납예정', '반납완료'].map(s => (
+                  <button key={s} style={{ padding: '3px 8px', borderRadius: 12, border: `1px solid ${RENTAL_STATUS_COLOR[s] || '#E5E7EB'}`, background: '#fff', color: RENTAL_STATUS_COLOR[s] || '#6B7280', fontSize: 10, cursor: 'pointer', fontWeight: 600 }}>{s}</button>
+                ))}
+              </div>
+              <div style={{ flex: 1, overflowY: 'auto' }}>
+                {[...RENTALS].sort((a, b) => a.dday - b.dday).map(r => (
+                  <div key={r.id} onClick={() => setSelectedRental(r)}
+                    style={{ padding: '14px 16px', borderBottom: '1px solid #F3F4F6', cursor: 'pointer', background: selectedRental?.id === r.id ? `${YELLOW}18` : 'transparent', borderLeft: selectedRental?.id === r.id ? `3px solid ${YELLOW}` : '3px solid transparent' }}>
+                    <div style={{ display: 'flex', gap: 8, marginBottom: 6 }}>
+                      <DdayBadge dday={r.dday} />
+                      <Badge label={r.status} color={RENTAL_STATUS_COLOR[r.status]} bg={RENTAL_STATUS_BG[r.status]} />
+                      <span style={{ marginLeft: 'auto', fontSize: 11, color: '#9CA3AF' }}>{r.assignee}</span>
+                    </div>
+                    <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 3 }}>{r.client}</div>
+                    <div style={{ fontSize: 12, color: '#6B7280' }}>{r.items}</div>
+                    <div style={{ fontSize: 11, color: '#9CA3AF', marginTop: 4 }}>반납 {r.returnDate}</div>
+                  </div>
+                ))}
+              </div>
+            </div>
+            {selectedRental ? (
+              <div style={{ flex: 1, overflowY: 'auto', padding: 24 }}>
+                <div style={{ background: '#fff', borderRadius: 12, padding: 22, boxShadow: '0 1px 4px rgba(0,0,0,0.06)', marginBottom: 16 }}>
+                  <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 14 }}>
+                    <div>
+                      <div style={{ display: 'flex', gap: 8, marginBottom: 8 }}>
+                        <DdayBadge dday={selectedRental.dday} />
+                        <Badge label={selectedRental.status} color={RENTAL_STATUS_COLOR[selectedRental.status]} bg={RENTAL_STATUS_BG[selectedRental.status]} />
+                      </div>
+                      <h2 style={{ margin: '0 0 4px', fontSize: 18, fontWeight: 800 }}>{selectedRental.client}</h2>
+                      <div style={{ fontSize: 13, color: '#6B7280' }}>{selectedRental.project} · 담당 {selectedRental.assignee}</div>
+                    </div>
+                    <div style={{ display: 'flex', gap: 8 }}>
+                      <button style={{ padding: '7px 14px', border: '1px solid #E5E7EB', borderRadius: 8, background: '#fff', fontSize: 12, cursor: 'pointer' }}>📁 드롭박스</button>
+                      <button style={{ background: YELLOW, border: 'none', borderRadius: 8, padding: '7px 14px', fontWeight: 700, fontSize: 12, cursor: 'pointer' }}>반납 확인</button>
+                    </div>
+                  </div>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                    {[['대여 품목', selectedRental.items], ['수령일', selectedRental.pickup], ['반납일', selectedRental.returnDate], ['반납 방법', '택배 착불']].map(([k, v]) => (
+                      <div key={k}><div style={{ fontSize: 11, color: '#9CA3AF', marginBottom: 2 }}>{k}</div><div style={{ fontWeight: 600, fontSize: 13 }}>{v}</div></div>
+                    ))}
+                  </div>
+                </div>
+                <div style={{ background: '#fff', borderRadius: 12, padding: 18, boxShadow: '0 1px 4px rgba(0,0,0,0.06)', marginBottom: 16 }}>
+                  <h3 style={{ margin: '0 0 14px', fontSize: 13, fontWeight: 700 }}>반납 체크리스트</h3>
+                  {['수량 확인', '파손 여부 확인', '충전 상태 확인', '악세서리 확인', '반납 처리 완료'].map((item, i) => (
+                    <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '9px 0', borderBottom: '1px solid #F3F4F6' }}>
+                      <input type="checkbox" defaultChecked={i < 2} style={{ accentColor: YELLOW }} />
+                      <span style={{ fontSize: 13 }}>{item}</span>
+                    </div>
+                  ))}
+                </div>
+                <div style={{ background: '#fff', borderRadius: 12, padding: 18, boxShadow: '0 1px 4px rgba(0,0,0,0.06)' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
+                    <div style={{ width: 22, height: 22, background: DARK, borderRadius: 6, display: 'flex', alignItems: 'center', justifyContent: 'center', color: YELLOW, fontSize: 10 }}>✦</div>
+                    <span style={{ fontWeight: 700, fontSize: 13 }}>Claude 협업</span>
+                  </div>
+                  <div style={{ background: '#F9FAFB', borderRadius: 8, padding: 12, marginBottom: 10, fontSize: 13, color: '#374151' }}>
+                    {selectedRental.client} 대여건 확인했어. 반납일 {selectedRental.returnDate}, 현재 {selectedRental.status} 상태. 뭐 도와줄까?
+                  </div>
+                  <div style={{ display: 'flex', gap: 8 }}>
+                    <input placeholder="이 대여건에 대해 물어보세요..." style={{ flex: 1, padding: '9px 12px', borderRadius: 8, border: '1px solid #E5E7EB', fontSize: 13, outline: 'none' }} />
+                    <button style={{ background: DARK, color: YELLOW, border: 'none', borderRadius: 8, padding: '9px 14px', fontWeight: 700, fontSize: 12, cursor: 'pointer' }}>전송</button>
+                  </div>
+                </div>
+              </div>
+            ) : <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#9CA3AF' }}>대여건을 선택하세요</div>}
+          </div>
+        )}
+
+        {/* SOS BOARD */}
+        {page === 'services' && servicePage === 'sos' && (
+          <div style={{ display: 'flex', height: '100%', overflow: 'hidden' }}>
+            <div style={{ width: 300, borderRight: '1px solid #E5E7EB', background: '#fff', display: 'flex', flexDirection: 'column', flexShrink: 0 }}>
+              <div style={{ padding: '16px 16px 12px', borderBottom: '1px solid #F3F4F6' }}>
+                <button onClick={() => setServicePage(null)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#9CA3AF', fontSize: 12, padding: 0, marginBottom: 10 }}>← 서비스 목록</button>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <span style={{ fontSize: 20 }}>🎵</span>
+                  <h2 style={{ margin: 0, fontSize: 16, fontWeight: 700 }}>SOS 공연</h2>
+                </div>
+              </div>
+              <div style={{ flex: 1, overflowY: 'auto' }}>
+                {[...SOS_PROJECTS].sort((a, b) => a.dday - b.dday).map(s => (
+                  <div key={s.id} onClick={() => setSelectedSos(s)}
+                    style={{ padding: '14px 16px', borderBottom: '1px solid #F3F4F6', cursor: 'pointer', background: selectedSos?.id === s.id ? `${YELLOW}18` : 'transparent', borderLeft: selectedSos?.id === s.id ? `3px solid ${YELLOW}` : '3px solid transparent' }}>
+                    <div style={{ display: 'flex', gap: 8, marginBottom: 6 }}>
+                      <DdayBadge dday={s.dday} />
+                      <span style={{ fontSize: 11, padding: '2px 8px', borderRadius: 20, background: '#F5F3FF', color: '#7C3AED', fontWeight: 600 }}>{s.stage}</span>
+                    </div>
+                    <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 2 }}>{s.name}</div>
+                    <div style={{ fontSize: 12, color: '#9CA3AF' }}>{s.date} · {s.size}명 · {s.venue}</div>
+                  </div>
+                ))}
+              </div>
+            </div>
+            {selectedSos ? (
+              <div style={{ flex: 1, overflowY: 'auto', padding: 24 }}>
+                <div style={{ background: '#fff', borderRadius: 12, padding: 22, boxShadow: '0 1px 4px rgba(0,0,0,0.06)', marginBottom: 16 }}>
+                  <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 14 }}>
+                    <div>
+                      <div style={{ display: 'flex', gap: 8, marginBottom: 8 }}>
+                        <DdayBadge dday={selectedSos.dday} />
+                        <span style={{ fontSize: 12, padding: '2px 10px', borderRadius: 20, background: '#F5F3FF', color: '#7C3AED', fontWeight: 600 }}>{selectedSos.stage}</span>
+                      </div>
+                      <h2 style={{ margin: '0 0 6px', fontSize: 18, fontWeight: 800 }}>{selectedSos.name}</h2>
+                      <div style={{ fontSize: 13, color: '#6B7280', display: 'flex', gap: 14 }}>
+                        <span>📅 {selectedSos.date}</span>
+                        <span>👥 {selectedSos.size}명</span>
+                        <span>📍 {selectedSos.venue}</span>
+                        <span>👤 {selectedSos.assignee}</span>
+                      </div>
+                    </div>
+                    <div style={{ display: 'flex', gap: 8 }}>
+                      <button style={{ padding: '7px 14px', border: '1px solid #E5E7EB', borderRadius: 8, background: '#fff', fontSize: 12, cursor: 'pointer' }}>📁 드롭박스</button>
+                      <button style={{ padding: '7px 14px', border: '1px solid #E5E7EB', borderRadius: 8, background: '#fff', fontSize: 12, cursor: 'pointer' }}>📅 캘린더</button>
+                    </div>
+                  </div>
+                  {/* 진행 단계 */}
+                  <div style={{ display: 'flex', gap: 0, marginTop: 16 }}>
+                    {['섭외단계', '계약협의', '섭외완료', '리허설', '공연완료'].map((st, i, arr) => {
+                      const idx = arr.indexOf(selectedSos.stage)
+                      const done = i <= (idx === -1 ? 0 : idx)
+                      return (
+                        <div key={st} style={{ display: 'flex', alignItems: 'center', flex: i < arr.length - 1 ? 1 : 'none' }}>
+                          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4 }}>
+                            <div style={{ width: 22, height: 22, borderRadius: '50%', background: done ? '#7C3AED' : '#F3F4F6', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 10, fontWeight: 700, color: done ? '#fff' : '#9CA3AF' }}>{done ? '✓' : i + 1}</div>
+                            <span style={{ fontSize: 10, color: done ? '#7C3AED' : '#9CA3AF', fontWeight: done ? 700 : 400, whiteSpace: 'nowrap' }}>{st}</span>
+                          </div>
+                          {i < arr.length - 1 && <div style={{ flex: 1, height: 2, background: i < (idx === -1 ? 0 : idx) ? '#7C3AED' : '#E5E7EB', margin: '0 4px', marginBottom: 16 }} />}
+                        </div>
+                      )
+                    })}
+                  </div>
+                </div>
+
+                <div style={{ background: '#fff', borderRadius: 12, padding: 18, boxShadow: '0 1px 4px rgba(0,0,0,0.06)', marginBottom: 16 }}>
+                  <h3 style={{ margin: '0 0 14px', fontSize: 13, fontWeight: 700 }}>공연 준비 체크리스트</h3>
+                  {Object.entries(selectedSos.checklist).map(([item, done]) => (
+                    <div key={item} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '9px 0', borderBottom: '1px solid #F3F4F6' }}>
+                      <input type="checkbox" defaultChecked={done} style={{ accentColor: '#7C3AED' }} />
+                      <span style={{ fontSize: 13, textDecoration: done ? 'line-through' : 'none', color: done ? '#9CA3AF' : '#374151' }}>{item}</span>
+                      {!done && <span style={{ marginLeft: 'auto', fontSize: 11, color: '#EF4444', fontWeight: 600 }}>미완료</span>}
+                    </div>
+                  ))}
+                </div>
+
+                <div style={{ background: '#fff', borderRadius: 12, padding: 18, boxShadow: '0 1px 4px rgba(0,0,0,0.06)' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
+                    <div style={{ width: 22, height: 22, background: DARK, borderRadius: 6, display: 'flex', alignItems: 'center', justifyContent: 'center', color: YELLOW, fontSize: 10 }}>✦</div>
+                    <span style={{ fontWeight: 700, fontSize: 13 }}>Claude 협업</span>
+                    <span style={{ fontSize: 11, color: '#9CA3AF' }}>공연 맥락 자동 주입됨</span>
+                  </div>
+                  <div style={{ background: '#F9FAFB', borderRadius: 8, padding: 12, marginBottom: 10, fontSize: 13, color: '#374151' }}>
+                    {selectedSos.name} 공연이야. D-{selectedSos.dday}, {selectedSos.stage} 단계. 체크리스트 {Object.values(selectedSos.checklist).filter(Boolean).length}/{Object.values(selectedSos.checklist).length} 완료. 뭐 도와줄까?
+                  </div>
+                  <div style={{ display: 'flex', gap: 8 }}>
+                    <input placeholder="공연 준비에 대해 물어보세요..." style={{ flex: 1, padding: '9px 12px', borderRadius: 8, border: '1px solid #E5E7EB', fontSize: 13, outline: 'none' }} />
+                    <button style={{ background: DARK, color: YELLOW, border: 'none', borderRadius: 8, padding: '9px 14px', fontWeight: 700, fontSize: 12, cursor: 'pointer' }}>전송</button>
+                  </div>
+                  <div style={{ marginTop: 8, display: 'flex', gap: 6 }}>
+                    {['아티스트 컨펌 이메일 써줘', '공연 기획서 초안 작성', '체크리스트 요약'].map(q => (
+                      <button key={q} style={{ fontSize: 11, padding: '4px 10px', borderRadius: 20, border: '1px solid #E5E7EB', background: '#fff', cursor: 'pointer', color: '#6B7280' }}>{q}</button>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            ) : <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#9CA3AF' }}>공연을 선택하세요</div>}
+          </div>
+        )}
+
+        {/* OTHER SERVICE BOARDS (edu, install, content, ent) */}
+        {page === 'services' && servicePage && !['rental', 'sos'].includes(servicePage) && (
+          <div style={{ padding: 40, textAlign: 'center' }}>
+            <button onClick={() => setServicePage(null)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#9CA3AF', fontSize: 13, marginBottom: 24 }}>← 서비스 목록</button>
+            <div style={{ fontSize: 48, marginBottom: 16 }}>{SERVICES_CATALOG.find(s => s.id === servicePage)?.icon}</div>
+            <h2 style={{ fontSize: 20, fontWeight: 700, marginBottom: 8 }}>{SERVICES_CATALOG.find(s => s.id === servicePage)?.name} 관리판</h2>
+            <p style={{ color: '#9CA3AF', fontSize: 14 }}>서비스별 전용 트래킹 보드 — 실제 구현 시 각 서비스 특성에 맞게 설계됩니다</p>
           </div>
         )}
 
@@ -783,29 +1044,37 @@ export default function RedesignDemo() {
                 {/* CLAUDE */}
                 {projectTab === 'claude' && (
                   <div style={{ background: '#fff', borderRadius: 12, padding: 20, boxShadow: '0 1px 4px rgba(0,0,0,0.06)' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 16 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12 }}>
                       <div style={{ width: 32, height: 32, background: DARK, borderRadius: 8, display: 'flex', alignItems: 'center', justifyContent: 'center', color: YELLOW, fontWeight: 700, fontSize: 14 }}>✦</div>
                       <div>
                         <div style={{ fontWeight: 700, fontSize: 14 }}>Claude 협업</div>
-                        <div style={{ fontSize: 11, color: '#9CA3AF' }}>프로젝트 맥락 자동 주입됨 · MD 저장 가능</div>
+                        <div style={{ fontSize: 11, color: '#9CA3AF' }}>{selectedProject.id} 맥락 주입됨 · 서비스: {selectedProject.service} · 단계: {selectedProject.stage}</div>
+                      </div>
+                      <div style={{ marginLeft: 'auto', display: 'flex', gap: 6 }}>
+                        <button style={{ fontSize: 11, padding: '4px 10px', borderRadius: 20, border: '1px solid #E5E7EB', background: '#fff', cursor: 'pointer', color: '#6B7280' }}>☁️ Dropbox 저장</button>
                       </div>
                     </div>
-                    <div style={{ background: '#F9FAFB', borderRadius: 8, padding: 16, marginBottom: 16, minHeight: 200 }}>
-                      <div style={{ display: 'flex', gap: 10, marginBottom: 16 }}>
-                        <div style={{ width: 28, height: 28, background: DARK, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: YELLOW, fontSize: 12, flexShrink: 0 }}>✦</div>
-                        <div style={{ background: '#fff', borderRadius: 10, padding: '10px 14px', fontSize: 13, boxShadow: '0 1px 3px rgba(0,0,0,0.06)' }}>
-                          안녕. {selectedProject.id} &quot;{selectedProject.name}&quot; 건이야.<br />
-                          현재 상태: {selectedProject.status} · 담당: {selectedProject.assignee}<br />
-                          뭐 도와줄까?
+                    {/* 빠른 질문 버튼 */}
+                    <div style={{ display: 'flex', gap: 6, marginBottom: 14, flexWrap: 'wrap' }}>
+                      {['이메일 회신 초안 써줘', '현재 상태 요약해줘', '다음 할 일 정리해줘', '견적서 문구 도와줘'].map(q => (
+                        <button key={q} onClick={() => setClaudeMessages(prev => [...prev, { role: 'user', text: q }, { role: 'assistant', text: `"${q}" 요청 처리 중... ${selectedProject.name} 프로젝트 맥락과 소통 내역을 기반으로 분석하고 있어.` }])}
+                          style={{ fontSize: 11, padding: '5px 12px', borderRadius: 20, border: `1px solid ${YELLOW}`, background: `${YELLOW}20`, cursor: 'pointer', color: DARK, fontWeight: 600 }}>{q}</button>
+                      ))}
+                    </div>
+                    {/* 메시지 영역 */}
+                    <div style={{ background: '#F9FAFB', borderRadius: 10, padding: 14, marginBottom: 12, minHeight: 180, maxHeight: 300, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 12 }}>
+                      {claudeMessages.map((m, i) => (
+                        <div key={i} style={{ display: 'flex', gap: 8, flexDirection: m.role === 'user' ? 'row-reverse' : 'row' }}>
+                          <div style={{ width: 26, height: 26, borderRadius: '50%', background: m.role === 'user' ? YELLOW : DARK, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, color: m.role === 'user' ? DARK : YELLOW, fontWeight: 700, flexShrink: 0 }}>{m.role === 'user' ? ME.name[0] : '✦'}</div>
+                          <div style={{ background: '#fff', borderRadius: 10, padding: '9px 13px', fontSize: 13, maxWidth: '80%', boxShadow: '0 1px 3px rgba(0,0,0,0.06)', lineHeight: 1.6 }}>{m.text}</div>
                         </div>
-                      </div>
+                      ))}
                     </div>
-                    <div style={{ display: 'flex', gap: 10 }}>
-                      <input placeholder="이 프로젝트에 대해 물어보세요..." style={{ flex: 1, padding: '10px 14px', borderRadius: 8, border: '1px solid #E5E7EB', fontSize: 13, outline: 'none' }} />
-                      <button style={{ background: DARK, color: YELLOW, border: 'none', borderRadius: 8, padding: '10px 16px', fontWeight: 700, fontSize: 13, cursor: 'pointer' }}>전송</button>
-                    </div>
-                    <div style={{ marginTop: 10, display: 'flex', gap: 6 }}>
-                      <button style={{ fontSize: 11, padding: '4px 10px', borderRadius: 20, border: '1px solid #E5E7EB', background: '#fff', cursor: 'pointer', color: '#6B7280' }}>☁️ 드롭박스 저장</button>
+                    <div style={{ display: 'flex', gap: 8 }}>
+                      <input value={claudeInput} onChange={e => setClaudeInput(e.target.value)}
+                        onKeyDown={e => e.key === 'Enter' && sendClaude()}
+                        placeholder="이 프로젝트에 대해 물어보세요..." style={{ flex: 1, padding: '10px 14px', borderRadius: 8, border: '1px solid #E5E7EB', fontSize: 13, outline: 'none' }} />
+                      <button onClick={sendClaude} style={{ background: DARK, color: YELLOW, border: 'none', borderRadius: 8, padding: '10px 16px', fontWeight: 700, fontSize: 13, cursor: 'pointer' }}>전송</button>
                     </div>
                   </div>
                 )}
