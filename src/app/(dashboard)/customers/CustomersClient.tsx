@@ -358,12 +358,12 @@ export default function CustomersClient({ customers, persons, isAdmin }: Props) 
             <div className="flex gap-1.5">
               {['전체','학교','교육청','공공기관','기업','기타'].map(t => {
                 const cnt = t === '전체' ? customers.length : customers.filter(c => c.type === t).length
-                const active = t === '전체' ? !orgSearch && true : false
+                const active = t === '전체' ? !orgSearch : orgSearch === t
                 return (
                   <button key={t}
                     onClick={() => setOrgSearch(t === '전체' ? '' : t)}
                     className="px-2.5 py-1.5 rounded-full text-xs font-medium border transition-all"
-                    style={orgSearch === t ? { background: '#121212', color: '#FFCE00', borderColor: '#121212' } : { background: '#fff', color: '#6B7280', borderColor: '#E5E7EB' }}>
+                    style={active ? { background: '#121212', color: '#FFCE00', borderColor: '#121212' } : { background: '#fff', color: '#6B7280', borderColor: '#E5E7EB' }}>
                     {t} <span className="opacity-60">({cnt})</span>
                   </button>
                 )

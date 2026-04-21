@@ -199,7 +199,8 @@ export async function convertLeadToSale(leadId: string) {
       // 고객 레코드 없으면 신규 생성
       const { data: newCust } = await adminDb.from('customers').insert({
         name: (lead.client_org as string).trim(),
-        type: '기관',
+        type: '기타',
+        status: '활성',
         contact_name: (lead.contact_name as string | null) ?? null,
         phone: ((lead.phone || lead.office_phone) as string | null) ?? null,
         contact_email: (lead.email as string | null) ?? null,
@@ -291,6 +292,8 @@ export async function convertLeadToSale(leadId: string) {
   }).catch(console.error)
 
   revalidatePath('/leads')
+  revalidatePath('/projects')
+  revalidatePath('/dashboard')
   revalidatePath('/sales/report')
   revalidatePath('/pipeline')
 

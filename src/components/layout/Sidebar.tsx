@@ -77,7 +77,7 @@ export default function Sidebar() {
           if (!admin) taskQ = taskQ.eq('assignee_id', user.id)
 
           let leadQ = supabase.from('leads').select('id', { count: 'exact', head: true })
-            .lte('remind_date', today).not('status', 'in', '(완료,취소)')
+            .lte('remind_date', sevenDays).not('status', 'in', '(완료,취소)')
           if (!admin) leadQ = leadQ.eq('assignee_id', user.id)
 
           const [{ count: taskCount }, { count: leadCount }] = await Promise.all([taskQ, leadQ])
