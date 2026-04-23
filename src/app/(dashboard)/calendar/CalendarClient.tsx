@@ -72,6 +72,7 @@ export default function CalendarClient({ events, today }: { events: CalEvent[]; 
 
   const [createModal, setCreateModal] = useState<{ date: string } | null>(null)
   const [editModal, setEditModal] = useState<GEvent | null>(null)
+  const [dayListModal, setDayListModal] = useState<{ date: string; db: CalEvent[]; g: GEvent[] } | null>(null)
   const [form, setForm] = useState<FormData>(EMPTY_FORM)
   const [saving, setSaving] = useState(false)
   const [deleting, setDeleting] = useState(false)
@@ -251,7 +252,7 @@ export default function CalendarClient({ events, today }: { events: CalEvent[]; 
                       {dayData.db.slice(0, 1).map(e => (
                         <Link key={e.id} href={e.href}
                           onClick={ev => ev.stopPropagation()}
-                          className="block text-[10px] px-1 py-0.5 rounded truncate font-medium leading-tight"
+                          className="block text-[10px] px-1 py-0.5 rounded truncate font-medium leading-tight hover:ring-1 hover:ring-gray-400 hover:brightness-95"
                           style={{ background: e.color + '20', color: e.color }}>
                           {e.title}
                         </Link>
@@ -259,13 +260,17 @@ export default function CalendarClient({ events, today }: { events: CalEvent[]; 
                       {dayData.g.slice(0, allEvents.length > 2 ? 1 : 2).map(e => (
                         <button key={e.id}
                           onClick={ev => { ev.stopPropagation(); openEdit(e) }}
-                          className="block w-full text-left text-[10px] px-1 py-0.5 rounded truncate font-medium leading-tight"
+                          className="block w-full text-left text-[10px] px-1 py-0.5 rounded truncate font-medium leading-tight hover:ring-1 hover:ring-gray-400 hover:brightness-95"
                           style={{ background: e.color + '20', color: e.color }}>
                           {e.startTime ? `${e.startTime} ` : ''}{e.title}
                         </button>
                       ))}
                       {allEvents.length > 2 && (
-                        <div className="text-[10px] font-medium text-blue-500 px-1 group-hover:text-blue-700">+{allEvents.length - 2}개 (셀 클릭)</div>
+                        <button
+                          onClick={ev => { ev.stopPropagation(); setDayListModal({ date: dateStr, db: dayData.db, g: dayData.g }) }}
+                          className="block w-full text-left text-[10px] font-medium text-blue-500 px-1 py-0.5 rounded hover:bg-blue-50">
+                          +{allEvents.length - 2}개 더 보기
+                        </button>
                       )}
                     </div>
                   </>
@@ -447,6 +452,47 @@ export default function CalendarClient({ events, today }: { events: CalEvent[]; 
                 {saving ? '저장 중...' : editModal ? '수정' : '추가'}
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* 날짜별 일정 목록 모달 */}
+      {dayListModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ backgroundColor: 'rgba(0,0,0,0.4)' }}
+          onClick={() => setDayListModal(null)}>
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-md p-6" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-base font-bold text-gray-900">
+                {dayListModal.date.replace(/-/g, '.')} 일정 ({dayListModal.db.length + dayListModal.g.length}개)
+              </h2>
+              <button onClick={() => setDayListModal(null)} className="text-gray-400 hover:text-gray-600 text-xl leading-none">×</button>
+            </div>
+            <div className="space-y-1.5 max-h-96 overflow-y-auto">
+              {dayListModal.db.map(e => (
+                <Link key={e.id} href={e.href}
+                  onClick={() => setDayListModal(null)}
+                  className="flex items-center gap-2.5 px-3 py-2 rounded-lg hover:bg-gray-50">
+                  <div className="w-2 h-2 rounded-full flex-shrink-0" style={{ background: e.color }} />
+                  <span className="text-sm text-gray-700 flex-1 truncate">{e.title}</span>
+                </Link>
+              ))}
+              {dayListModal.g.map(e => (
+                <button key={e.id}
+                  onClick={() => { setDayListModal(null); openEdit(e) }}
+                  className="flex items-center gap-2.5 px-3 py-2 rounded-lg hover:bg-gray-50 w-full text-left">
+                  <div className="w-2 h-2 rounded-full flex-shrink-0" style={{ background: e.color }} />
+                  <div className="flex-1 min-w-0">
+                    <div className="text-sm text-gray-700 truncate">{e.title}</div>
+                    {e.startTime && <div className="text-xs text-gray-400">{e.startTime}{e.endTime ? ` ~ ${e.endTime}` : ''}</div>}
+                  </div>
+                </button>
+              ))}
+            </div>
+            <button
+              onClick={() => { const d = dayListModal.date; setDayListModal(null); openCreate(d) }}
+              className="w-full mt-4 py-2 text-sm font-medium rounded-lg border border-dashed border-gray-300 text-gray-500 hover:border-yellow-400 hover:text-gray-700">
+              + 이 날짜에 일정 추가
+            </button>
           </div>
         </div>
       )}
