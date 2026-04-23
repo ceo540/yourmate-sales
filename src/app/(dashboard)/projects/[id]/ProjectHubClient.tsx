@@ -710,6 +710,7 @@ export default function ProjectHubClient({
 
   // 상태 메뉴
   const [localStatus, setLocalStatus] = useState(project.status)
+  useEffect(() => { setLocalStatus(project.status) }, [project.status])
   const [showStatusMenu, setShowStatusMenu] = useState(false)
   const statusMenuRef = useRef<HTMLDivElement>(null)
   useEffect(() => {
