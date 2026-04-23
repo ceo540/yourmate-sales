@@ -97,7 +97,7 @@ export async function removeProjectMember(projectId: string, profileId: string) 
   revalidatePath(`/projects/${projectId}`)
 }
 
-export async function updateProjectStatus(projectId: string, status: string) {
+export async function updateProjectStatus(projectId: string, status: string): Promise<{ cancelMsg?: string }> {
   const admin = createAdminClient()
   const { error } = await admin
     .from('projects')
@@ -106,30 +106,44 @@ export async function updateProjectStatus(projectId: string, status: string) {
   if (error) throw new Error(error.message)
 
   // 취소 상태로 변경 시 드롭박스 폴더를 999999.취소 폴더로 이동
-  // projects.dropbox_url + 연결된 sales.dropbox_url 모두 처리
   if (status === '취소') {
+    const diagnostics: string[] = []
     const { data: project } = await admin.from('projects').select('dropbox_url').eq('id', projectId).single()
+
     if (project?.dropbox_url) {
       const result = await moveDropboxToCancel(project.dropbox_url)
       if ('newUrl' in result) {
         await admin.from('projects').update({ dropbox_url: result.newUrl }).eq('id', projectId)
+        diagnostics.push('프로젝트 폴더 이동 완료')
       } else {
-        console.error('[cancel-move] project dropbox move failed:', result.error)
+        diagnostics.push(`프로젝트 폴더 이동 실패: ${result.error}`)
       }
+    } else {
+      diagnostics.push('프로젝트 자체 Dropbox URL 없음 (projects.dropbox_url = null)')
     }
-    const { data: linkedSales } = await admin.from('sales').select('id, dropbox_url').eq('project_id', projectId)
+
+    const { data: linkedSales } = await admin.from('sales').select('id, name, dropbox_url').eq('project_id', projectId)
+    diagnostics.push(`연결 매출 ${linkedSales?.length ?? 0}건`)
     for (const sale of linkedSales ?? []) {
-      if (!sale.dropbox_url) continue
+      if (!sale.dropbox_url) {
+        diagnostics.push(`  · ${sale.name}: Dropbox URL 없음`)
+        continue
+      }
       const result = await moveDropboxToCancel(sale.dropbox_url)
       if ('newUrl' in result) {
         await admin.from('sales').update({ dropbox_url: result.newUrl }).eq('id', sale.id)
+        diagnostics.push(`  · ${sale.name}: 이동 완료`)
       } else {
-        console.error(`[cancel-move] sale ${sale.id} dropbox move failed:`, result.error)
+        diagnostics.push(`  · ${sale.name}: 실패 - ${result.error}`)
       }
     }
+
+    revalidatePath(`/projects/${projectId}`)
+    return { cancelMsg: diagnostics.join('\n') }
   }
 
   revalidatePath(`/projects/${projectId}`)
+  return {}
 }
 
 export async function linkProjectCustomer(projectId: string, customerId: string) {

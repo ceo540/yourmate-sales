@@ -791,9 +791,11 @@ export default function ProjectHubClient({
   }
 
   const pipelineIdx = PIPELINE.indexOf(localStatus ?? '진행중')
-  function handleStatusChange(stage: string) {
+  async function handleStatusChange(stage: string) {
     setLocalStatus(stage); setShowStatusMenu(false)
-    startTransition(async () => { await updateProjectStatus(project.id, stage) })
+    const res = await updateProjectStatus(project.id, stage)
+    if (stage === '취소' && res?.cancelMsg) alert(`취소 처리 결과:\n\n${res.cancelMsg}`)
+    startTransition(() => router.refresh())
   }
 
   function handleAddLog(type: string, category: string, content: string, contactedAt: string, location: string, participants: string[], outcome: string, saleId: string | null) {
