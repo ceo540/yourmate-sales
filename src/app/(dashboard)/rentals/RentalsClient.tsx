@@ -4,6 +4,7 @@ import {
   createRental, updateRental, deleteRental,
   addRentalItem, removeRentalItem, addRentalContact, updateRentalChecklist,
 } from './actions'
+import { toLocalDateStr } from '@/lib/utils'
 
 // ─── 상수 ────────────────────────────────────────────────────────
 export const RENTAL_STATUSES = ['전체','유입','견적발송','렌탈확정','진행중','수거완료','검수중','완료','취소','보류'] as const
@@ -339,7 +340,7 @@ export default function RentalsClient({ rentals: initialRentals, profiles, custo
   // 전체 활성 건 (취소/보류 제외) — 이달 건수 표시용
   const activeRentals = rentals.filter(r => !['취소','보류'].includes(r.status))
 
-  const todayStr = today.toISOString().slice(0, 10)
+  const todayStr = toLocalDateStr(today)
 
   // ─── 패널 헬퍼 ───────────────────────────────────────────────
   function InlineText({ field, label, value, type='text', options }: {
@@ -437,7 +438,7 @@ export default function RentalsClient({ rentals: initialRentals, profiles, custo
           <div className="grid grid-cols-7 gap-px">
             {calDays.map((day, idx) => {
               if (!day) return <div key={idx} className="min-h-[64px]" />
-              const isToday = new Date(calYear, calMonth, day).toISOString().slice(0,10) === todayStr
+              const isToday = toLocalDateStr(new Date(calYear, calMonth, day)) === todayStr
               const dayRentals = rentalsByDate[day.toString()] ?? []
               const isWeekend = (idx % 7 === 0 || idx % 7 === 6)
               return (

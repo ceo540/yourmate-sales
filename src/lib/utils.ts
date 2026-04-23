@@ -69,6 +69,15 @@ export function createProfileMap<T extends { id: string }>(
   return Object.fromEntries((items ?? []).map((p) => [p.id, p]))
 }
 
+// Date → 'YYYY-MM-DD' (로컬 기준).
+// toISOString()은 UTC 변환이라 KST 자정이 전날 UTC 15시가 되어 날짜가 하루 밀림.
+export function toLocalDateStr(d: Date): string {
+  const y = d.getFullYear()
+  const m = String(d.getMonth() + 1).padStart(2, '0')
+  const day = String(d.getDate()).padStart(2, '0')
+  return `${y}-${m}-${day}`
+}
+
 // id → 이름 문자열 맵. 로그/메모에서 작성자 이름만 필요할 때.
 export function createProfileNameMap(
   items: readonly { id: string; name: string | null }[] | null | undefined

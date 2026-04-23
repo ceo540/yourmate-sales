@@ -76,7 +76,7 @@ export default function ProjectsClient({ projects, isAdmin }: { projects: Projec
           className="border border-gray-200 rounded-lg px-3 py-2 text-sm w-72 focus:outline-none focus:ring-2 focus:ring-yellow-300"
         />
         <div className="flex gap-1.5">
-          {(['전체', '진행중', '완료', '보류']).map(s => {
+          {(['전체', '진행중', '완료', '보류', '취소']).map(s => {
             const cnt = s === '전체' ? projects.length : projects.filter(p => p.status === s).length
             const active = statusFilter === s
             return (
