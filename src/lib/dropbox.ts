@@ -1,22 +1,9 @@
+import { SERVICE_PATHS } from './services'
+
 // ROOT_NAMESPACE는 계정 루트 네임스페이스
 // → API 경로는 절대경로 (/방 준영/1. 가업/★ DB/...), 웹 URL에서 /home 제거 후 그대로 사용
 const DB_BASE = '/방 준영/1. 가업/★ DB'
 const ROOT_NAMESPACE = process.env.DROPBOX_ROOT_NAMESPACE ?? '3265523555'
-
-// 서비스 타입 → Dropbox 상위 폴더 경로 (★ DB 기준 상대경로)
-const SERVICE_PATHS: Record<string, string> = {
-  'SOS':        '/2 SOS/2 프로젝트',
-  '교육프로그램': '/1 아트키움/2 프로젝트',
-  '납품설치':    '/3 학교상점/1 납품 설치',
-  '유지보수':    '/3 학교상점/1 유지보수',
-  '교구대여':    '/3 학교상점/1 교구대여',
-  '제작인쇄':    '/3 학교상점/1 제작인쇄',
-  '콘텐츠제작':  '/4 002Creative(영상,디자인,행사)/2 콘텐츠제작',
-  '행사운영':    '/4 002Creative(영상,디자인,행사)/2 행사운영',
-  '행사대여':    '/4 002Creative(영상,디자인,행사)/2 행사대여',
-  '프로젝트':    '/4 002Creative(영상,디자인,행사)/2 프로젝트',
-  '002ENT':     '/5 002ent',
-}
 
 // 리프레시 토큰으로 액세스 토큰 발급
 export async function getDropboxToken(): Promise<string | null> {

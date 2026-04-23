@@ -29,20 +29,9 @@ export const DEPARTMENT_LABELS: Record<Department, string> = {
   '002_entertainment': '002 Entertainment',
 }
 
-// 서비스 → 사업부 자동 매핑
-export const SERVICE_TO_DEPT: Record<string, string> = {
-  'SOS':        'sound_of_school',
-  '002ENT':     '002_entertainment',
-  '교육프로그램':  'artkiwoom',
-  '납품설치':    'school_store',
-  '유지보수':    'school_store',
-  '교구대여':    'school_store',
-  '제작인쇄':    'school_store',
-  '콘텐츠제작':  '002_creative',
-  '행사운영':    '002_creative',
-  '행사대여':    '002_creative',
-  '프로젝트':    '002_creative',
-}
+// 서비스 → 사업부 매핑은 lib/services.ts에 중앙화.
+// 기존 import 경로 호환을 위해 re-export.
+export { SERVICE_TO_DEPT } from '@/lib/services'
 
 // 매출 현황 계층 구조 (사업부 → 서비스)
 export const DEPT_SERVICE_GROUPS = [
@@ -245,6 +234,7 @@ export interface Lead {
   converted_sale_id: string | null
   dropbox_url: string | null
   quotation_url: string | null
+  linked_calendar_events: { id: string; calendarKey: string; title: string; date: string; color: string }[] | null
   created_at: string
   updated_at: string
   relatedSales?: RelatedSale[]
