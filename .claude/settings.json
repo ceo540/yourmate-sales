@@ -1,0 +1,11 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npx vercel ls*)",
+      "Bash(npx tsc --noEmit*)",
+      "Bash(vercel ls*)",
+      "mcp__plugin_vercel_vercel__get_runtime_logs",
+      "mcp__plugin_vercel_vercel__list_deployments"
+    ]
+  }
+}

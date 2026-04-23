@@ -4,7 +4,7 @@ import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { revalidatePath } from 'next/cache'
 import { renameDropboxFolder, listDropboxFolder, moveDropboxToCancel } from '@/lib/dropbox'
-import { createEvent, CALENDAR_COLORS } from '@/lib/google-calendar'
+import { createEvent, deleteEvent as deleteGCalEvent, CALENDAR_COLORS } from '@/lib/google-calendar'
 import { createProfileNameMap } from '@/lib/utils'
 import { isAdminOrManager } from '@/lib/permissions'
 
@@ -307,6 +307,25 @@ export async function unlinkCalendarEvent(projectId: string, eventId: string) {
   const current: LinkedCalEvent[] = (p?.linked_calendar_events as LinkedCalEvent[]) ?? []
   await admin.from('projects').update({ linked_calendar_events: current.filter(e => e.id !== eventId) }).eq('id', projectId)
   revalidatePath(`/projects/${projectId}`)
+}
+
+// 연결 해제 + Google Calendar 이벤트도 완전 삭제
+export async function unlinkAndDeleteCalendarEvent(
+  projectId: string,
+  eventId: string,
+  calendarKey: string,
+): Promise<{ error?: string }> {
+  try {
+    await deleteGCalEvent(calendarKey, eventId)
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : 'Google Calendar 삭제 실패' }
+  }
+  const admin = createAdminClient()
+  const { data: p } = await admin.from('projects').select('linked_calendar_events').eq('id', projectId).single()
+  const current: LinkedCalEvent[] = (p?.linked_calendar_events as LinkedCalEvent[]) ?? []
+  await admin.from('projects').update({ linked_calendar_events: current.filter(e => e.id !== eventId) }).eq('id', projectId)
+  revalidatePath(`/projects/${projectId}`)
+  return {}
 }
 
 export async function createAndLinkCalendarEvent(
