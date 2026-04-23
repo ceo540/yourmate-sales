@@ -105,6 +105,7 @@ interface Project {
   id: string; name: string; service_type: string | null; department: string | null
   status: string; dropbox_url: string | null; memo: string | null; notes: string | null
   customer_id: string | null; pm_id: string | null
+  linked_calendar_events: { id: string; calendarKey: string; title: string; date: string; color: string }[] | null
 }
 interface Lead {
   id: string; lead_id: string; project_name: string | null

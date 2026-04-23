@@ -47,6 +47,7 @@ interface Sale {
   contract_assignee_id: string | null
   notes: string | null; project_overview: string | null
   notion_page_id: string | null
+  share_token: string | null
 }
 
 interface Props {
