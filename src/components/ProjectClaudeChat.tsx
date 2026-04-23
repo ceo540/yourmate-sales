@@ -25,6 +25,8 @@ export default function ProjectClaudeChat({ leadId, saleId, projectName, dropbox
   const [loading, setLoading] = useState(false)
   const [savingIdx, setSavingIdx] = useState<number | null>(null)
   const [savedIdx, setSavedIdx] = useState<number | null>(null)
+  const [savingHtmlIdx, setSavingHtmlIdx] = useState<number | null>(null)
+  const [savedHtmlIdx, setSavedHtmlIdx] = useState<number | null>(null)
   const bottomRef = useRef<HTMLDivElement>(null)
   // 세션 내 리드/매출별 대화 저장소
   const historyRef = useRef<Record<string, Message[]>>({})
@@ -157,6 +159,51 @@ export default function ProjectClaudeChat({ leadId, saleId, projectName, dropbox
     }
   }
 
+  function extractHtml(content: string): string | null {
+    const blockMatch = content.match(/```html\s*([\s\S]*?)```/)
+    if (blockMatch) return blockMatch[1].trim()
+    const rawMatch = content.match(/(<html[\s\S]*?<\/html>)/i)
+    if (rawMatch) return rawMatch[1].trim()
+    return null
+  }
+
+  async function saveHtml(idx: number) {
+    if (!dropboxReady) {
+      alert('Dropbox URL이 올바르지 않습니다. /home/... 형식으로 입력해주세요.')
+      return
+    }
+    const msg = messages[idx]
+    if (!msg || msg.role !== 'assistant') return
+    const html = extractHtml(msg.content)
+    if (!html) return
+    setSavingHtmlIdx(idx)
+    try {
+      const res = await fetch('/api/claude/save-html', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ dropboxUrl, html }),
+      })
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}))
+        alert('HTML 저장 실패: ' + (err.error ?? res.status))
+        return
+      }
+      setSavedHtmlIdx(idx)
+      setTimeout(() => setSavedHtmlIdx(null), 3000)
+    } catch {
+      alert('HTML 저장 중 오류가 발생했습니다.')
+    } finally {
+      setSavingHtmlIdx(null)
+    }
+  }
+
+  function openPdfPreview(html: string) {
+    const blob = new Blob([html], { type: 'text/html' })
+    const url = URL.createObjectURL(blob)
+    const win = window.open(url, '_blank')
+    if (win) setTimeout(() => URL.revokeObjectURL(url), 60000)
+  }
+
   function copyToClipboard(text: string) {
     navigator.clipboard.writeText(text).catch(() => {})
   }
@@ -216,14 +263,14 @@ export default function ProjectClaudeChat({ leadId, saleId, projectName, dropbox
                     msg.content
                   )}
                   {msg.role === 'assistant' && msg.content && (
-                    <div className="mt-2 flex gap-2 border-t border-gray-200 pt-1.5">
+                    <div className="mt-2 flex flex-wrap gap-2 border-t border-gray-200 pt-1.5">
                       <button
                         onClick={() => copyToClipboard(msg.content)}
                         className="text-xs text-gray-400 hover:text-gray-600 px-2 py-1 rounded hover:bg-gray-200"
                       >
                         복사
                       </button>
-                      {dropboxUrl && (
+                      {dropboxReady && (
                         <button
                           onClick={() => saveToDropbox(i)}
                           disabled={savingIdx === i}
@@ -235,6 +282,34 @@ export default function ProjectClaudeChat({ leadId, saleId, projectName, dropbox
                         >
                           {savingIdx === i ? '저장 중...' : savedIdx === i ? '✓ 저장됨' : '☁ Dropbox 저장'}
                         </button>
+                      )}
+                      {extractHtml(msg.content) && (
+                        <>
+                          {dropboxReady && (
+                            <button
+                              onClick={() => saveHtml(i)}
+                              disabled={savingHtmlIdx === i}
+                              className={`text-xs px-2.5 py-1 rounded font-medium transition-all disabled:opacity-50 ${
+                                savedHtmlIdx === i
+                                  ? 'bg-green-100 text-green-700'
+                                  : 'bg-purple-100 text-purple-700 hover:bg-purple-200'
+                              }`}
+                            >
+                              {savingHtmlIdx === i ? '저장 중...' : savedHtmlIdx === i ? '✓ HTML 저장됨' : '📄 HTML 저장'}
+                            </button>
+                          )}
+                          <button
+                            onClick={() => openPdfPreview(extractHtml(msg.content)!)}
+                            className="text-xs px-2.5 py-1 rounded font-medium bg-orange-100 text-orange-700 hover:bg-orange-200"
+                          >
+                            🖨️ PDF
+                          </button>
+                        </>
+                      )}
+                      {dropboxUrl && !dropboxReady && (
+                        <span className="text-[10px] text-orange-400 px-1" title="Dropbox URL이 /home/... 형식이 아닙니다. 매출/리드 정보에서 URL을 수정해주세요.">
+                          ⚠ Dropbox
+                        </span>
                       )}
                     </div>
                   )}

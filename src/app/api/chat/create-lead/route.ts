@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { syncLeadToCustomerDB } from '@/lib/customer-sync'
+import { createOrUpdateLeadBrief } from '@/lib/brief-generator'
 
 async function generateLeadId(supabase: Awaited<ReturnType<typeof createClient>>): Promise<string> {
   const today = new Date().toISOString().slice(0, 10).replace(/-/g, '')
@@ -59,6 +60,11 @@ export async function POST(req: NextRequest) {
 
     // 고객 DB 자동 upsert (콜드메일 리스트용)
     await syncLeadToCustomerDB({ client_org, contact_name, phone, email })
+
+    // service_type이 있으면 Dropbox 폴더 + brief.md 자동 생성
+    if (service_type && data.id) {
+      createOrUpdateLeadBrief(data.id).catch(() => {})
+    }
 
     const note = existing && existing.length > 0
       ? ` (참고: 동일 기관 기존 리드 ${existing.length}건 — ${existing.map((e: { lead_id: string; service_type: string | null; status: string }) => `${e.lead_id} ${e.service_type || ''} ${e.status}`).join(', ')})`

@@ -2,8 +2,10 @@ import Anthropic from '@anthropic-ai/sdk'
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
-import { getDropboxToken } from '@/lib/dropbox'
+import { getDropboxToken, readDropboxFile, uploadTextFile, createSaleFolder } from '@/lib/dropbox'
+import { appendAiNote } from '@/lib/brief-generator'
 import { logApiUsage } from '@/lib/api-usage'
+import { createEvent as createGCalEvent } from '@/lib/google-calendar'
 
 export const maxDuration = 60
 
@@ -199,8 +201,9 @@ const SYSTEM_PROMPT = `너는 유어메이트(yourmate) 사내 시스템 "빵빵
 
 ### [새 리드 모드]
 - 사용자가 어떤 형태의 내용을 붙여넣든 리드 정보를 추출해
-- 정리된 텍스트 + 반드시 아래 <lead-data> 블록 출력
-- create_lead 도구는 쓰지 마. 사용자가 카드 확인 후 직접 등록함.
+- 정보가 파악되면 정리된 텍스트 + <lead-data> 블록 출력 → 사용자가 카드 확인 후 등록 가능
+- 단, "등록해줘", "넣어줘", "바로 저장해", "저장해줘" 같은 명시적 요청이면 create_lead 도구로 직접 등록해. 중복 확인 유도하지 말고 바로 실행.
+- 대화 흐름 중 정보가 자연스럽게 파악되면 중간에라도 <lead-data> 블록 제시해. 요약만 하고 블록 안 띄우는 건 금지.
 
 ### [기존 건 업데이트 모드]
 - 먼저 어떤 건인지 파악 → search_leads 또는 get_sales로 검색
@@ -246,7 +249,31 @@ const SYSTEM_PROMPT = `너는 유어메이트(yourmate) 사내 시스템 "빵빵
 
 service_type은 반드시 위 목록 중 정확히 하나만.
 revenue는 금액 있으면 숫자(원 단위), 없으면 null.
-한국어로 답변.`
+한국어로 답변.
+
+## Dropbox 연결 없을 때 대응
+프로젝트에 Dropbox 폴더가 없거나 파일 접근 실패 시 아래 순서로 직접 해결해. 절대 "내 영역 밖이야" 하지 마.
+1. search_dropbox로 프로젝트명 검색 → 기존 폴더 찾기
+2. 폴더 찾으면 → set_dropbox_url로 연결 후 작업 진행
+3. 폴더 없으면 → update_brief_note가 자동 생성하니까 그냥 실행
+4. 그래도 안 되면 → "프로젝트 설정에서 Dropbox 폴더를 수동으로 연결해줘" 라고 안내
+
+## brief.md 자동 저장 안내
+프로젝트 페이지에서 대화 중 아래 상황이 감지되면, 답변 마지막에 한 줄 제안 추가:
+"→ 이 내용 brief에 저장할까? (update_brief_note 쓰면 자동 저장)"
+- 클라이언트 성향·특이사항 (예: "까다로운 담당자", "예산에 민감")
+- 구두 합의 내용
+- 핵심 결정사항 또는 방향 전환
+- 향후 협업 시 주의해야 할 사항
+직접 "저장해줘", "brief에 남겨줘" 요청 받으면 바로 update_brief_note 실행.
+
+## 캘린더 일정 등록
+대화 중 아래 상황이 감지되면 create_calendar_event 도구 사용을 제안해:
+- 날짜가 명시된 행사, 배송, 납품, 미팅, 마감일 언급
+- brief.md나 계약 내용에서 날짜가 추출된 경우
+- 사용자가 "캘린더에 넣어줘", "일정 잡아줘" 직접 요청
+
+캘린더 키: main(개인/전체 일정), sos(공연), rental(렌탈 배송/수거), artqium(아트키움 프로그램)`
 
 const TOOLS: Anthropic.Tool[] = [
   {
@@ -415,7 +442,7 @@ const TOOLS: Anthropic.Tool[] = [
   },
   {
     name: 'create_lead',
-    description: '새 리드(잠재 고객 문의)를 등록합니다. 같은 기관이 이미 있으면 알려줍니다.',
+    description: '새 리드(잠재 고객 문의)를 등록합니다. 같은 기관 활성 리드가 있으면 중복 경고를 반환하고 confirm=true 재호출 시에만 등록합니다.',
     input_schema: {
       type: 'object' as const,
       properties: {
@@ -431,6 +458,7 @@ const TOOLS: Anthropic.Tool[] = [
         channel: { type: 'string', description: '소통 경로: 전화/이메일/카카오/채널톡/기타' },
         inflow_source: { type: 'string', description: '유입 경로: 네이버/인스타/유튜브/지인/기존고객/기타' },
         assignee_name: { type: 'string', description: '담당 직원 이름 (없으면 미지정)' },
+        confirm: { type: 'boolean', description: '중복 경고 후 사용자가 확인했을 때 true로 재호출' },
       },
       required: ['client_org'],
     },
@@ -484,10 +512,74 @@ const TOOLS: Anthropic.Tool[] = [
       },
     },
   },
+  {
+    name: 'set_dropbox_url',
+    description: '현재 프로젝트에 Dropbox 폴더 URL을 연결합니다. search_dropbox로 폴더를 찾은 뒤 사용.',
+    input_schema: {
+      type: 'object' as const,
+      properties: {
+        dropbox_url: { type: 'string', description: 'Dropbox 폴더 URL (https://www.dropbox.com/home/... 형식)' },
+      },
+      required: ['dropbox_url'],
+    },
+  },
+  {
+    name: 'update_brief_note',
+    description: '현재 프로젝트의 brief.md AI 협업 노트 섹션에 중요 정보를 추가합니다. 클라이언트 성향, 구두 합의, 핵심 결정사항, 주의사항 등 DB에 담기 어려운 정성 정보를 저장.',
+    input_schema: {
+      type: 'object' as const,
+      properties: {
+        note: { type: 'string', description: '저장할 내용 (1~2줄 요약)' },
+      },
+      required: ['note'],
+    },
+  },
+  {
+    name: 'add_project_log',
+    description: '현재 열린 프로젝트/리드에 소통 내역을 직접 등록합니다. 통화 내용, 이메일, 미팅 결과 등을 기록할 때 사용.',
+    input_schema: {
+      type: 'object' as const,
+      properties: {
+        content: { type: 'string', description: '소통 내용 (필수)' },
+        log_type: { type: 'string', description: '통화 / 이메일 / 방문 / 내부회의 / 메모 / 기타' },
+        contacted_at: { type: 'string', description: '날짜 YYYY-MM-DD (없으면 오늘)' },
+      },
+      required: ['content'],
+    },
+  },
+  {
+    name: 'update_project_status',
+    description: '현재 열린 프로젝트/리드의 상태를 변경합니다. 프로젝트 페이지에서만 동작.',
+    input_schema: {
+      type: 'object' as const,
+      properties: {
+        status: { type: 'string', description: '리드 상태: 유입/회신대기/견적발송/조율중/진행중/완료/취소 | 프로젝트 상태: 기획중/진행중/완료/보류' },
+      },
+      required: ['status'],
+    },
+  },
+  {
+    name: 'create_calendar_event',
+    description: '구글 캘린더에 일정을 등록합니다. 행사, 배송, 미팅, 마감일 등.',
+    input_schema: {
+      type: 'object' as const,
+      properties: {
+        calendar_key: { type: 'string', description: 'main(개인/전체) | sos(공연) | rental(렌탈 배송/수거) | artqium(아트키움)' },
+        title: { type: 'string', description: '일정 제목' },
+        date: { type: 'string', description: '시작일 YYYY-MM-DD' },
+        end_date: { type: 'string', description: '종료일 YYYY-MM-DD (종일 이벤트이고 하루짜리면 생략)' },
+        start_time: { type: 'string', description: '시작 시간 HH:MM (종일 이벤트면 생략)' },
+        end_time: { type: 'string', description: '종료 시간 HH:MM (종일 이벤트면 생략)' },
+        description: { type: 'string', description: '일정 설명 (선택)' },
+        is_all_day: { type: 'boolean', description: '종일 이벤트 여부 (기본 true)' },
+      },
+      required: ['calendar_key', 'title', 'date'],
+    },
+  },
 ]
 
 // 도구 실행
-async function executeTool(name: string, input: Record<string, unknown>, userRole: string, userId: string) {
+async function executeTool(name: string, input: Record<string, unknown>, userRole: string, userId: string, projectId?: string) {
   const supabase = await createClient()
   const isMember = userRole === 'member'
 
@@ -984,6 +1076,15 @@ async function executeTool(name: string, input: Record<string, unknown>, userRol
       .neq('status', '취소')
       .limit(5)
 
+    if (existing && existing.length > 0 && !input.confirm) {
+      const list = existing.map(e => `• ${e.lead_id} [${e.service_type || '미지정'}] ${e.status}`).join('\n')
+      return {
+        duplicate_warning: true,
+        existing_count: existing.length,
+        message: `⚠️ "${clientOrg}" 활성 리드 ${existing.length}건 있어:\n${list}\n\n그래도 새로 등록할까? (confirm=true로 재호출)`,
+      }
+    }
+
     const today = new Date().toISOString().slice(0, 10).replace(/-/g, '')
     const prefix = `LEAD${today}-`
     const { data: lastId } = await supabase
@@ -1023,10 +1124,7 @@ async function executeTool(name: string, input: Record<string, unknown>, userRol
     }).select('id, lead_id').single()
 
     if (error) return { error: error.message }
-    const note = existing && existing.length > 0
-      ? ` 참고: 동일 기관 기존 리드 ${existing.length}건 있음 (${existing.map(e => `${e.lead_id} ${e.service_type || ''} ${e.status}`).join(', ')})`
-      : ''
-    return { success: true, lead_id: lead.lead_id, id: lead.id, message: `리드 등록 완료! (${lead.lead_id})${note}` }
+    return { success: true, lead_id: lead.lead_id, id: lead.id, message: `리드 등록 완료! (${lead.lead_id})` }
   }
 
   if (name === 'update_lead') {
@@ -1217,6 +1315,107 @@ async function executeTool(name: string, input: Record<string, unknown>, userRol
     return { path: folderPath, count: entries.length, files: entries }
   }
 
+  if (name === 'add_project_log') {
+    const admin = createAdminClient()
+    let saleId: string | null = null
+    let leadId: string | null = null
+
+    if (projectId) {
+      const { data: rel } = await admin
+        .from('project_sales_relations')
+        .select('sale_id')
+        .eq('project_id', projectId)
+        .limit(1)
+        .single()
+      saleId = rel?.sale_id ?? null
+    }
+
+    const contactedAt = (input.contacted_at as string)
+      ? new Date(input.contacted_at as string).toISOString()
+      : new Date().toISOString()
+
+    const { error } = await admin.from('project_logs').insert({
+      lead_id: leadId,
+      sale_id: saleId,
+      content: input.content,
+      log_type: (input.log_type as string) || '메모',
+      author_id: userId,
+      contacted_at: contactedAt,
+    })
+    if (error) return { error: error.message }
+    return { success: true, message: '소통 내역을 저장했어.' }
+  }
+
+  if (name === 'update_project_status') {
+    if (!projectId) return { error: '프로젝트 페이지에서만 사용 가능해.' }
+    const admin = createAdminClient()
+    const { error } = await admin
+      .from('projects')
+      .update({ status: input.status, updated_at: new Date().toISOString() })
+      .eq('id', projectId)
+    if (error) return { error: error.message }
+    return { success: true, message: `프로젝트 상태를 "${input.status}"로 변경했어.` }
+  }
+
+  if (name === 'update_brief_note') {
+    if (!projectId) return { error: '프로젝트 페이지에서만 사용 가능해.' }
+    const admin = createAdminClient()
+    const { data: project } = await admin.from('projects').select('dropbox_url, name, service_type').eq('id', projectId).single()
+
+    let folderUrl = project?.dropbox_url as string | null
+
+    if (!folderUrl) {
+      if (!project?.service_type || !project?.name) {
+        return { error: 'Dropbox 폴더가 없고 서비스 유형이나 프로젝트명이 없어서 자동 생성 불가. 수동으로 연결해줘.' }
+      }
+      folderUrl = await createSaleFolder({ service_type: project.service_type, name: project.name, inflow_date: null }).catch(() => null)
+      if (folderUrl) {
+        await admin.from('projects').update({ dropbox_url: folderUrl, updated_at: new Date().toISOString() }).eq('id', projectId)
+      }
+    }
+
+    if (!folderUrl) return { error: 'Dropbox 폴더 자동 생성 실패. 직접 연결해줘.' }
+
+    const folderPath = decodeURIComponent(folderUrl.replace('https://www.dropbox.com/home', '')).replace(/\/$/, '')
+    const existing = await readDropboxFile(`${folderPath}/brief.md`).catch(() => null)
+    const existingText = existing && !('error' in existing) ? existing.text : ''
+    const updated = appendAiNote(existingText, input.note as string)
+    await uploadTextFile({ folderWebUrl: folderUrl, filename: 'brief.md', content: updated })
+    const wasCreated = !project?.dropbox_url
+    return { success: true, message: wasCreated ? `Dropbox 폴더 새로 만들고 brief 저장했어.` : 'brief.md AI 협업 노트에 저장했어.' }
+  }
+
+  if (name === 'set_dropbox_url') {
+    if (!projectId) return { error: '프로젝트 페이지에서만 사용 가능해.' }
+    const url = input.dropbox_url as string
+    if (!url.startsWith('https://www.dropbox.com')) return { error: 'Dropbox URL 형식이 맞지 않아.' }
+    const admin = createAdminClient()
+    const { error } = await admin.from('projects').update({ dropbox_url: url, updated_at: new Date().toISOString() }).eq('id', projectId)
+    if (error) return { error: error.message }
+    return { success: true, message: 'Dropbox 폴더 연결했어. 이제 brief 저장이나 파일 조회 가능해.' }
+  }
+
+  if (name === 'create_calendar_event') {
+    const calKey = (input.calendar_key as string) || 'main'
+    const title = input.title as string
+    const date = input.date as string
+    const isAllDay = input.is_all_day !== false && !input.start_time
+    try {
+      await createGCalEvent(calKey, {
+        title,
+        date,
+        endDate: (input.end_date as string) || date,
+        startTime: input.start_time as string | undefined,
+        endTime: input.end_time as string | undefined,
+        description: (input.description as string) || '',
+        isAllDay,
+      })
+      return { success: true, message: `캘린더(${calKey})에 "${title}" 일정 등록했어. (${date})` }
+    } catch (e: unknown) {
+      return { error: e instanceof Error ? e.message : '캘린더 등록 실패' }
+    }
+  }
+
   return { error: '알 수 없는 도구' }
 }
 
@@ -1226,22 +1425,82 @@ export async function POST(req: NextRequest) {
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
-    const { messages, mode } = await req.json()
+    const { messages, mode, projectId } = await req.json()
 
     const { data: profile } = await supabase.from('profiles').select('name, role').eq('id', user.id).single()
     const userName = profile?.name || '팀원'
     const userRole = profile?.role || 'member'
 
+    // 프로젝트 컨텍스트 주입 (URL에서 감지된 프로젝트 ID)
+    let projectContext = ''
+    if (projectId) {
+      const admin = createAdminClient()
+      const { data: project } = await admin
+        .from('projects')
+        .select('name, service_type, department, status, project_number, dropbox_url')
+        .eq('id', projectId)
+        .single()
+      if (project) {
+        const { data: linkedSales } = await admin
+          .from('project_sales_relations')
+          .select('sale_id, sales(name, revenue, contract_stage)')
+          .eq('project_id', projectId)
+          .limit(5)
+        const { data: openTasks } = await admin
+          .from('tasks')
+          .select('title, status, priority, due_date')
+          .eq('project_id', projectId)
+          .not('status', 'in', '(완료,보류)')
+          .limit(10)
+
+        const salesLines = (linkedSales ?? [])
+          .map((r: any) => r.sales ? `  - ${r.sales.name} / ${(r.sales.revenue ?? 0).toLocaleString()}원 / ${r.sales.contract_stage}` : '')
+          .filter(Boolean).join('\n')
+        const taskLines = (openTasks ?? [])
+          .map((t: any) => `  - [${t.priority || '보통'}] ${t.title}${t.due_date ? ` (마감: ${t.due_date})` : ''}`)
+          .join('\n')
+
+        // brief.md 읽기 (Dropbox 폴더가 있을 때)
+        let briefSection = ''
+        if (project.dropbox_url) {
+          const folderPath = decodeURIComponent(
+            (project.dropbox_url as string).replace('https://www.dropbox.com/home', '')
+          ).replace(/\/$/, '')
+          const briefResult = await readDropboxFile(`${folderPath}/brief.md`).catch(() => null)
+          if (briefResult && !('error' in briefResult)) {
+            briefSection = `\n\n### 프로젝트 Brief (brief.md)\n${briefResult.text}`
+          }
+        }
+
+        // 소통내역 최근 3건
+        const primarySaleId = (linkedSales ?? [])[0]?.sale_id ?? null
+        let recentLogs = ''
+        if (primarySaleId) {
+          const { data: logs } = await admin
+            .from('project_logs')
+            .select('content, log_type, contacted_at')
+            .eq('sale_id', primarySaleId)
+            .order('contacted_at', { ascending: false })
+            .limit(3)
+          if (logs?.length) {
+            recentLogs = `\n- 최근 소통:\n${logs.map((l: any) => `  - [${l.log_type}] ${l.contacted_at?.slice(0, 10)}: ${l.content}`).join('\n')}`
+          }
+        }
+
+        projectContext = `\n## 현재 열린 프로젝트\n이 대화는 아래 프로젝트 페이지에서 시작됐어. 프로젝트 관련 질문에 우선적으로 활용해.\n- 프로젝트명: ${project.name}\n- 번호: ${project.project_number || '미지정'}\n- 서비스: ${project.service_type || '미지정'}\n- 상태: ${project.status || '미지정'}\n- 사업부: ${project.department || '미지정'}${salesLines ? `\n- 연결된 계약:\n${salesLines}` : ''}${taskLines ? `\n- 미완료 업무:\n${taskLines}` : ''}${recentLogs}${briefSection}\n`
+      }
+    }
+
     const MODE_CONTEXT: Record<string, string> = {
       'new-sale':  '\n## 현재 모드: 새 계약건\n목표는 계약건 등록이야. 아래 상황에 맞게 유연하게 대응해.\n- 상담 중 질문: CS 매뉴얼 기반으로 즉시 답해. 서비스 언급되면 파악할 내용 알려줘. 가격·정책 질문엔 매뉴얼 기준으로.\n- 메모·전사록 붙여넣기: 계약 정보 추출 후 <sale-data> 블록 출력.\n- "등록해줘" 요청: 대화에서 파악된 정보로 <sale-data> 블록 출력.\n- 매뉴얼에 없는 건 "담당자한테 확인해봐".',
-      'new-lead':  '\n## 현재 모드: 새 리드\n목표는 리드 등록이야. 아래 상황에 맞게 유연하게 대응해.\n- 상담 중 질문: CS 매뉴얼 기반으로 즉시 답해. 서비스 언급되면 파악할 내용 알려줘. 가격·정책 질문엔 매뉴얼 기준으로.\n- 메모·전사록 붙여넣기: 리드 정보 추출 후 <lead-data> 블록 출력.\n- "등록해줘" 요청: 대화에서 파악된 정보로 <lead-data> 블록 출력.\n- create_lead 도구는 쓰지 마. 매뉴얼에 없는 건 "담당자한테 확인해봐".',
+      'new-lead':  '\n## 현재 모드: 새 리드\n목표는 리드 등록이야. 상황에 맞게 유연하게 대응해.\n- 상담 중 질문: CS 매뉴얼 기반으로 즉시 답해. 서비스 언급되면 파악할 내용 알려줘.\n- 메모·전사록 붙여넣기: 리드 정보 추출 후 <lead-data> 블록 출력.\n- 대화 흐름에서 정보가 충분히 파악되면 자동으로 <lead-data> 블록 제시해. 요약만 하고 끝내지 마.\n- "등록해줘", "넣어줘", "저장해줘" 같이 명시적으로 등록 요청하면 create_lead 도구로 바로 직접 등록해. 카드로 보여주지 말고 바로 실행.\n- 매뉴얼에 없는 건 "담당자한테 확인해봐".',
       'update':    '\n## 현재 모드: 기존 건 업데이트\n어떤 건인지 먼저 파악해. search_leads 또는 get_sales로 검색하고 결과 보여줘. 확인 후 내용 받아서 update 도구로 업데이트해.',
       'chat':      '\n## 현재 모드: 질문하기\n도구 사용해서 데이터 조회 및 답변해.',
     }
     const modeCtx = mode ? (MODE_CONTEXT[mode] || '') : ''
 
     const today = new Date().toLocaleDateString('ko-KR', { year: 'numeric', month: 'long', day: 'numeric', timeZone: 'Asia/Seoul' })
-    const systemWithDate = `오늘 날짜: ${today}\n현재 사용자: ${userName} (권한: ${userRole})\n${userRole === 'member' ? '※ 이 사용자는 팀원 권한이라 본인 담당 건만 조회 가능해.\n' : ''}${modeCtx}\n${SYSTEM_PROMPT}`
+    const systemWithDate = `오늘 날짜: ${today}\n현재 사용자: ${userName} (권한: ${userRole})\n${userRole === 'member' ? '※ 이 사용자는 팀원 권한이라 본인 담당 건만 조회 가능해.\n' : ''}${projectContext}${modeCtx}\n${SYSTEM_PROMPT}`
 
     const apiMessages: Anthropic.MessageParam[] = messages.map((m: {
       role: string
@@ -1285,7 +1544,7 @@ export async function POST(req: NextRequest) {
 
       const toolResults: Anthropic.ToolResultBlockParam[] = await Promise.all(
         toolUseBlocks.map(async (tu) => {
-          const result = await executeTool(tu.name, tu.input as Record<string, unknown>, userRole, user.id)
+          const result = await executeTool(tu.name, tu.input as Record<string, unknown>, userRole, user.id, projectId)
           return {
             type: 'tool_result' as const,
             tool_use_id: tu.id,

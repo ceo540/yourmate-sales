@@ -147,6 +147,28 @@ export default function RentalDetailClient({ rental, profiles, linkableRentals }
   const [deliveries, setDeliveries] = useState<RentalDelivery[]>(rental.deliveries)
   const [showAddDelivery, setShowAddDelivery] = useState(false)
   const [expandedDelivery, setExpandedDelivery] = useState<string | null>(null)
+  const [syncingCalDelivery, setSyncingCalDelivery] = useState<string | null>(null)
+
+  async function handleSyncDeliveryCalendar(d: RentalDelivery) {
+    setSyncingCalDelivery(d.id)
+    try {
+      const events = []
+      if (d.delivery_date) events.push({ title: `[배송] ${d.location} (${rental.customer_name})`, date: d.delivery_date })
+      if (d.pickup_date) events.push({ title: `[수거] ${d.location} (${rental.customer_name})`, date: d.pickup_date })
+      await Promise.all(events.map(ev =>
+        fetch('/api/calendar/events', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ calendarKey: 'rental', ...ev, isAllDay: true }),
+        })
+      ))
+      alert(`캘린더에 ${events.length}개 일정을 등록했어요.`)
+    } catch {
+      alert('캘린더 등록에 실패했습니다.')
+    } finally {
+      setSyncingCalDelivery(null)
+    }
+  }
   const [editingDeliveryId, setEditingDeliveryId] = useState<string | null>(null)
   const emptyDeliveryForm = { location: '', contact_name: '', phone: '', delivery_date: '', pickup_date: '', delivery_method: '', notes: '' }
   const [deliveryForm, setDeliveryForm] = useState(emptyDeliveryForm)
@@ -774,6 +796,13 @@ export default function RentalDetailClient({ rental, profiles, linkableRentals }
                             {d.notes && <p>메모: {d.notes}</p>}
                           </div>
                           <div className="flex gap-2">
+                            {(d.delivery_date || d.pickup_date) && (
+                              <button onClick={() => handleSyncDeliveryCalendar(d)}
+                                disabled={syncingCalDelivery === d.id}
+                                className="text-xs text-gray-400 hover:text-orange-600 px-2 py-1 border border-gray-200 rounded-lg disabled:opacity-50">
+                                {syncingCalDelivery === d.id ? '...' : '📅'}
+                              </button>
+                            )}
                             <button onClick={() => {
                               setEditDeliveryForm({
                                 location: d.location,

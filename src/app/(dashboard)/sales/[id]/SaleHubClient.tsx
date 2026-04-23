@@ -7,6 +7,7 @@ import { updateMemo } from './memo-action'
 import { updateSaleDetail } from './contract-action'
 import { createTask, updateTaskStatus, deleteTask } from '../tasks/actions'
 import { saveNotes, saveProjectOverview, generateProjectOverview, chatInNotes, generateDocument } from './notes-action'
+import { generateShareToken, revokeShareToken } from './share-action'
 import { updateProgressStatus } from '../actions'
 import { listSaleDropboxFiles } from './dropbox-action'
 import { syncSaleName, type SyncResult } from './sync-name-action'
@@ -100,6 +101,8 @@ function formatDue(d: string | null) {
 
 export default function SaleHubClient({ sale, tasks: initialTasks, logs, profiles, entities, customers, costs: initialCosts, vendors, showInternalCosts, viewMode, isAdmin, currentUserId }: Props) {
   const [tab, setTab] = useState<'overview' | 'tasks' | 'logs' | 'notes' | 'contract' | '원가' | 'claude'>('overview')
+  const [shareToken, setShareToken] = useState<string | null>(sale.share_token)
+  const [shareLoading, setShareLoading] = useState(false)
   const [tasks, setTasks] = useState(initialTasks)
   const [selectedTask, setSelectedTask] = useState<Task | null>(null)
   const [isPending, startTransition] = useTransition()
@@ -194,7 +197,41 @@ export default function SaleHubClient({ sale, tasks: initialTasks, logs, profile
 
       {/* ── 개요 탭 ── */}
       {tab === 'overview' && (
-        <OverviewTab sale={sale} tasks={tasks} logs={localLogs} notes={sale.notes ?? ''} initialOverview={sale.project_overview ?? ''} costs={localCosts} showInternalCosts={showInternalCosts} />
+        <>
+          <div className="flex justify-end mb-3 gap-2">
+            {shareToken ? (
+              <>
+                <button
+                  onClick={() => { navigator.clipboard.writeText(`${window.location.origin}/share/${shareToken}`) }}
+                  className="text-xs px-3 py-1.5 bg-blue-50 text-blue-700 rounded-lg hover:bg-blue-100 font-medium"
+                >
+                  🔗 링크 복사
+                </button>
+                <button
+                  onClick={async () => { setShareLoading(true); await revokeShareToken(sale.id); setShareToken(null); setShareLoading(false) }}
+                  disabled={shareLoading}
+                  className="text-xs px-3 py-1.5 bg-gray-50 text-gray-400 rounded-lg hover:bg-red-50 hover:text-red-500 disabled:opacity-40"
+                >
+                  공유 취소
+                </button>
+              </>
+            ) : (
+              <button
+                onClick={async () => {
+                  setShareLoading(true)
+                  const token = await generateShareToken(sale.id)
+                  if (token) { setShareToken(token); navigator.clipboard.writeText(`${window.location.origin}/share/${token}`) }
+                  setShareLoading(false)
+                }}
+                disabled={shareLoading}
+                className="text-xs px-3 py-1.5 bg-gray-50 text-gray-500 rounded-lg hover:bg-gray-100 disabled:opacity-40"
+              >
+                {shareLoading ? '생성 중...' : '🔗 외부 공유 링크'}
+              </button>
+            )}
+          </div>
+          <OverviewTab sale={sale} tasks={tasks} logs={localLogs} notes={sale.notes ?? ''} initialOverview={sale.project_overview ?? ''} costs={localCosts} showInternalCosts={showInternalCosts} />
+        </>
       )}
 
       {/* ── 업무 탭 ── */}
@@ -1149,8 +1186,9 @@ function ContractTab({ sale, profiles, entities, customers }: {
           <div>
             <label className="block text-xs font-medium text-gray-600 mb-1">드롭박스 폴더 링크</label>
             <input name="dropbox_url" type="url" defaultValue={sale.dropbox_url ?? ''}
-              placeholder="https://www.dropbox.com/..."
+              placeholder="https://www.dropbox.com/home/..."
               className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-yellow-400" />
+            <p className="text-[10px] text-gray-400 mt-1">Finder 우클릭 링크(/scl/fo/...)는 안 됩니다. 드롭박스 웹 → 폴더 열기 → 주소창 URL 복사</p>
           </div>
 
           <button type="submit" disabled={isPending}

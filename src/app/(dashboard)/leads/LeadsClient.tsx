@@ -3,7 +3,7 @@ import { useState, useTransition, useEffect, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import ReactMarkdown from 'react-markdown'
 import { Lead, LeadStatus, LEAD_STATUSES, LEAD_CHANNELS, LEAD_SOURCES } from '@/types'
-import { createLead, updateLead, deleteLead, convertLeadToSale, addSaleToLead, createLeadFolder, updateLeadDropboxUrl, syncLeadDropboxFolderName, createPerson, updateLeadPersonAndCustomer, previewProjectNumber } from './actions'
+import { createLead, updateLead, deleteLead, convertLeadToSale, addSaleToLead, createLeadFolder, updateLeadDropboxUrl, syncLeadDropboxFolderName, createPerson, updateLeadPersonAndCustomer, previewProjectNumber, refreshLeadBrief, createAndLinkLeadCalendarEvent, unlinkLeadCalendarEvent } from './actions'
 import { createLeadLog, getLeadLogs, deleteLeadLog } from './lead-log-actions'
 import ProjectClaudeChat from '@/components/ProjectClaudeChat'
 
@@ -438,6 +438,19 @@ export default function LeadsClient({ leads, profiles, persons, currentUserId, i
   const [creatingFolder, setCreatingFolder] = useState(false)
   const [dropboxSyncing, setDropboxSyncing] = useState(false)
   const [dropboxSyncDone, setDropboxSyncDone] = useState(false)
+  const [briefError, setBriefError] = useState<string | null>(null)
+
+  // Calendar
+  const [localLinkedEvents, setLocalLinkedEvents] = useState<{ id: string; calendarKey: string; title: string; date: string; color: string }[]>([])
+  const [showCalCreate, setShowCalCreate] = useState(false)
+  const [calCreateKey, setCalCreateKey] = useState('main')
+  const [calCreateTitle, setCalCreateTitle] = useState('')
+  const [calCreateDate, setCalCreateDate] = useState('')
+  const [calCreateStart, setCalCreateStart] = useState('')
+  const [calCreateEnd, setCalCreateEnd] = useState('')
+  const [calCreateAllDay, setCalCreateAllDay] = useState(false)
+  const [calCreateDesc, setCalCreateDesc] = useState('')
+  const [calCreateLoading, setCalCreateLoading] = useState(false)
 
   // Add sale form
   const [showAddSaleForm, setShowAddSaleForm] = useState(false)
@@ -544,6 +557,8 @@ export default function LeadsClient({ leads, profiles, persons, currentUserId, i
     setLogsCollapsed(true)
     setTab('main')
     setDropboxSyncDone(false)
+    setLocalLinkedEvents(selectedLead?.linked_calendar_events ?? [])
+    setShowCalCreate(false)
   }, [selectedLead?.id])
 
   // ── Filtered list ────────────────────────────────────────────────
@@ -925,7 +940,7 @@ export default function LeadsClient({ leads, profiles, persons, currentUserId, i
 
               return (
                 <button key={lead.id}
-                  onClick={() => setSelectedLead(isSelected ? null : lead)}
+                  onClick={() => { setSelectedLead(isSelected ? null : lead); setBriefError(null) }}
                   className={`w-full text-left px-3 py-2.5 transition-all border-l-2 ${
                     isSelected ? 'bg-yellow-50 border-yellow-400' : 'border-transparent hover:bg-gray-50'
                   }`}>
@@ -1200,12 +1215,66 @@ export default function LeadsClient({ leads, profiles, persons, currentUserId, i
                         견적서 생성
                       </button>
                     )}
+                    {selectedLead.dropbox_url && (
+                      <button
+                        onClick={() => {
+                          setBriefError(null)
+                          startTransition(async () => {
+                            const res = await refreshLeadBrief(selectedLead.id)
+                            if (!res.ok) {
+                              setBriefError(res.error ?? '알 수 없는 오류')
+                              setShowDropboxInput(true)
+                            }
+                          })
+                        }}
+                        disabled={isPending}
+                        className="text-xs px-3 py-1.5 border border-gray-200 rounded-lg hover:bg-gray-50 text-gray-500 transition-colors disabled:opacity-40">
+                        📄 Brief 갱신
+                      </button>
+                    )}
                     <button
                       onClick={() => handleDelete(selectedLead.id)}
                       className="text-xs px-3 py-1.5 text-red-400 hover:text-red-600 border border-red-100 rounded-lg hover:bg-red-50 transition-colors ml-auto">
                       삭제
                     </button>
                   </div>
+
+                  {/* 드롭박스 연결 오류 안내 */}
+                  {briefError && (
+                    <div className="mt-3 rounded-xl border border-red-200 bg-red-50 px-4 py-3 space-y-2">
+                      <div className="flex items-start gap-2">
+                        <span className="text-red-500 text-sm flex-shrink-0">⚠</span>
+                        <div>
+                          <p className="text-sm font-medium text-red-700">드롭박스 연결 오류</p>
+                          <p className="text-xs text-red-500 mt-0.5">저장된 폴더 URL이 잘못됐거나 폴더가 이동·삭제된 것 같아요. 드롭박스에서 올바른 폴더를 찾아 URL을 다시 붙여넣거나, 새 폴더를 만드세요.</p>
+                        </div>
+                        <button onClick={() => setBriefError(null)} className="ml-auto text-red-300 hover:text-red-500 text-xs flex-shrink-0">✕</button>
+                      </div>
+                      <div className="flex gap-2">
+                        <input
+                          value={dropboxInput}
+                          onChange={e => setDropboxInput(e.target.value)}
+                          placeholder="https://www.dropbox.com/home/... (정확한 URL 붙여넣기)"
+                          className="flex-1 text-xs border border-red-200 rounded-lg px-2.5 py-1.5 bg-white focus:outline-none focus:border-yellow-400" />
+                        <button
+                          onClick={async () => {
+                            await handleSaveDropboxUrl(selectedLead.id)
+                            setBriefError(null)
+                          }}
+                          disabled={!dropboxInput.trim()}
+                          className="text-xs px-3 py-1.5 rounded-lg font-medium disabled:opacity-40"
+                          style={{ backgroundColor: '#FFCE00', color: '#121212' }}>저장</button>
+                      </div>
+                      {!selectedLead.dropbox_url && (
+                        <button
+                          onClick={() => { handleCreateLeadFolder(selectedLead.id); setBriefError(null) }}
+                          disabled={creatingFolder}
+                          className="text-xs text-gray-500 hover:text-gray-700 underline disabled:opacity-40">
+                          {creatingFolder ? '생성 중...' : '또는 새 드롭박스 폴더 자동 생성'}
+                        </button>
+                      )}
+                    </div>
+                  )}
                 </div>
 
                 {/* ── 기본 정보 2열 카드 ── */}
@@ -1480,6 +1549,95 @@ export default function LeadsClient({ leads, profiles, persons, currentUserId, i
                     </div>
                   )}
                 </div>
+
+                {/* ── 캘린더 일정 ── */}
+                {(() => {
+                  const CALENDAR_LABELS: Record<string, string> = { main: '개인/전체', sos: '사운드오브스쿨', rental: '렌탈일정', artqium: '아트키움' }
+                  const CALENDAR_COLORS_MAP: Record<string, string> = { main: '#3B82F6', sos: '#8B5CF6', rental: '#F59E0B', artqium: '#10B981' }
+                  return (
+                    <div className="bg-white rounded-2xl p-5" style={{ boxShadow: '0 1px 4px rgba(0,0,0,0.06)' }}>
+                      <div className="flex items-center justify-between mb-3">
+                        <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider">캘린더 일정</p>
+                        <button onClick={() => setShowCalCreate(v => !v)}
+                          className="text-xs text-gray-400 hover:text-gray-700 px-2 py-1 rounded hover:bg-gray-50">
+                          {showCalCreate ? '취소' : '+ 일정 추가'}
+                        </button>
+                      </div>
+
+                      {showCalCreate && (
+                        <div className="mb-3 p-3 bg-blue-50 rounded-xl space-y-2 border border-blue-100">
+                          <select value={calCreateKey} onChange={e => setCalCreateKey(e.target.value)}
+                            className="w-full text-xs border border-gray-200 rounded-lg px-2.5 py-1.5 bg-white focus:outline-none focus:border-yellow-400">
+                            {Object.entries(CALENDAR_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+                          </select>
+                          <input value={calCreateTitle} onChange={e => setCalCreateTitle(e.target.value)}
+                            placeholder="일정 제목 (예: 이화여대 미팅)"
+                            className="w-full text-xs border border-gray-200 rounded-lg px-2.5 py-1.5 focus:outline-none focus:border-yellow-400 bg-white" />
+                          <input type="date" value={calCreateDate} onChange={e => setCalCreateDate(e.target.value)}
+                            className="w-full text-xs border border-gray-200 rounded-lg px-2.5 py-1.5 focus:outline-none focus:border-yellow-400 bg-white" />
+                          <label className="flex items-center gap-2 text-xs text-gray-500 cursor-pointer">
+                            <input type="checkbox" checked={calCreateAllDay} onChange={e => setCalCreateAllDay(e.target.checked)} className="rounded" />
+                            종일 일정
+                          </label>
+                          {!calCreateAllDay && (
+                            <div className="flex gap-2">
+                              <input type="time" value={calCreateStart} onChange={e => setCalCreateStart(e.target.value)}
+                                className="flex-1 text-xs border border-gray-200 rounded-lg px-2.5 py-1.5 focus:outline-none focus:border-yellow-400 bg-white" />
+                              <span className="text-xs text-gray-400 self-center">~</span>
+                              <input type="time" value={calCreateEnd} onChange={e => setCalCreateEnd(e.target.value)}
+                                className="flex-1 text-xs border border-gray-200 rounded-lg px-2.5 py-1.5 focus:outline-none focus:border-yellow-400 bg-white" />
+                            </div>
+                          )}
+                          <textarea value={calCreateDesc} onChange={e => setCalCreateDesc(e.target.value)}
+                            placeholder="메모 (선택)" rows={2}
+                            className="w-full text-xs border border-gray-200 rounded-lg px-2.5 py-1.5 focus:outline-none focus:border-yellow-400 bg-white resize-none" />
+                          <button
+                            disabled={calCreateLoading || !calCreateTitle.trim() || !calCreateDate}
+                            onClick={async () => {
+                              if (!calCreateTitle.trim() || !calCreateDate) return
+                              setCalCreateLoading(true)
+                              const res = await createAndLinkLeadCalendarEvent(selectedLead.id, calCreateKey, {
+                                title: calCreateTitle, date: calCreateDate,
+                                startTime: calCreateAllDay ? undefined : calCreateStart || undefined,
+                                endTime: calCreateAllDay ? undefined : calCreateEnd || undefined,
+                                isAllDay: calCreateAllDay,
+                                description: calCreateDesc.trim() || undefined,
+                              })
+                              setCalCreateLoading(false)
+                              if (res.error) { alert('오류: ' + res.error); return }
+                              const newEv = { id: `ev-${Date.now()}`, calendarKey: calCreateKey, title: calCreateTitle, date: calCreateDate, color: CALENDAR_COLORS_MAP[calCreateKey] ?? '#3B82F6' }
+                              setLocalLinkedEvents(prev => [...prev, newEv])
+                              setShowCalCreate(false)
+                              setCalCreateTitle(''); setCalCreateDate(''); setCalCreateStart(''); setCalCreateEnd(''); setCalCreateDesc(''); setCalCreateAllDay(false)
+                            }}
+                            className="w-full py-1.5 text-xs font-semibold rounded-lg hover:opacity-80 disabled:opacity-40"
+                            style={{ backgroundColor: '#FFCE00', color: '#121212' }}>
+                            {calCreateLoading ? '등록 중...' : '구글 캘린더에 등록'}
+                          </button>
+                        </div>
+                      )}
+
+                      {localLinkedEvents.length === 0 ? (
+                        <p className="text-xs text-gray-400">등록된 일정이 없습니다</p>
+                      ) : (
+                        <div className="space-y-1.5">
+                          {[...localLinkedEvents].sort((a, b) => a.date.localeCompare(b.date)).map(ev => (
+                            <div key={ev.id} className="flex items-center gap-2 group">
+                              <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: ev.color }} />
+                              <span className="text-xs text-gray-500 flex-shrink-0">{ev.date}</span>
+                              <span className="text-xs text-gray-700 flex-1 truncate">{ev.title}</span>
+                              <span className="text-[10px] text-gray-400 flex-shrink-0">{CALENDAR_LABELS[ev.calendarKey] ?? ev.calendarKey}</span>
+                              <button onClick={async () => {
+                                setLocalLinkedEvents(prev => prev.filter(e => e.id !== ev.id))
+                                await unlinkLeadCalendarEvent(selectedLead.id, ev.id)
+                              }} className="text-gray-300 hover:text-red-400 text-xs opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0">✕</button>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  )
+                })()}
 
                 {/* ── Claude 협업 ── */}
                 <ProjectClaudeChat

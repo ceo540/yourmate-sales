@@ -86,6 +86,9 @@ export default function ContractHubClient({ sales }: Props) {
   const [stageSaving, setStageSaving] = useState(false)
   const [schedules, setSchedules] = useState<PaymentSchedule[]>([])
   const [savingSchedules, setSavingSchedules] = useState(false)
+  const [salesSchedulesMap, setSalesSchedulesMap] = useState<Record<string, PaymentSchedule[]>>(
+    () => Object.fromEntries(sales.map(s => [s.id, s.payment_schedules ?? []]))
+  )
   const newDocRef = useRef<HTMLInputElement>(null)
 
   const selected = sales.find(s => s.id === selectedId) ?? null
@@ -165,11 +168,15 @@ export default function ContractHubClient({ sales }: Props) {
   }
 
   function handleToggleReceived(id: string) {
-    setSchedules(prev => prev.map(s => {
-      if (s.id !== id) return s
-      const next = !s.is_received
-      return { ...s, is_received: next, received_date: next ? new Date().toISOString().slice(0, 10) : null }
-    }))
+    setSchedules(prev => {
+      const next = prev.map(s => {
+        if (s.id !== id) return s
+        const nextReceived = !s.is_received
+        return { ...s, is_received: nextReceived, received_date: nextReceived ? new Date().toISOString().slice(0, 10) : null }
+      })
+      if (selectedId) setSalesSchedulesMap(m => ({ ...m, [selectedId]: next }))
+      return next
+    })
   }
 
   function handleRemoveSchedule(id: string) {
@@ -190,11 +197,45 @@ export default function ContractHubClient({ sales }: Props) {
     return acc
   }, {})
 
+  // 이달 수금 집계
+  const thisMonth = new Date().toISOString().slice(0, 7) // YYYY-MM
+  const allSchedules = Object.values(salesSchedulesMap).flat()
+  const monthReceived = allSchedules
+    .filter(p => p.is_received && (p.received_date ?? '').startsWith(thisMonth))
+    .reduce((s, p) => s + p.amount, 0)
+  const monthPending = allSchedules
+    .filter(p => !p.is_received && (p.due_date ?? '').startsWith(thisMonth))
+    .reduce((s, p) => s + p.amount, 0)
+  const totalUnreceived = allSchedules
+    .filter(p => !p.is_received)
+    .reduce((s, p) => s + p.amount, 0)
+
   return (
     <div className="flex h-[calc(100vh-64px)] overflow-hidden">
 
       {/* ── 왼쪽: 계약 목록 ── */}
       <div className="w-80 flex-shrink-0 border-r border-gray-100 flex flex-col bg-white">
+
+        {/* 이달 수금 현황 */}
+        <div className="px-4 py-3 border-b border-gray-100 bg-gray-50">
+          <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide mb-2">
+            {new Date().getMonth() + 1}월 수금 현황
+          </p>
+          <div className="grid grid-cols-3 gap-2 text-center">
+            <div>
+              <p className="text-xs text-gray-400">수령완료</p>
+              <p className="text-sm font-bold text-green-600">{fmt(monthReceived)}</p>
+            </div>
+            <div>
+              <p className="text-xs text-gray-400">이달예정</p>
+              <p className="text-sm font-bold text-blue-600">{fmt(monthPending)}</p>
+            </div>
+            <div>
+              <p className="text-xs text-gray-400">전체미수</p>
+              <p className="text-sm font-bold text-orange-500">{fmt(totalUnreceived)}</p>
+            </div>
+          </div>
+        </div>
 
         {/* 검색 */}
         <div className="px-4 pt-4 pb-3 border-b border-gray-100">
