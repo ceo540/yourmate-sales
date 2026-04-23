@@ -2,17 +2,11 @@
 import { useState, useTransition } from 'react'
 import { createTask, updateTaskStatus, deleteTask, applyTaskTemplate } from '../tasks/actions'
 import { SERVICE_TASK_TEMPLATES } from '@/lib/task-templates'
+import { TASK_STATUS_STYLE as STATUS_STYLE } from '@/lib/constants'
 
 const STATUSES = ['할 일', '진행중', '검토중', '완료', '보류'] as const
 const PRIORITIES = ['낮음', '보통', '높음'] as const
 
-const STATUS_STYLE: Record<string, string> = {
-  '할 일':  'bg-gray-100 text-gray-600',
-  '진행중': 'bg-blue-100 text-blue-700',
-  '검토중': 'bg-yellow-100 text-yellow-700',
-  '완료':   'bg-green-100 text-green-700',
-  '보류':   'bg-red-100 text-red-600',
-}
 
 const PRIORITY_STYLE: Record<string, string> = {
   '낮음': 'text-gray-400',

@@ -3,6 +3,7 @@ import { createAdminClient } from '@/lib/supabase/admin'
 import { redirect } from 'next/navigation'
 import Link from 'next/link'
 import { isAdmin as checkIsAdmin } from '@/lib/permissions'
+import { TASK_STATUS_STYLE as STATUS_STYLE } from '@/lib/constants'
 import DashboardMemo from './DashboardMemo'
 
 const SVC_COLOR: Record<string, string> = {
@@ -10,13 +11,6 @@ const SVC_COLOR: Record<string, string> = {
   '교구대여': '#D97706', '제작인쇄': '#EC4899', '콘텐츠제작': '#EC4899',
   '행사운영': '#F97316', '행사대여': '#F59E0B', '유지보수': '#0891B2',
   '002ENT': '#EF4444', '프로젝트': '#6B7280',
-}
-const STATUS_STYLE: Record<string, string> = {
-  '할 일': 'bg-gray-100 text-gray-600',
-  '진행중': 'bg-blue-100 text-blue-700',
-  '검토중': 'bg-yellow-100 text-yellow-700',
-  '완료': 'bg-green-100 text-green-700',
-  '보류': 'bg-red-100 text-red-600',
 }
 const WEEKDAYS = ['일', '월', '화', '수', '목', '금', '토']
 

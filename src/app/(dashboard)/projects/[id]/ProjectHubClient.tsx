@@ -41,13 +41,7 @@ const STAGE_COLORS: Record<string, string> = {
   완수: 'bg-teal-100 text-teal-700', 계산서발행: 'bg-indigo-100 text-indigo-700',
   잔금: 'bg-green-100 text-green-700',
 }
-const STATUS_STYLE: Record<string, string> = {
-  '완료': 'bg-green-100 text-green-700', '진행중': 'bg-blue-100 text-blue-700',
-  '할 일': 'bg-gray-100 text-gray-500', '보류': 'bg-red-100 text-red-500', '검토중': 'bg-yellow-100 text-yellow-700',
-}
-const PRIORITY_DOT: Record<string, string> = {
-  긴급: 'bg-red-500', 높음: 'bg-orange-400', 보통: 'bg-gray-300', 낮음: 'bg-gray-200',
-}
+import { TASK_STATUS_STYLE as STATUS_STYLE, PRIORITY_DOT } from '@/lib/constants'
 const AVATAR_COLORS = ['bg-yellow-400', 'bg-blue-400', 'bg-green-400', 'bg-purple-400', 'bg-orange-400']
 const PIPELINE = ['유입', '협의중', '견적발송', '계약', '진행중', '완료']
 const LOG_HAS_LOCATION    = new Set(['방문', '미팅', '출장', '내부회의'])
