@@ -3,7 +3,7 @@
 import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { revalidatePath } from 'next/cache'
-import { renameDropboxFolder, listDropboxFolder } from '@/lib/dropbox'
+import { renameDropboxFolder, listDropboxFolder, moveDropboxToCancel } from '@/lib/dropbox'
 import { createEvent, CALENDAR_COLORS } from '@/lib/google-calendar'
 import { createProfileNameMap } from '@/lib/utils'
 import { isAdminOrManager } from '@/lib/permissions'
@@ -104,6 +104,18 @@ export async function updateProjectStatus(projectId: string, status: string) {
     .update({ status, updated_at: new Date().toISOString() })
     .eq('id', projectId)
   if (error) throw new Error(error.message)
+
+  // 취소 상태로 변경 시 드롭박스 폴더를 999999.취소 폴더로 이동
+  if (status === '취소') {
+    const { data: project } = await admin.from('projects').select('dropbox_url').eq('id', projectId).single()
+    if (project?.dropbox_url) {
+      const result = await moveDropboxToCancel(project.dropbox_url)
+      if ('newUrl' in result) {
+        await admin.from('projects').update({ dropbox_url: result.newUrl }).eq('id', projectId)
+      }
+    }
+  }
+
   revalidatePath(`/projects/${projectId}`)
 }
 
@@ -327,6 +339,9 @@ export async function deleteProject(projectId: string): Promise<{ error?: string
 
   const { error: saleErr } = await admin.from('sales').update({ project_id: null }).eq('project_id', projectId)
   if (saleErr) return { error: `매출 연결 해제 실패: ${saleErr.message}` }
+
+  const { error: leadErr } = await admin.from('leads').update({ project_id: null }).eq('project_id', projectId)
+  if (leadErr) return { error: `리드 연결 해제 실패: ${leadErr.message}` }
 
   const { error: projErr } = await admin.from('projects').delete().eq('id', projectId)
   if (projErr) return { error: `프로젝트 삭제 실패: ${projErr.message}` }
