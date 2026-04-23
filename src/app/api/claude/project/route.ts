@@ -11,6 +11,7 @@ const WEB_BASE = 'https://www.dropbox.com/home'
 
 const LEAD_STATUSES = ['유입', '회신대기', '견적발송', '조율중', '진행중', '완료', '취소']
 const CONTRACT_STAGES = ['계약', '착수', '선금', '중도금', '완수', '계산서발행', '잔금']
+const PROJECT_STATUSES = ['유입', '협의중', '견적발송', '계약', '진행중', '완료', '보류', '취소']
 const LOG_TYPES = ['통화', '이메일', '방문', '내부회의', '메모', '기타']
 
 export async function POST(req: NextRequest) {
@@ -194,7 +195,7 @@ ${logs && logs.length > 0 ? `\n## 최근 소통내역\n${logs.map(l => `- [${l.l
     },
     {
       name: 'update_status',
-      description: `현재 단계를 변경합니다. 리드: ${LEAD_STATUSES.join('/')} 중 하나. 계약: ${CONTRACT_STAGES.join('/')} 중 하나.`,
+      description: `현재 단계를 변경합니다. 리드: ${LEAD_STATUSES.join('/')} / 계약: ${CONTRACT_STAGES.join('/')} / 프로젝트: ${PROJECT_STATUSES.join('/')} 중 하나.`,
       input_schema: {
         type: 'object' as const,
         properties: {
@@ -334,6 +335,12 @@ ${logs && logs.length > 0 ? `\n## 최근 소통내역\n${logs.map(l => `- [${l.l
                   .eq('id', saleId)
                 result = error ? `변경 실패: ${error.message}` : `계약 단계를 "${input.status}"로 변경했습니다.`
                 if (!error) revalidate()
+              } else if (projectId) {
+                const { error } = await admin.from('projects')
+                  .update({ status: input.status, updated_at: new Date().toISOString() })
+                  .eq('id', projectId)
+                result = error ? `변경 실패: ${error.message}` : `프로젝트 상태를 "${input.status}"로 변경했습니다.`
+                if (!error) revalidate()
               }
 
             } else if (block.name === 'update_notes') {
@@ -349,6 +356,12 @@ ${logs && logs.length > 0 ? `\n## 최근 소통내역\n${logs.map(l => `- [${l.l
                   .update({ memo: input.notes })
                   .eq('id', saleId)
                 result = error ? `저장 실패: ${error.message}` : '계약 메모를 업데이트했습니다.'
+                if (!error) revalidate()
+              } else if (projectId) {
+                const { error } = await admin.from('projects')
+                  .update({ memo: input.notes, updated_at: new Date().toISOString() })
+                  .eq('id', projectId)
+                result = error ? `저장 실패: ${error.message}` : '프로젝트 메모를 업데이트했습니다.'
                 if (!error) revalidate()
               }
 
