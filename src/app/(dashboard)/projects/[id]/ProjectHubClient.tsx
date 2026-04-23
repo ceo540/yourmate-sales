@@ -10,7 +10,7 @@ import {
   togglePaymentReceived, addPaymentSchedule, deletePaymentSchedule,
   addSaleCost, deleteSaleCost, updateContractStage, updateContractProgressStatus,
   updateContractInfo, createTaskForProject, deleteProject, listProjectDropboxFiles,
-  linkCalendarEvent, unlinkCalendarEvent, createAndLinkCalendarEvent,
+  linkCalendarEvent, unlinkCalendarEvent, createAndLinkCalendarEvent, unlinkAndDeleteCalendarEvent,
 } from './project-actions'
 import { syncProjectName, type ProjectSyncResult } from './sync-project-name-action'
 const CALENDAR_LABELS: Record<string, string> = {
@@ -1417,9 +1417,17 @@ export default function ProjectHubClient({
                           <p className="text-sm text-gray-800 truncate">{ev.title}</p>
                         </div>
                         <span className="text-xs text-gray-400 flex-shrink-0">{ev.date.slice(5).replace('-', '/')}</span>
-                        <button onClick={() => {
-                          startTransition(() => unlinkCalendarEvent(project.id, ev.id))
+                        <button onClick={async () => {
+                          const alsoDelete = confirm(
+                            '이 일정을 어떻게 처리할까요?\n\n[확인] Google Calendar에서도 완전 삭제\n[취소] 프로젝트 연결만 해제 (Google Calendar에 그대로 남김)'
+                          )
                           setLocalLinkedEvents(prev => prev.filter(e => e.id !== ev.id))
+                          if (alsoDelete) {
+                            const res = await unlinkAndDeleteCalendarEvent(project.id, ev.id, ev.calendarKey)
+                            if (res.error) alert('Google Calendar 삭제 실패: ' + res.error)
+                          } else {
+                            startTransition(() => unlinkCalendarEvent(project.id, ev.id))
+                          }
                         }} className="text-gray-200 hover:text-red-400 text-xs opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0">✕</button>
                       </div>
                     ))}
