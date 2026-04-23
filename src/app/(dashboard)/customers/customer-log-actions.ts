@@ -1,6 +1,7 @@
 'use server'
 import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
+import { createProfileNameMap } from '@/lib/utils'
 
 export async function getCustomerLogs(entityType: 'customer' | 'person', entityId: string) {
   const admin = createAdminClient()
@@ -17,7 +18,7 @@ export async function getCustomerLogs(entityType: 'customer' | 'person', entityI
   let profileMap: Record<string, string> = {}
   if (authorIds.length > 0) {
     const { data: profiles } = await admin.from('profiles').select('id, name').in('id', authorIds)
-    profileMap = Object.fromEntries((profiles ?? []).map((p: any) => [p.id, p.name]))
+    profileMap = createProfileNameMap(profiles)
   }
 
   return data.map((l: any) => ({

@@ -1,5 +1,6 @@
 'use client'
 import { useState, useMemo } from 'react'
+import { createProfileNameMap } from '@/lib/utils'
 
 // ─── 파이프라인 3컬럼 정의 ──────────────────────────────────────
 const COLUMNS = [
@@ -104,7 +105,7 @@ export default function PipelineClient({ leads, sales, profiles }: Props) {
   const [assigneeFilter, setAssigneeFilter] = useState('전체')
   const [serviceFilter, setServiceFilter] = useState('전체')
 
-  const profileMap = Object.fromEntries(profiles.map(p => [p.id, p.name]))
+  const profileMap = createProfileNameMap(profiles)
 
   // 리드와 매출건을 카드 형태로 통합
   const cards: PipelineCard[] = useMemo(() => {

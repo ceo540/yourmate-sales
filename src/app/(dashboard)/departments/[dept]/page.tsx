@@ -2,16 +2,10 @@ import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { redirect, notFound } from 'next/navigation'
 import { DEPARTMENT_LABELS, Department } from '@/types'
+import { createProfileNameMap } from '@/lib/utils'
+import { isAdminOrManager } from '@/lib/permissions'
+import { DEPT_ICONS } from '@/lib/constants'
 import DeptClient from './DeptClient'
-
-const DEPT_ICONS: Record<Department, string> = {
-  sound_of_school:    '🎵',
-  artkiwoom:          '🎨',
-  school_store:       '🏫',
-  '002_creative':     '🎬',
-  yourmate:           '🏢',
-  '002_entertainment':'🎤',
-}
 
 export default async function DeptPage({ params }: { params: Promise<{ dept: string }> }) {
   const { dept } = await params
@@ -23,7 +17,7 @@ export default async function DeptPage({ params }: { params: Promise<{ dept: str
   if (!user) redirect('/login')
 
   const { data: profile } = await supabase.from('profiles').select('role').eq('id', user.id).single()
-  const isAdmin = profile?.role === 'admin' || profile?.role === 'manager'
+  const isAdmin = isAdminOrManager(profile?.role)
 
   const currentYear = new Date().getFullYear()
 
@@ -36,7 +30,7 @@ export default async function DeptPage({ params }: { params: Promise<{ dept: str
 
   // 전체 profiles (담당자 필터 + 새 건 폼용)
   const { data: allProfiles } = await supabase.from('profiles').select('id, name').order('name')
-  const profileMap = Object.fromEntries((allProfiles ?? []).map(p => [p.id, p.name]))
+  const profileMap = createProfileNameMap(allProfiles)
 
   const sales = (salesRaw ?? []).map(s => ({
     ...s,

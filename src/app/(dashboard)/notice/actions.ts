@@ -2,6 +2,7 @@
 import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { revalidatePath } from 'next/cache'
+import { isAdmin as checkIsAdmin } from '@/lib/permissions'
 
 export async function createNotice(formData: FormData) {
   const supabase = await createClient()
@@ -9,7 +10,7 @@ export async function createNotice(formData: FormData) {
   if (!user) return { error: '로그인 필요' }
 
   const { data: profile } = await supabase.from('profiles').select('role').eq('id', user.id).single()
-  const isAdmin = profile?.role === 'admin'
+  const isAdmin = checkIsAdmin(profile?.role)
   const pinned = isAdmin && formData.get('pinned') === 'on'
 
   const { error } = await supabase.from('notices').insert({

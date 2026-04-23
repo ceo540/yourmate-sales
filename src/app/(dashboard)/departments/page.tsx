@@ -2,15 +2,7 @@ import { createClient } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
 import Link from 'next/link'
 import { DEPARTMENT_LABELS, Department } from '@/types'
-
-const DEPT_ICONS: Record<Department, string> = {
-  sound_of_school:   '🎵',
-  artkiwoom:         '🎨',
-  school_store:      '🏫',
-  '002_creative':    '🎬',
-  yourmate:          '🏢',
-  '002_entertainment':'🎤',
-}
+import { DEPT_ICONS } from '@/lib/constants'
 
 const DEPT_DESC: Record<Department, string> = {
   sound_of_school:    '공연 · SOS 프로그램',

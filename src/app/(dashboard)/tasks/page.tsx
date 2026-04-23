@@ -1,6 +1,8 @@
 import { createAdminClient } from '@/lib/supabase/admin'
 import { createClient } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
+import { createProfileMap } from '@/lib/utils'
+import { isAdminOrManager } from '@/lib/permissions'
 import TasksClient from './TasksClient'
 
 export default async function TasksPage() {
@@ -11,7 +13,7 @@ export default async function TasksPage() {
   const adminSupabase = createAdminClient()
 
   const { data: profile } = await adminSupabase.from('profiles').select('id, role').eq('id', user.id).single()
-  const isAdmin = profile?.role === 'admin' || profile?.role === 'manager'
+  const isAdmin = isAdminOrManager(profile?.role)
 
   // 업무 조회 (admin: 전체, member: 내 담당)
   let tasksQuery = adminSupabase.from('tasks').select('*').order('due_date', { ascending: true, nullsFirst: false })
@@ -25,7 +27,7 @@ export default async function TasksPage() {
     adminSupabase.from('sales').select('id, name, department').order('name'),
   ])
 
-  const profileMap = Object.fromEntries((profiles ?? []).map(p => [p.id, p]))
+  const profileMap = createProfileMap(profiles)
   const saleMap = Object.fromEntries((sales ?? []).map(s => [s.id, s]))
 
   const tasks = (rawTasks ?? []).map(t => ({

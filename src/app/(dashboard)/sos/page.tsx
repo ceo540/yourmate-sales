@@ -1,6 +1,7 @@
 import { createAdminClient } from '@/lib/supabase/admin'
 import { createClient } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
+import { isAdminOrManager } from '@/lib/permissions'
 import SosClient from './SosClient'
 
 export default async function SosPage() {
@@ -20,7 +21,7 @@ export default async function SosPage() {
     adminSupabase.from('profiles').select('id, role').eq('id', user.id).single(),
   ])
 
-  const isAdmin = profile?.role === 'admin' || profile?.role === 'manager'
+  const isAdmin = isAdminOrManager(profile?.role)
 
   return (
     <SosClient

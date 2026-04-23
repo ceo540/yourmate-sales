@@ -1,5 +1,6 @@
 import { createClient } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
+import { isAdminOrManager } from '@/lib/permissions'
 import CustomersClient from './CustomersClient'
 
 export default async function CustomersPage() {
@@ -34,7 +35,7 @@ export default async function CustomersPage() {
     supabase.from('sales').select('id, customer_id, revenue, title, service_type, created_at').not('customer_id', 'is', null),
   ])
 
-  const isAdmin = profile?.role === 'admin' || profile?.role === 'manager'
+  const isAdmin = isAdminOrManager(profile?.role)
 
   // 기관 데이터 가공
   const customers = (customersRaw ?? []).map((c: any) => {

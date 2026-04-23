@@ -3,6 +3,7 @@ import Link from 'next/link'
 import { DEPT_SERVICE_GROUPS } from '@/types'
 import { createSale } from '../actions'
 import SubmitButton from '@/components/ui/SubmitButton'
+import { isAdminOrManager } from '@/lib/permissions'
 
 interface BusinessEntity { id: string; name: string }
 interface Customer { id: string; name: string; type: string }
@@ -19,7 +20,7 @@ export default async function NewSalePage() {
     supabase.from('customers').select('id, name, type').order('name'),
   ])
   const customers = (customersRaw ?? []) as Customer[]
-  const isAdmin = currentProfile?.role === 'admin' || currentProfile?.role === 'manager'
+  const isAdmin = isAdminOrManager(currentProfile?.role)
 
   return (
     <div className="max-w-2xl mx-auto">

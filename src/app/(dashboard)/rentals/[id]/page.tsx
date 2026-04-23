@@ -1,5 +1,6 @@
 import { createClient } from '@/lib/supabase/server'
 import { redirect, notFound } from 'next/navigation'
+import { createProfileNameMap } from '@/lib/utils'
 import RentalDetailClient from './RentalDetailClient'
 
 export default async function RentalDetailPage({ params }: { params: Promise<{ id: string }> }) {
@@ -19,7 +20,7 @@ export default async function RentalDetailPage({ params }: { params: Promise<{ i
 
   if (!rental) notFound()
 
-  const profileMap = Object.fromEntries((profilesRaw ?? []).map(p => [p.id, p.name]))
+  const profileMap = createProfileNameMap(profilesRaw)
 
   return (
     <RentalDetailClient

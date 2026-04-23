@@ -1,6 +1,8 @@
 import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { redirect } from 'next/navigation'
+import { createProfileNameMap } from '@/lib/utils'
+import { isAdminOrManager } from '@/lib/permissions'
 import ProjectsClient from './ProjectsClient'
 
 export default async function ProjectsPage() {
@@ -10,7 +12,7 @@ export default async function ProjectsPage() {
 
   const admin = createAdminClient()
   const { data: profile } = await admin.from('profiles').select('id, role, name').eq('id', user.id).single()
-  const isAdmin = profile?.role === 'admin' || profile?.role === 'manager'
+  const isAdmin = isAdminOrManager(profile?.role)
 
   // 프로젝트 목록 — sales join으로 단계/매출 정보 포함
   const [{ data: projectsRaw }, { data: profiles }] = await Promise.all([
@@ -24,7 +26,7 @@ export default async function ProjectsPage() {
     admin.from('profiles').select('id, name'),
   ])
 
-  const profileMap = Object.fromEntries((profiles ?? []).map(p => [p.id, p.name]))
+  const profileMap = createProfileNameMap(profiles)
 
   const projects = (projectsRaw ?? []).map((p: any) => {
     const sale = (p.sales ?? [])[0] ?? null

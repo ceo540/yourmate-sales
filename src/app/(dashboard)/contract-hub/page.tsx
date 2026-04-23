@@ -1,6 +1,7 @@
 import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { redirect } from 'next/navigation'
+import { createProfileMap } from '@/lib/utils'
 import ContractHubClient from './ContractHubClient'
 
 export default async function ContractHubPage() {
@@ -33,7 +34,7 @@ export default async function ContractHubPage() {
     admin.from('business_entities').select('id, name').order('name'),
   ])
 
-  const profileMap = Object.fromEntries((profiles ?? []).map(p => [p.id, p]))
+  const profileMap = createProfileMap(profiles)
   const entityMap = Object.fromEntries((entities ?? []).map(e => [e.id, e]))
 
   // 수금 일정 조회

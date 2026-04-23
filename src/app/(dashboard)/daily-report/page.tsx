@@ -1,6 +1,7 @@
 import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { redirect } from 'next/navigation'
+import { isAdminOrManager } from '@/lib/permissions'
 import DailyReportClient from './DailyReportClient'
 
 export default async function DailyReportPage() {
@@ -10,7 +11,7 @@ export default async function DailyReportPage() {
 
   const admin = createAdminClient()
   const { data: profile } = await supabase.from('profiles').select('id, role, name').eq('id', user.id).single()
-  const isAdmin = profile?.role === 'admin' || profile?.role === 'manager'
+  const isAdmin = isAdminOrManager(profile?.role)
   const today = new Date().toISOString().slice(0, 10)
 
   // 내 담당 업무 목록 (링크용)

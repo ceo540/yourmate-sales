@@ -3,6 +3,7 @@
 import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { revalidatePath } from 'next/cache'
+import { createProfileNameMap } from '@/lib/utils'
 
 export async function createLog(saleId: string, content: string, logType: string, contactedAt?: string) {
   const supabase = await createClient()
@@ -60,7 +61,7 @@ export async function getSaleLogs(saleId: string) {
   let profileMap: Record<string, string> = {}
   if (authorIds.length > 0) {
     const { data: profiles } = await admin.from('profiles').select('id, name').in('id', authorIds)
-    profileMap = Object.fromEntries((profiles ?? []).map((p: any) => [p.id, p.name]))
+    profileMap = createProfileNameMap(profiles)
   }
 
   return data.map((l: any) => ({

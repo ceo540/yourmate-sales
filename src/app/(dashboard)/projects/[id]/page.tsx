@@ -1,6 +1,8 @@
 import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { notFound, redirect } from 'next/navigation'
+import { createProfileMap } from '@/lib/utils'
+import { isAdminOrManager } from '@/lib/permissions'
 import ProjectHubClient from './ProjectHubClient'
 
 export default async function ProjectPage({ params }: { params: Promise<{ id: string }> }) {
@@ -17,7 +19,7 @@ export default async function ProjectPage({ params }: { params: Promise<{ id: st
   ])
   if (!project) notFound()
 
-  const isAdmin = profile?.role === 'admin' || profile?.role === 'manager'
+  const isAdmin = isAdminOrManager(profile?.role)
 
   const [
     { data: membersRaw },
@@ -56,7 +58,7 @@ export default async function ProjectPage({ params }: { params: Promise<{ id: st
       : Promise.resolve({ data: [] }),
   ])
 
-  const profileMap = Object.fromEntries((profiles ?? []).map(p => [p.id, p]))
+  const profileMap = createProfileMap(profiles)
   const entityMap = Object.fromEntries((entities ?? []).map(e => [e.id, e.name]))
 
   const members = (membersRaw ?? []).map((m: any) => ({
@@ -153,6 +155,7 @@ export default async function ProjectPage({ params }: { params: Promise<{ id: st
           notes: project.notes ?? null,
           customer_id: project.customer_id ?? null,
           pm_id: project.pm_id ?? null,
+          linked_calendar_events: (project.linked_calendar_events as any[]) ?? [],
         }}
         members={members}
         contracts={contracts}

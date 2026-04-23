@@ -1,5 +1,6 @@
 import { createAdminClient } from '@/lib/supabase/admin'
 import { createClient } from '@/lib/supabase/server'
+import { isAdminOrManager } from '@/lib/permissions'
 import AttendanceClient from './AttendanceClient'
 import { AttendanceRecord, Holiday, WorkSchedule } from './actions'
 
@@ -11,7 +12,7 @@ export default async function AttendancePage() {
   const { data: profile } = await supabase
     .from('profiles').select('role, name').eq('id', user!.id).single()
 
-  const isAdmin = profile?.role === 'admin' || profile?.role === 'manager'
+  const isAdmin = isAdminOrManager(profile?.role)
 
   const [{ data: monthsRaw }, { data: holidaysRaw }, { data: schedulesRaw }] = await Promise.all([
     supabase.from('attendance_records').select('year_month').order('year_month', { ascending: false }),

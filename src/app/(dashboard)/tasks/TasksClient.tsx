@@ -1,6 +1,7 @@
 'use client'
 import { useState, useTransition } from 'react'
 import { createTask, updateTaskStatus, deleteTask, updateTask } from '../sales/tasks/actions'
+import { createProfileMap } from '@/lib/utils'
 
 const STATUSES = ['할 일', '진행중', '검토중', '완료', '보류'] as const
 const PRIORITIES = ['낮음', '보통', '높음'] as const
@@ -530,7 +531,7 @@ function AddTaskForm({ profiles, sales, currentUserId, onCreated, onCancel }: {
     if (!fd.get('title')) return
     setSubmitting(true)
     await createTask(fd)
-    const profileMap = Object.fromEntries(profiles.map(p => [p.id, p]))
+    const profileMap = createProfileMap(profiles)
     const saleMap = Object.fromEntries(sales.map(s => [s.id, s]))
     const assigneeId = fd.get('assignee_id') as string
     const saleId = (fd.get('project_id') as string) || null

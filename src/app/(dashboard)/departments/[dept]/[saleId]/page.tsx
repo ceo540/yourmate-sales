@@ -3,17 +3,10 @@ import { createAdminClient } from '@/lib/supabase/admin'
 import { notFound, redirect } from 'next/navigation'
 import Link from 'next/link'
 import { DEPARTMENT_LABELS } from '@/types'
+import { createProfileMap } from '@/lib/utils'
+import { isAdminOrManager } from '@/lib/permissions'
+import { CONTRACT_STAGE_BADGE } from '@/lib/constants'
 import SaleHubClient from '@/app/(dashboard)/sales/[id]/SaleHubClient'
-
-const CONTRACT_STAGE_BADGE: Record<string, string> = {
-  '계약':       'bg-blue-50 text-blue-600',
-  '착수':       'bg-purple-50 text-purple-600',
-  '선금':       'bg-yellow-50 text-yellow-700',
-  '중도금':     'bg-orange-50 text-orange-600',
-  '완수':       'bg-teal-50 text-teal-600',
-  '계산서발행': 'bg-indigo-50 text-indigo-600',
-  '잔금':       'bg-green-50 text-green-600',
-}
 
 export default async function DeptSalePage({
   params,
@@ -28,7 +21,7 @@ export default async function DeptSalePage({
 
   const admin = createAdminClient()
   const { data: profile } = await admin.from('profiles').select('id, role, name').eq('id', user.id).single()
-  const isAdmin = profile?.role === 'admin' || profile?.role === 'manager'
+  const isAdmin = isAdminOrManager(profile?.role)
 
   const { data: costPerm } = profile?.role !== 'admin'
     ? await admin.from('role_permissions').select('access_level').eq('role', profile?.role ?? 'member').eq('page_key', 'cost_internal').single()
@@ -55,7 +48,7 @@ export default async function DeptSalePage({
     admin.from('vendors').select('id, name, type').order('name'),
   ])
 
-  const profileMap = Object.fromEntries((profiles ?? []).map(p => [p.id, p]))
+  const profileMap = createProfileMap(profiles)
 
   const tasks = (rawTasks ?? []).map(t => ({
     ...t,
@@ -117,6 +110,7 @@ export default async function DeptSalePage({
           notes: sale.notes ?? null,
           project_overview: sale.project_overview ?? null,
           notion_page_id: (sale as any).notion_page_id ?? null,
+          share_token: (sale as any).share_token ?? null,
         }}
         tasks={tasks}
         logs={logs}

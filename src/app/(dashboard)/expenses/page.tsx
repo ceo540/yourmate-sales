@@ -1,5 +1,6 @@
 import { createClient } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
+import { createProfileNameMap } from '@/lib/utils'
 import ExpensesClient from './ExpensesClient'
 
 export default async function ExpensesPage() {
@@ -15,7 +16,7 @@ export default async function ExpensesPage() {
     supabase.from('profiles').select('id, name'),
   ])
 
-  const profileMap = Object.fromEntries((profilesRaw ?? []).map(p => [p.id, p.name]))
+  const profileMap = createProfileNameMap(profilesRaw)
 
   const expenses = (expensesRaw ?? []).map((e: any) => ({
     ...e,

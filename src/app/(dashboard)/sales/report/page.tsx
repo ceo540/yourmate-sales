@@ -2,7 +2,8 @@ import { createClient } from '@/lib/supabase/server'
 import Link from 'next/link'
 import { redirect } from 'next/navigation'
 import SalesReportClient from './SalesReportClient'
-import { parseDepartments } from '@/lib/utils'
+import { parseDepartments, createProfileMap } from '@/lib/utils'
+import { isAdminOrManager } from '@/lib/permissions'
 
 export default async function SalesReportPage() {
   const supabase = await createClient()
@@ -19,7 +20,7 @@ export default async function SalesReportPage() {
   ])
   const customers = (customersRaw ?? []) as { id: string; name: string; type: string }[]
 
-  const isAdmin = profile?.role === 'admin' || profile?.role === 'manager'
+  const isAdmin = isAdminOrManager(profile?.role)
   const myDepts = parseDepartments((profile as any)?.departments)
 
   let salesQuery = supabase
@@ -44,7 +45,7 @@ export default async function SalesReportPage() {
     ? await supabase.from('sale_costs').select('*').in('sale_id', saleIds)
     : { data: [] }
 
-  const profileMap = Object.fromEntries((profiles ?? []).map(p => [p.id, p]))
+  const profileMap = createProfileMap(profiles)
   const entityMap = Object.fromEntries((entities ?? []).map(e => [e.id, { id: e.id, name: e.name }]))
   const costsMap: Record<string, any[]> = {}
   for (const cost of (allCosts ?? [])) {

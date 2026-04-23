@@ -1,6 +1,8 @@
 import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { redirect } from 'next/navigation'
+import { createProfileMap } from '@/lib/utils'
+import { isAdminOrManager } from '@/lib/permissions'
 import LeadsClient from './LeadsClient'
 
 
@@ -24,7 +26,7 @@ export default async function LeadsPage({ searchParams }: { searchParams: any })
     admin.from('persons').select('id, name, phone, email, person_org_relations(id, dept, title, is_current, customers(id, name, region, type))').order('name'),
   ])
 
-  const profileMap = Object.fromEntries((profilesRaw ?? []).map(p => [p.id, p]))
+  const profileMap = createProfileMap(profilesRaw)
 
   // 담당자 맵 (person_id → 이름 + 현재 소속)
   const personMap = Object.fromEntries((personsRaw ?? []).map((p: any) => {
@@ -81,7 +83,7 @@ export default async function LeadsPage({ searchParams }: { searchParams: any })
         profiles={profilesRaw ?? []}
         persons={personOptions}
         currentUserId={user.id}
-        isAdmin={role === 'admin' || role === 'manager'}
+        isAdmin={isAdminOrManager(role)}
         initialClientOrg={initialClientOrg}
       />
     </div>

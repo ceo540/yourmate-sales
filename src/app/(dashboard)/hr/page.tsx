@@ -1,6 +1,7 @@
 import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { redirect } from 'next/navigation'
+import { isAdminOrManager } from '@/lib/permissions'
 import HrClient from './HrClient'
 
 function calcAnnualLeave(joinDate: string): number {
@@ -19,7 +20,7 @@ export default async function HrPage() {
   if (!user) redirect('/login')
 
   const { data: profile } = await supabase.from('profiles').select('role').eq('id', user.id).single()
-  const isAdmin = profile?.role === 'admin' || profile?.role === 'manager'
+  const isAdmin = isAdminOrManager(profile?.role)
 
   const admin = createAdminClient()
   const year = new Date().getFullYear()

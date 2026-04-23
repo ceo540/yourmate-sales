@@ -2,6 +2,7 @@ import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { redirect } from 'next/navigation'
 import Link from 'next/link'
+import { isAdmin as checkIsAdmin } from '@/lib/permissions'
 import DashboardMemo from './DashboardMemo'
 
 const SVC_COLOR: Record<string, string> = {
@@ -45,7 +46,7 @@ export default async function DashboardPage() {
 
   const admin = createAdminClient()
   const { data: profile } = await admin.from('profiles').select('id, role, name').eq('id', user.id).single()
-  const isAdmin = profile?.role === 'admin'
+  const isAdmin = checkIsAdmin(profile?.role)
 
   const now = new Date()
   const today = now.toISOString().slice(0, 10)
@@ -91,7 +92,7 @@ export default async function DashboardPage() {
     remindQ,
     projectsQ,
     revenueQ,
-    admin.from('rental_deliveries').select('id, rental_id, delivery_date, pickup_date')
+    admin.from('rental_deliveries').select('id, rental_id, delivery_date, pickup_date, location')
       .or('delivery_date.not.is.null,pickup_date.not.is.null')
       .gte('delivery_date', today).limit(5),
     admin.from('sos_concerts').select('id, name, year, month')
@@ -109,9 +110,9 @@ export default async function DashboardPage() {
   const calEvents: CalEv[] = []
   for (const d of deliveries ?? []) {
     if (d.delivery_date && d.delivery_date >= today)
-      calEvents.push({ id: `del-${d.id}`, title: '렌탈 배송', date: d.delivery_date, color: '#D97706' })
+      calEvents.push({ id: `del-${d.id}`, title: d.location ? `렌탈 배송 — ${d.location}` : '렌탈 배송', date: d.delivery_date, color: '#D97706' })
     if (d.pickup_date && d.pickup_date >= today)
-      calEvents.push({ id: `pick-${d.id}`, title: '렌탈 수거', date: d.pickup_date, color: '#EF4444' })
+      calEvents.push({ id: `pick-${d.id}`, title: d.location ? `렌탈 수거 — ${d.location}` : '렌탈 수거', date: d.pickup_date, color: '#EF4444' })
   }
   for (const c of concerts ?? []) {
     const mm = String(c.month).padStart(2, '0')

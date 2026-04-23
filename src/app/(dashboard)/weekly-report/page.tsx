@@ -1,5 +1,6 @@
 import { createClient } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
+import { isAdminOrManager } from '@/lib/permissions'
 import WeeklyReportClient from './WeeklyReportClient'
 import { getRecentWeeks } from './utils'
 
@@ -14,7 +15,7 @@ export default async function WeeklyReportPage() {
     .eq('id', user.id)
     .single()
 
-  const isAdmin = profile?.role === 'admin' || profile?.role === 'manager'
+  const isAdmin = isAdminOrManager(profile?.role)
 
   // 최근 8주치 보고서 조회
   const weeks = getRecentWeeks(8)

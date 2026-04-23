@@ -1,5 +1,6 @@
 import { createClient } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
+import { createProfileMap } from '@/lib/utils'
 import ReceivablesClient from './ReceivablesClient'
 
 export default async function ReceivablesPage() {
@@ -25,7 +26,7 @@ export default async function ReceivablesPage() {
     supabase.from('profiles').select('id, name'),
   ])
 
-  const profileMap = Object.fromEntries((profiles ?? []).map(p => [p.id, { id: p.id, name: p.name }]))
+  const profileMap = createProfileMap(profiles)
   const entityMap = Object.fromEntries((entities ?? []).map(e => [e.id, { id: e.id, name: e.name }]))
   const sales = (salesRaw ?? []).map((s: any) => ({
     ...s,

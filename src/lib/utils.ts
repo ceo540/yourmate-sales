@@ -61,3 +61,17 @@ export function parseDepartments(raw: unknown): string[] {
 export function fmt(n: number | null | undefined): string {
   return (n || 0).toLocaleString()
 }
+
+// id → 전체 프로필 객체 맵. FK 조인 대신 수동 조인 시 사용.
+export function createProfileMap<T extends { id: string }>(
+  items: readonly T[] | null | undefined
+): Record<string, T> {
+  return Object.fromEntries((items ?? []).map((p) => [p.id, p]))
+}
+
+// id → 이름 문자열 맵. 로그/메모에서 작성자 이름만 필요할 때.
+export function createProfileNameMap(
+  items: readonly { id: string; name: string | null }[] | null | undefined
+): Record<string, string> {
+  return Object.fromEntries((items ?? []).map((p) => [p.id, p.name ?? '']))
+}

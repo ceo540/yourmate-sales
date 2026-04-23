@@ -1,5 +1,6 @@
 import { createClient } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
+import { createProfileNameMap } from '@/lib/utils'
 import RentalsClient from './RentalsClient'
 
 export default async function RentalsPage() {
@@ -14,7 +15,7 @@ export default async function RentalsPage() {
     supabase.from('customers').select('id, name, type').order('name'),
   ])
 
-  const profileMap = Object.fromEntries((profilesRaw ?? []).map(p => [p.id, p.name]))
+  const profileMap = createProfileNameMap(profilesRaw)
 
   // 렌탈별 품목 그룹핑
   const itemsByRental: Record<string, typeof allItems> = {}

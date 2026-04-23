@@ -1,6 +1,7 @@
 import { createClient } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
 import Link from 'next/link'
+import { isAdmin as checkIsAdmin } from '@/lib/permissions'
 
 const FEATURE_GROUPS = [
   {
@@ -168,7 +169,7 @@ export default async function AboutPage() {
   if (!user) redirect('/login')
 
   const { data: profile } = await supabase.from('profiles').select('role, name').eq('id', user.id).single()
-  const isAdmin = profile?.role === 'admin'
+  const isAdmin = checkIsAdmin(profile?.role)
 
   const visibleGroups = FEATURE_GROUPS.map(group => ({
     ...group,
