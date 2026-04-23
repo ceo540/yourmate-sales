@@ -9,10 +9,14 @@ import {
   updateProjectName, updateCustomerContact, addProjectMember, removeProjectMember, linkSaleToProject,
   togglePaymentReceived, addPaymentSchedule, deletePaymentSchedule,
   addSaleCost, deleteSaleCost, updateContractStage, updateContractProgressStatus,
-  updateContractInfo, createTaskForProject,
+  updateContractInfo, createTaskForProject, deleteProject, listProjectDropboxFiles,
+  linkCalendarEvent, unlinkCalendarEvent, createAndLinkCalendarEvent,
 } from './project-actions'
-import { updateTaskStatus, deleteTask, updateTask } from '../../sales/tasks/actions'
+const CALENDAR_LABELS: Record<string, string> = {
+  main: '개인/전체', sos: '사운드오브스쿨', rental: '렌탈일정', artqium: '아트키움',
+}
 import ProjectClaudeChat from '@/components/ProjectClaudeChat'
+import { updateTaskStatus, deleteTask, updateTask } from '../../sales/tasks/actions'
 
 // ── 상수 ──────────────────────────────────────────────────────────────────────
 type LogType = '통화' | '이메일' | '방문' | '미팅' | '출장' | '내부회의' | '메모' | '기타'
@@ -101,10 +105,12 @@ interface Log {
   sale_id?: string | null; lead_id?: string | null
 }
 interface CostItem { id: string; item: string; amount: number; category: string; sale_id: string }
+interface LinkedCalEvent { id: string; calendarKey: string; title: string; date: string; color: string }
 interface Project {
   id: string; name: string; service_type: string | null; department: string | null
   status: string; dropbox_url: string | null; memo: string | null; notes: string | null
   customer_id: string | null; pm_id: string | null
+  linked_calendar_events?: LinkedCalEvent[]
 }
 interface Lead {
   id: string; lead_id: string; project_name: string | null
@@ -424,7 +430,7 @@ function ContractCard({
                   client_org: contract.client_org ?? '', contract_split_reason: contract.contract_split_reason ?? '',
                   inflow_date: contract.inflow_date ?? '', payment_date: contract.payment_date ?? '', dropbox_url: contract.dropbox_url ?? '' })
                 setEditingInfo(true)
-              }} className="text-xs text-gray-300 hover:text-gray-600 ml-2 flex-shrink-0">✏ 편집</button>
+              }} className="text-xs text-gray-500 hover:text-gray-800 ml-2 flex-shrink-0">✏ 편집</button>
             </div>
           )}
 
@@ -640,7 +646,7 @@ function LogForm({ contracts, onSubmit, isPending }: {
 // ── 메인 컴포넌트 ─────────────────────────────────────────────────────────────
 export default function ProjectHubClient({
   project, members, contracts: initialContracts, tasks: initialTasks, logs: initialLogs,
-  costs: initialCosts, profiles, customers, customer, leads, salesOptions, entities, persons, isAdmin,
+  costs: initialCosts, profiles, customers, customer, leads, salesOptions, entities, persons, isAdmin, currentUserId,
 }: Props) {
   const router = useRouter()
   const [localContracts, setLocalContracts] = useState(initialContracts)
@@ -652,8 +658,32 @@ export default function ProjectHubClient({
   const [isPending, startTransition] = useTransition()
 
   const [localName, setLocalName] = useState(project.name)
+
+  // 캘린더 피커용 타입
+  type GCalItem = { id: string; title: string; date: string; calendarKey: string; color: string }
   const [editingName, setEditingName] = useState(false)
   const [nameInput, setNameInput] = useState(project.name)
+  const [confirmDelete, setConfirmDelete] = useState(false)
+
+  // 드롭박스 파일 목록
+  type DropboxItem = { name: string; path: string; type: 'file' | 'folder' }
+  const [dbxFiles, setDbxFiles] = useState<DropboxItem[] | null>(null)
+  const [dbxLoading, setDbxLoading] = useState(false)
+
+  // 캘린더 연결 상태
+  const [localLinkedEvents, setLocalLinkedEvents] = useState<LinkedCalEvent[]>(project.linked_calendar_events ?? [])
+  const [showCalCreate, setShowCalCreate] = useState(false)
+  const [showCalPicker, setShowCalPicker] = useState(false)
+  const [allCalEvents, setAllCalEvents] = useState<GCalItem[]>([])
+  const [calPickerLoading, setCalPickerLoading] = useState(false)
+  const [calCreateKey, setCalCreateKey] = useState('main')
+  const [calCreateTitle, setCalCreateTitle] = useState('')
+  const [calCreateDate, setCalCreateDate] = useState('')
+  const [calCreateStart, setCalCreateStart] = useState('')
+  const [calCreateEnd, setCalCreateEnd] = useState('')
+  const [calCreateAllDay, setCalCreateAllDay] = useState(false)
+  const [calCreateDesc, setCalCreateDesc] = useState('')
+  const [calCreateLoading, setCalCreateLoading] = useState(false)
 
   // 탭
   const [activeTab, setActiveTab] = useState<'work' | 'contract'>('work')
@@ -661,7 +691,6 @@ export default function ProjectHubClient({
   // 업무 탭 상태
   const [logFilter, setLogFilter] = useState('전체')
   const [taskFilter, setTaskFilter] = useState<'pending' | 'all'>('pending')
-  const [claudeOpen, setClaudeOpen] = useState(false)
   const [showTaskForm, setShowTaskForm] = useState(false)
   const [newTaskTitle, setNewTaskTitle] = useState('')
   const [newTaskDesc, setNewTaskDesc] = useState('')
@@ -926,14 +955,32 @@ export default function ProjectHubClient({
                 </div>
               </div>
             </div>
-            <div className="flex-shrink-0 relative" ref={statusMenuRef}>
+            <div className="flex items-center gap-2 flex-shrink-0">
+              {(isAdmin || members.some(m => m.profile_id === currentUserId && m.role === 'PM')) && (
+                confirmDelete ? (
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-xs text-red-500">정말 삭제?</span>
+                    <button onClick={() => startTransition(async () => {
+                      const res = await deleteProject(project.id)
+                      if (res.error) { alert(`삭제 실패: ${res.error}`); return }
+                      router.push('/projects')
+                    })} disabled={isPending}
+                      className="text-xs px-2 py-1 bg-red-500 text-white rounded-lg hover:bg-red-600 disabled:opacity-40">삭제</button>
+                    <button onClick={() => setConfirmDelete(false)} className="text-xs px-2 py-1 border border-gray-200 rounded-lg text-gray-500">취소</button>
+                  </div>
+                ) : (
+                  <button onClick={() => setConfirmDelete(true)}
+                    className="text-xs px-2 py-1 border border-red-200 text-red-400 rounded-lg hover:bg-red-50 transition-colors">삭제</button>
+                )
+              )}
+              <div className="relative" ref={statusMenuRef}>
               <button onClick={() => setShowStatusMenu(s => !s)}
                 className={`text-sm px-3 py-1.5 rounded-full font-medium cursor-pointer hover:opacity-80 transition-opacity ${
                   localStatus === '완료' ? 'bg-green-100 text-green-700' : localStatus === '보류' ? 'bg-red-100 text-red-500' : 'bg-blue-100 text-blue-700'
                 }`}>{localStatus} ▾</button>
               {showStatusMenu && (
                 <div className="absolute right-0 top-full mt-1 bg-white border border-gray-200 rounded-xl shadow-lg z-30 py-1 min-w-32">
-                  {[...PIPELINE, '보류'].map(s => (
+                  {[...PIPELINE, '보류', '취소'].map(s => (
                     <button key={s} onClick={() => handleStatusChange(s)}
                       className={`w-full text-left px-3 py-2 text-sm hover:bg-gray-50 ${localStatus === s ? 'font-semibold text-gray-900' : 'text-gray-600'}`}>
                       {localStatus === s && '✓ '}{s}
@@ -941,6 +988,7 @@ export default function ProjectHubClient({
                   ))}
                 </div>
               )}
+              </div>
             </div>
           </div>
           <div className="flex items-center mt-3">
@@ -1231,21 +1279,200 @@ export default function ProjectHubClient({
                 </div>
               </div>
 
-              {/* Claude */}
+              {/* 캘린더 일정 */}
               <div className="bg-white border border-gray-100 rounded-xl overflow-hidden">
-                <button onClick={() => setClaudeOpen(o => !o)} className="w-full flex items-center justify-between px-4 py-3 hover:bg-gray-50">
-                  <h2 className="text-sm font-semibold text-gray-800">Claude 협업</h2>
+                <div className="flex items-center justify-between px-4 py-3 border-b border-gray-50">
+                  <h2 className="text-sm font-semibold text-gray-800">캘린더 일정</h2>
                   <div className="flex items-center gap-2">
-                    <span className="text-xs text-gray-400">프로젝트 맥락 자동 주입</span>
-                    <span className="text-gray-300 text-xs">{claudeOpen ? '▲' : '▼'}</span>
+                    <a href="/calendar" className="text-xs text-gray-400 hover:text-gray-700">캘린더 →</a>
+                    <button onClick={() => { setShowCalCreate(s => !s); setShowCalPicker(false) }}
+                      className="text-xs px-2 py-1 rounded hover:bg-gray-50 text-gray-400 hover:text-gray-700">+ 생성</button>
+                    <button onClick={async () => {
+                      setShowCalPicker(s => !s); setShowCalCreate(false)
+                      if (!showCalPicker && allCalEvents.length === 0) {
+                        setCalPickerLoading(true)
+                        const now = new Date(); const y = now.getFullYear(); const m = now.getMonth()
+                        const [a, b] = await Promise.all([
+                          fetch(`/api/calendar/events?year=${y}&month=${m}`).then(r => r.json()),
+                          fetch(`/api/calendar/events?year=${m === 11 ? y + 1 : y}&month=${m === 11 ? 0 : m + 1}`).then(r => r.json()),
+                        ])
+                        const today = now.toISOString().slice(0, 10)
+                        setAllCalEvents([...(a.events ?? []), ...(b.events ?? [])].filter((e: GCalItem) => e.date >= today).sort((a: GCalItem, b: GCalItem) => a.date.localeCompare(b.date)))
+                        setCalPickerLoading(false)
+                      }
+                    }} className="text-xs px-2 py-1 rounded hover:bg-gray-50 text-gray-400 hover:text-gray-700">연결</button>
                   </div>
-                </button>
-                {claudeOpen && (
-                  <div className="border-t border-gray-50">
-                    <ProjectClaudeChat saleId={localContracts[0]?.id} serviceType={project.service_type} projectName={project.name} dropboxUrl={project.dropbox_url} />
+                </div>
+
+                {/* 생성 폼 */}
+                {showCalCreate && (
+                  <div className="px-4 py-3 bg-yellow-50 border-b border-yellow-100 space-y-2">
+                    <div className="flex gap-2">
+                      <select value={calCreateKey} onChange={e => setCalCreateKey(e.target.value)}
+                        className="text-xs border border-yellow-200 rounded-lg px-2 py-1.5 bg-white focus:outline-none">
+                        {Object.entries(CALENDAR_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+                      </select>
+                      <input value={calCreateTitle} onChange={e => setCalCreateTitle(e.target.value)}
+                        placeholder="일정 제목 *" autoFocus
+                        className="flex-1 text-sm border border-yellow-200 rounded-lg px-2.5 py-1.5 bg-white focus:outline-none focus:border-yellow-400" />
+                    </div>
+                    <div className="flex gap-2 items-center flex-wrap">
+                      <input type="date" value={calCreateDate} onChange={e => setCalCreateDate(e.target.value)}
+                        className="text-xs border border-yellow-200 rounded-lg px-2 py-1.5 bg-white focus:outline-none" />
+                      <label className="flex items-center gap-1 text-xs text-gray-500">
+                        <input type="checkbox" checked={calCreateAllDay} onChange={e => setCalCreateAllDay(e.target.checked)} />
+                        종일
+                      </label>
+                      {!calCreateAllDay && <>
+                        <input type="time" value={calCreateStart} onChange={e => setCalCreateStart(e.target.value)}
+                          className="text-xs border border-yellow-200 rounded-lg px-2 py-1.5 bg-white focus:outline-none" />
+                        <span className="text-xs text-gray-400">~</span>
+                        <input type="time" value={calCreateEnd} onChange={e => setCalCreateEnd(e.target.value)}
+                          className="text-xs border border-yellow-200 rounded-lg px-2 py-1.5 bg-white focus:outline-none" />
+                      </>}
+                    </div>
+                    <textarea value={calCreateDesc} onChange={e => setCalCreateDesc(e.target.value)}
+                      placeholder="메모 (선택)"
+                      rows={2}
+                      className="w-full text-xs border border-yellow-200 rounded-lg px-2.5 py-1.5 bg-white focus:outline-none focus:border-yellow-400 resize-none" />
+                    <div className="flex gap-2">
+                      <button onClick={async () => {
+                        if (!calCreateTitle.trim() || !calCreateDate) return
+                        setCalCreateLoading(true)
+                        const res = await createAndLinkCalendarEvent(project.id, calCreateKey, {
+                          title: calCreateTitle.trim(), date: calCreateDate,
+                          startTime: calCreateAllDay ? undefined : calCreateStart || undefined,
+                          endTime: calCreateAllDay ? undefined : calCreateEnd || undefined,
+                          isAllDay: calCreateAllDay,
+                          description: calCreateDesc.trim() || undefined,
+                        })
+                        setCalCreateLoading(false)
+                        if (res.error) { alert('생성 실패: ' + res.error); return }
+                        setLocalLinkedEvents(prev => [...prev, {
+                          id: `tmp-${Date.now()}`, calendarKey: calCreateKey,
+                          title: calCreateTitle.trim(), date: calCreateDate,
+                          color: '#3B82F6',
+                        }])
+                        setCalCreateTitle(''); setCalCreateDate(''); setCalCreateStart(''); setCalCreateEnd(''); setCalCreateDesc(''); setCalCreateAllDay(false)
+                        setShowCalCreate(false)
+                      }} disabled={calCreateLoading || !calCreateTitle.trim() || !calCreateDate}
+                        className="px-3 py-1.5 text-xs font-semibold rounded-lg hover:opacity-80 disabled:opacity-40"
+                        style={{ backgroundColor: '#FFCE00', color: '#121212' }}>
+                        {calCreateLoading ? '생성 중...' : '생성'}
+                      </button>
+                      <button onClick={() => setShowCalCreate(false)} className="px-3 py-1.5 text-xs border border-gray-200 rounded-lg text-gray-500">취소</button>
+                    </div>
+                  </div>
+                )}
+
+                {/* 기존 일정 연결 피커 */}
+                {showCalPicker && (
+                  <div className="border-b border-gray-100 max-h-52 overflow-y-auto">
+                    {calPickerLoading ? (
+                      <p className="text-xs text-gray-400 px-4 py-3 text-center">불러오는 중...</p>
+                    ) : allCalEvents.length === 0 ? (
+                      <p className="text-xs text-gray-400 px-4 py-3 text-center">이달·다음달 일정 없음</p>
+                    ) : allCalEvents.map(ev => {
+                      const linked = localLinkedEvents.find(e => e.id === ev.id)
+                      return (
+                        <div key={ev.id} className="flex items-center gap-3 px-4 py-2 hover:bg-gray-50">
+                          <div className="w-1 h-5 rounded-full flex-shrink-0" style={{ backgroundColor: ev.color }} />
+                          <div className="flex-1 min-w-0">
+                            <p className="text-xs text-gray-700 truncate">{ev.title}</p>
+                            <p className="text-xs text-gray-400">{ev.date.slice(5).replace('-', '/')}</p>
+                          </div>
+                          <button onClick={() => {
+                            if (linked) {
+                              startTransition(() => unlinkCalendarEvent(project.id, ev.id))
+                              setLocalLinkedEvents(prev => prev.filter(e => e.id !== ev.id))
+                            } else {
+                              const newEv: LinkedCalEvent = { id: ev.id, calendarKey: ev.calendarKey, title: ev.title, date: ev.date, color: ev.color }
+                              startTransition(() => linkCalendarEvent(project.id, newEv))
+                              setLocalLinkedEvents(prev => [...prev, newEv])
+                            }
+                          }} className={`text-xs px-2 py-0.5 rounded-full flex-shrink-0 transition-colors ${linked ? 'bg-yellow-100 text-yellow-700' : 'border border-gray-200 text-gray-400 hover:border-gray-400'}`}>
+                            {linked ? '연결됨' : '+ 연결'}
+                          </button>
+                        </div>
+                      )
+                    })}
+                  </div>
+                )}
+
+                {/* 연결된 일정 목록 */}
+                {localLinkedEvents.length === 0 ? (
+                  <p className="text-xs text-gray-400 px-4 py-4 text-center">연결된 일정 없음 — 위 버튼으로 생성하거나 연결하세요</p>
+                ) : (
+                  <div className="divide-y divide-gray-50">
+                    {[...localLinkedEvents].sort((a, b) => a.date.localeCompare(b.date)).map(ev => (
+                      <div key={ev.id} className="flex items-center gap-3 px-4 py-2.5 group">
+                        <div className="w-1 h-6 rounded-full flex-shrink-0" style={{ backgroundColor: ev.color }} />
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm text-gray-800 truncate">{ev.title}</p>
+                        </div>
+                        <span className="text-xs text-gray-400 flex-shrink-0">{ev.date.slice(5).replace('-', '/')}</span>
+                        <button onClick={() => {
+                          startTransition(() => unlinkCalendarEvent(project.id, ev.id))
+                          setLocalLinkedEvents(prev => prev.filter(e => e.id !== ev.id))
+                        }} className="text-gray-200 hover:text-red-400 text-xs opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0">✕</button>
+                      </div>
+                    ))}
                   </div>
                 )}
               </div>
+
+              {/* 관련 파일 (드롭박스) */}
+              {dropboxUrl && (
+                <div className="bg-white border border-gray-100 rounded-xl overflow-hidden">
+                  <div className="flex items-center justify-between px-4 py-3 border-b border-gray-50">
+                    <div className="flex items-center gap-2">
+                      <h2 className="text-sm font-semibold text-gray-800">관련 파일</h2>
+                      <a href={dropboxUrl} target="_blank" rel="noreferrer"
+                        className="text-xs text-blue-400 hover:text-blue-600">드롭박스 열기 →</a>
+                    </div>
+                    <button
+                      onClick={async () => {
+                        setDbxLoading(true)
+                        const files = await listProjectDropboxFiles(dropboxUrl)
+                        setDbxFiles(files)
+                        setDbxLoading(false)
+                      }}
+                      disabled={dbxLoading}
+                      className="text-xs text-gray-400 hover:text-gray-700 px-2 py-1 rounded hover:bg-gray-50 disabled:opacity-40">
+                      {dbxLoading ? '로딩...' : dbxFiles === null ? '불러오기' : '새로고침'}
+                    </button>
+                  </div>
+                  {dbxFiles === null ? (
+                    <p className="text-xs text-gray-400 px-4 py-4 text-center">위 버튼을 눌러 파일 목록을 불러오세요</p>
+                  ) : dbxFiles.length === 0 ? (
+                    <p className="text-xs text-gray-400 px-4 py-4 text-center">폴더가 비어 있습니다</p>
+                  ) : (
+                    <div className="divide-y divide-gray-50">
+                      {dbxFiles.map(f => {
+                        const isFolder = f.type === 'folder'
+                        const ext = f.name.split('.').pop()?.toLowerCase() ?? ''
+                        const icon = isFolder ? '📁' : ['pdf'].includes(ext) ? '📄' : ['jpg','jpeg','png','gif','webp'].includes(ext) ? '🖼' : ['xlsx','xls','csv'].includes(ext) ? '📊' : ['docx','doc'].includes(ext) ? '📝' : '📎'
+                        return (
+                          <div key={f.path} className="flex items-center gap-2.5 px-4 py-2.5 hover:bg-gray-50">
+                            <span className="text-sm flex-shrink-0">{icon}</span>
+                            <span className="text-sm text-gray-700 truncate flex-1">{f.name}</span>
+                            {isFolder && <span className="text-xs text-gray-400 flex-shrink-0">폴더</span>}
+                          </div>
+                        )
+                      })}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* AI 협업 창구 */}
+              <ProjectClaudeChat
+                saleId={localContracts[0]?.id}
+                serviceType={project.service_type}
+                projectName={localName}
+                dropboxUrl={dropboxUrl || null}
+              />
+
             </>
           )}
 
@@ -1581,9 +1808,23 @@ export default function ProjectHubClient({
                       </div>
                     </div>
                   ) : (
-                    <div className="flex items-center gap-1.5 justify-end">
-                      {project.dropbox_url ? <a href={project.dropbox_url} target="_blank" rel="noopener noreferrer" className="text-blue-500 hover:underline">연결됨 ↗</a> : <span className="text-gray-300">미연결</span>}
-                      <button onClick={() => setEditingDropbox(true)} className="text-gray-300 hover:text-gray-600 ml-1">✏</button>
+                    <div className="flex flex-col items-end gap-1">
+                      <div className="flex items-center gap-1.5">
+                        {dropboxUrl ? <a href={dropboxUrl} target="_blank" rel="noopener noreferrer" className="text-blue-500 hover:underline">연결됨 ↗</a> : <span className="text-gray-300">미연결</span>}
+                        <button onClick={() => setEditingDropbox(true)} className="text-gray-300 hover:text-gray-600 ml-1">✏</button>
+                      </div>
+                      {!dropboxUrl && localContracts.some(c => c.dropbox_url) && (
+                        <button
+                          onClick={() => startTransition(async () => {
+                            const contractUrl = localContracts.find(c => c.dropbox_url)?.dropbox_url ?? ''
+                            await updateProjectDropbox(project.id, contractUrl)
+                            setDropboxUrl(contractUrl)
+                          })}
+                          disabled={isPending}
+                          className="text-[10px] text-blue-400 hover:text-blue-600 underline">
+                          계약 Dropbox 가져오기
+                        </button>
+                      )}
                     </div>
                   )}
                 </div>

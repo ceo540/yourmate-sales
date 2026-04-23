@@ -13,7 +13,7 @@ export default async function CalendarPage() {
 
   const [{ data: deliveries }, { data: concerts }] = await Promise.all([
     supabase.from('rental_deliveries')
-      .select('id, rental_id, delivery_date, pickup_date')
+      .select('id, rental_id, delivery_date, pickup_date, location')
       .or('delivery_date.not.is.null,pickup_date.not.is.null'),
     admin.from('sos_concerts')
       .select('id, name, year, month')
@@ -26,7 +26,7 @@ export default async function CalendarPage() {
     if (d.delivery_date) {
       events.push({
         id: `del-${d.id}`,
-        title: '렌탈 배송',
+        title: d.location ? `렌탈 배송 — ${d.location}` : '렌탈 배송',
         date: d.delivery_date,
         type: 'rental_delivery',
         color: '#D97706',
@@ -36,7 +36,7 @@ export default async function CalendarPage() {
     if (d.pickup_date) {
       events.push({
         id: `pick-${d.id}`,
-        title: '렌탈 수거',
+        title: d.location ? `렌탈 수거 — ${d.location}` : '렌탈 수거',
         date: d.pickup_date,
         type: 'rental_pickup',
         color: '#EF4444',

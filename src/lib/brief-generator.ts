@@ -1,5 +1,23 @@
 import { createAdminClient } from './supabase/admin'
-import { createSaleFolder, uploadTextFile } from './dropbox'
+import { createSaleFolder, uploadTextFile, readDropboxFile } from './dropbox'
+
+const AI_NOTES_HEADER = '## AI 협업 노트'
+
+// 기존 brief.md에서 AI 협업 노트 섹션 추출 (재생성 시 보존용)
+function extractAiNotes(content: string): string {
+  const idx = content.indexOf(AI_NOTES_HEADER)
+  return idx !== -1 ? content.slice(idx).trimEnd() : ''
+}
+
+// brief.md에 AI 노트 한 줄 추가 (또는 섹션 신규 생성)
+export function appendAiNote(existingContent: string, note: string): string {
+  const date = new Date().toLocaleDateString('ko-KR', { year: 'numeric', month: '2-digit', day: '2-digit' }).replace(/\. /g, '-').replace('.', '')
+  const entry = `- [${date}] ${note}`
+  if (existingContent.includes(AI_NOTES_HEADER)) {
+    return existingContent.trimEnd() + '\n' + entry + '\n'
+  }
+  return existingContent.trimEnd() + `\n\n---\n\n${AI_NOTES_HEADER}\n\n${entry}\n`
+}
 
 interface LeadBriefParams {
   lead_id: string
@@ -108,5 +126,12 @@ export async function createOrUpdateLeadBrief(leadId: string): Promise<void> {
     channel: lead.channel,
   })
 
-  await uploadTextFile({ folderWebUrl: folderUrl, filename: 'brief.md', content }).catch(() => {})
+  // 기존 AI 협업 노트 보존 (DB 재생성 시 덮어쓰지 않도록)
+  const existingBrief = await readDropboxFile(
+    decodeURIComponent(folderUrl.replace('https://www.dropbox.com/home', '')).replace(/\/$/, '') + '/brief.md'
+  ).catch(() => null)
+  const aiNotes = existingBrief && !('error' in existingBrief) ? extractAiNotes(existingBrief.text) : ''
+  const finalContent = aiNotes ? content.trimEnd() + '\n\n---\n\n' + aiNotes : content
+
+  await uploadTextFile({ folderWebUrl: folderUrl, filename: 'brief.md', content: finalContent }).catch(() => {})
 }

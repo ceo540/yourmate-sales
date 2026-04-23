@@ -7,6 +7,7 @@ import { createSaleFolder, renameDropboxFolder, renameDropboxFolderFull, moveDro
 import { syncLeadToCustomerDB } from '@/lib/customer-sync'
 import { notifyLeadConverted } from '@/lib/channeltalk'
 import { createOrUpdateLeadBrief } from '@/lib/brief-generator'
+import { createEvent, CALENDAR_COLORS } from '@/lib/google-calendar'
 
 // YY-NNN 형식 고유번호 생성 (예: 26-009)
 async function generateProjectNumber(): Promise<string> {
@@ -162,6 +163,17 @@ export async function updateLead(id: string, data: Partial<{
     }
   }
   revalidatePath('/leads')
+}
+
+export async function refreshLeadBrief(id: string): Promise<{ ok: boolean; error?: string }> {
+  try {
+    await createOrUpdateLeadBrief(id)
+    revalidatePath('/leads')
+    return { ok: true }
+  } catch (e: unknown) {
+    const message = e instanceof Error ? e.message : String(e)
+    return { ok: false, error: message }
+  }
 }
 
 export async function deleteLead(id: string) {
@@ -471,4 +483,43 @@ export async function syncLeadDropboxFolderName(
   await supabase.from('leads').update({ dropbox_url: result.newUrl, updated_at: new Date().toISOString() }).eq('id', leadId)
   revalidatePath('/leads')
   return { newUrl: result.newUrl }
+}
+
+type LinkedCalEvent = { id: string; calendarKey: string; title: string; date: string; color: string }
+
+export async function linkLeadCalendarEvent(leadId: string, event: LinkedCalEvent): Promise<void> {
+  const admin = createAdminClient()
+  const { data: lead } = await admin.from('leads').select('linked_calendar_events').eq('id', leadId).single()
+  const current: LinkedCalEvent[] = (lead?.linked_calendar_events as LinkedCalEvent[]) ?? []
+  if (current.find(e => e.id === event.id)) return
+  await admin.from('leads').update({ linked_calendar_events: [...current, event] }).eq('id', leadId)
+  revalidatePath('/leads')
+}
+
+export async function unlinkLeadCalendarEvent(leadId: string, eventId: string): Promise<void> {
+  const admin = createAdminClient()
+  const { data: lead } = await admin.from('leads').select('linked_calendar_events').eq('id', leadId).single()
+  const current: LinkedCalEvent[] = (lead?.linked_calendar_events as LinkedCalEvent[]) ?? []
+  await admin.from('leads').update({ linked_calendar_events: current.filter(e => e.id !== eventId) }).eq('id', leadId)
+  revalidatePath('/leads')
+}
+
+export async function createAndLinkLeadCalendarEvent(
+  leadId: string,
+  calendarKey: string,
+  data: { title: string; date: string; startTime?: string; endTime?: string; description?: string; isAllDay?: boolean }
+): Promise<{ error?: string }> {
+  try {
+    const ev = await createEvent(calendarKey, data)
+    await linkLeadCalendarEvent(leadId, {
+      id: ev.id ?? `ev-${Date.now()}`,
+      calendarKey,
+      title: data.title,
+      date: data.date,
+      color: CALENDAR_COLORS[calendarKey] ?? '#3B82F6',
+    })
+    return {}
+  } catch (e: unknown) {
+    return { error: e instanceof Error ? e.message : String(e) }
+  }
 }

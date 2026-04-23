@@ -3,7 +3,10 @@
 import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { revalidatePath } from 'next/cache'
-import { renameDropboxFolder } from '@/lib/dropbox'
+import { renameDropboxFolder, listDropboxFolder } from '@/lib/dropbox'
+import { createEvent, CALENDAR_COLORS } from '@/lib/google-calendar'
+import { createProfileNameMap } from '@/lib/utils'
+import { isAdminOrManager } from '@/lib/permissions'
 
 export async function createProjectLog(
   projectId: string,
@@ -57,7 +60,7 @@ export async function getProjectLogs(projectId: string) {
   let profileMap: Record<string, string> = {}
   if (authorIds.length > 0) {
     const { data: profiles } = await admin.from('profiles').select('id, name').in('id', authorIds)
-    profileMap = Object.fromEntries((profiles ?? []).map((p: any) => [p.id, p.name]))
+    profileMap = createProfileNameMap(profiles)
   }
   return data.map((l: any) => ({
     ...l,
@@ -246,6 +249,90 @@ export async function createTaskForProject(
   }
   revalidatePath(`/projects/${contractId}`)
   return { ...data, assignee }
+}
+
+type LinkedCalEvent = { id: string; calendarKey: string; title: string; date: string; color: string }
+
+export async function linkCalendarEvent(projectId: string, event: LinkedCalEvent) {
+  const admin = createAdminClient()
+  const { data: p } = await admin.from('projects').select('linked_calendar_events').eq('id', projectId).single()
+  const current: LinkedCalEvent[] = (p?.linked_calendar_events as LinkedCalEvent[]) ?? []
+  if (current.find(e => e.id === event.id)) return
+  await admin.from('projects').update({ linked_calendar_events: [...current, event] }).eq('id', projectId)
+  revalidatePath(`/projects/${projectId}`)
+}
+
+export async function unlinkCalendarEvent(projectId: string, eventId: string) {
+  const admin = createAdminClient()
+  const { data: p } = await admin.from('projects').select('linked_calendar_events').eq('id', projectId).single()
+  const current: LinkedCalEvent[] = (p?.linked_calendar_events as LinkedCalEvent[]) ?? []
+  await admin.from('projects').update({ linked_calendar_events: current.filter(e => e.id !== eventId) }).eq('id', projectId)
+  revalidatePath(`/projects/${projectId}`)
+}
+
+export async function createAndLinkCalendarEvent(
+  projectId: string,
+  calendarKey: string,
+  data: { title: string; date: string; startTime?: string; endTime?: string; description?: string; isAllDay?: boolean }
+): Promise<{ error?: string }> {
+  try {
+    const ev = await createEvent(calendarKey, data)
+    await linkCalendarEvent(projectId, {
+      id: ev.id ?? `ev-${Date.now()}`,
+      calendarKey,
+      title: data.title,
+      date: data.date,
+      color: CALENDAR_COLORS[calendarKey] ?? '#3B82F6',
+    })
+    return {}
+  } catch (e: unknown) {
+    return { error: e instanceof Error ? e.message : String(e) }
+  }
+}
+
+export async function listProjectDropboxFiles(
+  dropboxUrl: string
+): Promise<{ name: string; path: string; type: 'file' | 'folder' }[]> {
+  const WEB_BASE = 'https://www.dropbox.com/home'
+  if (!dropboxUrl.startsWith(WEB_BASE)) return []
+  const relativePath = decodeURIComponent(dropboxUrl.replace(WEB_BASE, ''))
+  return listDropboxFolder(relativePath)
+}
+
+export async function deleteProject(projectId: string): Promise<{ error?: string }> {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return { error: 'Unauthorized' }
+
+  const admin = createAdminClient()
+  const { data: profile } = await admin.from('profiles').select('role').eq('id', user.id).single()
+  const isAdminRole = isAdminOrManager(profile?.role)
+
+  if (!isAdminRole) {
+    const { data: membership } = await admin
+      .from('project_members')
+      .select('role')
+      .eq('project_id', projectId)
+      .eq('profile_id', user.id)
+      .single()
+    if (membership?.role !== 'PM') return { error: '관리자 또는 PM만 삭제 가능합니다' }
+  }
+
+  // 연관 데이터 정리 — 각 단계 실패 시 명확한 메시지 반환
+  const { error: memErr } = await admin.from('project_members').delete().eq('project_id', projectId)
+  if (memErr) return { error: `멤버 정리 실패: ${memErr.message}` }
+
+  const { error: logErr } = await admin.from('project_logs').delete().eq('project_id', projectId)
+  if (logErr) return { error: `로그 정리 실패: ${logErr.message}` }
+
+  const { error: saleErr } = await admin.from('sales').update({ project_id: null }).eq('project_id', projectId)
+  if (saleErr) return { error: `매출 연결 해제 실패: ${saleErr.message}` }
+
+  const { error: projErr } = await admin.from('projects').delete().eq('id', projectId)
+  if (projErr) return { error: `프로젝트 삭제 실패: ${projErr.message}` }
+
+  revalidatePath('/projects')
+  return {}
 }
 
 export async function updateCustomerContact(

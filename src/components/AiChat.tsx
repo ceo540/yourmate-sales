@@ -1,6 +1,6 @@
 'use client'
 import { useState, useRef, useEffect } from 'react'
-import { useRouter } from 'next/navigation'
+import { useRouter, usePathname } from 'next/navigation'
 
 type ChatMode = 'new-sale' | 'new-lead' | 'update' | 'chat' | null
 
@@ -34,6 +34,7 @@ interface Message {
 }
 
 const INIT_MSG = '뭐 할 거야?'
+const PROJECT_INIT_MSG = '이 프로젝트 뭐 도와줄까?'
 
 const EXAMPLES: Record<string, string[]> = {
   'new-sale':  ['OO학교 행사운영 2천만원 계약 체결했어', 'OO기관 납품설치 1500만원, 수금 50% 완료'],
@@ -73,6 +74,8 @@ export default function AiChat() {
   const [loading, setLoading] = useState(false)
   const [creatingId, setCreatingId] = useState<number | null>(null)
   const [creatingLeadId, setCreatingLeadId] = useState<number | null>(null)
+  const [savingBriefId, setSavingBriefId] = useState<number | null>(null)
+  const [savedBriefIds, setSavedBriefIds] = useState<Set<number>>(new Set())
   const [imageAttachment, setImageAttachment] = useState<{ base64: string; mediaType: string; preview: string } | null>(null)
   const [reminders, setReminders] = useState<{ id: string; lead_id: string; client_org: string | null; remind_date: string; status: string }[]>([])
   const [remindersChecked, setRemindersChecked] = useState(false)
@@ -80,11 +83,20 @@ export default function AiChat() {
   const inputRef = useRef<HTMLTextAreaElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const router = useRouter()
+  const pathname = usePathname()
+
+  const pathParts = pathname.split('/')
+  const projectsIdx = pathParts.indexOf('projects')
+  const projectId = projectsIdx !== -1 && pathParts[projectsIdx + 1] ? pathParts[projectsIdx + 1] : null
+  const isLeadsPage = pathname.startsWith('/leads')
+
+  const storageKey = projectId ? `bbangbbangi-msg-project-${projectId}` : 'bbangbbangi-messages'
+  const storageModeKey = projectId ? `bbangbbangi-mode-project-${projectId}` : 'bbangbbangi-mode'
 
   useEffect(() => {
     try {
-      const saved = localStorage.getItem('bbangbbangi-messages')
-      const savedMode = localStorage.getItem('bbangbbangi-mode') as ChatMode
+      const saved = localStorage.getItem(storageKey)
+      const savedMode = localStorage.getItem(storageModeKey) as ChatMode
       if (saved) {
         const parsed = JSON.parse(saved) as Message[]
         if (parsed.length > 0) {
@@ -94,15 +106,17 @@ export default function AiChat() {
         }
       }
     } catch { /* ignore */ }
-    setMessages([{ role: 'assistant', content: INIT_MSG }])
-  }, [])
+    const initMsg = projectId ? PROJECT_INIT_MSG : INIT_MSG
+    setMessages([{ role: 'assistant', content: initMsg }])
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pathname])
 
   useEffect(() => {
     if (messages.length === 0) return
     try {
-      localStorage.setItem('bbangbbangi-messages', JSON.stringify(messages))
+      localStorage.setItem(storageKey, JSON.stringify(messages))
     } catch { /* ignore */ }
-  }, [messages])
+  }, [messages, storageKey])
 
   useEffect(() => {
     if (open) setTimeout(() => inputRef.current?.focus(), 100)
@@ -123,16 +137,17 @@ export default function AiChat() {
     const found = MODES.find(x => x.id === m)
     if (!found) return
     setMode(m)
-    localStorage.setItem('bbangbbangi-mode', m || '')
+    localStorage.setItem(storageModeKey, m || '')
     setMessages(prev => [...prev, { role: 'assistant', content: found.reply }])
     setTimeout(() => inputRef.current?.focus(), 100)
   }
 
   function reset() {
-    localStorage.removeItem('bbangbbangi-messages')
-    localStorage.removeItem('bbangbbangi-mode')
+    localStorage.removeItem(storageKey)
+    localStorage.removeItem(storageModeKey)
     setMode(null)
-    setMessages([{ role: 'assistant', content: INIT_MSG }])
+    const initMsg = projectId ? PROJECT_INIT_MSG : INIT_MSG
+    setMessages([{ role: 'assistant', content: initMsg }])
   }
 
   const handleImageSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -188,6 +203,7 @@ export default function AiChat() {
             } : {}),
           })),
           mode: activeMode,
+          projectId: projectId ?? undefined,
         }),
       })
       const data = await res.json()
@@ -252,6 +268,20 @@ export default function AiChat() {
     setCreatingLeadId(null)
   }
 
+  const handleSaveToBrief = async (msgIdx: number, content: string) => {
+    if (!projectId) return
+    setSavingBriefId(msgIdx)
+    try {
+      const res = await fetch('/api/claude/save-to-brief', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ projectId, note: content }),
+      })
+      if (res.ok) setSavedBriefIds(prev => new Set(prev).add(msgIdx))
+    } catch { /* ignore */ }
+    setSavingBriefId(null)
+  }
+
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault()
@@ -264,11 +294,11 @@ export default function AiChat() {
 
   return (
     <>
-      {/* 플로팅 버튼 */}
+      {/* 플로팅 버튼 - 모바일에서는 채팅창 열리면 숨김 */}
       <button
         onClick={() => setOpen(o => !o)}
-        className="fixed bottom-6 right-6 z-50 w-12 h-12 rounded-full shadow-lg flex items-center justify-center transition-all hover:scale-110"
-        style={{ backgroundColor: '#FFCE00' }}
+        className={`fixed bottom-6 right-6 z-50 rounded-full shadow-lg flex items-center justify-center transition-all hover:scale-110 ${open ? 'hidden md:flex w-12 h-12' : 'flex w-14 h-14 md:w-12 md:h-12'}`}
+        style={{ backgroundColor: '#FFCE00', bottom: 'max(24px, env(safe-area-inset-bottom, 24px))' }}
         title="AI 어시스턴트"
       >
         {open ? (
@@ -276,21 +306,42 @@ export default function AiChat() {
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M6 18L18 6M6 6l12 12" />
           </svg>
         ) : (
-          <svg className="w-5 h-5" fill="none" stroke="#121212" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z" />
-          </svg>
+          <>
+            <svg className="w-6 h-6 md:w-5 md:h-5" fill="none" stroke="#121212" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z" />
+            </svg>
+            {projectId && (
+              <span className="absolute -top-1 -right-1 w-3 h-3 rounded-full bg-blue-500 border-2 border-white" />
+            )}
+          </>
         )}
       </button>
 
-      {/* 채팅 패널 */}
+      {/* 채팅 패널 - 모바일: 전체화면, 데스크탑: 플로팅 */}
       {open && (
-        <div className={`fixed bottom-[88px] right-4 md:right-6 z-50 bg-white rounded-2xl shadow-2xl border border-gray-100 flex flex-col overflow-hidden transition-all duration-200 ${
-          expanded ? 'w-[calc(100vw-32px)] md:w-[680px] max-h-[80vh]' : 'w-[calc(100vw-32px)] md:w-[420px] max-h-[85vh] md:max-h-[85vh]'
-        }`}>
+        <div
+          className={`fixed z-50 bg-white flex flex-col overflow-hidden
+            inset-0
+            md:inset-auto md:bottom-[88px] md:right-4 lg:right-6
+            md:rounded-2xl md:shadow-2xl md:border md:border-gray-100
+            ${expanded ? 'md:w-[680px] md:max-h-[80vh]' : 'md:w-[420px] md:max-h-[85vh]'}
+          `}
+          style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}
+        >
           {/* 헤더 */}
           <div className="px-4 py-3 border-b border-gray-100 flex items-center gap-2 flex-shrink-0" style={{ backgroundColor: '#FFCE00' }}>
             <div className="w-2 h-2 rounded-full bg-green-500" />
             <span className="text-sm font-semibold text-gray-900">빵빵이 😎</span>
+            {projectId && (
+              <span className="text-xs px-2 py-0.5 rounded-full bg-blue-500/20 text-blue-900 font-medium">
+                📁 프로젝트
+              </span>
+            )}
+            {!projectId && isLeadsPage && (
+              <span className="text-xs px-2 py-0.5 rounded-full bg-green-500/20 text-green-900 font-medium">
+                🎯 리드
+              </span>
+            )}
             {mode && (
               <span className="text-xs px-2 py-0.5 rounded-full bg-black/10 text-gray-800 font-medium">
                 {MODE_LABEL[mode]}
@@ -299,7 +350,7 @@ export default function AiChat() {
             <div className="ml-auto flex items-center gap-2">
               {mode && (
                 <button
-                  onClick={() => { setMode(null); localStorage.removeItem('bbangbbangi-mode') }}
+                  onClick={() => { setMode(null); localStorage.removeItem(storageModeKey) }}
                   className="text-xs text-gray-600 hover:text-gray-900"
                   title="모드 변경"
                 >
@@ -307,9 +358,18 @@ export default function AiChat() {
                 </button>
               )}
               <button onClick={reset} className="text-xs text-gray-600 hover:text-gray-900">초기화</button>
+              {/* 모바일에서는 X 버튼, 데스크탑에서는 확장 버튼 */}
+              <button
+                onClick={() => setOpen(false)}
+                className="md:hidden text-gray-700 hover:text-gray-900 transition-colors p-1"
+              >
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
               <button
                 onClick={() => setExpanded(e => !e)}
-                className="text-gray-600 hover:text-gray-900 transition-colors"
+                className="hidden md:block text-gray-600 hover:text-gray-900 transition-colors"
               >
                 {expanded ? (
                   <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -409,6 +469,17 @@ export default function AiChat() {
                   {msg.content}
                 </div>
 
+                {/* Brief 저장 버튼 (프로젝트 페이지 + 어시스턴트 메시지) */}
+                {msg.role === 'assistant' && projectId && i > 0 && (
+                  <button
+                    onClick={() => handleSaveToBrief(i, msg.content)}
+                    disabled={savingBriefId === i || savedBriefIds.has(i)}
+                    className="mt-1 text-[10px] px-2 py-0.5 rounded-full border border-gray-200 text-gray-400 hover:border-blue-300 hover:text-blue-500 disabled:opacity-60 transition-colors"
+                  >
+                    {savedBriefIds.has(i) ? '✓ 저장됨' : savingBriefId === i ? '저장 중...' : '📝 Brief'}
+                  </button>
+                )}
+
                 {/* Notion 바로가기 */}
                 {msg.notionUrl && (
                   <a
@@ -485,7 +556,7 @@ export default function AiChat() {
           </div>
 
           {/* 입력 */}
-          <div className="px-3 py-3 border-t border-gray-100 flex flex-col gap-2">
+          <div className="px-3 py-3 border-t border-gray-100 flex flex-col gap-2 flex-shrink-0">
             {/* 이미지 미리보기 */}
             {imageAttachment && (
               <div className="relative w-fit">
@@ -512,10 +583,10 @@ export default function AiChat() {
               />
               <button
                 onClick={() => fileInputRef.current?.click()}
-                className="w-8 h-8 rounded-xl flex items-center justify-center flex-shrink-0 border border-gray-200 text-gray-400 hover:text-gray-600 hover:border-gray-300 transition-colors"
+                className="w-10 h-10 md:w-8 md:h-8 rounded-xl flex items-center justify-center flex-shrink-0 border border-gray-200 text-gray-400 hover:text-gray-600 hover:border-gray-300 transition-colors"
                 title="이미지 첨부"
               >
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <svg className="w-5 h-5 md:w-4 md:h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13" />
                 </svg>
               </button>
@@ -524,9 +595,9 @@ export default function AiChat() {
                 value={input}
                 onChange={e => setInput(e.target.value)}
                 onKeyDown={handleKeyDown}
-                placeholder={mode ? MODE_PLACEHOLDER[mode] : '뭐 할지 선택하거나 바로 입력해...'}
+                placeholder={mode ? MODE_PLACEHOLDER[mode] : projectId ? '이 프로젝트 관련해서 뭐든...' : '뭐 할지 선택하거나 바로 입력해...'}
                 rows={1}
-                className="flex-1 resize-none px-3 py-2 text-sm border border-gray-200 rounded-xl focus:outline-none focus:border-yellow-400 focus:ring-1 focus:ring-yellow-400 max-h-32 overflow-y-auto"
+                className="flex-1 resize-none px-3 py-2.5 text-sm border border-gray-200 rounded-xl focus:outline-none focus:border-yellow-400 focus:ring-1 focus:ring-yellow-400 max-h-32 overflow-y-auto"
                 onInput={e => {
                   const t = e.target as HTMLTextAreaElement
                   t.style.height = 'auto'
@@ -536,10 +607,10 @@ export default function AiChat() {
               <button
                 onClick={() => send()}
                 disabled={(!input.trim() && !imageAttachment) || loading}
-                className="w-8 h-8 rounded-xl flex items-center justify-center flex-shrink-0 disabled:opacity-40 transition-all hover:opacity-80"
+                className="w-10 h-10 md:w-8 md:h-8 rounded-xl flex items-center justify-center flex-shrink-0 disabled:opacity-40 transition-all hover:opacity-80"
                 style={{ backgroundColor: '#FFCE00' }}
               >
-                <svg className="w-4 h-4" fill="none" stroke="#121212" viewBox="0 0 24 24">
+                <svg className="w-5 h-5 md:w-4 md:h-4" fill="none" stroke="#121212" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 12h14M12 5l7 7-7 7" />
                 </svg>
               </button>
