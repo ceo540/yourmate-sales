@@ -3,8 +3,10 @@
 import { useState, useRef, useEffect, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
 import { DEPARTMENT_LABELS, type Department } from '@/types'
-import { createEntity, updateEntity, deleteEntity, updatePermission, updateJoinDate, setInitialLeave, createOneOnOne, deleteOneOnOne, updateDocumentStatus, updateEmployeeEntity, adminAddLeave, updateProfileDetail, upsertSalary, deleteSalary, addOnboardingItem, toggleOnboardingItem, deleteOnboardingItem, importOnboardingFromNotion, updateNotionTemplateUrl, createDepartment, updateDepartment, deleteDepartment, reorderDepartments, linkEmployeeCard } from './actions'
+import { createEntity, updateEntity, deleteEntity, updateJoinDate, setInitialLeave, createOneOnOne, deleteOneOnOne, updateDocumentStatus, updateEmployeeEntity, adminAddLeave, updateProfileDetail, upsertSalary, deleteSalary, addOnboardingItem, toggleOnboardingItem, deleteOnboardingItem, importOnboardingFromNotion, updateNotionTemplateUrl, createDepartment, updateDepartment, deleteDepartment, reorderDepartments, linkEmployeeCard } from './actions'
 import { upsertEmployeeCard, deleteEmployeeCard } from '../payroll/actions'
+import PermissionsTab from './components/PermissionsTab'
+import EntitiesTab from './components/EntitiesTab'
 
 interface UserProfile {
   id: string
@@ -206,15 +208,8 @@ export default function AdminClient({ users: initialUsers, entities: initialEnti
   const [deptEditForm, setDeptEditForm] = useState({ label: '', description: '', color: '#9CA3AF' })
   const [showDeptAddForm, setShowDeptAddForm] = useState(false)
   const [deptAddForm, setDeptAddForm] = useState({ label: '', description: '', color: '#9CA3AF' })
-  const [perms, setPerms] = useState(initialPerms)
-  const [togglingKey, setTogglingKey] = useState<string | null>(null)
   const [entities, setEntities] = useState(initialEntities)
   useEffect(() => { setEntities(initialEntities) }, [initialEntities])
-  const [showEntityForm, setShowEntityForm] = useState(false)
-  const EMPTY_ENTITY_FORM = { name: '', business_number: '', representative_name: '', business_type: '', business_item: '', address: '', email: '', phone: '', corporate_number: '', bank_name: '', account_number: '', account_holder: '' }
-  const [entityForm, setEntityForm] = useState(EMPTY_ENTITY_FORM)
-  const [editingEntityId, setEditingEntityId] = useState<string | null>(null)
-  const [editEntityForm, setEditEntityForm] = useState(EMPTY_ENTITY_FORM)
 
   useEffect(() => {
     const handleClick = (e: MouseEvent) => {
@@ -291,102 +286,6 @@ export default function AdminClient({ users: initialUsers, entities: initialEnti
     setUsers(prev => prev.filter(u => u.id !== userId))
   }
 
-  const handleEntityCreate = async (e: React.FormEvent) => {
-    e.preventDefault()
-    const fd = new FormData()
-    Object.entries(entityForm).forEach(([k, v]) => fd.set(k, v))
-    await createEntity(fd)
-    setEntityForm(EMPTY_ENTITY_FORM)
-    setShowEntityForm(false)
-    startTransition(() => router.refresh())
-  }
-
-  const handleEntityUpdate = async (id: string) => {
-    const fd = new FormData()
-    fd.set('id', id)
-    Object.entries(editEntityForm).forEach(([k, v]) => fd.set(k, v))
-    await updateEntity(fd)
-    setEntities(prev => prev.map(e => e.id === id ? {
-      ...e,
-      name: editEntityForm.name,
-      business_number: editEntityForm.business_number || null,
-      representative_name: editEntityForm.representative_name || null,
-      business_type: editEntityForm.business_type || null,
-      business_item: editEntityForm.business_item || null,
-      address: editEntityForm.address || null,
-      email: editEntityForm.email || null,
-      phone: editEntityForm.phone || null,
-      corporate_number: editEntityForm.corporate_number || null,
-      bank_name: editEntityForm.bank_name || null,
-      account_number: editEntityForm.account_number || null,
-      account_holder: editEntityForm.account_holder || null,
-    } : e))
-    setEditingEntityId(null)
-  }
-
-  const handleEntityDelete = async (id: string, name: string) => {
-    if (!confirm(`"${name}" 사업자를 삭제하시겠어요?\n이미 연결된 매출 건에서는 사업자 정보가 사라집니다.`)) return
-    await deleteEntity(id)
-    setEntities(prev => prev.filter(e => e.id !== id))
-  }
-
-  const ALL_PERM_ROWS: { label: string; pageKey?: string; fixed?: { admin: string; manager: string; member: string } }[] = [
-    { label: '대시보드',          pageKey: 'dashboard' },
-    { label: '대시보드 자금잔고',  pageKey: 'dashboard_finance' },
-    { label: '매출 현황',         pageKey: 'sales' },
-    { label: '계약 목록',         pageKey: 'sales_report' },
-    { label: '매출 등록/수정',    fixed: { admin: '전체', manager: '전체', member: '본인 건만' } },
-    { label: '리드 관리',         pageKey: 'leads' },
-    { label: '업무 관리',         pageKey: 'tasks' },
-    { label: '미수금 현황',       pageKey: 'receivables' },
-    { label: '거래처 DB',         pageKey: 'vendors' },
-    { label: '지급 관리',         pageKey: 'payments' },
-    { label: '매출 건 내부원가',  pageKey: 'cost_internal' },
-    { label: '재무 현황',         fixed: { admin: '✓', manager: '어드민만', member: '어드민만' } },
-    { label: '인건비 관리',       fixed: { admin: '✓', manager: '어드민만', member: '어드민만' } },
-    { label: '고정비 관리',       fixed: { admin: '✓', manager: '어드민만', member: '어드민만' } },
-    { label: '자금일보',          fixed: { admin: '✓', manager: '어드민만', member: '어드민만' } },
-    { label: '팀원 관리',         fixed: { admin: '✓', manager: '어드민만', member: '어드민만' } },
-  ]
-  const ROLES = [
-    { role: 'manager', label: '팀장', color: 'bg-blue-100 text-blue-700' },
-    { role: 'member',  label: '팀원/PM', color: 'bg-gray-100 text-gray-600' },
-  ]
-  const LEVELS = [
-    { value: 'off',  label: '끄기',  active: 'bg-gray-200 text-gray-600' },
-    { value: 'read', label: '읽기',  active: 'bg-blue-100 text-blue-700' },
-    { value: 'own',  label: '담당만', active: 'bg-yellow-100 text-yellow-800' },
-    { value: 'full', label: '전체',  active: 'bg-green-100 text-green-700' },
-  ]
-
-  async function handleLevelChange(role: string, pageKey: string, level: string) {
-    const key = `${role}:${pageKey}`
-    setTogglingKey(key)
-    setPerms(prev => ({ ...prev, [role]: { ...prev[role], [pageKey]: level } }))
-    await updatePermission(role, pageKey, level)
-    setTogglingKey(null)
-  }
-
-  function LevelSelector({ role, pageKey }: { role: string; pageKey: string }) {
-    const current = perms[role]?.[pageKey] ?? 'off'
-    const busy = togglingKey === `${role}:${pageKey}`
-    return (
-      <div className={`inline-flex rounded-lg border border-gray-200 overflow-hidden ${busy ? 'opacity-50' : ''}`}>
-        {LEVELS.map(lv => (
-          <button
-            key={lv.value}
-            onClick={() => handleLevelChange(role, pageKey, lv.value)}
-            disabled={busy}
-            className={`px-2.5 py-1 text-xs font-medium border-r border-gray-200 last:border-r-0 transition-colors ${
-              current === lv.value ? lv.active : 'bg-white text-gray-400 hover:bg-gray-50'
-            }`}
-          >
-            {lv.label}
-          </button>
-        ))}
-      </div>
-    )
-  }
 
   return (
     <div className="space-y-6">
@@ -1617,62 +1516,7 @@ export default function AdminClient({ users: initialUsers, entities: initialEnti
       })()}
 
       {/* 권한 안내 탭 */}
-      {activeTab === 'permissions' && (
-        <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
-          <div className="px-6 py-4 border-b border-gray-100">
-            <h2 className="text-sm font-semibold text-gray-900">역할별 접근 권한</h2>
-            <p className="text-xs text-gray-400 mt-1">토글로 켜고 끄면 즉시 적용돼요. 관리자는 항상 전체 접근이에요.</p>
-          </div>
-          <div className="overflow-x-auto">
-            <table className="w-full">
-              <thead>
-                <tr className="bg-gray-50 border-b border-gray-100">
-                  <th className="text-left text-xs font-semibold text-gray-500 px-6 py-3">메뉴</th>
-                  <th className="text-center text-xs font-semibold px-6 py-3">
-                    <span className="px-2 py-1 rounded-full bg-yellow-100 text-yellow-800">관리자</span>
-                  </th>
-                  {ROLES.map(r => (
-                    <th key={r.role} className="text-center text-xs font-semibold px-6 py-3">
-                      <span className={`px-2 py-1 rounded-full ${r.color}`}>{r.label}</span>
-                    </th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-50">
-                {ALL_PERM_ROWS.map((row) => (
-                  <tr key={row.label} className="hover:bg-gray-50">
-                    <td className="px-6 py-3.5 text-sm text-gray-700">{row.label}</td>
-                    <td className="px-6 py-3.5 text-center">
-                      {row.fixed
-                        ? <span className="text-xs px-2 py-1 rounded-full bg-green-50 text-green-600 font-medium">{row.fixed.admin}</span>
-                        : <span className="inline-flex h-5 w-9 items-center rounded-full bg-green-400 cursor-not-allowed opacity-60"><span className="inline-block h-3.5 w-3.5 translate-x-4 rounded-full bg-white shadow" /></span>
-                      }
-                    </td>
-                    {ROLES.map(r => (
-                      <td key={r.role} className="px-6 py-3.5 text-center">
-                        {row.fixed
-                          ? <span className={`text-xs px-2 py-1 rounded-full ${row.fixed[r.role as 'manager' | 'member'] === '어드민만' ? 'bg-red-50 text-red-400' : 'bg-gray-50 text-gray-500'}`}>{row.fixed[r.role as 'manager' | 'member']}</span>
-                          : <LevelSelector role={r.role} pageKey={row.pageKey!} />
-                        }
-                      </td>
-                    ))}
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-          <div className="px-6 py-4 border-t border-gray-100 bg-gray-50 space-y-2">
-            <p className="text-xs text-gray-400">변경 사항은 해당 역할 직원이 다음 페이지 이동 시 반영돼요.</p>
-            <div className="text-xs text-gray-400 space-y-1 pt-1 border-t border-gray-200">
-              <p className="font-medium text-gray-500">권한 단계 안내</p>
-              <p><span className="font-medium text-gray-600">끄기</span> — 메뉴가 숨겨지고 접근이 차단돼요.</p>
-              <p><span className="font-medium text-gray-600">담당만</span> — 팀원 관리에서 지정한 담당 사업부의 매출 건, 또는 본인이 직접 담당자로 지정된 건만 볼 수 있어요. 담당 사업부가 없으면 본인 건만 표시돼요.</p>
-              <p><span className="font-medium text-gray-600">읽기</span> — 전체 데이터를 볼 수 있지만 수정은 불가해요.</p>
-              <p><span className="font-medium text-gray-600">전체</span> — 전체 데이터를 보고 수정할 수 있어요.</p>
-            </div>
-          </div>
-        </div>
-      )}
+      {activeTab === 'permissions' && <PermissionsTab initialPerms={initialPerms} />}
 
       {activeTab === 'team' && <div className="bg-white rounded-xl border border-gray-200">
         <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100">
@@ -1778,174 +1622,7 @@ export default function AdminClient({ users: initialUsers, entities: initialEnti
         </div>
       )}
 
-      {/* 사업자 관리 */}
-      {activeTab === 'entities' && <div className="bg-white rounded-xl border border-gray-200">
-        <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100">
-          <h2 className="text-sm font-semibold text-gray-900">사업자 관리 ({entities.length}개)</h2>
-          <button
-            onClick={() => { setShowEntityForm(true); setEditingEntityId(null) }}
-            className="px-4 py-2 rounded-lg text-xs font-semibold hover:opacity-80 transition-all"
-            style={{ backgroundColor: '#FFCE00', color: '#121212' }}
-          >
-            + 사업자 추가
-          </button>
-        </div>
-
-        {/* 추가 폼 */}
-        {showEntityForm && (
-          <form onSubmit={handleEntityCreate} className="px-6 py-5 border-b border-gray-100 space-y-3">
-            <p className="text-xs font-semibold text-gray-700 mb-2">새 사업자 등록</p>
-            <div className="grid grid-cols-2 gap-2">
-              <input value={entityForm.name} onChange={e => setEntityForm(f => ({ ...f, name: e.target.value }))}
-                placeholder="상호명 *" required
-                className="px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-yellow-400" />
-              <input value={entityForm.business_number} onChange={e => setEntityForm(f => ({ ...f, business_number: e.target.value }))}
-                placeholder="사업자등록번호"
-                className="px-3 py-2 border border-gray-200 rounded-lg text-sm font-mono focus:outline-none focus:border-yellow-400" />
-              <input value={entityForm.representative_name} onChange={e => setEntityForm(f => ({ ...f, representative_name: e.target.value }))}
-                placeholder="대표자명"
-                className="px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-yellow-400" />
-              <input value={entityForm.phone} onChange={e => setEntityForm(f => ({ ...f, phone: e.target.value }))}
-                placeholder="전화번호"
-                className="px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-yellow-400" />
-              <input value={entityForm.business_type} onChange={e => setEntityForm(f => ({ ...f, business_type: e.target.value }))}
-                placeholder="업태 (예: 서비스업)"
-                className="px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-yellow-400" />
-              <input value={entityForm.business_item} onChange={e => setEntityForm(f => ({ ...f, business_item: e.target.value }))}
-                placeholder="종목 (예: 교육, 행사운영)"
-                className="px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-yellow-400" />
-              <input value={entityForm.email} onChange={e => setEntityForm(f => ({ ...f, email: e.target.value }))}
-                placeholder="이메일 (세금계산서 수신용)" type="email"
-                className="col-span-2 px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-yellow-400" />
-              <input value={entityForm.address} onChange={e => setEntityForm(f => ({ ...f, address: e.target.value }))}
-                placeholder="사업장 주소"
-                className="col-span-2 px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-yellow-400" />
-              <input value={entityForm.corporate_number} onChange={e => setEntityForm(f => ({ ...f, corporate_number: e.target.value }))}
-                placeholder="법인등록번호 (법인사업자)"
-                className="col-span-2 px-3 py-2 border border-gray-200 rounded-lg text-sm font-mono focus:outline-none focus:border-yellow-400" />
-              <p className="col-span-2 text-xs font-medium text-gray-500 pt-1">계좌 정보</p>
-              <input value={entityForm.bank_name} onChange={e => setEntityForm(f => ({ ...f, bank_name: e.target.value }))}
-                placeholder="은행명 (예: 농협)"
-                className="px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-yellow-400" />
-              <input value={entityForm.account_holder} onChange={e => setEntityForm(f => ({ ...f, account_holder: e.target.value }))}
-                placeholder="예금주"
-                className="px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-yellow-400" />
-              <input value={entityForm.account_number} onChange={e => setEntityForm(f => ({ ...f, account_number: e.target.value }))}
-                placeholder="계좌번호"
-                className="col-span-2 px-3 py-2 border border-gray-200 rounded-lg text-sm font-mono focus:outline-none focus:border-yellow-400" />
-            </div>
-            <div className="flex gap-2 justify-end pt-1">
-              <button type="submit" className="text-xs px-4 py-1.5 rounded-lg font-semibold hover:opacity-80 transition-all" style={{ backgroundColor: '#FFCE00', color: '#121212' }}>추가</button>
-              <button type="button" onClick={() => { setShowEntityForm(false); setEntityForm(EMPTY_ENTITY_FORM) }}
-                className="text-xs px-3 py-1.5 rounded-lg border border-gray-200 text-gray-500 hover:bg-gray-50 transition-colors">취소</button>
-            </div>
-          </form>
-        )}
-
-        <div className="divide-y divide-gray-50">
-          {entities.length === 0 && !showEntityForm && (
-            <p className="px-6 py-4 text-sm text-gray-400">등록된 사업자가 없습니다.</p>
-          )}
-          {entities.map(entity => (
-            <div key={entity.id} className="px-6 py-4">
-              {editingEntityId === entity.id ? (
-                <div className="space-y-3">
-                  <p className="text-xs font-semibold text-gray-700">사업자 정보 수정</p>
-                  <div className="grid grid-cols-2 gap-2">
-                    <input value={editEntityForm.name} onChange={e => setEditEntityForm(f => ({ ...f, name: e.target.value }))}
-                      placeholder="상호명 *"
-                      className="px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-yellow-400" />
-                    <input value={editEntityForm.business_number} onChange={e => setEditEntityForm(f => ({ ...f, business_number: e.target.value }))}
-                      placeholder="사업자등록번호"
-                      className="px-3 py-2 border border-gray-200 rounded-lg text-sm font-mono focus:outline-none focus:border-yellow-400" />
-                    <input value={editEntityForm.representative_name} onChange={e => setEditEntityForm(f => ({ ...f, representative_name: e.target.value }))}
-                      placeholder="대표자명"
-                      className="px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-yellow-400" />
-                    <input value={editEntityForm.phone} onChange={e => setEditEntityForm(f => ({ ...f, phone: e.target.value }))}
-                      placeholder="전화번호"
-                      className="px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-yellow-400" />
-                    <input value={editEntityForm.business_type} onChange={e => setEditEntityForm(f => ({ ...f, business_type: e.target.value }))}
-                      placeholder="업태 (예: 서비스업)"
-                      className="px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-yellow-400" />
-                    <input value={editEntityForm.business_item} onChange={e => setEditEntityForm(f => ({ ...f, business_item: e.target.value }))}
-                      placeholder="종목 (예: 교육, 행사운영)"
-                      className="px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-yellow-400" />
-                    <input value={editEntityForm.email} onChange={e => setEditEntityForm(f => ({ ...f, email: e.target.value }))}
-                      placeholder="이메일 (세금계산서 수신용)" type="email"
-                      className="col-span-2 px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-yellow-400" />
-                    <input value={editEntityForm.address} onChange={e => setEditEntityForm(f => ({ ...f, address: e.target.value }))}
-                      placeholder="사업장 주소"
-                      className="col-span-2 px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-yellow-400" />
-                    <input value={editEntityForm.corporate_number} onChange={e => setEditEntityForm(f => ({ ...f, corporate_number: e.target.value }))}
-                      placeholder="법인등록번호 (법인사업자)"
-                      className="col-span-2 px-3 py-2 border border-gray-200 rounded-lg text-sm font-mono focus:outline-none focus:border-yellow-400" />
-                    <p className="col-span-2 text-xs font-medium text-gray-500 pt-1">계좌 정보</p>
-                    <input value={editEntityForm.bank_name} onChange={e => setEditEntityForm(f => ({ ...f, bank_name: e.target.value }))}
-                      placeholder="은행명 (예: 농협)"
-                      className="px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-yellow-400" />
-                    <input value={editEntityForm.account_holder} onChange={e => setEditEntityForm(f => ({ ...f, account_holder: e.target.value }))}
-                      placeholder="예금주"
-                      className="px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-yellow-400" />
-                    <input value={editEntityForm.account_number} onChange={e => setEditEntityForm(f => ({ ...f, account_number: e.target.value }))}
-                      placeholder="계좌번호"
-                      className="col-span-2 px-3 py-2 border border-gray-200 rounded-lg text-sm font-mono focus:outline-none focus:border-yellow-400" />
-                  </div>
-                  <div className="flex gap-2 justify-end">
-                    <button onClick={() => handleEntityUpdate(entity.id)}
-                      className="text-xs px-3 py-1.5 rounded-lg font-semibold hover:opacity-80 transition-all" style={{ backgroundColor: '#FFCE00', color: '#121212' }}>저장</button>
-                    <button onClick={() => setEditingEntityId(null)}
-                      className="text-xs px-3 py-1.5 rounded-lg border border-gray-200 text-gray-500 hover:bg-gray-50 transition-colors">취소</button>
-                  </div>
-                </div>
-              ) : (
-                <div>
-                  <div className="flex items-start justify-between">
-                    <div>
-                      <span className="text-sm font-semibold text-gray-900">{entity.name}</span>
-                      {entity.representative_name && <span className="ml-2 text-xs text-gray-500">대표 {entity.representative_name}</span>}
-                      {entity.business_number && <span className="ml-2 text-xs text-gray-400 font-mono">{entity.business_number}</span>}
-                    </div>
-                    <div className="flex gap-2 shrink-0">
-                      <button
-                        onClick={() => {
-                          setEditingEntityId(entity.id)
-                          setShowEntityForm(false)
-                          setEditEntityForm({
-                            name: entity.name,
-                            business_number: entity.business_number ?? '',
-                            representative_name: entity.representative_name ?? '',
-                            business_type: entity.business_type ?? '',
-                            business_item: entity.business_item ?? '',
-                            address: entity.address ?? '',
-                            email: entity.email ?? '',
-                            phone: entity.phone ?? '',
-                            corporate_number: entity.corporate_number ?? '',
-                            bank_name: entity.bank_name ?? '',
-                            account_number: entity.account_number ?? '',
-                            account_holder: entity.account_holder ?? '',
-                          })
-                        }}
-                        className="text-xs text-gray-400 hover:text-yellow-600 transition-colors"
-                      >수정</button>
-                      <button onClick={() => handleEntityDelete(entity.id, entity.name)}
-                        className="text-xs text-gray-300 hover:text-red-400 transition-colors">삭제</button>
-                    </div>
-                  </div>
-                  <div className="mt-1.5 flex flex-wrap gap-x-4 gap-y-0.5">
-                    {entity.business_type && <span className="text-xs text-gray-400">업태: {entity.business_type}</span>}
-                    {entity.business_item && <span className="text-xs text-gray-400">종목: {entity.business_item}</span>}
-                    {entity.phone && <span className="text-xs text-gray-400">☎ {entity.phone}</span>}
-                    {entity.email && <span className="text-xs text-gray-400">✉ {entity.email}</span>}
-                    {entity.corporate_number && <span className="text-xs text-gray-400 font-mono">법인 {entity.corporate_number}</span>}
-                    {entity.address && <span className="text-xs text-gray-400 w-full">📍 {entity.address}</span>}
-                    {entity.bank_name && <span className="text-xs text-gray-400 w-full">🏦 {entity.bank_name} {entity.account_number}{entity.account_holder ? ` (${entity.account_holder})` : ''}</span>}
-                  </div>
-                </div>
-              )}
-            </div>
-          ))}
-        </div>
-      </div>}
+      {activeTab === 'entities' && <EntitiesTab entities={entities} setEntities={setEntities} />}
 
       {activeTab === 'api-usage' && <ApiUsageTab />}
 
