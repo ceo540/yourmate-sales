@@ -310,6 +310,7 @@ export async function unlinkCalendarEvent(projectId: string, eventId: string) {
 }
 
 // 연결 해제 + Google Calendar 이벤트도 완전 삭제
+// "Not Found"는 이미 삭제된 것으로 간주하고 unlink는 진행
 export async function unlinkAndDeleteCalendarEvent(
   projectId: string,
   eventId: string,
@@ -318,7 +319,10 @@ export async function unlinkAndDeleteCalendarEvent(
   try {
     await deleteGCalEvent(calendarKey, eventId)
   } catch (e) {
-    return { error: e instanceof Error ? e.message : 'Google Calendar 삭제 실패' }
+    const msg = e instanceof Error ? e.message : String(e)
+    const alreadyGone = /not found|404|resource.*has been deleted/i.test(msg)
+    if (!alreadyGone) return { error: msg }
+    // Not Found → Google Calendar에 없음. 프로젝트 연결 해제는 계속 진행.
   }
   const admin = createAdminClient()
   const { data: p } = await admin.from('projects').select('linked_calendar_events').eq('id', projectId).single()
