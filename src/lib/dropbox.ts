@@ -302,6 +302,7 @@ export async function moveDropboxToCancel(
   const newPath = `${cancelPath}/${folderName}`
 
   // 취소 폴더가 없으면 생성
+  // fullPath/cancelPath에 이미 DB_BASE가 포함되어 있으므로 다시 붙이지 않는다
   await fetch('https://api.dropboxapi.com/2/files/create_folder_v2', {
     method: 'POST',
     headers: {
@@ -309,7 +310,7 @@ export async function moveDropboxToCancel(
       'Content-Type': 'application/json',
       'Dropbox-API-Path-Root': JSON.stringify({ '.tag': 'root', 'root': ROOT_NAMESPACE }),
     },
-    body: JSON.stringify({ path: `${DB_BASE}${cancelPath}`, autorename: false }),
+    body: JSON.stringify({ path: cancelPath, autorename: false }),
   }).catch(() => {})
 
   const res = await fetch('https://api.dropboxapi.com/2/files/move_v2', {
@@ -320,8 +321,8 @@ export async function moveDropboxToCancel(
       'Dropbox-API-Path-Root': JSON.stringify({ '.tag': 'root', 'root': ROOT_NAMESPACE }),
     },
     body: JSON.stringify({
-      from_path: `${DB_BASE}${fullPath}`,
-      to_path: `${DB_BASE}${newPath}`,
+      from_path: fullPath,
+      to_path: newPath,
       allow_shared_folder: true,
       autorename: false,
     }),
