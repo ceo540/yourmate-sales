@@ -1470,6 +1470,7 @@ export default function ProjectHubClient({
               {/* AI 협업 창구 */}
               <ProjectClaudeChat
                 saleId={localContracts[0]?.id}
+                projectId={project.id}
                 serviceType={project.service_type}
                 projectName={localName}
                 dropboxUrl={dropboxUrl || null}

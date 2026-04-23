@@ -18,9 +18,10 @@ export async function POST(req: NextRequest) {
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
-  const { leadId, saleId, dropboxUrl, messages } = await req.json() as {
+  const { leadId, saleId, projectId, dropboxUrl, messages } = await req.json() as {
     leadId?: string
     saleId?: string
+    projectId?: string
     dropboxUrl?: string | null
     messages: { role: 'user' | 'assistant'; content: string }[]
   }
@@ -82,6 +83,33 @@ ${logs && logs.length > 0 ? `\n## 최근 소통내역\n${logs.map(l => `- [${l.l
 - 유입일: ${sale.inflow_date || ''}
 - 메모: ${sale.memo || '(없음)'}
 ${tasks && tasks.length > 0 ? `\n## 미완료 태스크\n${tasks.map(t => `- [${t.status}] ${t.title}${t.due_date ? ' (마감: ' + t.due_date + ')' : ''}`).join('\n')}` : ''}
+${logs && logs.length > 0 ? `\n## 최근 소통내역\n${logs.map(l => `- [${l.log_type}] ${l.contacted_at?.slice(0, 10)}: ${l.content}`).join('\n')}` : ''}`
+    }
+  } else if (projectId) {
+    const { data: project } = await admin.from('projects').select('*').eq('id', projectId).single()
+    if (project) {
+      serviceType = project.service_type as string | null
+      let pmName: string | null = null
+      if (project.pm_id) {
+        const { data: profile } = await admin.from('profiles').select('name').eq('id', project.pm_id).single()
+        pmName = profile?.name ?? null
+      }
+      const { data: linkedSales } = await admin
+        .from('sales').select('id, name, contract_stage, revenue, client_org')
+        .eq('project_id', projectId)
+      const { data: logs } = await admin
+        .from('project_logs').select('content, log_type, contacted_at')
+        .eq('project_id', projectId).order('contacted_at', { ascending: false }).limit(3)
+
+      projectContext = `## 현재 프로젝트 정보
+- 프로젝트명: ${project.name || '(미입력)'}
+- 서비스: ${project.service_type || '(미지정)'}
+- 사업부: ${project.department || '(미지정)'}
+- 상태: ${project.status || '진행중'}
+- PM: ${pmName || '(미배정)'}
+- Dropbox 폴더: ${project.dropbox_url ? '연결됨 (list_project_files로 조회 가능)' : '(없음)'}
+- 메모: ${project.memo || '(없음)'}
+${linkedSales && linkedSales.length > 0 ? `\n## 연결된 계약 (${linkedSales.length}건)\n${linkedSales.map(s => `- ${s.name} · 단계: ${s.contract_stage ?? '-'} · 매출: ${s.revenue ? s.revenue.toLocaleString() + '원' : '-'}${s.client_org ? ' · 고객: ' + s.client_org : ''}`).join('\n')}` : ''}
 ${logs && logs.length > 0 ? `\n## 최근 소통내역\n${logs.map(l => `- [${l.log_type}] ${l.contacted_at?.slice(0, 10)}: ${l.content}`).join('\n')}` : ''}`
     }
   }
