@@ -12,6 +12,7 @@ import {
   updateContractInfo, createTaskForProject, deleteProject, listProjectDropboxFiles,
   linkCalendarEvent, unlinkCalendarEvent, createAndLinkCalendarEvent,
 } from './project-actions'
+import { syncProjectName, type ProjectSyncResult } from './sync-project-name-action'
 const CALENDAR_LABELS: Record<string, string> = {
   main: '개인/전체', sos: '사운드오브스쿨', rental: '렌탈일정', artqium: '아트키움',
 }
@@ -739,6 +740,8 @@ export default function ProjectHubClient({
   const [showLeads, setShowLeads] = useState(false)
   const [showCustomerDetail, setShowCustomerDetail] = useState(false)
   const [editingDropbox, setEditingDropbox] = useState(false)
+  const [syncing, setSyncing] = useState(false)
+  const [syncResult, setSyncResult] = useState<ProjectSyncResult | null>(null)
   const [dropboxUrl, setDropboxUrl] = useState(project.dropbox_url ?? '')
   const [linkingSale, setLinkingSale] = useState(false)
   const [selectedSaleId, setSelectedSaleId] = useState('')
@@ -1815,7 +1818,25 @@ export default function ProjectHubClient({
                       <div className="flex items-center gap-1.5">
                         {dropboxUrl ? <a href={dropboxUrl} target="_blank" rel="noopener noreferrer" className="text-blue-500 hover:underline">연결됨 ↗</a> : <span className="text-gray-300">미연결</span>}
                         <button onClick={() => setEditingDropbox(true)} className="text-xs text-blue-500 hover:text-blue-700 ml-1 underline">편집</button>
+                        {dropboxUrl && (
+                          <button
+                            onClick={async () => {
+                              setSyncing(true); setSyncResult(null)
+                              const result = await syncProjectName(project.id)
+                              setSyncResult(result); setSyncing(false)
+                              if (result.success) startTransition(() => router.refresh())
+                            }}
+                            disabled={syncing}
+                            className="text-xs text-blue-500 hover:text-blue-700 underline disabled:opacity-50"
+                            title="프로젝트명과 Dropbox 폴더명을 맞춥니다"
+                          >{syncing ? '동기화중...' : '🔄 동기화'}</button>
+                        )}
                       </div>
+                      {syncResult && (
+                        <p className={`text-[10px] ${syncResult.success ? 'text-green-600' : 'text-red-500'}`}>
+                          {syncResult.message}
+                        </p>
+                      )}
                       {!dropboxUrl && localContracts.some(c => c.dropbox_url) && (
                         <button
                           onClick={() => startTransition(async () => {
