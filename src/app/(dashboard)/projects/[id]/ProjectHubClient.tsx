@@ -1814,7 +1814,7 @@ export default function ProjectHubClient({
                     <div className="flex flex-col items-end gap-1">
                       <div className="flex items-center gap-1.5">
                         {dropboxUrl ? <a href={dropboxUrl} target="_blank" rel="noopener noreferrer" className="text-blue-500 hover:underline">연결됨 ↗</a> : <span className="text-gray-300">미연결</span>}
-                        <button onClick={() => setEditingDropbox(true)} className="text-gray-300 hover:text-gray-600 ml-1">✏</button>
+                        <button onClick={() => setEditingDropbox(true)} className="text-xs text-blue-500 hover:text-blue-700 ml-1 underline">편집</button>
                       </div>
                       {!dropboxUrl && localContracts.some(c => c.dropbox_url) && (
                         <button
