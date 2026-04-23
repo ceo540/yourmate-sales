@@ -336,11 +336,16 @@ ${logs && logs.length > 0 ? `\n## 최근 소통내역\n${logs.map(l => `- [${l.l
                 result = error ? `변경 실패: ${error.message}` : `계약 단계를 "${input.status}"로 변경했습니다.`
                 if (!error) revalidate()
               } else if (projectId) {
-                const { error } = await admin.from('projects')
+                const { data, error } = await admin.from('projects')
                   .update({ status: input.status, updated_at: new Date().toISOString() })
                   .eq('id', projectId)
-                result = error ? `변경 실패: ${error.message}` : `프로젝트 상태를 "${input.status}"로 변경했습니다.`
-                if (!error) revalidate()
+                  .select('id, status')
+                if (error) result = `변경 실패: ${error.message}`
+                else if (!data || data.length === 0) result = `변경 실패: projects 테이블에서 id=${projectId}인 행을 찾지 못함`
+                else {
+                  result = `프로젝트 상태를 "${input.status}"로 변경 완료 (DB 확인: ${data[0].status}).`
+                  revalidate()
+                }
               }
 
             } else if (block.name === 'update_notes') {
@@ -358,11 +363,13 @@ ${logs && logs.length > 0 ? `\n## 최근 소통내역\n${logs.map(l => `- [${l.l
                 result = error ? `저장 실패: ${error.message}` : '계약 메모를 업데이트했습니다.'
                 if (!error) revalidate()
               } else if (projectId) {
-                const { error } = await admin.from('projects')
+                const { data, error } = await admin.from('projects')
                   .update({ memo: input.notes, updated_at: new Date().toISOString() })
                   .eq('id', projectId)
-                result = error ? `저장 실패: ${error.message}` : '프로젝트 메모를 업데이트했습니다.'
-                if (!error) revalidate()
+                  .select('id')
+                if (error) result = `저장 실패: ${error.message}`
+                else if (!data || data.length === 0) result = `저장 실패: projects 테이블에서 id=${projectId}인 행을 찾지 못함`
+                else { result = '프로젝트 메모를 업데이트했습니다.'; revalidate() }
               }
 
             } else if (block.name === 'create_task') {
