@@ -3,6 +3,7 @@
 import { useState, useTransition, useEffect } from 'react'
 import { updateTask } from '../tasks/actions'
 import TiptapEditor from './TiptapEditor'
+import { TASK_STATUS_STYLE as STATUS_STYLE } from '@/lib/constants'
 
 interface ChecklistItem { id: string; text: string; done: boolean }
 interface Profile { id: string; name: string }
@@ -29,13 +30,6 @@ interface Props {
 const STATUSES = ['할 일', '진행중', '검토중', '완료', '보류']
 const PRIORITIES = ['낮음', '보통', '높음', '긴급']
 
-const STATUS_STYLE: Record<string, string> = {
-  '할 일':  'bg-gray-100 text-gray-600',
-  '진행중': 'bg-blue-100 text-blue-700',
-  '검토중': 'bg-yellow-100 text-yellow-700',
-  '완료':   'bg-green-100 text-green-700',
-  '보류':   'bg-red-100 text-red-600',
-}
 const PRIORITY_STYLE: Record<string, string> = {
   '낮음': 'bg-gray-100 text-gray-400',
   '보통': 'bg-gray-100 text-gray-600',
