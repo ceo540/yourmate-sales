@@ -106,12 +106,25 @@ export async function updateProjectStatus(projectId: string, status: string) {
   if (error) throw new Error(error.message)
 
   // 취소 상태로 변경 시 드롭박스 폴더를 999999.취소 폴더로 이동
+  // projects.dropbox_url + 연결된 sales.dropbox_url 모두 처리
   if (status === '취소') {
     const { data: project } = await admin.from('projects').select('dropbox_url').eq('id', projectId).single()
     if (project?.dropbox_url) {
       const result = await moveDropboxToCancel(project.dropbox_url)
       if ('newUrl' in result) {
         await admin.from('projects').update({ dropbox_url: result.newUrl }).eq('id', projectId)
+      } else {
+        console.error('[cancel-move] project dropbox move failed:', result.error)
+      }
+    }
+    const { data: linkedSales } = await admin.from('sales').select('id, dropbox_url').eq('project_id', projectId)
+    for (const sale of linkedSales ?? []) {
+      if (!sale.dropbox_url) continue
+      const result = await moveDropboxToCancel(sale.dropbox_url)
+      if ('newUrl' in result) {
+        await admin.from('sales').update({ dropbox_url: result.newUrl }).eq('id', sale.id)
+      } else {
+        console.error(`[cancel-move] sale ${sale.id} dropbox move failed:`, result.error)
       }
     }
   }
