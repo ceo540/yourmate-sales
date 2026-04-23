@@ -237,6 +237,8 @@ ${logs && logs.length > 0 ? `\n## 최근 소통내역\n${logs.map(l => `- [${l.l
         controller.enqueue(encoder.encode(`data: ${JSON.stringify(text)}\n\n`))
       const revalidate = () =>
         controller.enqueue(encoder.encode('data: [REVALIDATE]\n\n'))
+      const sendProjectStatus = (status: string) =>
+        controller.enqueue(encoder.encode(`data: [PROJECT_STATUS:${status}]\n\n`))
 
       try {
         const history: Anthropic.MessageParam[] = messages.map(m => ({
@@ -343,6 +345,7 @@ ${logs && logs.length > 0 ? `\n## 최근 소통내역\n${logs.map(l => `- [${l.l
                   result = `프로젝트 상태를 "${input.status}"로 변경 완료 (DB 확인: ${data[0].status}).`
                   revalidatePath(`/projects/${projectId}`)
                   revalidatePath('/projects')
+                  sendProjectStatus(data[0].status)
                   revalidate()
                 }
               } else if (saleId) {

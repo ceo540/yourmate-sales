@@ -16,9 +16,10 @@ interface Props {
   dropboxUrl?: string | null
   defaultOpen?: boolean
   onRevalidate?: () => void
+  onProjectStatusChange?: (status: string) => void
 }
 
-export default function ProjectClaudeChat({ leadId, saleId, projectId, projectName, dropboxUrl, defaultOpen = false, onRevalidate }: Props) {
+export default function ProjectClaudeChat({ leadId, saleId, projectId, projectName, dropboxUrl, defaultOpen = false, onRevalidate, onProjectStatusChange }: Props) {
   const router = useRouter()
   const [open, setOpen] = useState(defaultOpen)
   const [messages, setMessages] = useState<Message[]>([])
@@ -96,6 +97,11 @@ export default function ProjectClaudeChat({ leadId, saleId, projectId, projectNa
           const data = line.slice(6)
           if (data === '[DONE]') break
           if (data === '[REVALIDATE]') { router.refresh(); onRevalidate?.(); continue }
+          if (data.startsWith('[PROJECT_STATUS:')) {
+            const status = data.slice('[PROJECT_STATUS:'.length, -1)
+            onProjectStatusChange?.(status)
+            continue
+          }
           if (data.startsWith('[ERROR]')) {
             accumulated = '오류가 발생했습니다: ' + data.slice(8)
             setMessages(prev => {
