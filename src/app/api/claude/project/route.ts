@@ -285,7 +285,7 @@ ${logs && logs.length > 0 ? `\n## 최근 소통내역\n${logs.map(l => `- [${l.l
 
             let result = ''
             const input = block.input as Record<string, string>
-            const folderPath = dropboxUrl?.replace(WEB_BASE, '') ?? ''
+            const folderPath = dropboxUrl ? decodeURIComponent(dropboxUrl.replace(WEB_BASE, '')) : ''
 
             // ── Dropbox 읽기 ──
             if (block.name === 'list_project_files') {
