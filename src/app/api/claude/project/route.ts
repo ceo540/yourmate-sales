@@ -323,17 +323,14 @@ ${logs && logs.length > 0 ? `\n## 최근 소통내역\n${logs.map(l => `- [${l.l
 
             } else if (block.name === 'update_status') {
               send('\n*(단계 변경 중...)*\n')
+              // 우선순위: leadId > projectId > saleId
+              // 프로젝트 상세 페이지에서 Claude 호출 시 saleId도 같이 오는데, 사용자 의도는
+              // 보통 "프로젝트 상태" (projects.status) 변경이지 "계약 단계" (sales.contract_stage) 변경이 아님.
               if (leadId) {
                 const { error } = await admin.from('leads')
                   .update({ status: input.status, updated_at: new Date().toISOString() })
                   .eq('id', leadId)
                 result = error ? `변경 실패: ${error.message}` : `리드 단계를 "${input.status}"로 변경했습니다.`
-                if (!error) revalidate()
-              } else if (saleId) {
-                const { error } = await admin.from('sales')
-                  .update({ contract_stage: input.status })
-                  .eq('id', saleId)
-                result = error ? `변경 실패: ${error.message}` : `계약 단계를 "${input.status}"로 변경했습니다.`
                 if (!error) revalidate()
               } else if (projectId) {
                 const { data, error } = await admin.from('projects')
@@ -348,6 +345,12 @@ ${logs && logs.length > 0 ? `\n## 최근 소통내역\n${logs.map(l => `- [${l.l
                   revalidatePath('/projects')
                   revalidate()
                 }
+              } else if (saleId) {
+                const { error } = await admin.from('sales')
+                  .update({ contract_stage: input.status })
+                  .eq('id', saleId)
+                result = error ? `변경 실패: ${error.message}` : `계약 단계를 "${input.status}"로 변경했습니다.`
+                if (!error) revalidate()
               }
 
             } else if (block.name === 'update_notes') {
