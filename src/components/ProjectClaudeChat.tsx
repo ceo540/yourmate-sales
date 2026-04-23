@@ -10,6 +10,7 @@ interface Message {
 interface Props {
   leadId?: string
   saleId?: string
+  projectId?: string
   serviceType?: string | null
   projectName?: string | null
   dropboxUrl?: string | null
@@ -17,7 +18,7 @@ interface Props {
   onRevalidate?: () => void
 }
 
-export default function ProjectClaudeChat({ leadId, saleId, projectName, dropboxUrl, defaultOpen = false, onRevalidate }: Props) {
+export default function ProjectClaudeChat({ leadId, saleId, projectId, projectName, dropboxUrl, defaultOpen = false, onRevalidate }: Props) {
   const router = useRouter()
   const [open, setOpen] = useState(defaultOpen)
   const [messages, setMessages] = useState<Message[]>([])
@@ -31,7 +32,7 @@ export default function ProjectClaudeChat({ leadId, saleId, projectName, dropbox
   // 세션 내 리드/매출별 대화 저장소
   const historyRef = useRef<Record<string, Message[]>>({})
 
-  const chatKey = leadId ?? saleId ?? ''
+  const chatKey = leadId ?? saleId ?? projectId ?? ''
 
   // 리드/매출 전환 시 해당 대화 복원
   useEffect(() => {
@@ -64,7 +65,7 @@ export default function ProjectClaudeChat({ leadId, saleId, projectName, dropbox
       const res = await fetch('/api/claude/project', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ leadId, saleId, dropboxUrl, messages: nextMessages }),
+        body: JSON.stringify({ leadId, saleId, projectId, dropboxUrl, messages: nextMessages }),
       })
 
       if (!res.ok || !res.body) {
