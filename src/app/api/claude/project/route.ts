@@ -344,6 +344,8 @@ ${logs && logs.length > 0 ? `\n## 최근 소통내역\n${logs.map(l => `- [${l.l
                 else if (!data || data.length === 0) result = `변경 실패: projects 테이블에서 id=${projectId}인 행을 찾지 못함`
                 else {
                   result = `프로젝트 상태를 "${input.status}"로 변경 완료 (DB 확인: ${data[0].status}).`
+                  revalidatePath(`/projects/${projectId}`)
+                  revalidatePath('/projects')
                   revalidate()
                 }
               }
@@ -369,7 +371,11 @@ ${logs && logs.length > 0 ? `\n## 최근 소통내역\n${logs.map(l => `- [${l.l
                   .select('id')
                 if (error) result = `저장 실패: ${error.message}`
                 else if (!data || data.length === 0) result = `저장 실패: projects 테이블에서 id=${projectId}인 행을 찾지 못함`
-                else { result = '프로젝트 메모를 업데이트했습니다.'; revalidate() }
+                else {
+                  result = '프로젝트 메모를 업데이트했습니다.'
+                  revalidatePath(`/projects/${projectId}`)
+                  revalidate()
+                }
               }
 
             } else if (block.name === 'create_task') {
