@@ -106,10 +106,12 @@ ${logs && logs.length > 0 ? `\n## 최근 소통내역\n${logs.map(l => `- [${l.l
 - 프로젝트명: ${project.name || '(미입력)'}
 - 서비스: ${project.service_type || '(미지정)'}
 - 사업부: ${project.department || '(미지정)'}
-- 상태: ${project.status || '진행중'}
+- **프로젝트 상태: ${project.status || '진행중'}** (가능한 값: ${PROJECT_STATUSES.join('/')})
 - PM: ${pmName || '(미배정)'}
 - Dropbox 폴더: ${project.dropbox_url ? '연결됨 (list_project_files로 조회 가능)' : '(없음)'}
 - 메모: ${project.memo || '(없음)'}
+
+**중요**: 사용자가 "상태" 또는 "단계"를 변경해달라고 하면 기본적으로 **프로젝트 상태(projects.status)** 를 의미합니다. update_status 툴을 호출하세요. 연결된 계약의 세부 단계를 변경할 때는 사용자가 "계약 단계" 또는 "계약 진행"이라고 명시해야 합니다.
 ${linkedSales && linkedSales.length > 0 ? `\n## 연결된 계약 (${linkedSales.length}건)\n${linkedSales.map(s => `- ${s.name} · 단계: ${s.contract_stage ?? '-'} · 매출: ${s.revenue ? s.revenue.toLocaleString() + '원' : '-'}${s.client_org ? ' · 고객: ' + s.client_org : ''}`).join('\n')}` : ''}
 ${logs && logs.length > 0 ? `\n## 최근 소통내역\n${logs.map(l => `- [${l.log_type}] ${l.contacted_at?.slice(0, 10)}: ${l.content}`).join('\n')}` : ''}`
     }
@@ -195,7 +197,11 @@ ${logs && logs.length > 0 ? `\n## 최근 소통내역\n${logs.map(l => `- [${l.l
     },
     {
       name: 'update_status',
-      description: `현재 단계를 변경합니다. 리드: ${LEAD_STATUSES.join('/')} / 계약: ${CONTRACT_STAGES.join('/')} / 프로젝트: ${PROJECT_STATUSES.join('/')} 중 하나.`,
+      description: `현재 상태/단계를 변경합니다.
+- projectId 컨텍스트(프로젝트 상세 페이지)에서는 projects.status를 변경하며, 가능한 값: ${PROJECT_STATUSES.join('/')}.
+- saleId 컨텍스트(매출/계약 상세)에서는 sales.contract_stage를 변경하며, 가능한 값: ${CONTRACT_STAGES.join('/')}.
+- leadId 컨텍스트(리드)에서는 leads.status를 변경하며, 가능한 값: ${LEAD_STATUSES.join('/')}.
+사용자가 단순히 "상태"/"단계"라고 하면 현재 컨텍스트 기준으로 해석하세요. projectId가 있으면 프로젝트 상태 변경이 기본입니다.`,
       input_schema: {
         type: 'object' as const,
         properties: {
