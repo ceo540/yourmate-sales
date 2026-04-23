@@ -1486,6 +1486,7 @@ export default function ProjectHubClient({
                 serviceType={project.service_type}
                 projectName={localName}
                 dropboxUrl={dropboxUrl || null}
+                onProjectStatusChange={(s) => setLocalStatus(s)}
               />
 
             </>
