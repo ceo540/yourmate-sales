@@ -208,8 +208,11 @@ export async function renameDropboxFolder(
   const folderName = fullPath.substring(lastSlash + 1)
 
   // 날짜 접두사 추출 (예: "260416 ")
+  // newName이 이미 날짜 패턴(260416) 또는 프로젝트 번호 패턴(26-109)으로 시작하면
+  // 접두사를 중복으로 붙이지 않는다.
   const dateMatch = folderName.match(/^(\d{6})\s/)
-  const datePrefix = dateMatch ? dateMatch[1] + ' ' : ''
+  const newNameAlreadyHasPrefix = /^(\d{6}\s|\d{2}-\d)/.test(newName)
+  const datePrefix = (dateMatch && !newNameAlreadyHasPrefix) ? dateMatch[1] + ' ' : ''
 
   const newFolderName = `${datePrefix}${newName}`
   const newPath = `${parentPath}/${newFolderName}`
