@@ -6,6 +6,7 @@ import { Lead, LeadStatus, LEAD_STATUSES, LEAD_CHANNELS, LEAD_SOURCES } from '@/
 import { createLead, updateLead, deleteLead, convertLeadToSale, addSaleToLead, createLeadFolder, updateLeadDropboxUrl, syncLeadDropboxFolderName, createPerson, updateLeadPersonAndCustomer, previewProjectNumber, refreshLeadBrief, createAndLinkLeadCalendarEvent, unlinkLeadCalendarEvent } from './actions'
 import { createLeadLog, getLeadLogs, deleteLeadLog } from './lead-log-actions'
 import ProjectClaudeChat from '@/components/ProjectClaudeChat'
+import { LOG_TYPE_COLORS } from '@/lib/constants'
 
 const LABEL_CLS = 'block text-xs font-medium text-gray-500 mb-1'
 const INPUT_CLS = 'w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-yellow-300'
@@ -275,13 +276,6 @@ const SERVICE_TYPES = [
   '콘텐츠제작', '행사운영', '행사대여', '프로젝트', '002ENT',
 ]
 
-const LOG_TYPE_COLORS: Record<string, string> = {
-  통화: 'bg-blue-50 text-blue-600', 이메일: 'bg-purple-50 text-purple-600',
-  방문: 'bg-green-50 text-green-600', 미팅: 'bg-teal-50 text-teal-600',
-  출장: 'bg-cyan-50 text-cyan-600', 메모: 'bg-yellow-50 text-yellow-700',
-  내부회의: 'bg-orange-50 text-orange-600', 기타: 'bg-gray-100 text-gray-500',
-  최초유입: 'bg-teal-50 text-teal-600',
-}
 // 한국어 조사: 받침 있으면 '으로', 없거나 ㄹ 받침이면 '로'
 const LOG_TYPE_PARTICLE: Record<string, string> = {
   방문: '으로', 미팅: '으로', 출장: '으로',
