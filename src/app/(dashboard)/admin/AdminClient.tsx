@@ -1,10 +1,8 @@
 'use client'
 
-import { useState, useRef, useEffect, useTransition } from 'react'
+import { useState, useEffect, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
-import { DEPARTMENT_LABELS, type Department } from '@/types'
-import { createEntity, updateEntity, deleteEntity, updateJoinDate, setInitialLeave, updateEmployeeEntity, adminAddLeave, updateProfileDetail, upsertSalary, deleteSalary, addOnboardingItem, toggleOnboardingItem, deleteOnboardingItem, importOnboardingFromNotion, updateNotionTemplateUrl, linkEmployeeCard } from './actions'
-import { upsertEmployeeCard, deleteEmployeeCard } from '../payroll/actions'
+import { updateJoinDate, setInitialLeave, updateEmployeeEntity, adminAddLeave, updateProfileDetail, linkEmployeeCard } from './actions'
 import PermissionsTab from './components/PermissionsTab'
 import EntitiesTab from './components/EntitiesTab'
 import TeamTab from './components/TeamTab'

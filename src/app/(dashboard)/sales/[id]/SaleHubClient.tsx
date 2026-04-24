@@ -1,13 +1,11 @@
 'use client'
 
-import { useState, useTransition, useEffect, useCallback } from 'react'
+import { useState, useTransition, useEffect } from 'react'
 import { createLog, deleteLog, getSaleLogs } from './log-actions'
 // useRouter intentionally removed — using getSaleLogs for log refresh to avoid startTransition rollback
-import { updateMemo } from './memo-action'
 import { createTask, updateTaskStatus, deleteTask } from '../tasks/actions'
 import { generateShareToken, revokeShareToken } from './share-action'
-import { TASK_STATUS_STYLE as STATUS_COLORS, LOG_TYPE_COLORS } from '@/lib/constants'
-import QuotationModal from './QuotationModal'
+import { LOG_TYPE_COLORS } from '@/lib/constants'
 import TaskDetailPanel from './TaskDetailPanel'
 import NotesTab from './components/NotesTab'
 import ContractTab from './components/ContractTab'

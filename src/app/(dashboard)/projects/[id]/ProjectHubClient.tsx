@@ -7,9 +7,7 @@ import {
   updateProjectMemo, updateProjectNotes, updateProjectStatus,
   linkProjectCustomer, createAndLinkCustomer, updateProjectDropbox,
   updateProjectName, updateCustomerContact, addProjectMember, removeProjectMember, linkSaleToProject,
-  togglePaymentReceived, addPaymentSchedule, deletePaymentSchedule,
-  addSaleCost, deleteSaleCost, updateContractStage, updateContractProgressStatus,
-  updateContractInfo, createTaskForProject, deleteProject, listProjectDropboxFiles,
+  createTaskForProject, deleteProject, listProjectDropboxFiles,
   linkCalendarEvent, unlinkCalendarEvent, createAndLinkCalendarEvent, unlinkAndDeleteCalendarEvent,
 } from './project-actions'
 import { syncProjectName, type ProjectSyncResult } from './sync-project-name-action'

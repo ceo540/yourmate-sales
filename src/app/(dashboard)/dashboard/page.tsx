@@ -3,7 +3,6 @@ import { createAdminClient } from '@/lib/supabase/admin'
 import { redirect } from 'next/navigation'
 import Link from 'next/link'
 import { isAdmin as checkIsAdmin } from '@/lib/permissions'
-import { TASK_STATUS_STYLE as STATUS_STYLE } from '@/lib/constants'
 import DashboardMemo from './DashboardMemo'
 
 const SVC_COLOR: Record<string, string> = {
