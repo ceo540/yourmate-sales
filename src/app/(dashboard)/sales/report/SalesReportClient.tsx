@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import { DEPT_SERVICE_GROUPS } from '@/types'
 import SaleExpandEditor from './SaleExpandEditor'
 import { bulkDeleteSales, bulkUpdateSalesStage } from '../actions'
+import { CONTRACT_STAGE_BADGE as CONTRACT_STAGE_COLORS } from '@/lib/constants'
 
 interface CostItem {
   id: string
@@ -68,16 +69,6 @@ interface Props {
 function formatDate(d: string | null) {
   if (!d) return '-'
   return new Date(d).toLocaleDateString('ko-KR', { month: 'short', day: 'numeric' })
-}
-
-const CONTRACT_STAGE_COLORS: Record<string, string> = {
-  '계약': 'bg-blue-50 text-blue-600',
-  '착수': 'bg-purple-50 text-purple-600',
-  '선금': 'bg-yellow-50 text-yellow-700',
-  '중도금': 'bg-orange-50 text-orange-600',
-  '완수': 'bg-teal-50 text-teal-600',
-  '계산서발행': 'bg-indigo-50 text-indigo-600',
-  '잔금': 'bg-green-50 text-green-600',
 }
 
 const CONTRACT_BADGE_COLORS: Record<string, string> = {
