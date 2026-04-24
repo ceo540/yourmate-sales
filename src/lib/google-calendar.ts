@@ -99,7 +99,8 @@ export async function createEvent(calendarKey: string, data: {
   const calendarId = CALENDAR_MAP[calendarKey as keyof typeof CALENDAR_MAP]
   if (!calendarId) throw new Error('Invalid calendar key')
 
-  const isAllDay = data.isAllDay ?? !data.startTime
+  // startTime이 비어있으면 '종일' 모드로 강제 (빈 dateTime으로 400 나는 것 방지)
+  const isAllDay = data.isAllDay === true || !data.startTime
   const start = isAllDay
     ? { date: data.date }
     : { dateTime: `${data.date}T${data.startTime}:00`, timeZone: 'Asia/Seoul' }
@@ -127,7 +128,7 @@ export async function updateEvent(calendarKey: string, eventId: string, data: {
   const calendarId = CALENDAR_MAP[calendarKey as keyof typeof CALENDAR_MAP]
   if (!calendarId) throw new Error('Invalid calendar key')
 
-  const isAllDay = data.isAllDay ?? !data.startTime
+  const isAllDay = data.isAllDay === true || !data.startTime
   const start = isAllDay
     ? { date: data.date }
     : { dateTime: `${data.date}T${data.startTime}:00`, timeZone: 'Asia/Seoul' }
