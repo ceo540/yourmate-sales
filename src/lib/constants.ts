@@ -43,6 +43,19 @@ export const PRIORITY_BADGE: Record<string, string> = {
   '긴급': 'bg-red-100 text-red-600',
 }
 
+// 로그 타입 배지 색상 (리드/매출 상세 페이지 공용)
+export const LOG_TYPE_COLORS: Record<string, string> = {
+  통화:     'bg-blue-50 text-blue-600',
+  이메일:   'bg-purple-50 text-purple-600',
+  방문:     'bg-green-50 text-green-600',
+  미팅:     'bg-teal-50 text-teal-600',
+  출장:     'bg-cyan-50 text-cyan-600',
+  메모:     'bg-yellow-50 text-yellow-700',
+  내부회의: 'bg-orange-50 text-orange-600',
+  최초유입: 'bg-teal-50 text-teal-600',
+  기타:     'bg-gray-100 text-gray-500',
+}
+
 // 서비스 유형 배지 색상 (sales 목록, sales report 공용)
 export const SERVICE_COLOR_BADGE: Record<string, string> = {
   '002ENT':     'bg-blue-50 text-blue-700',

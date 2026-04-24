@@ -13,6 +13,7 @@ import { listSaleDropboxFiles } from './dropbox-action'
 import { syncSaleName, type SyncResult } from './sync-name-action'
 import dynamic from 'next/dynamic'
 import { DEPARTMENT_LABELS, PROGRESS_STATUSES, ProgressStatus } from '@/types'
+import { TASK_STATUS_STYLE as STATUS_COLORS, LOG_TYPE_COLORS } from '@/lib/constants'
 import QuotationModal from './QuotationModal'
 import TaskDetailPanel from './TaskDetailPanel'
 const TiptapEditor = dynamic(() => import('./TiptapEditor'), { ssr: false, loading: () => <div className="h-32 bg-gray-50 rounded-lg animate-pulse" /> })
@@ -66,19 +67,6 @@ interface Props {
   currentUserId: string
 }
 
-const STATUS_COLORS: Record<string, string> = {
-  '할 일':  'bg-gray-100 text-gray-600',
-  '진행중': 'bg-blue-100 text-blue-700',
-  '검토중': 'bg-yellow-100 text-yellow-700',
-  '완료':   'bg-green-100 text-green-700',
-  '보류':   'bg-red-100 text-red-600',
-}
-const LOG_TYPE_COLORS: Record<string, string> = {
-  통화: 'bg-blue-50 text-blue-600', 이메일: 'bg-purple-50 text-purple-600',
-  방문: 'bg-green-50 text-green-600', 미팅: 'bg-teal-50 text-teal-600',
-  메모: 'bg-yellow-50 text-yellow-700',
-  내부회의: 'bg-orange-50 text-orange-600', 기타: 'bg-gray-100 text-gray-500',
-}
 // 받침 있는 타입은 '으로', 없거나 ㄹ 받침은 '로'
 const LOG_SAVE_PARTICLE: Record<string, string> = { 방문: '으로', 미팅: '으로' }
 const CONTRACT_STAGES = ['계약', '착수', '선금', '중도금', '완수', '계산서발행', '잔금'] as const
