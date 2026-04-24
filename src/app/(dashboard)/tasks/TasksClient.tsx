@@ -2,16 +2,10 @@
 import { useState, useTransition } from 'react'
 import { createTask, updateTaskStatus, deleteTask, updateTask } from '../sales/tasks/actions'
 import { createProfileMap } from '@/lib/utils'
-import { TASK_STATUS_STYLE as STATUS_STYLE, PRIORITY_DOT } from '@/lib/constants'
+import { TASK_STATUS_STYLE as STATUS_STYLE, PRIORITY_DOT, PRIORITY_TEXT as PRIORITY_STYLE } from '@/lib/constants'
 
 const STATUSES = ['할 일', '진행중', '검토중', '완료', '보류'] as const
 const PRIORITIES = ['낮음', '보통', '높음'] as const
-
-const PRIORITY_STYLE: Record<string, string> = {
-  '낮음': 'text-gray-400',
-  '보통': 'text-yellow-500',
-  '높음': 'text-red-500',
-}
 
 interface Profile { id: string; name: string }
 interface Sale { id: string; name: string; department?: string | null }

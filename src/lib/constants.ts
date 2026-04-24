@@ -28,6 +28,21 @@ export const PRIORITY_DOT: Record<string, string> = {
   '낮음': 'bg-gray-200',
 }
 
+// 업무 우선순위 텍스트 색상 (tasks 목록, TasksSection 공용)
+export const PRIORITY_TEXT: Record<string, string> = {
+  '낮음': 'text-gray-400',
+  '보통': 'text-yellow-500',
+  '높음': 'text-red-500',
+}
+
+// 업무 우선순위 배지 (TaskDetailPanel 용 - 배경+텍스트 강조)
+export const PRIORITY_BADGE: Record<string, string> = {
+  '낮음': 'bg-gray-100 text-gray-400',
+  '보통': 'bg-gray-100 text-gray-600',
+  '높음': 'bg-orange-100 text-orange-600',
+  '긴급': 'bg-red-100 text-red-600',
+}
+
 // 사업부 아이콘 이모지
 export const DEPT_ICONS: Record<Department, string> = {
   sound_of_school:    '🎵',
