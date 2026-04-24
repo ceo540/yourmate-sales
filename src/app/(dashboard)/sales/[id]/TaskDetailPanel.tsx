@@ -3,7 +3,7 @@
 import { useState, useTransition, useEffect } from 'react'
 import { updateTask } from '../tasks/actions'
 import TiptapEditor from './TiptapEditor'
-import { TASK_STATUS_STYLE as STATUS_STYLE } from '@/lib/constants'
+import { TASK_STATUS_STYLE as STATUS_STYLE, PRIORITY_BADGE as PRIORITY_STYLE } from '@/lib/constants'
 
 interface ChecklistItem { id: string; text: string; done: boolean }
 interface Profile { id: string; name: string }
@@ -29,13 +29,6 @@ interface Props {
 
 const STATUSES = ['할 일', '진행중', '검토중', '완료', '보류']
 const PRIORITIES = ['낮음', '보통', '높음', '긴급']
-
-const PRIORITY_STYLE: Record<string, string> = {
-  '낮음': 'bg-gray-100 text-gray-400',
-  '보통': 'bg-gray-100 text-gray-600',
-  '높음': 'bg-orange-100 text-orange-600',
-  '긴급': 'bg-red-100 text-red-600',
-}
 
 export default function TaskDetailPanel({ task, profiles, onClose, onSaved }: Props) {
   const [title, setTitle] = useState(task.title)
