@@ -19,6 +19,8 @@ const CALENDAR_LABELS: Record<string, string> = {
 import ProjectClaudeChat from '@/components/ProjectClaudeChat'
 import { updateTaskStatus, deleteTask, updateTask } from '../../sales/tasks/actions'
 import LogForm from './components/LogForm'
+import Avatar from './components/Avatar'
+import AssigneePicker from './components/AssigneePicker'
 
 // ── 상수 ──────────────────────────────────────────────────────────────────────
 const LOG_TYPE_STYLE: Record<string, { badge: string; bar: string; label: string }> = {
@@ -38,7 +40,6 @@ const STAGE_COLORS: Record<string, string> = {
   잔금: 'bg-green-100 text-green-700',
 }
 import { TASK_STATUS_STYLE as STATUS_STYLE, PRIORITY_DOT } from '@/lib/constants'
-const AVATAR_COLORS = ['bg-yellow-400', 'bg-blue-400', 'bg-green-400', 'bg-purple-400', 'bg-orange-400']
 const PIPELINE = ['유입', '협의중', '견적발송', '계약', '진행중', '완료']
 const CONTRACT_STAGES = ['계약', '착수', '선금', '중도금', '완수', '계산서발행', '잔금']
 const PROGRESS_OPTIONS = ['착수전', '착수중', '완수']
@@ -59,15 +60,6 @@ function fmtDatetime(s: string | null) {
   if (!s) return ''
   return new Date(s).toLocaleDateString('ko-KR', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })
 }
-function Avatar({ name, idx = 0, size = 'sm' }: { name: string; idx?: number; size?: 'sm' | 'md' }) {
-  const sz = size === 'sm' ? 'w-5 h-5 text-xs' : 'w-7 h-7 text-sm'
-  return (
-    <div className={`${sz} ${AVATAR_COLORS[idx % AVATAR_COLORS.length]} rounded-full flex items-center justify-center font-bold text-gray-900 flex-shrink-0`}>
-      {name[0]}
-    </div>
-  )
-}
-
 // ── 인터페이스 ────────────────────────────────────────────────────────────────
 interface Profile { id: string; name: string }
 interface Person { id: string; name: string; phone: string | null; email: string | null }
@@ -112,57 +104,6 @@ interface Props {
   profiles: Profile[]; customers: Customer[]; customer: Customer | null
   leads: Lead[]; salesOptions: SaleOption[]; entities: Entity[]
   persons: Person[]; isAdmin: boolean; currentUserId: string
-}
-
-// ── 담당자 피커 ───────────────────────────────────────────────────────────────
-function AssigneePicker({ label, value, multi, profiles, onChange }: {
-  label: string; value: Profile[]; multi: boolean; profiles: Profile[]
-  onChange: (added: Profile | null, removed: Profile | null) => void
-}) {
-  const [open, setOpen] = useState(false)
-  const ref = useRef<HTMLDivElement>(null)
-  useEffect(() => {
-    const h = (e: MouseEvent) => { if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false) }
-    document.addEventListener('mousedown', h)
-    return () => document.removeEventListener('mousedown', h)
-  }, [])
-  function toggle(p: Profile) {
-    const exists = value.find(v => v.id === p.id)
-    if (exists) { onChange(null, p) }
-    else { if (!multi && value.length > 0) onChange(null, value[0]); onChange(p, null) }
-    if (!multi) setOpen(false)
-  }
-  return (
-    <div className="relative" ref={ref}>
-      <div className="flex items-center gap-1.5 flex-wrap cursor-pointer" onClick={() => setOpen(true)}>
-        {value.length === 0
-          ? <span className="text-xs text-gray-400 border border-dashed border-gray-200 px-2 py-0.5 rounded hover:border-gray-400">+ {label}</span>
-          : value.map((p, i) => (
-            <div key={p.id} className="flex items-center gap-1">
-              <Avatar name={p.name} idx={i} />
-              <span className="text-xs text-gray-700">{p.name}</span>
-            </div>
-          ))
-        }
-        {value.length > 0 && <span className="text-xs text-gray-300 hover:text-gray-600 ml-0.5">+</span>}
-      </div>
-      {open && (
-        <div className="absolute left-0 top-full mt-1 bg-white border border-gray-200 rounded-xl shadow-lg z-30 min-w-40 py-1">
-          {profiles.map((p, i) => {
-            const selected = !!value.find(v => v.id === p.id)
-            return (
-              <button key={p.id} onClick={() => toggle(p)}
-                className={`w-full flex items-center gap-2 px-3 py-2 text-sm hover:bg-gray-50 ${selected ? 'font-medium text-gray-900' : 'text-gray-600'}`}>
-                <Avatar name={p.name} idx={i} />
-                <span>{p.name}</span>
-                {selected && <span className="ml-auto text-yellow-500 text-xs">✓</span>}
-              </button>
-            )
-          })}
-        </div>
-      )}
-    </div>
-  )
 }
 
 // ── 계약 카드 ─────────────────────────────────────────────────────────────────
