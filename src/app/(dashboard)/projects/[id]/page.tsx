@@ -1,7 +1,7 @@
 import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { notFound, redirect } from 'next/navigation'
-import { createProfileMap } from '@/lib/utils'
+import { createProfileMap, createProfileNameMap } from '@/lib/utils'
 import { isAdminOrManager } from '@/lib/permissions'
 import ProjectHubClient from './ProjectHubClient'
 
@@ -103,7 +103,7 @@ export default async function ProjectPage({ params }: { params: Promise<{ id: st
   let logAuthorMap: Record<string, string> = {}
   if (authorIds.length > 0) {
     const { data: logProfiles } = await admin.from('profiles').select('id, name').in('id', authorIds)
-    logAuthorMap = Object.fromEntries((logProfiles ?? []).map(p => [p.id, p.name]))
+    logAuthorMap = createProfileNameMap(logProfiles)
   }
 
   // 프로젝트 로그와 리드 로그를 합쳐 contacted_at 기준 내림차순 정렬
@@ -131,7 +131,7 @@ export default async function ProjectPage({ params }: { params: Promise<{ id: st
   let leadAssigneeMap: Record<string, string> = {}
   if (leadAssigneeIds.length > 0) {
     const { data: lp } = await admin.from('profiles').select('id, name').in('id', leadAssigneeIds)
-    leadAssigneeMap = Object.fromEntries((lp ?? []).map(p => [p.id, p.name]))
+    leadAssigneeMap = createProfileNameMap(lp)
   }
   const leads = (leadsRaw ?? []).map((l: any) => ({
     id: l.id,

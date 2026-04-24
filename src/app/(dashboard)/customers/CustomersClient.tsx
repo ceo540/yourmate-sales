@@ -7,6 +7,7 @@ import {
   addRelation, endRelation, updateRelation, deleteRelation,
 } from './actions'
 import { getCustomerLogs, createCustomerLog, deleteCustomerLog } from './customer-log-actions'
+import { createProfileMap } from '@/lib/utils'
 
 /* ── 타입 ── */
 interface OrgContact {
@@ -114,8 +115,8 @@ export default function CustomersClient({ customers, persons, isAdmin }: Props) 
     setDetailType('person'); setDetailId(id); setListView('person'); setEditingInfo(false)
   }
 
-  const orgMap    = Object.fromEntries(customers.map(c=>[c.id,c]))
-  const personMap = Object.fromEntries(persons.map(p=>[p.id,p]))
+  const orgMap    = createProfileMap(customers)
+  const personMap = createProfileMap(persons)
   const currentOrg    = detailType==='org'    ? orgMap[detailId!]    : null
   const currentPerson = detailType==='person' ? personMap[detailId!] : null
 

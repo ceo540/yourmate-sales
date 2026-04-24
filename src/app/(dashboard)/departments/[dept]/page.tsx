@@ -61,7 +61,7 @@ export default async function DeptPage({ params }: { params: Promise<{ dept: str
     let taskProfileMap: Record<string, string> = {}
     if (assigneeIds.length > 0) {
       const { data: taskProfiles } = await admin.from('profiles').select('id, name').in('id', assigneeIds)
-      taskProfileMap = Object.fromEntries((taskProfiles ?? []).map(p => [p.id, p.name]))
+      taskProfileMap = createProfileNameMap(taskProfiles)
     }
     const saleNameMap = Object.fromEntries((salesRaw ?? []).map(s => [s.id, s.name]))
 
