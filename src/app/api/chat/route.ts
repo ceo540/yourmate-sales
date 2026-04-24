@@ -6,7 +6,7 @@ import { getDropboxToken, readDropboxFile, uploadTextFile, createSaleFolder } fr
 import { appendAiNote } from '@/lib/brief-generator'
 import { logApiUsage } from '@/lib/api-usage'
 import { createEvent as createGCalEvent } from '@/lib/google-calendar'
-import { SYSTEM_PROMPT } from '@/lib/prompts/chat-system-prompt'
+import { SYSTEM_PROMPT } from '@/lib/bbang/loadSchema'
 
 export const maxDuration = 60
 
