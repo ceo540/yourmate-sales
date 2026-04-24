@@ -32,7 +32,7 @@ export default async function ProjectPage({ params }: { params: Promise<{ id: st
     { data: leadsRaw },
     { data: personsRaw },
   ] = await Promise.all([
-    admin.from('project_members').select('profile_id, role, profiles:profile_id(id, name)').eq('project_id', id),
+    admin.from('project_members').select('profile_id, role').eq('project_id', id),
     admin.from('sales').select('*, payment_schedules(*)').eq('project_id', id).order('created_at'),
     admin.from('profiles').select('id, name').order('name'),
     admin.from('customers').select('id, name, type, contact_name, phone, contact_email').order('name'),
@@ -61,10 +61,11 @@ export default async function ProjectPage({ params }: { params: Promise<{ id: st
   const profileMap = createProfileMap(profiles)
   const entityMap = Object.fromEntries((entities ?? []).map(e => [e.id, e.name]))
 
-  const members = (membersRaw ?? []).map((m: any) => ({
+  // FK 조인 금지 (CLAUDE.md) — profileMap으로 수동 조인
+  const members = (membersRaw ?? []).map((m: { profile_id: string; role: string }) => ({
     profile_id: m.profile_id,
     role: m.role,
-    name: (m.profiles as any)?.name ?? '알 수 없음',
+    name: profileMap[m.profile_id]?.name ?? '알 수 없음',
   }))
 
   const contracts = (contractsRaw ?? []).map(c => ({
