@@ -43,6 +43,21 @@ export const PRIORITY_BADGE: Record<string, string> = {
   '긴급': 'bg-red-100 text-red-600',
 }
 
+// 서비스 유형 배지 색상 (sales 목록, sales report 공용)
+export const SERVICE_COLOR_BADGE: Record<string, string> = {
+  '002ENT':     'bg-blue-50 text-blue-700',
+  'SOS':        'bg-indigo-50 text-indigo-700',
+  '교육프로그램': 'bg-emerald-50 text-emerald-700',
+  '납품설치':   'bg-orange-50 text-orange-700',
+  '유지보수':   'bg-amber-50 text-amber-700',
+  '교구대여':   'bg-yellow-50 text-yellow-700',
+  '제작인쇄':   'bg-lime-50 text-lime-700',
+  '콘텐츠제작': 'bg-purple-50 text-purple-700',
+  '행사운영':   'bg-pink-50 text-pink-700',
+  '행사대여':   'bg-fuchsia-50 text-fuchsia-700',
+  '프로젝트':   'bg-rose-50 text-rose-700',
+}
+
 // 사업부 아이콘 이모지
 export const DEPT_ICONS: Record<Department, string> = {
   sound_of_school:    '🎵',

@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation'
 import { DEPT_SERVICE_GROUPS } from '@/types'
 import SaleExpandEditor from './SaleExpandEditor'
 import { bulkDeleteSales, bulkUpdateSalesStage } from '../actions'
-import { CONTRACT_STAGE_BADGE as CONTRACT_STAGE_COLORS } from '@/lib/constants'
+import { CONTRACT_STAGE_BADGE as CONTRACT_STAGE_COLORS, SERVICE_COLOR_BADGE as SERVICE_COLORS } from '@/lib/constants'
 
 interface CostItem {
   id: string
@@ -76,20 +76,6 @@ const CONTRACT_BADGE_COLORS: Record<string, string> = {
   '세금계산서': 'bg-blue-50 text-blue-700',
   '카드결제': 'bg-purple-50 text-purple-700',
   '기타': 'bg-gray-100 text-gray-500',
-}
-
-const SERVICE_COLORS: Record<string, string> = {
-  '002ENT':   'bg-blue-50 text-blue-700',
-  'SOS':       'bg-indigo-50 text-indigo-700',
-  '교육프로그램': 'bg-emerald-50 text-emerald-700',
-  '납품설치':   'bg-orange-50 text-orange-700',
-  '유지보수':   'bg-amber-50 text-amber-700',
-  '교구대여':   'bg-yellow-50 text-yellow-700',
-  '제작인쇄':   'bg-lime-50 text-lime-700',
-  '콘텐츠제작':  'bg-purple-50 text-purple-700',
-  '행사운영':   'bg-pink-50 text-pink-700',
-  '행사대여':   'bg-fuchsia-50 text-fuchsia-700',
-  '프로젝트':   'bg-rose-50 text-rose-700',
 }
 
 function SortTh({ field, label, sortField, sortDir, onSort, className = '' }: {
