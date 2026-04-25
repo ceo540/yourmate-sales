@@ -1,8 +1,15 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useTransition } from 'react'
+import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import ProjectClaudeChat from '@/components/ProjectClaudeChat'
+import {
+  updateProjectMemo,
+  updateProjectNotes,
+  createProjectLog,
+  createTaskForProject,
+} from '../project-actions'
 
 interface Project {
   id: string
@@ -236,7 +243,7 @@ export default function ProjectV2Client({
           />
 
           {/* V1.7: 소통 Timeline */}
-          <CommunicationTimeline logs={logs} contracts={contracts} />
+          <CommunicationTimeline logs={logs} contracts={contracts} projectId={project.id} />
 
           {/* V1.8: 연관 서비스 */}
           <RelatedServicesV2
@@ -418,6 +425,8 @@ function ProjectOverviewSection({ project, customer, pmName, contracts, tasks, f
   project: Project; customer: Customer | null; pmName: string | null
   contracts: Contract[]; tasks: Task[]; finance: Finance
 }) {
+  const router = useRouter()
+  const [, startTransition] = useTransition()
   const pendingTasks = tasks.filter(t => t.status !== '완료' && t.status !== '보류')
   const urgentTasks = pendingTasks.filter(t => t.priority === '긴급' || t.priority === '높음').slice(0, 5)
   const completedRate = tasks.length > 0
@@ -425,6 +434,27 @@ function ProjectOverviewSection({ project, customer, pmName, contracts, tasks, f
     : 0
   const stage = contracts[0]?.contract_stage ?? null
   const profit = finance.revenue - finance.cost
+
+  // V1.12: 인플레이스 편집
+  const [editingMemo, setEditingMemo] = useState(false)
+  const [memoInput, setMemoInput] = useState(project.memo ?? '')
+  const [editingNotes, setEditingNotes] = useState(false)
+  const [notesInput, setNotesInput] = useState(project.notes ?? '')
+
+  function saveMemo() {
+    startTransition(async () => {
+      await updateProjectMemo(project.id, memoInput)
+      setEditingMemo(false)
+      router.refresh()
+    })
+  }
+  function saveNotes() {
+    startTransition(async () => {
+      await updateProjectNotes(project.id, notesInput)
+      setEditingNotes(false)
+      router.refresh()
+    })
+  }
 
   return (
     <div className="bg-white border border-gray-100 rounded-xl px-5 py-4 space-y-4">
@@ -487,19 +517,66 @@ function ProjectOverviewSection({ project, customer, pmName, contracts, tasks, f
         </div>
       )}
 
-      {/* 자유 메모 (project.memo 활용) */}
-      {project.memo && (
-        <div className="border-t border-gray-50 pt-3">
-          <p className="text-[10px] text-gray-400 mb-1">메모</p>
+      {/* 자유 메모 — 인플레이스 편집 */}
+      <div className="border-t border-gray-50 pt-3">
+        <div className="flex items-center justify-between mb-1">
+          <p className="text-[10px] text-gray-400 font-semibold">메모</p>
+          {!editingMemo && (
+            <button onClick={() => { setMemoInput(project.memo ?? ''); setEditingMemo(true) }}
+              className="text-[11px] text-gray-400 hover:text-gray-700">
+              {project.memo ? '편집' : '+ 추가'}
+            </button>
+          )}
+        </div>
+        {editingMemo ? (
+          <div className="space-y-2">
+            <textarea value={memoInput} onChange={e => setMemoInput(e.target.value)} rows={3} autoFocus
+              placeholder="프로젝트 일반 메모..."
+              className="w-full text-sm border border-gray-200 rounded-lg px-3 py-2 resize-none focus:outline-none focus:ring-1 focus:ring-yellow-400 bg-white" />
+            <div className="flex gap-2">
+              <button onClick={saveMemo}
+                className="px-3 py-1.5 text-xs font-semibold rounded-lg hover:opacity-80"
+                style={{ backgroundColor: '#FFCE00', color: '#121212' }}>저장</button>
+              <button onClick={() => setEditingMemo(false)}
+                className="px-3 py-1.5 text-xs border border-gray-200 rounded-lg text-gray-500">취소</button>
+            </div>
+          </div>
+        ) : project.memo ? (
           <p className="text-sm text-gray-700 whitespace-pre-line">{project.memo}</p>
+        ) : (
+          <p className="text-xs text-gray-400 italic">메모 없음</p>
+        )}
+      </div>
+
+      {/* 유의사항 — 인플레이스 편집 */}
+      <div className={`border-t border-gray-50 pt-3 -mx-5 -mb-4 px-5 py-3 rounded-b-xl ${(project.notes || editingNotes) ? 'bg-orange-50' : ''}`}>
+        <div className="flex items-center justify-between mb-1">
+          <p className={`text-[10px] font-semibold ${project.notes ? 'text-orange-700' : 'text-gray-400'}`}>
+            ⚠ 유의사항
+          </p>
+          {!editingNotes && (
+            <button onClick={() => { setNotesInput(project.notes ?? ''); setEditingNotes(true) }}
+              className={`text-[11px] hover:opacity-80 ${project.notes ? 'text-orange-500' : 'text-gray-400'}`}>
+              {project.notes ? '편집' : '+ 추가'}
+            </button>
+          )}
         </div>
-      )}
-      {project.notes && (
-        <div className="border-t border-gray-50 pt-3 bg-orange-50 -mx-5 -mb-4 px-5 py-3 rounded-b-xl">
-          <p className="text-[10px] text-orange-700 mb-1 font-semibold">⚠ 유의사항</p>
+        {editingNotes ? (
+          <div className="space-y-2">
+            <textarea value={notesInput} onChange={e => setNotesInput(e.target.value)} rows={3} autoFocus
+              placeholder="특이사항·주의사항... 제3자도 알아야 할 정보"
+              className="w-full text-sm border border-orange-200 rounded-lg px-3 py-2 resize-none focus:outline-none focus:ring-1 focus:ring-orange-400 bg-white" />
+            <div className="flex gap-2">
+              <button onClick={saveNotes}
+                className="px-3 py-1.5 text-xs font-semibold rounded-lg bg-orange-500 hover:bg-orange-600 text-white">저장</button>
+              <button onClick={() => setEditingNotes(false)}
+                className="px-3 py-1.5 text-xs border border-orange-200 rounded-lg text-orange-600">취소</button>
+            </div>
+          </div>
+        ) : project.notes ? (
           <p className="text-sm text-orange-800 whitespace-pre-line">{project.notes}</p>
-        </div>
-      )}
+        ) : null}
+      </div>
     </div>
   )
 }
@@ -642,7 +719,23 @@ const PRIORITY_DOT: Record<string, string> = {
 function ContractsTasksSection({ contracts, tasks, projectId }: {
   contracts: Contract[]; tasks: Task[]; projectId: string
 }) {
+  const router = useRouter()
+  const [, startTransition] = useTransition()
   const pendingTasks = tasks.filter(t => t.status !== '완료' && t.status !== '보류')
+
+  // V1.12: 빠른 업무 추가 (계약 1건 이상일 때만)
+  const [newTaskTitle, setNewTaskTitle] = useState('')
+  const canAddTask = contracts.length > 0
+  function addTask() {
+    if (!newTaskTitle.trim() || !canAddTask) return
+    const title = newTaskTitle.trim()
+    const firstSaleId = contracts[0].id
+    startTransition(async () => {
+      await createTaskForProject(firstSaleId, title, null, null, '보통', null)
+      setNewTaskTitle('')
+      router.refresh()
+    })
+  }
 
   return (
     <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
@@ -686,6 +779,20 @@ function ContractsTasksSection({ contracts, tasks, projectId }: {
           <p className="text-sm font-semibold text-gray-800">✅ 업무 ({pendingTasks.length}/{tasks.length})</p>
           <Link href={`/projects/${projectId}`} className="text-xs text-gray-400 hover:text-gray-700">상세 편집 →</Link>
         </div>
+        {/* 빠른 추가 */}
+        {canAddTask && (
+          <div className="px-5 py-2 bg-yellow-50 border-b border-yellow-100">
+            <div className="flex gap-2">
+              <input value={newTaskTitle} onChange={e => setNewTaskTitle(e.target.value)}
+                onKeyDown={e => { if (e.key === 'Enter') addTask() }}
+                placeholder="업무 제목 (Enter로 추가)..."
+                className="flex-1 text-xs border border-yellow-200 rounded px-2.5 py-1.5 bg-white focus:outline-none focus:border-yellow-400" />
+              <button onClick={addTask} disabled={!newTaskTitle.trim()}
+                className="text-xs px-3 py-1.5 rounded font-medium hover:opacity-80 disabled:opacity-40"
+                style={{ backgroundColor: '#FFCE00', color: '#121212' }}>+</button>
+            </div>
+          </div>
+        )}
         {tasks.length === 0 ? (
           <p className="text-center py-6 text-xs text-gray-400">등록된 업무 없음</p>
         ) : (
@@ -714,12 +821,30 @@ function ContractsTasksSection({ contracts, tasks, projectId }: {
   )
 }
 
-function CommunicationTimeline({ logs, contracts }: { logs: Log[]; contracts: Contract[] }) {
+function CommunicationTimeline({ logs, contracts, projectId }: { logs: Log[]; contracts: Contract[]; projectId: string }) {
+  const router = useRouter()
+  const [, startTransition] = useTransition()
   const contractNameMap = Object.fromEntries(contracts.map(c => [c.id, c.name]))
 
   // V1.11: 필터·검색
   const [typeFilter, setTypeFilter] = useState<string>('전체')
   const [search, setSearch] = useState('')
+
+  // V1.12: 인라인 추가
+  const [adding, setAdding] = useState(false)
+  const [newType, setNewType] = useState<string>('통화')
+  const [newContent, setNewContent] = useState('')
+
+  function submitNew() {
+    if (!newContent.trim()) return
+    const category = ['내부회의', '메모'].includes(newType) ? '내부' : '외부'
+    startTransition(async () => {
+      await createProjectLog(projectId, newContent.trim(), newType, category)
+      setNewContent('')
+      setAdding(false)
+      router.refresh()
+    })
+  }
 
   const availableTypes = Array.from(new Set(logs.map(l => l.log_type)))
   const typeCounts = availableTypes.reduce<Record<string, number>>((acc, t) => {
@@ -745,8 +870,40 @@ function CommunicationTimeline({ logs, contracts }: { logs: Log[]; contracts: Co
       <div className="px-5 py-3 border-b border-gray-100 space-y-2">
         <div className="flex items-center justify-between">
           <p className="text-sm font-semibold text-gray-800">💬 소통 Timeline</p>
-          <span className="text-xs text-gray-400">{filteredLogs.length} / {logs.length}건</span>
+          <div className="flex items-center gap-2">
+            <span className="text-xs text-gray-400">{filteredLogs.length} / {logs.length}건</span>
+            <button onClick={() => setAdding(s => !s)}
+              className="text-xs px-2 py-0.5 rounded font-medium hover:opacity-80"
+              style={{ backgroundColor: '#FFCE00', color: '#121212' }}>
+              {adding ? '닫기' : '+ 추가'}
+            </button>
+          </div>
         </div>
+
+        {/* 인라인 소통 추가 */}
+        {adding && (
+          <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-3 space-y-2">
+            <div className="flex gap-1.5 flex-wrap">
+              {['통화', '이메일', '방문', '미팅', '출장', '내부회의', '메모', '기타'].map(t => (
+                <button key={t} onClick={() => setNewType(t)}
+                  className={`text-[11px] px-2 py-0.5 rounded-full border transition-all ${newType === t ? 'bg-gray-900 text-white border-gray-900' : 'bg-white text-gray-500 border-gray-200 hover:border-gray-400'}`}>
+                  {LOG_ICON[t] ?? '·'} {t}
+                </button>
+              ))}
+            </div>
+            <textarea value={newContent} onChange={e => setNewContent(e.target.value)} rows={2}
+              placeholder="소통 내용을 입력하세요..." autoFocus
+              onKeyDown={e => { if (e.key === 'Enter' && e.metaKey) submitNew() }}
+              className="w-full text-sm border border-yellow-200 rounded-lg px-3 py-2 resize-none focus:outline-none focus:ring-1 focus:ring-yellow-400 bg-white" />
+            <div className="flex gap-2">
+              <button onClick={submitNew} disabled={!newContent.trim()}
+                className="px-3 py-1.5 text-xs font-semibold rounded-lg hover:opacity-80 disabled:opacity-40"
+                style={{ backgroundColor: '#FFCE00', color: '#121212' }}>저장 (⌘+Enter)</button>
+              <button onClick={() => { setAdding(false); setNewContent('') }}
+                className="px-3 py-1.5 text-xs border border-gray-200 rounded-lg text-gray-500">취소</button>
+            </div>
+          </div>
+        )}
         {logs.length > 0 && (
           <>
             {/* 검색 */}
