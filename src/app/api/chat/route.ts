@@ -30,7 +30,7 @@ import {
 
 export const maxDuration = 60
 
-const MODEL = 'claude-haiku-4-5-20251001'
+const MODEL = 'claude-sonnet-4-6'
 
 let _client: Anthropic | null = null
 const getClient = () => { if (!_client) _client = new Anthropic(); return _client }
@@ -1175,13 +1175,29 @@ export async function POST(req: NextRequest) {
       'new-sale':  '\n## 현재 모드: 새 계약건\n목표는 계약건 등록이야. 아래 상황에 맞게 유연하게 대응해.\n- 상담 중 질문: CS 매뉴얼 기반으로 즉시 답해. 서비스 언급되면 파악할 내용 알려줘. 가격·정책 질문엔 매뉴얼 기준으로.\n- 메모·전사록 붙여넣기: 계약 정보 추출 후 <sale-data> 블록 출력.\n- "등록해줘" 요청: 대화에서 파악된 정보로 <sale-data> 블록 출력.\n- 매뉴얼에 없는 건 "담당자한테 확인해봐".',
       'new-lead':  '\n## 현재 모드: 새 리드\n목표는 리드 등록이야. 상황에 맞게 유연하게 대응해.\n- 상담 중 질문: CS 매뉴얼 기반으로 즉시 답해. 서비스 언급되면 파악할 내용 알려줘.\n- 메모·전사록 붙여넣기: 리드 정보 추출 후 <lead-data> 블록 출력.\n- 대화 흐름에서 정보가 충분히 파악되면 자동으로 <lead-data> 블록 제시해. 요약만 하고 끝내지 마.\n- "등록해줘", "넣어줘", "저장해줘" 같이 명시적으로 등록 요청하면 create_lead 도구로 바로 직접 등록해. 카드로 보여주지 말고 바로 실행.\n- 매뉴얼에 없는 건 "담당자한테 확인해봐".',
       'update':    '\n## 현재 모드: 기존 건 업데이트\n어떤 건인지 먼저 파악해. search_leads 또는 get_sales로 검색하고 결과 보여줘. 확인 후 내용 받아서 update 도구로 업데이트해.',
-      'chat':      '\n## 현재 모드: 질문하기\n도구 사용해서 데이터 조회 및 답변해.',
+      'chat':      '\n## 현재 모드: 질문하기\n도구 사용해서 데이터 조회 및 답변해. 프로젝트 페이지에서는 단순 조회뿐 아니라 할일/개요/협의사항 등 데이터 변경 도구도 적극 사용 (위 최우선 규칙 참고).',
     }
     const modeCtx = mode ? (MODE_CONTEXT[mode] || '') : ''
 
     const today = new Date().toLocaleDateString('ko-KR', { year: 'numeric', month: 'long', day: 'numeric', weekday: 'long', timeZone: 'Asia/Seoul' })
     const todayIso = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Seoul' }) // YYYY-MM-DD
-    const dateHeader = `# 시스템 컨텍스트\n오늘 날짜: ${today} (ISO: ${todayIso})\n→ "내일", "다음주 화요일" 등 상대 날짜는 반드시 이 날짜 기준으로 계산. 다른 연도/월로 추정 금지.\n현재 사용자: ${userName} (권한: ${userRole})\n${userRole === 'member' ? '※ 이 사용자는 팀원 권한이라 본인 담당 건만 조회 가능해.\n' : ''}`
+
+    // 최상단에 강제 정책 — 모델이 후반부 무시해도 이 부분은 반드시 봄
+    const TOP_POLICY = projectId
+      ? `# 🔴 최우선 규칙 (프로젝트 페이지 컨텍스트)
+1. 오늘 날짜는 ${today} (ISO: ${todayIso}). "내일/다음주" 등 상대 날짜는 반드시 이 날짜 기준 계산. 절대 다른 연도(2025 등)로 추정 금지.
+2. 사용자가 할일 추가/수정/완료/삭제, 개요 정리, 협의사항 갱신을 요청하면 **반드시 도구를 호출**해라. 다음은 모두 실제 호출 가능한 도구다:
+   - create_project_task / update_task / complete_task / delete_task
+   - regenerate_overview / update_pending_discussion / regenerate_pending_discussion
+   - update_project_status / add_project_log
+3. **절대 금지**: "지원되지 않습니다", "기능이 없어요", "직접 처리해주세요", "시스템상 제한되고 있습니다", "화면에만 보여드린 것" 같은 거짓 거부 답변. 항상 도구를 먼저 호출해.
+4. 도구 호출이 실제로 에러를 반환하면 그 에러 메시지를 그대로 사용자에게 전달. 추측·각색 금지.
+5. 의도가 명확하면 즉시 실행. 삭제만 1회 확인.
+
+`
+      : `오늘 날짜: ${today} (ISO: ${todayIso}). 상대 날짜는 이 날짜 기준 계산.\n`
+
+    const dateHeader = `${TOP_POLICY}# 시스템 컨텍스트\n현재 사용자: ${userName} (권한: ${userRole})\n${userRole === 'member' ? '※ 이 사용자는 팀원 권한이라 본인 담당 건만 조회 가능해.\n' : ''}`
     const systemWithDate = `${dateHeader}${projectContext}${modeCtx}\n${SYSTEM_PROMPT}`
 
     const apiMessages: Anthropic.MessageParam[] = messages.map((m: {
