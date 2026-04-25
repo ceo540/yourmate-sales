@@ -1120,23 +1120,28 @@ export async function POST(req: NextRequest) {
         .eq('id', projectId)
         .single()
       if (project) {
-        const { data: linkedSales } = await admin
-          .from('project_sales_relations')
-          .select('sale_id, sales(name, revenue, contract_stage)')
+        // V2 페이지와 동일한 경로: sales.project_id 직접 조인
+        const { data: directSales } = await admin
+          .from('sales')
+          .select('id, name, revenue, contract_stage')
           .eq('project_id', projectId)
-          .limit(5)
-        const { data: openTasks } = await admin
-          .from('tasks')
-          .select('title, status, priority, due_date')
-          .eq('project_id', projectId)
-          .not('status', 'in', '(완료,보류)')
           .limit(10)
+        const saleIdList = (directSales ?? []).map(s => s.id)
+        // tasks.project_id 컬럼은 sale.id를 가리킴 (CLAUDE.md 도메인 모델 참고)
+        const { data: openTasks } = saleIdList.length > 0
+          ? await admin
+              .from('tasks')
+              .select('id, title, status, priority, due_date')
+              .in('project_id', saleIdList)
+              .not('status', 'in', '(완료,보류)')
+              .limit(20)
+          : { data: [] as { id: string; title: string; status: string; priority: string | null; due_date: string | null }[] }
 
-        const salesLines = (linkedSales ?? [])
-          .map((r: any) => r.sales ? `  - ${r.sales.name} / ${(r.sales.revenue ?? 0).toLocaleString()}원 / ${r.sales.contract_stage}` : '')
-          .filter(Boolean).join('\n')
+        const salesLines = (directSales ?? [])
+          .map(s => `  - ${s.name} / ${(s.revenue ?? 0).toLocaleString()}원 / ${s.contract_stage}`)
+          .join('\n')
         const taskLines = (openTasks ?? [])
-          .map((t: any) => `  - [${t.priority || '보통'}] ${t.title}${t.due_date ? ` (마감: ${t.due_date})` : ''}`)
+          .map(t => `  - [${t.priority || '보통'}] ${t.title}${t.due_date ? ` (마감: ${t.due_date})` : ''} [id:${t.id.slice(0, 8)}]`)
           .join('\n')
 
         // brief.md 읽기 (Dropbox 폴더가 있을 때)
@@ -1151,20 +1156,16 @@ export async function POST(req: NextRequest) {
           }
         }
 
-        // 소통내역 최근 3건
-        const primarySaleId = (linkedSales ?? [])[0]?.sale_id ?? null
-        let recentLogs = ''
-        if (primarySaleId) {
-          const { data: logs } = await admin
-            .from('project_logs')
-            .select('content, log_type, contacted_at')
-            .eq('sale_id', primarySaleId)
-            .order('contacted_at', { ascending: false })
-            .limit(3)
-          if (logs?.length) {
-            recentLogs = `\n- 최근 소통:\n${logs.map((l: any) => `  - [${l.log_type}] ${l.contacted_at?.slice(0, 10)}: ${l.content}`).join('\n')}`
-          }
-        }
+        // 소통내역 최근 3건 — project_id로 직접 조회
+        const { data: logs } = await admin
+          .from('project_logs')
+          .select('content, log_type, contacted_at')
+          .eq('project_id', projectId)
+          .order('contacted_at', { ascending: false })
+          .limit(3)
+        const recentLogs = logs?.length
+          ? `\n- 최근 소통:\n${logs.map(l => `  - [${l.log_type}] ${l.contacted_at?.slice(0, 10)}: ${l.content}`).join('\n')}`
+          : ''
 
         projectContext = `\n## 현재 열린 프로젝트\n이 대화는 아래 프로젝트 페이지에서 시작됐어. 프로젝트 관련 질문에 우선적으로 활용해.\n- 프로젝트명: ${project.name}\n- 번호: ${project.project_number || '미지정'}\n- 서비스: ${project.service_type || '미지정'}\n- 상태: ${project.status || '미지정'}\n- 사업부: ${project.department || '미지정'}${salesLines ? `\n- 연결된 계약:\n${salesLines}` : ''}${taskLines ? `\n- 미완료 업무:\n${taskLines}` : ''}${recentLogs}${briefSection}\n`
       }
@@ -1178,8 +1179,10 @@ export async function POST(req: NextRequest) {
     }
     const modeCtx = mode ? (MODE_CONTEXT[mode] || '') : ''
 
-    const today = new Date().toLocaleDateString('ko-KR', { year: 'numeric', month: 'long', day: 'numeric', timeZone: 'Asia/Seoul' })
-    const systemWithDate = `오늘 날짜: ${today}\n현재 사용자: ${userName} (권한: ${userRole})\n${userRole === 'member' ? '※ 이 사용자는 팀원 권한이라 본인 담당 건만 조회 가능해.\n' : ''}${projectContext}${modeCtx}\n${SYSTEM_PROMPT}`
+    const today = new Date().toLocaleDateString('ko-KR', { year: 'numeric', month: 'long', day: 'numeric', weekday: 'long', timeZone: 'Asia/Seoul' })
+    const todayIso = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Seoul' }) // YYYY-MM-DD
+    const dateHeader = `# 시스템 컨텍스트\n오늘 날짜: ${today} (ISO: ${todayIso})\n→ "내일", "다음주 화요일" 등 상대 날짜는 반드시 이 날짜 기준으로 계산. 다른 연도/월로 추정 금지.\n현재 사용자: ${userName} (권한: ${userRole})\n${userRole === 'member' ? '※ 이 사용자는 팀원 권한이라 본인 담당 건만 조회 가능해.\n' : ''}`
+    const systemWithDate = `${dateHeader}${projectContext}${modeCtx}\n${SYSTEM_PROMPT}`
 
     const apiMessages: Anthropic.MessageParam[] = messages.map((m: {
       role: string

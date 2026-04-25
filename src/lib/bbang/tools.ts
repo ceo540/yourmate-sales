@@ -287,7 +287,7 @@ export const TOOLS: Anthropic.Tool[] = [
   },
   {
     name: 'create_project_task',
-    description: '현재 열린 프로젝트에 할 일을 추가합니다. 프로젝트 컨텍스트(projectId)가 있을 때만 동작.',
+    description: '현재 열린 프로젝트에 할 일을 추가합니다. 프로젝트 컨텍스트에서 항상 사용 가능 (계약 1건 이상 있어야 함). 사용자가 "할일 추가/만들어/등록"이라고 하면 즉시 호출.',
     input_schema: {
       type: 'object' as const,
       properties: {
@@ -313,7 +313,7 @@ export const TOOLS: Anthropic.Tool[] = [
   },
   {
     name: 'update_task',
-    description: '현재 프로젝트 할 일의 담당자/마감일/우선순위/상태/설명을 수정합니다. task_id 또는 title로 식별.',
+    description: '현재 프로젝트의 기존 할 일을 수정합니다. 담당자/마감일/우선순위/상태/제목/설명 모두 변경 가능. 사용자가 "X 할일 마감 바꿔/담당자 바꿔/제목 바꿔" 등이라고 하면 즉시 호출. task_id 또는 title 부분 매칭으로 식별.',
     input_schema: {
       type: 'object' as const,
       properties: {
@@ -330,7 +330,7 @@ export const TOOLS: Anthropic.Tool[] = [
   },
   {
     name: 'delete_task',
-    description: '현재 프로젝트의 할 일을 삭제합니다. 사용자에게 한 번 확인받은 뒤에만 호출.',
+    description: '현재 프로젝트의 할 일을 삭제합니다. 사용자에게 "정말 삭제할까?" 한 번 확인받은 뒤 호출. 영구 삭제. "지원되지 않아요" 같은 거짓 거부 답변 절대 금지 — 이 도구로 실제 삭제 가능.',
     input_schema: {
       type: 'object' as const,
       properties: {
@@ -349,11 +349,11 @@ export const TOOLS: Anthropic.Tool[] = [
   },
   {
     name: 'update_pending_discussion',
-    description: '현재 프로젝트의 협의/미결 사항(pending_discussion)을 직접 수정합니다. 사용자가 명시적으로 내용을 줄 때 사용.',
+    description: '현재 프로젝트의 협의/미결 사항(pending_discussion) 박스 전체를 덮어씁니다. 추가하고 싶으면 기존 내용을 포함해서 합친 markdown을 content로 보내. 사용자가 자연어로 "협의사항 정리해/갱신해"라고 하면 자동 분석 도구(regenerate_pending_discussion)를 우선 사용.',
     input_schema: {
       type: 'object' as const,
       properties: {
-        content: { type: 'string', description: '새 협의사항 내용 (markdown 가능). 빈 문자열이면 삭제.' },
+        content: { type: 'string', description: '새로 저장할 markdown 전문. 기존 내용 + 추가분을 직접 합쳐서 보내. 빈 문자열이면 삭제.' },
       },
       required: ['content'],
     },
