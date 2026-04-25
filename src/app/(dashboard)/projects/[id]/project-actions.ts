@@ -626,16 +626,29 @@ export async function createTaskForProject(
   contractId: string | null, title: string, assigneeId: string | null, dueDate: string | null, priority: string, description: string | null,
 ): Promise<{ id: string; title: string; status: string; priority: string | null; due_date: string | null; assignee: { id: string; name: string } | null; project_id: string | null; description: string | null } | null> {
   const admin = createAdminClient()
-  const { data } = await admin.from('tasks').insert({
+  const { data, error } = await admin.from('tasks').insert({
     project_id: contractId || null, title, status: '할 일', priority, assignee_id: assigneeId || null, due_date: dueDate || null, description: description || null,
   }).select('id, title, status, priority, due_date, project_id, description, assignee_id').single()
+  if (error) {
+    console.error('[createTaskForProject] insert error:', error)
+    return null
+  }
   if (!data) return null
   let assignee: { id: string; name: string } | null = null
   if (data.assignee_id) {
     const { data: p } = await admin.from('profiles').select('id, name').eq('id', data.assignee_id).single()
     if (p) assignee = { id: p.id, name: p.name }
   }
-  revalidatePath(`/projects/${contractId}`)
+  // 진짜 project_id 찾아서 정확한 path revalidate (contractId는 sale.id임)
+  if (contractId) {
+    const { data: sale } = await admin.from('sales').select('project_id').eq('id', contractId).single()
+    if (sale?.project_id) {
+      revalidatePath(`/projects/${sale.project_id}`)
+      revalidatePath(`/projects/${sale.project_id}/v2`)
+    }
+    revalidatePath(`/sales/${contractId}`)
+  }
+  revalidatePath('/tasks')
   return { ...data, assignee }
 }
 
