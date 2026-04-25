@@ -124,8 +124,15 @@ export default function ProjectV2Client({
       <div className="grid grid-cols-1 lg:grid-cols-[1fr_320px] gap-5">
         {/* 좌: 메인 */}
         <div className="space-y-4">
-          <PlaceholderCard title="◆ 프로젝트 개요 (V1.6 예정)" subtitle="클라이언트 / 과업 / 진행 상황 위키" />
-          <PlaceholderCard title="◆ 소통 Timeline (V1.7 예정)" subtitle={`총 ${logs.length}건의 소통 기록`} />
+          {/* V1.6: 프로젝트 한눈에 + 자유 노트 */}
+          <ProjectOverviewSection
+            project={project} customer={customer} pmName={pmName}
+            contracts={contracts} tasks={tasks} finance={finance}
+          />
+
+          {/* V1.7: 소통 Timeline */}
+          <CommunicationTimeline logs={logs} contracts={contracts} />
+
           <PlaceholderCard title="◆ 연관 서비스 (V1.8 예정)" subtitle={`렌탈 ${rentals.length}건 등 — 직접 추가/이동`} />
           <PlaceholderCard title="◆ 계약 / 업무 / 메모 (V1.9 예정)" subtitle={`계약 ${contracts.length}건 · 업무 ${tasks.length}건`} />
         </div>
@@ -286,6 +293,169 @@ function PlaceholderCard({ title, subtitle, small }: { title: string; subtitle: 
     <div className={`bg-white border border-dashed border-gray-200 rounded-xl ${small ? 'px-4 py-3' : 'px-5 py-4'}`}>
       <p className={`font-semibold text-gray-700 ${small ? 'text-xs' : 'text-sm'}`}>{title}</p>
       <p className="text-xs text-gray-400 mt-1">{subtitle}</p>
+    </div>
+  )
+}
+
+/* ── V1.6: 프로젝트 개요 ─────────────────────────────────── */
+function ProjectOverviewSection({ project, customer, pmName, contracts, tasks, finance }: {
+  project: Project; customer: Customer | null; pmName: string | null
+  contracts: Contract[]; tasks: Task[]; finance: Finance
+}) {
+  const pendingTasks = tasks.filter(t => t.status !== '완료' && t.status !== '보류')
+  const urgentTasks = pendingTasks.filter(t => t.priority === '긴급' || t.priority === '높음').slice(0, 5)
+  const completedRate = tasks.length > 0
+    ? Math.round((tasks.filter(t => t.status === '완료').length / tasks.length) * 100)
+    : 0
+  const stage = contracts[0]?.contract_stage ?? null
+  const profit = finance.revenue - finance.cost
+
+  return (
+    <div className="bg-white border border-gray-100 rounded-xl px-5 py-4 space-y-4">
+      <div className="flex items-center justify-between">
+        <p className="text-sm font-semibold text-gray-800">📌 프로젝트 한눈에</p>
+        <span className="text-[10px] text-gray-400">제3자도 30초 안에 파악 가능하도록 자동 정리</span>
+      </div>
+
+      {/* 핵심 정보 한 줄 */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-sm">
+        <div>
+          <p className="text-[10px] text-gray-400 mb-1">고객사</p>
+          <p className="font-medium text-gray-800 truncate">{customer?.name ?? '미연결'}</p>
+        </div>
+        <div>
+          <p className="text-[10px] text-gray-400 mb-1">담당 PM</p>
+          <p className="font-medium text-gray-800 truncate">{pmName ?? '미지정'}</p>
+        </div>
+        <div>
+          <p className="text-[10px] text-gray-400 mb-1">계약 단계</p>
+          <p className="font-medium text-gray-800">{stage ?? '—'}</p>
+        </div>
+        <div>
+          <p className="text-[10px] text-gray-400 mb-1">매출 / 이익</p>
+          <p className="font-medium text-gray-800">
+            {fmtMoney(finance.revenue)}원
+            <span className={`ml-1 text-xs ${profit >= 0 ? 'text-green-600' : 'text-red-500'}`}>
+              ({fmtMoney(profit)}원)
+            </span>
+          </p>
+        </div>
+      </div>
+
+      {/* 진행 요약 */}
+      <div className="bg-gray-50 rounded-lg px-4 py-3">
+        <div className="flex items-center justify-between mb-2">
+          <span className="text-xs font-medium text-gray-600">업무 진행</span>
+          <span className="text-xs text-gray-500">
+            {tasks.length > 0 ? `${tasks.filter(t => t.status === '완료').length}/${tasks.length} 완료 · ${completedRate}%` : '업무 없음'}
+          </span>
+        </div>
+        {tasks.length > 0 && (
+          <div className="h-1.5 bg-gray-200 rounded-full overflow-hidden">
+            <div className="h-full rounded-full transition-all" style={{ width: `${completedRate}%`, backgroundColor: completedRate === 100 ? '#22c55e' : '#FFCE00' }} />
+          </div>
+        )}
+      </div>
+
+      {/* 긴급 업무 */}
+      {urgentTasks.length > 0 && (
+        <div className="bg-red-50 border border-red-100 rounded-lg px-4 py-3 space-y-1.5">
+          <p className="text-xs font-semibold text-red-700">⚠ 긴급/높음 업무 {urgentTasks.length}건</p>
+          {urgentTasks.map(t => (
+            <div key={t.id} className="flex items-center gap-2 text-xs">
+              <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${t.priority === '긴급' ? 'bg-red-500' : 'bg-orange-400'}`} />
+              <span className="text-gray-700 flex-1 truncate">{t.title}</span>
+              {t.due_date && <span className="text-gray-400">{t.due_date.slice(5)}</span>}
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* 자유 메모 (project.memo 활용) */}
+      {project.memo && (
+        <div className="border-t border-gray-50 pt-3">
+          <p className="text-[10px] text-gray-400 mb-1">메모</p>
+          <p className="text-sm text-gray-700 whitespace-pre-line">{project.memo}</p>
+        </div>
+      )}
+      {project.notes && (
+        <div className="border-t border-gray-50 pt-3 bg-orange-50 -mx-5 -mb-4 px-5 py-3 rounded-b-xl">
+          <p className="text-[10px] text-orange-700 mb-1 font-semibold">⚠ 유의사항</p>
+          <p className="text-sm text-orange-800 whitespace-pre-line">{project.notes}</p>
+        </div>
+      )}
+    </div>
+  )
+}
+
+/* ── V1.7: 소통 Timeline ─────────────────────────────────── */
+const LOG_ICON: Record<string, string> = {
+  통화: '📞', 이메일: '✉️', 방문: '🏢', 미팅: '🤝', 출장: '🚗',
+  내부회의: '💬', 메모: '📝', 기타: '·',
+}
+const LOG_COLOR: Record<string, string> = {
+  통화:     'bg-blue-50 text-blue-700 border-blue-100',
+  이메일:   'bg-purple-50 text-purple-700 border-purple-100',
+  방문:     'bg-green-50 text-green-700 border-green-100',
+  미팅:     'bg-teal-50 text-teal-700 border-teal-100',
+  출장:     'bg-cyan-50 text-cyan-700 border-cyan-100',
+  내부회의: 'bg-orange-50 text-orange-700 border-orange-100',
+  메모:     'bg-yellow-50 text-yellow-700 border-yellow-100',
+  기타:     'bg-gray-50 text-gray-600 border-gray-100',
+}
+
+function CommunicationTimeline({ logs, contracts }: { logs: Log[]; contracts: Contract[] }) {
+  const contractNameMap = Object.fromEntries(contracts.map(c => [c.id, c.name]))
+  return (
+    <div className="bg-white border border-gray-100 rounded-xl overflow-hidden">
+      <div className="px-5 py-3 border-b border-gray-100 flex items-center justify-between">
+        <p className="text-sm font-semibold text-gray-800">💬 소통 Timeline</p>
+        <span className="text-xs text-gray-400">최근 {logs.length}건</span>
+      </div>
+      {logs.length === 0 ? (
+        <p className="text-center py-8 text-sm text-gray-400">소통 기록이 없습니다</p>
+      ) : (
+        <ul className="divide-y divide-gray-50">
+          {logs.slice(0, 30).map(l => {
+            const dateStr = (l.contacted_at ?? l.created_at).slice(0, 16).replace('T', ' ')
+            const icon = LOG_ICON[l.log_type] ?? '·'
+            const color = LOG_COLOR[l.log_type] ?? 'bg-gray-50 text-gray-600 border-gray-100'
+            const saleName = l.sale_id ? contractNameMap[l.sale_id] : null
+            return (
+              <li key={l.id} className="px-5 py-3 hover:bg-gray-50/50">
+                <div className="flex items-start gap-3">
+                  <div className={`text-xs px-2 py-1 rounded-full border font-medium flex-shrink-0 ${color}`}>
+                    <span className="mr-0.5">{icon}</span>{l.log_type}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 mb-1 flex-wrap">
+                      <span className="text-xs text-gray-400">{dateStr}</span>
+                      {l.author_name && <span className="text-xs text-gray-500">· {l.author_name}</span>}
+                      {saleName && <span className="text-[10px] text-purple-500 bg-purple-50 px-1.5 py-0.5 rounded">계약: {saleName.slice(0, 14)}</span>}
+                    </div>
+                    <p className="text-sm text-gray-700 whitespace-pre-line line-clamp-3">{l.content}</p>
+                    {(l.location || (l.participants && l.participants.length > 0)) && (
+                      <p className="text-[11px] text-gray-400 mt-1">
+                        {l.location && <span>📍 {l.location}</span>}
+                        {l.location && l.participants && l.participants.length > 0 && <span> · </span>}
+                        {l.participants && l.participants.length > 0 && <span>참석: {l.participants.join(', ')}</span>}
+                      </p>
+                    )}
+                    {l.outcome && (
+                      <p className="text-[11px] text-blue-600 mt-1 bg-blue-50 px-2 py-1 rounded">→ {l.outcome}</p>
+                    )}
+                  </div>
+                </div>
+              </li>
+            )
+          })}
+        </ul>
+      )}
+      {logs.length > 30 && (
+        <div className="px-5 py-2 border-t border-gray-100 text-center">
+          <span className="text-xs text-gray-400">최근 30건만 표시 — 전체 보기 기능은 추후 추가</span>
+        </div>
+      )}
     </div>
   )
 }
