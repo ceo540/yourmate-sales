@@ -283,7 +283,11 @@ export default function ProjectHubClient({
     if (!newTaskTitle.trim() || !newTaskContractId) return
     startTransition(async () => {
       const result = await createTaskForProject(newTaskContractId, newTaskTitle, newTaskAssignee || null, newTaskDue || null, newTaskPriority, newTaskDesc || null)
-      if (result) setTasks(prev => [...prev, result])
+      if (result && 'error' in result) {
+        alert('할일 추가 실패: ' + result.error)
+        return
+      }
+      if (result) setTasks(prev => [...prev, result as Task])
       setNewTaskTitle(''); setNewTaskDesc(''); setNewTaskAssignee(''); setNewTaskDue(''); setNewTaskPriority('보통')
       setShowTaskForm(false)
     })

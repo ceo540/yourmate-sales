@@ -279,10 +279,11 @@ JSON만 반환. 마크다운 코드블록 없이.`
   }
 
   const titles: string[] = []
+  const errors: string[] = []
   for (const s of suggestions) {
     if (!s.title?.trim()) continue
     const validPriority = ['긴급', '높음', '보통', '낮음'].includes(s.priority ?? '') ? s.priority : '보통'
-    await admin.from('tasks').insert({
+    const { error: insertErr } = await admin.from('tasks').insert({
       project_id: firstContract.id,
       title: s.title.trim(),
       status: '할 일',
@@ -290,7 +291,16 @@ JSON만 반환. 마크다운 코드블록 없이.`
       due_date: s.due_date || null,
       bbang_suggested: true,
     })
-    titles.push(s.title.trim())
+    if (insertErr) {
+      console.error('[generateAndSuggestTasks] insert error:', insertErr, 'title:', s.title)
+      errors.push(`${s.title}: ${insertErr.message}`)
+    } else {
+      titles.push(s.title.trim())
+    }
+  }
+
+  if (titles.length === 0 && errors.length > 0) {
+    return { error: `Insert 실패 (${errors.length}건): ${errors[0]}` }
   }
 
   revalidatePath(`/projects/${projectId}/v2`)
@@ -624,16 +634,19 @@ export async function updateContractInfo(
 
 export async function createTaskForProject(
   contractId: string | null, title: string, assigneeId: string | null, dueDate: string | null, priority: string, description: string | null,
-): Promise<{ id: string; title: string; status: string; priority: string | null; due_date: string | null; assignee: { id: string; name: string } | null; project_id: string | null; description: string | null } | null> {
+): Promise<
+  | { id: string; title: string; status: string; priority: string | null; due_date: string | null; assignee: { id: string; name: string } | null; project_id: string | null; description: string | null }
+  | { error: string }
+> {
   const admin = createAdminClient()
   const { data, error } = await admin.from('tasks').insert({
     project_id: contractId || null, title, status: '할 일', priority, assignee_id: assigneeId || null, due_date: dueDate || null, description: description || null,
   }).select('id, title, status, priority, due_date, project_id, description, assignee_id').single()
   if (error) {
     console.error('[createTaskForProject] insert error:', error)
-    return null
+    return { error: error.message }
   }
-  if (!data) return null
+  if (!data) return { error: 'task insert returned no data' }
   let assignee: { id: string; name: string } | null = null
   if (data.assignee_id) {
     const { data: p } = await admin.from('profiles').select('id, name').eq('id', data.assignee_id).single()
