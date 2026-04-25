@@ -4,6 +4,7 @@ import { createClient } from '@/lib/supabase/server'
 import { SERVICE_TO_DEPT } from '@/types'
 import { createSaleFolder } from '@/lib/dropbox'
 import { logApiUsage } from '@/lib/api-usage'
+import { ensureProjectForSale, generateProjectNumber } from '@/lib/projects'
 
 const NOTION_DB_ID = '6401e402-25e9-4941-a89e-6e3107df5f74'
 
@@ -170,17 +171,19 @@ export async function POST(req: NextRequest) {
 
     const department = (service_type && SERVICE_TO_DEPT[service_type]) || null
     const inflowDate = new Date().toISOString().split('T')[0]
+    const projectNumber = await generateProjectNumber()
+    const saleName = name?.trim() || '(제목 없음)'
 
     // 1. Dropbox 폴더 생성
     const dropboxUrl = await createSaleFolder({
       service_type: service_type || null,
-      name: name?.trim() || '(제목 없음)',
+      name: saleName,
       inflow_date: inflowDate,
     })
 
     // 2. Supabase에 매출건 생성
     const { data, error } = await supabase.from('sales').insert({
-      name: name?.trim() || '(제목 없음)',
+      name: saleName,
       client_org: client_org || null,
       service_type: service_type || null,
       department,
@@ -190,9 +193,22 @@ export async function POST(req: NextRequest) {
       inflow_date: inflowDate,
       dropbox_url: dropboxUrl || null,
       assignee_id: user.id,
+      project_number: projectNumber,
     }).select('id').single()
 
     if (error) throw new Error(error.message)
+
+    // 3. 프로젝트 자동 생성 (orphan sales 방지)
+    await ensureProjectForSale({
+      saleId: data.id,
+      name: saleName,
+      service_type: service_type || null,
+      department,
+      customer_id: null,
+      pm_id: user.id,
+      project_number: projectNumber,
+      dropbox_url: dropboxUrl || null,
+    })
 
     // 3. AI 프로젝트 제안 생성 + Notion 프로젝트 생성 (병렬 불가 — proposal 먼저 필요)
     const proposal = await generateProposal({
