@@ -236,28 +236,36 @@ export default function ProjectV2Client({
       <div className="grid grid-cols-1 lg:grid-cols-[1fr_320px] gap-5">
         {/* 좌: 메인 */}
         <div className="space-y-4">
-          {/* V1.6: 프로젝트 한눈에 + 자유 노트 */}
-          <ProjectOverviewSection
+          {/* 1. 메모 (인플레이스) */}
+          <MemoBlock project={project} />
+
+          {/* 2. 3박스: 개요 / 과업내용 / 협의내용 (접/펼) */}
+          <ThreeBoxesBlock project={project} />
+
+          {/* 3. 한눈에 (KPI 요약) */}
+          <ProjectGlanceSection
             project={project} customer={customer} pmName={pmName}
             contracts={contracts} tasks={tasks} finance={finance}
           />
 
-          {/* V1.7: 소통 Timeline */}
+          {/* 4. 할일 (tasks) */}
+          <TasksSection tasks={tasks} contracts={contracts} projectId={project.id} />
+
+          {/* 5. 일정 (due_date 임박 순) */}
+          <ScheduleSection tasks={tasks} />
+
+          {/* 6. 소통 Timeline (종류 변경) */}
           <CommunicationTimeline logs={logs} contracts={contracts} projectId={project.id} />
 
-          {/* V1.8: 연관 서비스 */}
+          {/* 7. 연관 서비스 */}
           <RelatedServicesV2
             serviceType={project.service_type}
             rentals={rentals}
             contracts={contracts}
           />
 
-          {/* V1.9: 계약 + 업무 */}
-          <ContractsTasksSection
-            contracts={contracts}
-            tasks={tasks}
-            projectId={project.id}
-          />
+          {/* 8. 계약 관리 (분리) */}
+          <ContractsSection contracts={contracts} projectId={project.id} />
         </div>
 
         {/* 우: 사이드 */}
@@ -420,50 +428,124 @@ function PlaceholderCard({ title, subtitle, small }: { title: string; subtitle: 
   )
 }
 
-/* ── V1.6: 프로젝트 개요 ─────────────────────────────────── */
-function ProjectOverviewSection({ project, customer, pmName, contracts, tasks, finance }: {
+/* ── 1. 메모 (인라인 편집) ─────────────────────────────── */
+function MemoBlock({ project }: { project: Project }) {
+  const router = useRouter()
+  const [, startTransition] = useTransition()
+  const [editing, setEditing] = useState(false)
+  const [input, setInput] = useState(project.memo ?? '')
+
+  function save() {
+    startTransition(async () => {
+      await updateProjectMemo(project.id, input)
+      setEditing(false)
+      router.refresh()
+    })
+  }
+
+  return (
+    <div className="bg-white border border-gray-100 rounded-xl px-5 py-3">
+      <div className="flex items-center justify-between mb-1.5">
+        <p className="text-xs font-semibold text-gray-700">📝 메모</p>
+        {!editing && (
+          <button onClick={() => { setInput(project.memo ?? ''); setEditing(true) }}
+            className="text-[11px] text-gray-400 hover:text-gray-700">
+            {project.memo ? '편집' : '+ 추가'}
+          </button>
+        )}
+      </div>
+      {editing ? (
+        <div className="space-y-2">
+          <textarea value={input} onChange={e => setInput(e.target.value)} rows={3} autoFocus
+            placeholder="프로젝트 일반 메모..."
+            className="w-full text-sm border border-gray-200 rounded-lg px-3 py-2 resize-none focus:outline-none focus:ring-1 focus:ring-yellow-400 bg-white" />
+          <div className="flex gap-2">
+            <button onClick={save}
+              className="px-3 py-1.5 text-xs font-semibold rounded-lg hover:opacity-80"
+              style={{ backgroundColor: '#FFCE00', color: '#121212' }}>저장</button>
+            <button onClick={() => setEditing(false)}
+              className="px-3 py-1.5 text-xs border border-gray-200 rounded-lg text-gray-500">취소</button>
+          </div>
+        </div>
+      ) : project.memo ? (
+        <p className="text-sm text-gray-700 whitespace-pre-line">{project.memo}</p>
+      ) : (
+        <p className="text-xs text-gray-400 italic">메모 없음</p>
+      )}
+    </div>
+  )
+}
+
+/* ── 2. 3박스: 개요(빵빵이) / 과업내용 / 협의내용 (접/펼) ─── */
+function ThreeBoxesBlock({ project }: { project: Project }) {
+  // 현재는 placeholder. 추후 schema에 overview_summary, work_description, pending_discussion 추가 예정
+  // 협의내용은 임시로 project.notes 사용 (현재 유의사항). 분리 schema 들어오면 교체.
+  return (
+    <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+      <CollapsibleBox
+        title="📌 프로젝트 개요"
+        subtitle="빵빵이가 정리"
+        defaultOpen={true}
+        emptyText="빵빵이에게 '프로젝트 개요 정리해줘' 요청하면 자동 작성됩니다 (추후 자동화)"
+      />
+      <CollapsibleBox
+        title="✅ 과업 내용 / 해야할 일"
+        subtitle="자유 작성"
+        defaultOpen={true}
+        emptyText="아직 schema 추가 전 — 메모 또는 할일 섹션을 활용하세요"
+      />
+      <CollapsibleBox
+        title="💭 협의해야할 내용"
+        subtitle="미해결 이슈 정리"
+        defaultOpen={true}
+        content={project.notes ?? null}
+        emptyText="기존 '유의사항'을 임시로 표시 — 별도 schema 들어오면 분리"
+      />
+    </div>
+  )
+}
+
+function CollapsibleBox({ title, subtitle, defaultOpen, content, emptyText }: {
+  title: string; subtitle: string; defaultOpen?: boolean; content?: string | null; emptyText?: string
+}) {
+  const [open, setOpen] = useState(!!defaultOpen)
+  return (
+    <div className="bg-white border border-gray-100 rounded-xl overflow-hidden">
+      <button onClick={() => setOpen(o => !o)}
+        className="w-full px-4 py-2.5 flex items-center justify-between hover:bg-gray-50 transition-colors text-left">
+        <div>
+          <p className="text-xs font-semibold text-gray-700">{title}</p>
+          <p className="text-[10px] text-gray-400">{subtitle}</p>
+        </div>
+        <span className="text-gray-300 text-xs">{open ? '▲' : '▼'}</span>
+      </button>
+      {open && (
+        <div className="px-4 py-3 border-t border-gray-50">
+          {content ? (
+            <p className="text-sm text-gray-700 whitespace-pre-line">{content}</p>
+          ) : (
+            <p className="text-[11px] text-gray-400 italic">{emptyText ?? '내용 없음'}</p>
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
+
+/* ── 3. 한눈에 (KPI 요약) ───────────────────────────────── */
+function ProjectGlanceSection({ project, customer, pmName, contracts, tasks, finance }: {
   project: Project; customer: Customer | null; pmName: string | null
   contracts: Contract[]; tasks: Task[]; finance: Finance
 }) {
-  const router = useRouter()
-  const [, startTransition] = useTransition()
-  const pendingTasks = tasks.filter(t => t.status !== '완료' && t.status !== '보류')
-  const urgentTasks = pendingTasks.filter(t => t.priority === '긴급' || t.priority === '높음').slice(0, 5)
   const completedRate = tasks.length > 0
     ? Math.round((tasks.filter(t => t.status === '완료').length / tasks.length) * 100)
     : 0
   const stage = contracts[0]?.contract_stage ?? null
   const profit = finance.revenue - finance.cost
 
-  // V1.12: 인플레이스 편집
-  const [editingMemo, setEditingMemo] = useState(false)
-  const [memoInput, setMemoInput] = useState(project.memo ?? '')
-  const [editingNotes, setEditingNotes] = useState(false)
-  const [notesInput, setNotesInput] = useState(project.notes ?? '')
-
-  function saveMemo() {
-    startTransition(async () => {
-      await updateProjectMemo(project.id, memoInput)
-      setEditingMemo(false)
-      router.refresh()
-    })
-  }
-  function saveNotes() {
-    startTransition(async () => {
-      await updateProjectNotes(project.id, notesInput)
-      setEditingNotes(false)
-      router.refresh()
-    })
-  }
-
   return (
-    <div className="bg-white border border-gray-100 rounded-xl px-5 py-4 space-y-4">
-      <div className="flex items-center justify-between">
-        <p className="text-sm font-semibold text-gray-800">📌 프로젝트 한눈에</p>
-        <span className="text-[10px] text-gray-400">제3자도 30초 안에 파악 가능하도록 자동 정리</span>
-      </div>
-
-      {/* 핵심 정보 한 줄 */}
+    <div className="bg-white border border-gray-100 rounded-xl px-5 py-4 space-y-3">
+      <p className="text-sm font-semibold text-gray-800">📊 한눈에</p>
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-sm">
         <div>
           <p className="text-[10px] text-gray-400 mb-1">고객사</p>
@@ -487,13 +569,11 @@ function ProjectOverviewSection({ project, customer, pmName, contracts, tasks, f
           </p>
         </div>
       </div>
-
-      {/* 진행 요약 */}
-      <div className="bg-gray-50 rounded-lg px-4 py-3">
-        <div className="flex items-center justify-between mb-2">
+      <div className="bg-gray-50 rounded-lg px-4 py-2.5">
+        <div className="flex items-center justify-between mb-1.5">
           <span className="text-xs font-medium text-gray-600">업무 진행</span>
           <span className="text-xs text-gray-500">
-            {tasks.length > 0 ? `${tasks.filter(t => t.status === '완료').length}/${tasks.length} 완료 · ${completedRate}%` : '업무 없음'}
+            {tasks.length > 0 ? `${tasks.filter(t => t.status === '완료').length}/${tasks.length} · ${completedRate}%` : '업무 없음'}
           </span>
         </div>
         {tasks.length > 0 && (
@@ -502,100 +582,168 @@ function ProjectOverviewSection({ project, customer, pmName, contracts, tasks, f
           </div>
         )}
       </div>
+    </div>
+  )
+}
 
-      {/* 긴급 업무 */}
-      {urgentTasks.length > 0 && (
-        <div className="bg-red-50 border border-red-100 rounded-lg px-4 py-3 space-y-1.5">
-          <p className="text-xs font-semibold text-red-700">⚠ 긴급/높음 업무 {urgentTasks.length}건</p>
-          {urgentTasks.map(t => (
-            <div key={t.id} className="flex items-center gap-2 text-xs">
-              <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${t.priority === '긴급' ? 'bg-red-500' : 'bg-orange-400'}`} />
-              <span className="text-gray-700 flex-1 truncate">{t.title}</span>
-              {t.due_date && <span className="text-gray-400">{t.due_date.slice(5)}</span>}
-            </div>
-          ))}
+/* ── 4. 할일 (별도 섹션) ─────────────────────────────────── */
+function TasksSection({ tasks, contracts, projectId }: { tasks: Task[]; contracts: Contract[]; projectId: string }) {
+  const router = useRouter()
+  const [, startTransition] = useTransition()
+  const pendingTasks = tasks.filter(t => t.status !== '완료' && t.status !== '보류')
+  const [newTitle, setNewTitle] = useState('')
+  const canAdd = contracts.length > 0
+  function add() {
+    if (!newTitle.trim() || !canAdd) return
+    const title = newTitle.trim()
+    const firstSaleId = contracts[0].id
+    startTransition(async () => {
+      await createTaskForProject(firstSaleId, title, null, null, '보통', null)
+      setNewTitle('')
+      router.refresh()
+    })
+  }
+  return (
+    <div className="bg-white border border-gray-100 rounded-xl overflow-hidden">
+      <div className="px-5 py-3 border-b border-gray-100 flex items-center justify-between">
+        <p className="text-sm font-semibold text-gray-800">✅ 할일 ({pendingTasks.length}/{tasks.length})</p>
+        <Link href={`/projects/${projectId}`} className="text-xs text-gray-400 hover:text-gray-700">상세 편집 →</Link>
+      </div>
+      {canAdd && (
+        <div className="px-5 py-2 bg-yellow-50 border-b border-yellow-100">
+          <div className="flex gap-2">
+            <input value={newTitle} onChange={e => setNewTitle(e.target.value)}
+              onKeyDown={e => { if (e.key === 'Enter') add() }}
+              placeholder="할일 제목 (Enter로 추가)..."
+              className="flex-1 text-xs border border-yellow-200 rounded px-2.5 py-1.5 bg-white focus:outline-none focus:border-yellow-400" />
+            <button onClick={add} disabled={!newTitle.trim()}
+              className="text-xs px-3 py-1.5 rounded font-medium hover:opacity-80 disabled:opacity-40"
+              style={{ backgroundColor: '#FFCE00', color: '#121212' }}>+</button>
+          </div>
         </div>
       )}
-
-      {/* 자유 메모 — 인플레이스 편집 */}
-      <div className="border-t border-gray-50 pt-3">
-        <div className="flex items-center justify-between mb-1">
-          <p className="text-[10px] text-gray-400 font-semibold">메모</p>
-          {!editingMemo && (
-            <button onClick={() => { setMemoInput(project.memo ?? ''); setEditingMemo(true) }}
-              className="text-[11px] text-gray-400 hover:text-gray-700">
-              {project.memo ? '편집' : '+ 추가'}
-            </button>
-          )}
+      {tasks.length === 0 ? (
+        <p className="text-center py-6 text-xs text-gray-400">등록된 할일 없음</p>
+      ) : (
+        <ul className="divide-y divide-gray-50">
+          {tasks.slice(0, 12).map(t => (
+            <li key={t.id} className="px-5 py-2.5">
+              <div className="flex items-center gap-2">
+                <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${PRIORITY_DOT[t.priority ?? '보통'] ?? 'bg-gray-300'}`} />
+                <span className={`flex-1 text-sm truncate ${t.status === '완료' ? 'line-through text-gray-300' : 'text-gray-700'}`}>{t.title}</span>
+                {t.due_date && <span className="text-[11px] text-gray-400 flex-shrink-0">{t.due_date.slice(5)}</span>}
+                <span className={`text-[10px] px-2 py-0.5 rounded-full flex-shrink-0 ${TASK_STATUS_BADGE[t.status] ?? 'bg-gray-100 text-gray-500'}`}>
+                  {t.status}
+                </span>
+              </div>
+            </li>
+          ))}
+        </ul>
+      )}
+      {tasks.length > 12 && (
+        <div className="px-5 py-2 border-t border-gray-50 text-center text-xs text-gray-400">
+          +{tasks.length - 12}건 더
         </div>
-        {editingMemo ? (
-          <div className="space-y-2">
-            <textarea value={memoInput} onChange={e => setMemoInput(e.target.value)} rows={3} autoFocus
-              placeholder="프로젝트 일반 메모..."
-              className="w-full text-sm border border-gray-200 rounded-lg px-3 py-2 resize-none focus:outline-none focus:ring-1 focus:ring-yellow-400 bg-white" />
-            <div className="flex gap-2">
-              <button onClick={saveMemo}
-                className="px-3 py-1.5 text-xs font-semibold rounded-lg hover:opacity-80"
-                style={{ backgroundColor: '#FFCE00', color: '#121212' }}>저장</button>
-              <button onClick={() => setEditingMemo(false)}
-                className="px-3 py-1.5 text-xs border border-gray-200 rounded-lg text-gray-500">취소</button>
-            </div>
-          </div>
-        ) : project.memo ? (
-          <p className="text-sm text-gray-700 whitespace-pre-line">{project.memo}</p>
-        ) : (
-          <p className="text-xs text-gray-400 italic">메모 없음</p>
-        )}
-      </div>
+      )}
+    </div>
+  )
+}
 
-      {/* 유의사항 — 인플레이스 편집 */}
-      <div className={`border-t border-gray-50 pt-3 -mx-5 -mb-4 px-5 py-3 rounded-b-xl ${(project.notes || editingNotes) ? 'bg-orange-50' : ''}`}>
-        <div className="flex items-center justify-between mb-1">
-          <p className={`text-[10px] font-semibold ${project.notes ? 'text-orange-700' : 'text-gray-400'}`}>
-            ⚠ 유의사항
-          </p>
-          {!editingNotes && (
-            <button onClick={() => { setNotesInput(project.notes ?? ''); setEditingNotes(true) }}
-              className={`text-[11px] hover:opacity-80 ${project.notes ? 'text-orange-500' : 'text-gray-400'}`}>
-              {project.notes ? '편집' : '+ 추가'}
-            </button>
-          )}
-        </div>
-        {editingNotes ? (
-          <div className="space-y-2">
-            <textarea value={notesInput} onChange={e => setNotesInput(e.target.value)} rows={3} autoFocus
-              placeholder="특이사항·주의사항... 제3자도 알아야 할 정보"
-              className="w-full text-sm border border-orange-200 rounded-lg px-3 py-2 resize-none focus:outline-none focus:ring-1 focus:ring-orange-400 bg-white" />
-            <div className="flex gap-2">
-              <button onClick={saveNotes}
-                className="px-3 py-1.5 text-xs font-semibold rounded-lg bg-orange-500 hover:bg-orange-600 text-white">저장</button>
-              <button onClick={() => setEditingNotes(false)}
-                className="px-3 py-1.5 text-xs border border-orange-200 rounded-lg text-orange-600">취소</button>
-            </div>
-          </div>
-        ) : project.notes ? (
-          <p className="text-sm text-orange-800 whitespace-pre-line">{project.notes}</p>
-        ) : null}
+/* ── 5. 일정 (due_date 임박 순) ─────────────────────────── */
+function ScheduleSection({ tasks }: { tasks: Task[] }) {
+  const today = new Date()
+  today.setHours(0, 0, 0, 0)
+  const upcoming = tasks
+    .filter(t => t.due_date && t.status !== '완료' && t.status !== '보류')
+    .map(t => ({ task: t, due: new Date(t.due_date!) }))
+    .sort((a, b) => a.due.getTime() - b.due.getTime())
+    .slice(0, 8)
+
+  return (
+    <div className="bg-white border border-gray-100 rounded-xl px-5 py-3">
+      <p className="text-sm font-semibold text-gray-800 mb-2">📅 일정</p>
+      {upcoming.length === 0 ? (
+        <p className="text-xs text-gray-400 py-2">예정된 일정 없음 (할일에 기한 추가 시 표시)</p>
+      ) : (
+        <ul className="space-y-1.5">
+          {upcoming.map(({ task, due }) => {
+            const diffDays = Math.ceil((due.getTime() - today.getTime()) / (1000 * 60 * 60 * 24))
+            const overdue = diffDays < 0
+            const today0 = diffDays === 0
+            const soon = diffDays > 0 && diffDays <= 3
+            return (
+              <li key={task.id} className="flex items-center gap-2 text-xs">
+                <span className={`px-2 py-0.5 rounded-full font-semibold flex-shrink-0 ${overdue ? 'bg-red-100 text-red-700' : today0 ? 'bg-red-100 text-red-700' : soon ? 'bg-orange-100 text-orange-700' : 'bg-gray-100 text-gray-500'}`}>
+                  {overdue ? `D+${-diffDays}` : today0 ? 'D-day' : `D-${diffDays}`}
+                </span>
+                <span className="text-gray-700 flex-1 truncate">{task.title}</span>
+                <span className="text-gray-400">{due.toISOString().slice(5, 10)}</span>
+              </li>
+            )
+          })}
+        </ul>
+      )}
+    </div>
+  )
+}
+
+/* ── 8. 계약 관리 (별도) ─────────────────────────────────── */
+function ContractsSection({ contracts, projectId }: { contracts: Contract[]; projectId: string }) {
+  return (
+    <div className="bg-white border border-gray-100 rounded-xl overflow-hidden">
+      <div className="px-5 py-3 border-b border-gray-100 flex items-center justify-between">
+        <p className="text-sm font-semibold text-gray-800">📜 계약 관리 ({contracts.length}건)</p>
+        <Link href={`/projects/${projectId}`} className="text-xs text-gray-400 hover:text-gray-700">상세 편집 →</Link>
       </div>
+      {contracts.length === 0 ? (
+        <p className="text-center py-6 text-xs text-gray-400">등록된 계약 없음</p>
+      ) : (
+        <ul className="divide-y divide-gray-50">
+          {contracts.map(c => (
+            <li key={c.id} className="px-5 py-2.5 hover:bg-gray-50/50">
+              <div className="flex items-center justify-between gap-2">
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm text-gray-800 truncate">{c.name}</p>
+                  {c.client_org && <p className="text-[11px] text-gray-400 truncate">{c.client_org}</p>}
+                </div>
+                <div className="flex items-center gap-1.5 flex-shrink-0">
+                  {c.contract_stage && (
+                    <span className={`text-[10px] px-2 py-0.5 rounded-full ${CONTRACT_STAGE_BADGE[c.contract_stage] ?? 'bg-gray-100 text-gray-500'}`}>
+                      {c.contract_stage}
+                    </span>
+                  )}
+                  {c.revenue !== null && c.revenue > 0 && (
+                    <span className="text-xs font-medium text-gray-600">{fmtMoney(c.revenue)}원</span>
+                  )}
+                </div>
+              </div>
+            </li>
+          ))}
+        </ul>
+      )}
     </div>
   )
 }
 
 /* ── V1.7: 소통 Timeline ─────────────────────────────────── */
 const LOG_ICON: Record<string, string> = {
-  통화: '📞', 이메일: '✉️', 방문: '🏢', 미팅: '🤝', 출장: '🚗',
-  내부회의: '💬', 메모: '📝', 기타: '·',
+  통화: '📞', 이메일: '✉️', 문자: '💬', 미팅: '🤝',
+  내부회의: '🗣', 메모: '📝', 기타: '·',
+  // 과거 데이터 호환
+  방문: '🏢', 출장: '🚗',
 }
 const LOG_COLOR: Record<string, string> = {
   통화:     'bg-blue-50 text-blue-700 border-blue-100',
   이메일:   'bg-purple-50 text-purple-700 border-purple-100',
-  방문:     'bg-green-50 text-green-700 border-green-100',
+  문자:     'bg-yellow-50 text-yellow-700 border-yellow-100',
   미팅:     'bg-teal-50 text-teal-700 border-teal-100',
-  출장:     'bg-cyan-50 text-cyan-700 border-cyan-100',
   내부회의: 'bg-orange-50 text-orange-700 border-orange-100',
-  메모:     'bg-yellow-50 text-yellow-700 border-yellow-100',
-  기타:     'bg-gray-50 text-gray-600 border-gray-100',
+  메모:     'bg-gray-50 text-gray-600 border-gray-100',
+  기타:     'bg-gray-50 text-gray-500 border-gray-100',
+  방문:     'bg-green-50 text-green-700 border-green-100',
+  출장:     'bg-cyan-50 text-cyan-700 border-cyan-100',
 }
+const LOG_TYPES_NEW = ['통화', '이메일', '문자', '미팅', '내부회의', '메모', '기타']
 
 /* ── V1.8: 연관 서비스 카드 ─────────────────────────────── */
 const RENTAL_STATUS_BADGE: Record<string, string> = {
@@ -884,10 +1032,10 @@ function CommunicationTimeline({ logs, contracts, projectId }: { logs: Log[]; co
         {adding && (
           <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-3 space-y-2">
             <div className="flex gap-1.5 flex-wrap">
-              {['통화', '이메일', '방문', '미팅', '출장', '내부회의', '메모', '기타'].map(t => (
+              {LOG_TYPES_NEW.map(t => (
                 <button key={t} onClick={() => setNewType(t)}
                   className={`text-[11px] px-2 py-0.5 rounded-full border transition-all ${newType === t ? 'bg-gray-900 text-white border-gray-900' : 'bg-white text-gray-500 border-gray-200 hover:border-gray-400'}`}>
-                  {LOG_ICON[t] ?? '·'} {t}
+                  {LOG_ICON[t] ?? '·'} {t === '문자' ? '문자(카카오)' : t}
                 </button>
               ))}
             </div>
