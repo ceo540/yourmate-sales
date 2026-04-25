@@ -401,11 +401,15 @@ export async function createPerson(data: {
   name: string
   phone?: string
   email?: string
+  dept?: string
+  title?: string
+  customer_name?: string
 }): Promise<{ id: string; name: string; phone: string; email: string } | { error: string }> {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return { error: 'Unauthorized' }
 
+  const admin = createAdminClient()
   const { data: person, error } = await supabase
     .from('persons')
     .insert({ name: data.name, phone: data.phone || null, email: data.email || null })
@@ -413,6 +417,32 @@ export async function createPerson(data: {
     .single()
 
   if (error) return { error: error.message }
+
+  // 기관/부서/직급 정보 있으면 person_org_relations에 등록
+  if (data.customer_name || data.dept || data.title) {
+    let customerId: string | null = null
+    if (data.customer_name) {
+      const { data: existing } = await admin.from('customers').select('id').eq('name', data.customer_name).maybeSingle()
+      if (existing?.id) {
+        customerId = existing.id
+      } else {
+        const { data: newCust } = await admin.from('customers').insert({
+          name: data.customer_name, type: '기타', status: '활성',
+        }).select('id').single()
+        customerId = newCust?.id ?? null
+      }
+    }
+
+    if (customerId) {
+      await admin.from('person_org_relations').insert({
+        person_id: person.id, customer_id: customerId,
+        dept: data.dept || null, title: data.title || null,
+        started_at: new Date().toISOString().slice(0, 10),
+        ended_at: null, is_current: true,
+      })
+    }
+  }
+
   revalidatePath('/leads')
   return { id: person.id, name: person.name, phone: person.phone || '', email: person.email || '' }
 }

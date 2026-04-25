@@ -20,10 +20,11 @@ export default async function LeadsPage({ searchParams }: { searchParams: any })
   const role = profile?.role || 'member'
 
   const leadsQuery = admin.from('leads').select('*').order('inflow_date', { ascending: false })
-  const [{ data: leadsRaw }, { data: profilesRaw }, { data: personsRaw }] = await Promise.all([
+  const [{ data: leadsRaw }, { data: profilesRaw }, { data: personsRaw }, { data: customersRaw }] = await Promise.all([
     role === 'member' ? leadsQuery.eq('assignee_id', user.id) : leadsQuery,
     admin.from('profiles').select('id, name').order('name'),
     admin.from('persons').select('id, name, phone, email, person_org_relations(id, dept, title, is_current, customers(id, name, region, type))').order('name'),
+    admin.from('customers').select('id, name, type').order('name'),
   ])
 
   const profileMap = createProfileMap(profilesRaw)
@@ -82,6 +83,7 @@ export default async function LeadsPage({ searchParams }: { searchParams: any })
         leads={leads}
         profiles={profilesRaw ?? []}
         persons={personOptions}
+        customers={(customersRaw ?? []).map((c: any) => ({ id: c.id, name: c.name, type: c.type ?? null }))}
         currentUserId={user.id}
         isAdmin={isAdminOrManager(role)}
         initialClientOrg={initialClientOrg}
