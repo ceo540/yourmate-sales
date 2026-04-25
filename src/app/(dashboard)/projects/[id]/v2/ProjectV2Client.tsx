@@ -9,6 +9,10 @@ import {
   updateProjectNotes,
   createProjectLog,
   createTaskForProject,
+  updateProjectOverviewSummary,
+  updateProjectWorkDescription,
+  updateProjectPendingDiscussion,
+  generateAndSaveProjectOverview,
 } from '../project-actions'
 
 interface Project {
@@ -21,6 +25,9 @@ interface Project {
   dropbox_url: string | null
   memo: string | null
   notes: string | null
+  overview_summary: string | null
+  work_description: string | null
+  pending_discussion: string | null
   customer_id: string | null
   pm_id: string | null
 }
@@ -478,37 +485,147 @@ function MemoBlock({ project }: { project: Project }) {
 
 /* ── 2. 3박스: 개요(빵빵이) / 과업내용 / 협의내용 (접/펼) ─── */
 function ThreeBoxesBlock({ project }: { project: Project }) {
-  // 현재는 placeholder. 추후 schema에 overview_summary, work_description, pending_discussion 추가 예정
-  // 협의내용은 임시로 project.notes 사용 (현재 유의사항). 분리 schema 들어오면 교체.
   return (
     <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-      <CollapsibleBox
-        title="📌 프로젝트 개요"
-        subtitle="빵빵이가 정리"
-        defaultOpen={true}
-        emptyText="빵빵이에게 '프로젝트 개요 정리해줘' 요청하면 자동 작성됩니다 (추후 자동화)"
-      />
-      <CollapsibleBox
+      <OverviewSummaryBox project={project} />
+      <EditableBox
+        projectId={project.id}
         title="✅ 과업 내용 / 해야할 일"
         subtitle="자유 작성"
-        defaultOpen={true}
-        emptyText="아직 schema 추가 전 — 메모 또는 할일 섹션을 활용하세요"
+        value={project.work_description}
+        save={updateProjectWorkDescription}
+        emptyText="과업 범위, 산출물, 주요 일정 등을 자유롭게 정리하세요"
       />
-      <CollapsibleBox
+      <EditableBox
+        projectId={project.id}
         title="💭 협의해야할 내용"
         subtitle="미해결 이슈 정리"
-        defaultOpen={true}
-        content={project.notes ?? null}
-        emptyText="기존 '유의사항'을 임시로 표시 — 별도 schema 들어오면 분리"
+        value={project.pending_discussion}
+        save={updateProjectPendingDiscussion}
+        emptyText="아직 결정 안 된 사항, 클라이언트와 협의 필요한 항목"
       />
     </div>
   )
 }
 
-function CollapsibleBox({ title, subtitle, defaultOpen, content, emptyText }: {
-  title: string; subtitle: string; defaultOpen?: boolean; content?: string | null; emptyText?: string
+/* ── 2-A. 빵빵이 자동 개요 박스 ─────────────────────────── */
+function OverviewSummaryBox({ project }: { project: Project }) {
+  const router = useRouter()
+  const [, startTransition] = useTransition()
+  const [open, setOpen] = useState(true)
+  const [editing, setEditing] = useState(false)
+  const [input, setInput] = useState(project.overview_summary ?? '')
+  const [generating, setGenerating] = useState(false)
+  const [genError, setGenError] = useState<string | null>(null)
+
+  function save() {
+    startTransition(async () => {
+      await updateProjectOverviewSummary(project.id, input)
+      setEditing(false)
+      router.refresh()
+    })
+  }
+
+  async function generate() {
+    setGenerating(true)
+    setGenError(null)
+    try {
+      const res = await generateAndSaveProjectOverview(project.id)
+      if ('error' in res) {
+        setGenError(res.error)
+      } else {
+        setInput(res.summary)
+        router.refresh()
+      }
+    } catch (e: any) {
+      setGenError(e?.message ?? '실패')
+    } finally {
+      setGenerating(false)
+    }
+  }
+
+  return (
+    <div className="bg-white border border-gray-100 rounded-xl overflow-hidden">
+      <button onClick={() => setOpen(o => !o)}
+        className="w-full px-4 py-2.5 flex items-center justify-between hover:bg-gray-50 transition-colors text-left">
+        <div>
+          <p className="text-xs font-semibold text-gray-700">📌 프로젝트 개요</p>
+          <p className="text-[10px] text-gray-400">빵빵이가 정리</p>
+        </div>
+        <span className="text-gray-300 text-xs">{open ? '▲' : '▼'}</span>
+      </button>
+      {open && (
+        <div className="px-4 py-3 border-t border-gray-50 space-y-2">
+          {editing ? (
+            <>
+              <textarea value={input} onChange={e => setInput(e.target.value)} rows={8} autoFocus
+                className="w-full text-sm border border-gray-200 rounded-lg px-3 py-2 resize-y focus:outline-none focus:ring-1 focus:ring-yellow-400 bg-white" />
+              <div className="flex gap-2">
+                <button onClick={save}
+                  className="px-3 py-1.5 text-xs font-semibold rounded-lg hover:opacity-80"
+                  style={{ backgroundColor: '#FFCE00', color: '#121212' }}>저장</button>
+                <button onClick={() => { setEditing(false); setInput(project.overview_summary ?? '') }}
+                  className="px-3 py-1.5 text-xs border border-gray-200 rounded-lg text-gray-500">취소</button>
+              </div>
+            </>
+          ) : project.overview_summary ? (
+            <>
+              <p className="text-sm text-gray-700 whitespace-pre-line">{project.overview_summary}</p>
+              <div className="flex gap-2 pt-1 border-t border-gray-50">
+                <button onClick={generate} disabled={generating}
+                  className="text-[11px] text-blue-500 hover:text-blue-700 disabled:opacity-40">
+                  {generating ? '🤖 생성 중...' : '🤖 다시 생성'}
+                </button>
+                <button onClick={() => { setInput(project.overview_summary ?? ''); setEditing(true) }}
+                  className="text-[11px] text-gray-400 hover:text-gray-700">직접 수정</button>
+              </div>
+            </>
+          ) : (
+            <>
+              <p className="text-[11px] text-gray-400 italic">아직 작성된 개요가 없습니다.</p>
+              <div className="flex gap-2">
+                <button onClick={generate} disabled={generating}
+                  className="px-3 py-1.5 text-xs font-semibold rounded-lg hover:opacity-80 disabled:opacity-40"
+                  style={{ backgroundColor: '#FFCE00', color: '#121212' }}>
+                  {generating ? '🤖 생성 중...' : '🤖 빵빵이로 자동 생성'}
+                </button>
+                <button onClick={() => { setInput(''); setEditing(true) }}
+                  className="px-3 py-1.5 text-xs border border-gray-200 rounded-lg text-gray-500">직접 작성</button>
+              </div>
+            </>
+          )}
+          {genError && (
+            <p className="text-[11px] text-red-500">⚠ {genError}</p>
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
+
+/* ── 2-B. 자유 작성 박스 (work_description, pending_discussion 공용) ─── */
+function EditableBox({ projectId, title, subtitle, value, save, emptyText }: {
+  projectId: string
+  title: string
+  subtitle: string
+  value: string | null
+  save: (projectId: string, value: string) => Promise<void>
+  emptyText: string
 }) {
-  const [open, setOpen] = useState(!!defaultOpen)
+  const router = useRouter()
+  const [, startTransition] = useTransition()
+  const [open, setOpen] = useState(true)
+  const [editing, setEditing] = useState(false)
+  const [input, setInput] = useState(value ?? '')
+
+  function handleSave() {
+    startTransition(async () => {
+      await save(projectId, input)
+      setEditing(false)
+      router.refresh()
+    })
+  }
+
   return (
     <div className="bg-white border border-gray-100 rounded-xl overflow-hidden">
       <button onClick={() => setOpen(o => !o)}
@@ -520,11 +637,31 @@ function CollapsibleBox({ title, subtitle, defaultOpen, content, emptyText }: {
         <span className="text-gray-300 text-xs">{open ? '▲' : '▼'}</span>
       </button>
       {open && (
-        <div className="px-4 py-3 border-t border-gray-50">
-          {content ? (
-            <p className="text-sm text-gray-700 whitespace-pre-line">{content}</p>
+        <div className="px-4 py-3 border-t border-gray-50 space-y-2">
+          {editing ? (
+            <>
+              <textarea value={input} onChange={e => setInput(e.target.value)} rows={6} autoFocus
+                className="w-full text-sm border border-gray-200 rounded-lg px-3 py-2 resize-y focus:outline-none focus:ring-1 focus:ring-yellow-400 bg-white" />
+              <div className="flex gap-2">
+                <button onClick={handleSave}
+                  className="px-3 py-1.5 text-xs font-semibold rounded-lg hover:opacity-80"
+                  style={{ backgroundColor: '#FFCE00', color: '#121212' }}>저장</button>
+                <button onClick={() => { setEditing(false); setInput(value ?? '') }}
+                  className="px-3 py-1.5 text-xs border border-gray-200 rounded-lg text-gray-500">취소</button>
+              </div>
+            </>
+          ) : value ? (
+            <>
+              <p className="text-sm text-gray-700 whitespace-pre-line">{value}</p>
+              <button onClick={() => { setInput(value); setEditing(true) }}
+                className="text-[11px] text-gray-400 hover:text-gray-700">편집</button>
+            </>
           ) : (
-            <p className="text-[11px] text-gray-400 italic">{emptyText ?? '내용 없음'}</p>
+            <>
+              <p className="text-[11px] text-gray-400 italic">{emptyText}</p>
+              <button onClick={() => { setInput(''); setEditing(true) }}
+                className="text-[11px] text-blue-500 hover:text-blue-700">+ 추가</button>
+            </>
           )}
         </div>
       )}
