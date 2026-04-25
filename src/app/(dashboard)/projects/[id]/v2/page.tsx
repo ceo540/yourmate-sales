@@ -2,10 +2,10 @@ import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { notFound, redirect } from 'next/navigation'
 import { isAdminOrManager } from '@/lib/permissions'
+import { createProfileMap, createProfileNameMap } from '@/lib/utils'
 import ProjectV2Client from './ProjectV2Client'
 
 // V2 — 새 디자인 데모. 만족스러우면 기존 페이지 대체.
-// 기존 /projects/[id] 와 같은 데이터 사용. 점진적으로 데이터 fetch 확장.
 export default async function ProjectV2Page({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
   const supabase = await createClient()
@@ -21,6 +21,88 @@ export default async function ProjectV2Page({ params }: { params: Promise<{ id: 
 
   const isAdmin = isAdminOrManager(profile?.role)
 
+  const [
+    { data: membersRaw },
+    { data: contractsRaw },
+    { data: profilesRaw },
+    { data: customer },
+    { data: logsRaw },
+    { data: leadsRaw },
+  ] = await Promise.all([
+    admin.from('project_members').select('profile_id, role').eq('project_id', id),
+    admin.from('sales').select('id, name, revenue, contract_stage, progress_status, inflow_date, payment_date, client_org, contract_split_reason, dropbox_url, assignee_id, entity_id, payment_schedules(*)').eq('project_id', id).order('created_at'),
+    admin.from('profiles').select('id, name'),
+    project.customer_id
+      ? admin.from('customers').select('id, name, type, contact_name, phone, contact_email').eq('id', project.customer_id).maybeSingle()
+      : Promise.resolve({ data: null }),
+    admin.from('project_logs')
+      .select('id, content, log_type, log_category, contacted_at, created_at, author_id, location, participants, outcome, sale_id')
+      .eq('project_id', id)
+      .order('contacted_at', { ascending: false })
+      .limit(100),
+    admin.from('leads').select('id, lead_id').eq('project_id', id),
+  ])
+
+  const profileMap = createProfileMap(profilesRaw)
+  const profileNameMap = createProfileNameMap(profilesRaw)
+
+  const contractIds = (contractsRaw ?? []).map(c => c.id)
+  const [{ data: tasksRaw }, { data: costsRaw }, { data: rentalsRaw }] = await Promise.all([
+    contractIds.length > 0
+      ? admin.from('tasks').select('*').in('project_id', contractIds).order('created_at')
+      : Promise.resolve({ data: [] }),
+    contractIds.length > 0
+      ? admin.from('sale_costs').select('*').in('sale_id', contractIds).order('created_at')
+      : Promise.resolve({ data: [] }),
+    contractIds.length > 0
+      ? admin.from('rentals').select('id, sale_id, customer_name, status, rental_start, rental_end').in('sale_id', contractIds).order('created_at')
+      : Promise.resolve({ data: [] }),
+  ])
+
+  // PM 멤버 정보
+  const pmMember = (membersRaw ?? []).find(m => m.role === 'PM')
+  const pmId = pmMember?.profile_id ?? project.pm_id ?? null
+  const pmName = pmId ? (profileNameMap[pmId] ?? null) : null
+
+  // 담당자(person_org_relations) 조회 - customer가 있으면
+  let contactPerson: { name: string; dept: string | null; title: string | null; phone: string | null; email: string | null } | null = null
+  if (project.customer_id) {
+    const { data: rels } = await admin
+      .from('person_org_relations')
+      .select('dept, title, persons(id, name, phone, email)')
+      .eq('customer_id', project.customer_id)
+      .eq('is_current', true)
+      .limit(1)
+    const rel = (rels as any[])?.[0]
+    if (rel?.persons) {
+      contactPerson = {
+        name: rel.persons.name,
+        dept: rel.dept ?? null,
+        title: rel.title ?? null,
+        phone: rel.persons.phone ?? null,
+        email: rel.persons.email ?? null,
+      }
+    }
+  }
+
+  // 로그 author 매핑
+  const logs = (logsRaw ?? []).map(l => ({
+    id: l.id, content: l.content, log_type: l.log_type, log_category: l.log_category ?? null,
+    contacted_at: l.contacted_at, created_at: l.created_at,
+    author_name: l.author_id ? (profileNameMap[l.author_id] ?? null) : null,
+    sale_id: l.sale_id ?? null,
+    location: l.location ?? null,
+    participants: l.participants ?? null,
+    outcome: l.outcome ?? null,
+  }))
+
+  // 재무 합계
+  const totalRevenue = (contractsRaw ?? []).reduce((s, c: any) => s + (c.revenue ?? 0), 0)
+  const totalCost = (costsRaw ?? []).reduce((s, c: any) => s + (c.amount ?? 0), 0)
+  const totalReceived = (contractsRaw ?? []).reduce((sum, c: any) => {
+    return sum + ((c.payment_schedules ?? []).filter((p: any) => p.is_received).reduce((s: number, p: any) => s + (p.amount ?? 0), 0))
+  }, 0)
+
   return (
     <ProjectV2Client
       project={{
@@ -34,8 +116,27 @@ export default async function ProjectV2Page({ params }: { params: Promise<{ id: 
         memo: project.memo ?? null,
         notes: project.notes ?? null,
         customer_id: project.customer_id ?? null,
-        pm_id: project.pm_id ?? null,
+        pm_id: pmId,
       }}
+      pmName={pmName}
+      customer={customer ? { id: customer.id, name: customer.name, type: customer.type ?? null, contact_name: customer.contact_name ?? null, phone: customer.phone ?? null, contact_email: customer.contact_email ?? null } : null}
+      contactPerson={contactPerson}
+      finance={{ revenue: totalRevenue, cost: totalCost, received: totalReceived, contractCount: (contractsRaw ?? []).length }}
+      contracts={(contractsRaw ?? []).map((c: any) => ({
+        id: c.id, name: c.name, revenue: c.revenue ?? null,
+        contract_stage: c.contract_stage ?? null, progress_status: c.progress_status ?? null,
+        client_org: c.client_org ?? null,
+      }))}
+      tasks={(tasksRaw ?? []).map((t: any) => ({
+        id: t.id, title: t.title, status: t.status, priority: t.priority ?? null,
+        due_date: t.due_date ?? null, project_id: t.project_id ?? null,
+      }))}
+      logs={logs}
+      rentals={(rentalsRaw ?? []).map((r: any) => ({
+        id: r.id, sale_id: r.sale_id, customer_name: r.customer_name ?? '',
+        status: r.status ?? '', rental_start: r.rental_start ?? null, rental_end: r.rental_end ?? null,
+      }))}
+      leadIds={(leadsRaw ?? []).map((l: any) => l.id)}
       isAdmin={isAdmin}
       currentUserId={user.id}
     />
