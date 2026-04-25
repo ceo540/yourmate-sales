@@ -7,6 +7,8 @@ import { renameDropboxFolder, listDropboxFolder, moveDropboxToCancel } from '@/l
 import { createEvent, deleteEvent as deleteGCalEvent, CALENDAR_COLORS } from '@/lib/google-calendar'
 import { createProfileNameMap } from '@/lib/utils'
 import { isAdminOrManager } from '@/lib/permissions'
+import Anthropic from '@anthropic-ai/sdk'
+import { logApiUsage } from '@/lib/api-usage'
 
 export async function createProjectLog(
   projectId: string,
@@ -76,6 +78,125 @@ export async function updateProjectMemo(projectId: string, memo: string) {
     .eq('id', projectId)
   if (error) throw new Error(error.message)
   revalidatePath(`/projects/${projectId}`)
+}
+
+// V2 3박스용 필드 업데이트
+export async function updateProjectOverviewSummary(projectId: string, value: string) {
+  const admin = createAdminClient()
+  const { error } = await admin
+    .from('projects')
+    .update({ overview_summary: value || null, updated_at: new Date().toISOString() })
+    .eq('id', projectId)
+  if (error) throw new Error(error.message)
+  revalidatePath(`/projects/${projectId}/v2`)
+  revalidatePath(`/projects/${projectId}`)
+}
+
+export async function updateProjectWorkDescription(projectId: string, value: string) {
+  const admin = createAdminClient()
+  const { error } = await admin
+    .from('projects')
+    .update({ work_description: value || null, updated_at: new Date().toISOString() })
+    .eq('id', projectId)
+  if (error) throw new Error(error.message)
+  revalidatePath(`/projects/${projectId}/v2`)
+  revalidatePath(`/projects/${projectId}`)
+}
+
+export async function updateProjectPendingDiscussion(projectId: string, value: string) {
+  const admin = createAdminClient()
+  const { error } = await admin
+    .from('projects')
+    .update({ pending_discussion: value || null, updated_at: new Date().toISOString() })
+    .eq('id', projectId)
+  if (error) throw new Error(error.message)
+  revalidatePath(`/projects/${projectId}/v2`)
+  revalidatePath(`/projects/${projectId}`)
+}
+
+// V2 빵빵이 자동 개요 생성 — projects.overview_summary 자동 채움
+// 프로젝트 + 계약 + 업무 + 최근 소통을 분석해서 짧은 markdown/plain 개요 생성
+export async function generateAndSaveProjectOverview(projectId: string): Promise<{ summary: string } | { error: string }> {
+  const admin = createAdminClient()
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return { error: 'Unauthorized' }
+
+  // 데이터 fetch
+  const [{ data: project }, { data: contracts }, { data: customer }] = await Promise.all([
+    admin.from('projects').select('id, name, service_type, department, status, memo, notes').eq('id', projectId).single(),
+    admin.from('sales').select('id, name, revenue, contract_stage').eq('project_id', projectId),
+    admin.from('projects').select('customer_id, customers(name, type)').eq('id', projectId).maybeSingle(),
+  ])
+  if (!project) return { error: '프로젝트를 찾을 수 없습니다' }
+
+  const contractIds = (contracts ?? []).map(c => c.id)
+  const [{ data: tasks }, { data: logs }] = await Promise.all([
+    contractIds.length > 0
+      ? admin.from('tasks').select('title, status, priority, due_date').in('project_id', contractIds).limit(30)
+      : Promise.resolve({ data: [] }),
+    admin.from('project_logs')
+      .select('content, log_type, contacted_at')
+      .eq('project_id', projectId)
+      .order('contacted_at', { ascending: false })
+      .limit(15),
+  ])
+
+  const totalRevenue = (contracts ?? []).reduce((s: number, c: any) => s + (c.revenue ?? 0), 0)
+  const customerName = (customer as any)?.customers?.name ?? null
+
+  const taskSummary = (tasks ?? []).map((t: any) =>
+    `- [${t.status}${t.priority ? ` · ${t.priority}` : ''}] ${t.title}${t.due_date ? ` (${t.due_date.slice(5)})` : ''}`
+  ).join('\n')
+  const logSummary = (logs ?? []).slice(0, 8).map((l: any) =>
+    `- [${l.log_type}] ${(l.contacted_at ?? '').slice(0, 10)}: ${(l.content ?? '').slice(0, 80)}`
+  ).join('\n')
+
+  const prompt = `다음 프로젝트 정보로 짧고 명확한 "프로젝트 개요"를 작성해줘. 제3자가 읽어도 5초 안에 파악되게.
+
+[프로젝트]
+- 이름: ${project.name}
+- 고객사: ${customerName ?? '미연결'}
+- 서비스: ${project.service_type ?? '미입력'}
+- 진행 상태: ${project.status}
+- 매출 합계: ${totalRevenue > 0 ? `${(totalRevenue / 10000).toFixed(0)}만원` : '미입력'}
+- 계약 ${(contracts ?? []).length}건${(contracts ?? []).map((c: any) => ` / ${c.contract_stage ?? '계약'}`).join('')}
+${project.memo ? `- 메모: ${project.memo}` : ''}
+${project.notes ? `- 유의사항: ${project.notes}` : ''}
+
+[업무 (${(tasks ?? []).length}개)]
+${taskSummary || '없음'}
+
+[최근 소통]
+${logSummary || '없음'}
+
+아래 형식의 markdown으로 짧게 (총 8~12줄):
+**한줄 요약**: (이 프로젝트가 무엇이고 지금 어떤 상태인지 한 문장)
+
+**핵심 정보**:
+- 항목별로 짧게 (3~5줄)
+
+**현재 상황 / 다음 할 일**:
+- 가장 중요한 1~3가지
+
+마크다운 코드블록 없이 markdown 텍스트만 반환.`
+
+  const client = new Anthropic()
+  const message = await client.messages.create({
+    model: 'claude-haiku-4-5-20251001',
+    max_tokens: 600,
+    messages: [{ role: 'user', content: prompt }],
+  })
+  logApiUsage({ model: 'claude-haiku-4-5-20251001', endpoint: 'project-overview', userId: user.id, inputTokens: message.usage.input_tokens, outputTokens: message.usage.output_tokens }).catch(() => {})
+
+  const summary = ((message.content[0] as any)?.text ?? '').trim()
+  if (!summary) return { error: '개요 생성 실패' }
+
+  await admin.from('projects').update({ overview_summary: summary, updated_at: new Date().toISOString() }).eq('id', projectId)
+  revalidatePath(`/projects/${projectId}/v2`)
+  revalidatePath(`/projects/${projectId}`)
+
+  return { summary }
 }
 
 export async function addProjectMember(projectId: string, profileId: string, role: string) {

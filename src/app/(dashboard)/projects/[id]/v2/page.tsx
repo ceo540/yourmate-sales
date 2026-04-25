@@ -115,6 +115,9 @@ export default async function ProjectV2Page({ params }: { params: Promise<{ id: 
         dropbox_url: project.dropbox_url ?? null,
         memo: project.memo ?? null,
         notes: project.notes ?? null,
+        overview_summary: project.overview_summary ?? null,
+        work_description: project.work_description ?? null,
+        pending_discussion: project.pending_discussion ?? null,
         customer_id: project.customer_id ?? null,
         pm_id: pmId,
       }}
