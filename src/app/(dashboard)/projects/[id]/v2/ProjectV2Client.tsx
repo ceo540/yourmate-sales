@@ -53,6 +53,8 @@ interface Contract {
 interface Task {
   id: string; title: string; status: string; priority: string | null
   due_date: string | null; project_id: string | null
+  assignee_id?: string | null
+  assignee_name?: string | null
   bbang_suggested?: boolean
 }
 interface Log {
@@ -69,6 +71,8 @@ interface Rental {
   status: string; rental_start: string | null; rental_end: string | null
 }
 
+interface ProfileOpt { id: string; name: string }
+
 interface Props {
   project: Project
   pmName: string | null
@@ -80,6 +84,7 @@ interface Props {
   logs: Log[]
   rentals: Rental[]
   leadIds: string[]
+  profiles: ProfileOpt[]
   isAdmin: boolean
   currentUserId: string
 }
@@ -132,7 +137,7 @@ function KpiPill({ icon, label, value, tone }: { icon: string; label: string; va
 
 export default function ProjectV2Client({
   project, pmName, customer, contactPerson, finance,
-  contracts, tasks, logs, rentals, leadIds, currentUserId,
+  contracts, tasks, logs, rentals, leadIds, profiles, currentUserId,
 }: Props) {
   const profitRate = finance.revenue > 0
     ? Math.round(((finance.revenue - finance.cost) / finance.revenue) * 100)
@@ -254,7 +259,7 @@ export default function ProjectV2Client({
           <TwoBoxesBlock project={project} />
 
           {/* 3. 할일 (tasks) */}
-          <TasksSection tasks={tasks} contracts={contracts} projectId={project.id} />
+          <TasksSection tasks={tasks} contracts={contracts} projectId={project.id} profiles={profiles} />
 
           {/* 5. 일정 (due_date 임박 순) */}
           <ScheduleSection tasks={tasks} />
@@ -798,11 +803,17 @@ function ProjectGlanceSection({ project, customer, pmName, contracts, tasks, fin
 }
 
 /* ── 4. 할일 (별도 섹션) ─────────────────────────────────── */
-function TasksSection({ tasks, contracts, projectId }: { tasks: Task[]; contracts: Contract[]; projectId: string }) {
+function TasksSection({ tasks, contracts, projectId, profiles }: {
+  tasks: Task[]; contracts: Contract[]; projectId: string; profiles: ProfileOpt[]
+}) {
   const router = useRouter()
   const [, startTransition] = useTransition()
   const pendingTasks = tasks.filter(t => t.status !== '완료' && t.status !== '보류')
   const [newTitle, setNewTitle] = useState('')
+  const [newAssigneeId, setNewAssigneeId] = useState('')
+  const [newDue, setNewDue] = useState('')
+  const [newPriority, setNewPriority] = useState('보통')
+  const [showDetail, setShowDetail] = useState(false)
   const [suggesting, setSuggesting] = useState(false)
   const [suggestMsg, setSuggestMsg] = useState<string | null>(null)
   const canAdd = contracts.length > 0
@@ -811,8 +822,8 @@ function TasksSection({ tasks, contracts, projectId }: { tasks: Task[]; contract
     const title = newTitle.trim()
     const firstSaleId = contracts[0].id
     startTransition(async () => {
-      await createTaskForProject(firstSaleId, title, null, null, '보통', null)
-      setNewTitle('')
+      await createTaskForProject(firstSaleId, title, newAssigneeId || null, newDue || null, newPriority, null)
+      setNewTitle(''); setNewAssigneeId(''); setNewDue(''); setNewPriority('보통'); setShowDetail(false)
       router.refresh()
     })
   }
@@ -852,16 +863,35 @@ function TasksSection({ tasks, contracts, projectId }: { tasks: Task[]; contract
         </div>
       </div>
       {canAdd && (
-        <div className="px-5 py-2 bg-yellow-50 border-b border-yellow-100">
+        <div className="px-5 py-2 bg-yellow-50 border-b border-yellow-100 space-y-1.5">
           <div className="flex gap-2">
             <input value={newTitle} onChange={e => setNewTitle(e.target.value)}
-              onKeyDown={e => { if (e.key === 'Enter') add() }}
+              onKeyDown={e => { if (e.key === 'Enter' && !showDetail) add() }}
               placeholder="할일 제목 (Enter로 추가)..."
               className="flex-1 text-xs border border-yellow-200 rounded px-2.5 py-1.5 bg-white focus:outline-none focus:border-yellow-400" />
+            <button onClick={() => setShowDetail(s => !s)}
+              className="text-[11px] text-gray-500 hover:text-gray-800 px-2 py-1.5 rounded">
+              {showDetail ? '간단히' : '상세'}
+            </button>
             <button onClick={add} disabled={!newTitle.trim()}
               className="text-xs px-3 py-1.5 rounded font-medium hover:opacity-80 disabled:opacity-40"
-              style={{ backgroundColor: '#FFCE00', color: '#121212' }}>+</button>
+              style={{ backgroundColor: '#FFCE00', color: '#121212' }}>+ 추가</button>
           </div>
+          {showDetail && (
+            <div className="grid grid-cols-3 gap-1.5">
+              <select value={newAssigneeId} onChange={e => setNewAssigneeId(e.target.value)}
+                className="text-xs border border-yellow-200 rounded px-2 py-1.5 bg-white focus:outline-none focus:border-yellow-400">
+                <option value="">담당자 (선택)</option>
+                {profiles.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+              </select>
+              <input type="date" value={newDue} onChange={e => setNewDue(e.target.value)}
+                className="text-xs border border-yellow-200 rounded px-2 py-1.5 bg-white focus:outline-none focus:border-yellow-400" />
+              <select value={newPriority} onChange={e => setNewPriority(e.target.value)}
+                className="text-xs border border-yellow-200 rounded px-2 py-1.5 bg-white focus:outline-none focus:border-yellow-400">
+                {['낮음', '보통', '높음', '긴급'].map(p => <option key={p} value={p}>{p}</option>)}
+              </select>
+            </div>
+          )}
         </div>
       )}
       {tasks.length === 0 ? (
@@ -878,6 +908,7 @@ function TasksSection({ tasks, contracts, projectId }: { tasks: Task[]; contract
                   </span>
                 )}
                 <span className={`flex-1 text-sm truncate ${t.status === '완료' ? 'line-through text-gray-300' : 'text-gray-700'}`}>{t.title}</span>
+                {t.assignee_name && <span className="text-[11px] text-gray-500 flex-shrink-0">@{t.assignee_name}</span>}
                 {t.due_date && <span className="text-[11px] text-gray-400 flex-shrink-0">{t.due_date.slice(5)}</span>}
                 <span className={`text-[10px] px-2 py-0.5 rounded-full flex-shrink-0 ${TASK_STATUS_BADGE[t.status] ?? 'bg-gray-100 text-gray-500'}`}>
                   {t.status}
