@@ -1227,15 +1227,6 @@ export async function POST(req: NextRequest) {
       }
     })
 
-    console.log('[빵빵이] 호출:', JSON.stringify({
-      model: MODEL,
-      mode,
-      projectId: projectId ?? null,
-      todayIso,
-      sysHead: systemWithDate.slice(0, 300),
-      lastUserMsg: messages[messages.length - 1]?.content?.slice(0, 200),
-    }))
-
     // tool_use 루프
     let mutated = false
     let response = await getClient().messages.create({
@@ -1247,18 +1238,12 @@ export async function POST(req: NextRequest) {
     })
     logApiUsage({ model: MODEL, endpoint: 'chat', userId: user.id, inputTokens: response.usage.input_tokens, outputTokens: response.usage.output_tokens }).catch(() => {})
 
-    if (response.stop_reason !== 'tool_use') {
-      console.log('[빵빵이] 도구 호출 없이 종료. stop_reason:', response.stop_reason)
-    }
-
     while (response.stop_reason === 'tool_use') {
       const toolUseBlocks = response.content.filter((b): b is Anthropic.ToolUseBlock => b.type === 'tool_use')
-      console.log('[빵빵이] 도구 호출:', toolUseBlocks.map(t => `${t.name}(${JSON.stringify(t.input).slice(0, 150)})`).join(', '))
 
       const toolResults: Anthropic.ToolResultBlockParam[] = await Promise.all(
         toolUseBlocks.map(async (tu) => {
           const result = await executeTool(tu.name, tu.input as Record<string, unknown>, userRole, user.id, projectId)
-          console.log('[빵빵이] 도구 결과:', tu.name, '→', JSON.stringify(result).slice(0, 200))
           if (MUTATING_TOOLS.has(tu.name) && result && typeof result === 'object' && !('error' in result)) {
             mutated = true
           }
@@ -1305,16 +1290,7 @@ export async function POST(req: NextRequest) {
       text = text.replace(/<lead-data>[\s\S]*?<\/lead-data>/, '').trim()
     }
 
-    return NextResponse.json({
-      text, saleData, leadData, mutated,
-      _debug: {
-        model: MODEL,
-        mode,
-        projectId: projectId ?? null,
-        todayIso,
-        systemPromptHead: systemWithDate.slice(0, 500),
-      },
-    })
+    return NextResponse.json({ text, saleData, leadData, mutated })
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e)
     console.error('Chat API error:', msg)

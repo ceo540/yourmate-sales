@@ -207,8 +207,6 @@ export default function AiChat() {
         }),
       })
       const data = await res.json()
-      // 임시 디버그: production 환각 진단용 (해결 후 제거 예정)
-      if (data._debug) console.log('[빵빵이 디버그]', data._debug)
       const content = data.text || data.error || (data.leadData ? '리드 정보 추출 완료!' : data.saleData ? '계약 정보 추출 완료!' : '오류가 발생했어요.')
       setMessages(prev => [...prev, {
         role: 'assistant',
