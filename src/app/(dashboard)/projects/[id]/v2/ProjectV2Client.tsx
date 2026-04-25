@@ -822,8 +822,15 @@ function TasksSection({ tasks, contracts, projectId, profiles }: {
     const title = newTitle.trim()
     const firstSaleId = contracts[0].id
     startTransition(async () => {
-      await createTaskForProject(firstSaleId, title, newAssigneeId || null, newDue || null, newPriority, null)
+      const result = await createTaskForProject(firstSaleId, title, newAssigneeId || null, newDue || null, newPriority, null)
+      if (result && 'error' in result) {
+        setSuggestMsg(`⚠ 추가 실패: ${result.error}`)
+        setTimeout(() => setSuggestMsg(null), 8000)
+        return
+      }
       setNewTitle(''); setNewAssigneeId(''); setNewDue(''); setNewPriority('보통'); setShowDetail(false)
+      setSuggestMsg('✓ 추가됨')
+      setTimeout(() => setSuggestMsg(null), 2000)
       router.refresh()
     })
   }
