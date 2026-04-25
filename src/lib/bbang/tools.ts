@@ -286,6 +286,87 @@ export const TOOLS: Anthropic.Tool[] = [
     },
   },
   {
+    name: 'create_project_task',
+    description: '현재 열린 프로젝트에 할 일을 추가합니다. 프로젝트 컨텍스트(projectId)가 있을 때만 동작.',
+    input_schema: {
+      type: 'object' as const,
+      properties: {
+        title: { type: 'string', description: '할 일 제목 (필수)' },
+        priority: { type: 'string', description: '긴급 | 높음 | 보통 | 낮음 (기본 보통)' },
+        due_date: { type: 'string', description: '마감일 YYYY-MM-DD' },
+        assignee_name: { type: 'string', description: '담당자 이름 (이름으로 profile 매칭). 본인이면 "나"' },
+        description: { type: 'string', description: '상세 설명/메모' },
+      },
+      required: ['title'],
+    },
+  },
+  {
+    name: 'complete_task',
+    description: '현재 프로젝트의 할 일을 완료 상태로 변경합니다. 제목 일부로 검색해서 찾음. 여러 건 매칭 시 task_id로 재호출 필요.',
+    input_schema: {
+      type: 'object' as const,
+      properties: {
+        task_id: { type: 'string', description: '할 일 ID (UUID). title 검색 결과가 여러 개일 때 명시.' },
+        title: { type: 'string', description: '제목 검색어 (task_id 없을 때 필수)' },
+      },
+    },
+  },
+  {
+    name: 'update_task',
+    description: '현재 프로젝트 할 일의 담당자/마감일/우선순위/상태/설명을 수정합니다. task_id 또는 title로 식별.',
+    input_schema: {
+      type: 'object' as const,
+      properties: {
+        task_id: { type: 'string', description: '할 일 ID (UUID). title 검색 결과가 여러 개일 때 명시.' },
+        title: { type: 'string', description: '제목 검색어 (task_id 없을 때 필수)' },
+        new_title: { type: 'string', description: '새 제목 (변경 시)' },
+        priority: { type: 'string', description: '긴급 | 높음 | 보통 | 낮음' },
+        due_date: { type: 'string', description: '마감일 YYYY-MM-DD (없애려면 빈 문자열)' },
+        status: { type: 'string', description: '할 일 | 진행중 | 완료 | 보류' },
+        assignee_name: { type: 'string', description: '담당자 이름. "나"=본인, ""=미지정.' },
+        description: { type: 'string', description: '상세 설명' },
+      },
+    },
+  },
+  {
+    name: 'delete_task',
+    description: '현재 프로젝트의 할 일을 삭제합니다. 사용자에게 한 번 확인받은 뒤에만 호출.',
+    input_schema: {
+      type: 'object' as const,
+      properties: {
+        task_id: { type: 'string', description: '할 일 ID (UUID)' },
+        title: { type: 'string', description: '제목 검색어 (task_id 없을 때 필수)' },
+      },
+    },
+  },
+  {
+    name: 'regenerate_overview',
+    description: '현재 프로젝트의 자동 개요(overview_summary)를 최신 데이터로 재생성합니다. 계약/할일/소통 변동이 있어 개요가 오래되면 사용.',
+    input_schema: {
+      type: 'object' as const,
+      properties: {},
+    },
+  },
+  {
+    name: 'update_pending_discussion',
+    description: '현재 프로젝트의 협의/미결 사항(pending_discussion)을 직접 수정합니다. 사용자가 명시적으로 내용을 줄 때 사용.',
+    input_schema: {
+      type: 'object' as const,
+      properties: {
+        content: { type: 'string', description: '새 협의사항 내용 (markdown 가능). 빈 문자열이면 삭제.' },
+      },
+      required: ['content'],
+    },
+  },
+  {
+    name: 'regenerate_pending_discussion',
+    description: '현재 프로젝트의 협의/미결 사항을 최근 데이터로 재분석해 자동 갱신합니다.',
+    input_schema: {
+      type: 'object' as const,
+      properties: {},
+    },
+  },
+  {
     name: 'create_calendar_event',
     description: '구글 캘린더에 일정을 등록합니다. 행사, 배송, 미팅, 마감일 등.',
     input_schema: {
