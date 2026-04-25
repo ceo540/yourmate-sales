@@ -16,7 +16,9 @@ import {
   generateAndSaveProjectOverview,
   generateAndSavePendingDiscussion,
   generateAndSuggestTasks,
+  createAndLinkCalendarEvent,
 } from '../project-actions'
+import { updateTask } from '../../../sales/tasks/actions'
 
 interface Project {
   id: string
@@ -55,6 +57,7 @@ interface Task {
   due_date: string | null; project_id: string | null
   assignee_id?: string | null
   assignee_name?: string | null
+  description?: string | null
   bbang_suggested?: boolean
 }
 interface Log {
@@ -259,7 +262,7 @@ export default function ProjectV2Client({
           <TwoBoxesBlock project={project} />
 
           {/* 3. 할일 (tasks) */}
-          <TasksSection tasks={tasks} contracts={contracts} projectId={project.id} profiles={profiles} />
+          <TasksSection tasks={tasks} contracts={contracts} projectId={project.id} profiles={profiles} serviceType={project.service_type} />
 
           {/* 5. 일정 (due_date 임박 순) */}
           <ScheduleSection tasks={tasks} />
@@ -803,8 +806,8 @@ function ProjectGlanceSection({ project, customer, pmName, contracts, tasks, fin
 }
 
 /* ── 4. 할일 (별도 섹션) ─────────────────────────────────── */
-function TasksSection({ tasks, contracts, projectId, profiles }: {
-  tasks: Task[]; contracts: Contract[]; projectId: string; profiles: ProfileOpt[]
+function TasksSection({ tasks, contracts, projectId, profiles, serviceType }: {
+  tasks: Task[]; contracts: Contract[]; projectId: string; profiles: ProfileOpt[]; serviceType: string | null
 }) {
   const router = useRouter()
   const [, startTransition] = useTransition()
@@ -905,32 +908,207 @@ function TasksSection({ tasks, contracts, projectId, profiles }: {
         <p className="text-center py-6 text-xs text-gray-400">등록된 할일 없음</p>
       ) : (
         <ul className="divide-y divide-gray-50">
-          {tasks.slice(0, 12).map(t => (
-            <li key={t.id} className={`px-5 py-2.5 ${t.bbang_suggested ? 'bg-blue-50/40' : ''}`}>
-              <div className="flex items-center gap-2">
-                <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${PRIORITY_DOT[t.priority ?? '보통'] ?? 'bg-gray-300'}`} />
-                {t.bbang_suggested && (
-                  <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-blue-100 text-blue-700 font-semibold flex-shrink-0" title="빵빵이가 추천한 할 일">
-                    🤖
-                  </span>
-                )}
-                <span className={`flex-1 text-sm truncate ${t.status === '완료' ? 'line-through text-gray-300' : 'text-gray-700'}`}>{t.title}</span>
-                {t.assignee_name && <span className="text-[11px] text-gray-500 flex-shrink-0">@{t.assignee_name}</span>}
-                {t.due_date && <span className="text-[11px] text-gray-400 flex-shrink-0">{t.due_date.slice(5)}</span>}
-                <span className={`text-[10px] px-2 py-0.5 rounded-full flex-shrink-0 ${TASK_STATUS_BADGE[t.status] ?? 'bg-gray-100 text-gray-500'}`}>
-                  {t.status}
-                </span>
-              </div>
-            </li>
+          {tasks.slice(0, 20).map(t => (
+            <TaskRow key={t.id} task={t} profiles={profiles} projectId={projectId} serviceType={serviceType} />
           ))}
         </ul>
       )}
-      {tasks.length > 12 && (
+      {tasks.length > 20 && (
         <div className="px-5 py-2 border-t border-gray-50 text-center text-xs text-gray-400">
-          +{tasks.length - 12}건 더
+          +{tasks.length - 20}건 더
         </div>
       )}
     </div>
+  )
+}
+
+/* ── 4-A. 할일 row: 클릭 → expand 인라인 편집 + 캘린더 연동 ─── */
+const SERVICE_TO_CALENDAR: Record<string, string> = {
+  'SOS': 'sos',
+  '교구대여': 'rental',
+  '행사대여': 'rental',
+  '교육프로그램': 'artqium',
+}
+const CALENDAR_LABELS: Record<string, string> = {
+  main: '개인/전체',
+  sos: '사운드오브스쿨',
+  rental: '렌탈',
+  artqium: '아트키움',
+}
+
+function TaskRow({ task, profiles, projectId, serviceType }: {
+  task: Task; profiles: ProfileOpt[]; projectId: string; serviceType: string | null
+}) {
+  const router = useRouter()
+  const [, startTransition] = useTransition()
+  const [expanded, setExpanded] = useState(false)
+  const [form, setForm] = useState({
+    title: task.title,
+    status: task.status,
+    priority: task.priority ?? '보통',
+    assignee_id: task.assignee_id ?? '',
+    due_date: task.due_date ?? '',
+    description: task.description ?? '',
+  })
+  const [saving, setSaving] = useState(false)
+  const [savedMsg, setSavedMsg] = useState<string | null>(null)
+
+  // 캘린더 연동 폼
+  const [calOpen, setCalOpen] = useState(false)
+  const [calKey, setCalKey] = useState(serviceType ? (SERVICE_TO_CALENDAR[serviceType] ?? 'main') : 'main')
+  const [calDate, setCalDate] = useState(task.due_date ?? '')
+  const [calAllDay, setCalAllDay] = useState(true)
+  const [calStart, setCalStart] = useState('09:00')
+  const [calEnd, setCalEnd] = useState('18:00')
+  const [calMsg, setCalMsg] = useState<string | null>(null)
+
+  function save() {
+    if (!form.title.trim()) return
+    setSaving(true)
+    const fd = new FormData()
+    fd.set('id', task.id)
+    fd.set('title', form.title.trim())
+    fd.set('status', form.status)
+    fd.set('priority', form.priority)
+    fd.set('assignee_id', form.assignee_id)
+    fd.set('due_date', form.due_date)
+    fd.set('description', form.description)
+    if (task.project_id) fd.set('sale_id', task.project_id) // task.project_id는 sale.id
+    startTransition(async () => {
+      try {
+        await updateTask(fd)
+        setSavedMsg('✓ 저장됨')
+        setTimeout(() => setSavedMsg(null), 2000)
+        router.refresh()
+      } catch (e: any) {
+        setSavedMsg(`⚠ ${e?.message ?? '실패'}`)
+      } finally {
+        setSaving(false)
+      }
+    })
+  }
+
+  function addToCalendar() {
+    if (!calDate) {
+      setCalMsg('⚠ 날짜를 선택하세요')
+      return
+    }
+    setCalMsg('처리 중...')
+    startTransition(async () => {
+      const res = await createAndLinkCalendarEvent(projectId, calKey, {
+        title: form.title.trim(),
+        date: calDate,
+        startTime: calAllDay ? undefined : calStart,
+        endTime: calAllDay ? undefined : calEnd,
+        description: form.description || undefined,
+        isAllDay: calAllDay,
+      })
+      if (res.error) {
+        setCalMsg(`⚠ ${res.error}`)
+      } else {
+        setCalMsg(`✓ ${CALENDAR_LABELS[calKey]} 캘린더에 추가됨`)
+        setTimeout(() => setCalMsg(null), 4000)
+        setCalOpen(false)
+        router.refresh()
+      }
+    })
+  }
+
+  return (
+    <li className={task.bbang_suggested ? 'bg-blue-50/40' : ''}>
+      {/* 요약 row */}
+      <button onClick={() => setExpanded(e => !e)} className="w-full px-5 py-2.5 hover:bg-gray-50 text-left">
+        <div className="flex items-center gap-2">
+          <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${PRIORITY_DOT[task.priority ?? '보통'] ?? 'bg-gray-300'}`} />
+          {task.bbang_suggested && (
+            <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-blue-100 text-blue-700 font-semibold flex-shrink-0" title="빵빵이가 추천한 할 일">🤖</span>
+          )}
+          <span className={`flex-1 text-sm truncate ${task.status === '완료' ? 'line-through text-gray-300' : 'text-gray-700'}`}>{task.title}</span>
+          {task.assignee_name && <span className="text-[11px] text-gray-500 flex-shrink-0">@{task.assignee_name}</span>}
+          {task.due_date && <span className="text-[11px] text-gray-400 flex-shrink-0">{task.due_date.slice(5)}</span>}
+          <span className={`text-[10px] px-2 py-0.5 rounded-full flex-shrink-0 ${TASK_STATUS_BADGE[task.status] ?? 'bg-gray-100 text-gray-500'}`}>{task.status}</span>
+          <span className="text-gray-300 text-xs flex-shrink-0">{expanded ? '▲' : '▼'}</span>
+        </div>
+      </button>
+
+      {/* 상세 편집 */}
+      {expanded && (
+        <div className="px-5 py-3 bg-gray-50 border-t border-gray-100 space-y-2">
+          <input value={form.title} onChange={e => setForm(f => ({ ...f, title: e.target.value }))}
+            placeholder="제목" className="w-full text-sm font-medium border border-gray-200 rounded-lg px-3 py-2 bg-white focus:outline-none focus:border-yellow-400" />
+          <textarea value={form.description} onChange={e => setForm(f => ({ ...f, description: e.target.value }))}
+            placeholder="상세 내용 (할 일의 배경, 산출물, 주의사항 등)" rows={3}
+            className="w-full text-sm border border-gray-200 rounded-lg px-3 py-2 bg-white focus:outline-none focus:border-yellow-400 resize-none" />
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+            <select value={form.assignee_id} onChange={e => setForm(f => ({ ...f, assignee_id: e.target.value }))}
+              className="text-xs border border-gray-200 rounded px-2 py-1.5 bg-white focus:outline-none focus:border-yellow-400">
+              <option value="">담당자</option>
+              {profiles.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+            </select>
+            <input type="date" value={form.due_date} onChange={e => setForm(f => ({ ...f, due_date: e.target.value }))}
+              className="text-xs border border-gray-200 rounded px-2 py-1.5 bg-white focus:outline-none focus:border-yellow-400" />
+            <select value={form.priority} onChange={e => setForm(f => ({ ...f, priority: e.target.value }))}
+              className="text-xs border border-gray-200 rounded px-2 py-1.5 bg-white focus:outline-none focus:border-yellow-400">
+              {['낮음', '보통', '높음', '긴급'].map(p => <option key={p} value={p}>{p}</option>)}
+            </select>
+            <select value={form.status} onChange={e => setForm(f => ({ ...f, status: e.target.value }))}
+              className="text-xs border border-gray-200 rounded px-2 py-1.5 bg-white focus:outline-none focus:border-yellow-400">
+              {['할 일', '진행중', '검토중', '완료', '보류'].map(s => <option key={s} value={s}>{s}</option>)}
+            </select>
+          </div>
+          <div className="flex items-center gap-2 flex-wrap">
+            <button onClick={save} disabled={saving || !form.title.trim()}
+              className="px-3 py-1.5 text-xs font-semibold rounded-lg hover:opacity-80 disabled:opacity-40"
+              style={{ backgroundColor: '#FFCE00', color: '#121212' }}>
+              {saving ? '저장 중...' : '💾 저장'}
+            </button>
+            <button onClick={() => setCalOpen(o => !o)}
+              className="px-3 py-1.5 text-xs font-medium rounded-lg border border-blue-200 text-blue-600 hover:bg-blue-50">
+              📅 캘린더에 추가
+            </button>
+            {savedMsg && <span className="text-[11px] text-green-600">{savedMsg}</span>}
+            {calMsg && <span className="text-[11px] text-gray-500">{calMsg}</span>}
+          </div>
+
+          {/* 캘린더 연동 폼 */}
+          {calOpen && (
+            <div className="bg-blue-50 border border-blue-100 rounded-lg p-3 space-y-2">
+              <p className="text-[11px] font-semibold text-blue-700">📅 구글 캘린더 일정 추가</p>
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                <select value={calKey} onChange={e => setCalKey(e.target.value)}
+                  className="text-xs border border-blue-200 rounded px-2 py-1.5 bg-white focus:outline-none focus:border-blue-400">
+                  {Object.entries(CALENDAR_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+                </select>
+                <input type="date" value={calDate} onChange={e => setCalDate(e.target.value)}
+                  className="text-xs border border-blue-200 rounded px-2 py-1.5 bg-white focus:outline-none focus:border-blue-400" />
+                <label className="flex items-center gap-1.5 text-xs text-gray-600 px-2">
+                  <input type="checkbox" checked={calAllDay} onChange={e => setCalAllDay(e.target.checked)} />
+                  종일
+                </label>
+              </div>
+              {!calAllDay && (
+                <div className="grid grid-cols-2 gap-2">
+                  <input type="time" value={calStart} onChange={e => setCalStart(e.target.value)}
+                    className="text-xs border border-blue-200 rounded px-2 py-1.5 bg-white focus:outline-none focus:border-blue-400" />
+                  <input type="time" value={calEnd} onChange={e => setCalEnd(e.target.value)}
+                    className="text-xs border border-blue-200 rounded px-2 py-1.5 bg-white focus:outline-none focus:border-blue-400" />
+                </div>
+              )}
+              <div className="flex gap-2">
+                <button onClick={addToCalendar}
+                  className="px-3 py-1.5 text-xs font-semibold rounded-lg bg-blue-500 text-white hover:bg-blue-600">
+                  추가
+                </button>
+                <button onClick={() => { setCalOpen(false); setCalMsg(null) }}
+                  className="px-3 py-1.5 text-xs border border-blue-200 rounded-lg text-blue-600">
+                  취소
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+    </li>
   )
 }
 
