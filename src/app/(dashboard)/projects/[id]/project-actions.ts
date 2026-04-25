@@ -204,6 +204,48 @@ export async function linkSaleToProject(projectId: string, saleId: string) {
   revalidatePath(`/projects/${projectId}`)
 }
 
+// 프로젝트 내에서 새 매출(계약) 직접 생성 — 수의계약 분리 등
+// 프로젝트의 service_type/department/customer를 상속해서 채움
+export async function createSaleForProject(projectId: string, data: {
+  name: string
+  revenue: number
+  entity_id?: string | null
+  contract_stage?: string
+  contract_type?: string | null
+  contract_split_reason?: string | null
+  inflow_date?: string | null
+  payment_date?: string | null
+}) {
+  const admin = createAdminClient()
+  const { data: project } = await admin
+    .from('projects')
+    .select('service_type, department, customer_id, pm_id, project_number')
+    .eq('id', projectId)
+    .single()
+
+  const { data: sale, error } = await admin.from('sales').insert({
+    name: data.name,
+    project_id: projectId,
+    service_type: project?.service_type ?? null,
+    department: project?.department ?? null,
+    customer_id: project?.customer_id ?? null,
+    assignee_id: project?.pm_id ?? null,
+    project_number: project?.project_number ?? null,
+    entity_id: data.entity_id ?? null,
+    revenue: data.revenue,
+    contract_stage: data.contract_stage ?? '계약',
+    contract_type: data.contract_type ?? null,
+    contract_split_reason: data.contract_split_reason ?? null,
+    inflow_date: data.inflow_date ?? null,
+    payment_date: data.payment_date ?? null,
+  }).select('*, payment_schedules(*)').single()
+
+  if (error) return { error: error.message }
+
+  revalidatePath(`/projects/${projectId}`)
+  return { sale }
+}
+
 export async function updateProjectNotes(projectId: string, notes: string) {
   const admin = createAdminClient()
   await admin.from('projects').update({ notes: notes || null, updated_at: new Date().toISOString() }).eq('id', projectId)
