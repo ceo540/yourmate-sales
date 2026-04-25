@@ -9,7 +9,9 @@ import {
   addProjectMember,
   removeProjectMember,
   deleteProject,
+  updateProjectDropbox,
 } from '../project-actions'
+import { syncProjectName } from '../sync-project-name-action'
 
 type Profile = { id: string; name: string }
 type Customer = { id: string; name: string; type: string | null }
@@ -21,6 +23,7 @@ interface Props {
   customerId: string | null
   customer: { id: string; name: string } | null
   pmId: string | null
+  dropboxUrl: string | null
   customersAll: Customer[]
   profiles: Profile[]
   members: Member[]
@@ -28,7 +31,7 @@ interface Props {
 }
 
 export default function ProjectSettingsModal({
-  projectId, projectName, customerId, customer, pmId,
+  projectId, projectName, customerId, customer, pmId, dropboxUrl,
   customersAll, profiles, members, onClose,
 }: Props) {
   const router = useRouter()
@@ -66,6 +69,24 @@ export default function ProjectSettingsModal({
   const filteredCustomers = custQuery
     ? customersAll.filter(c => c.name.toLowerCase().includes(custQuery.toLowerCase())).slice(0, 8)
     : customersAll.slice(0, 8)
+
+  // Dropbox URL + 동기화
+  const [dbxInput, setDbxInput] = useState(dropboxUrl ?? '')
+  const [syncMsg, setSyncMsg] = useState<{ ok: boolean; text: string } | null>(null)
+  async function saveDropbox() {
+    if (dbxInput === (dropboxUrl ?? '')) return
+    setBusy('dropbox'); setError(null)
+    try { await updateProjectDropbox(projectId, dbxInput); router.refresh() }
+    catch (e) { setError(e instanceof Error ? e.message : '실패') }
+    finally { setBusy(null) }
+  }
+  async function syncDropbox() {
+    setBusy('sync'); setSyncMsg(null); setError(null)
+    const r = await syncProjectName(projectId)
+    setSyncMsg({ ok: r.success, text: r.message })
+    if (r.success) router.refresh()
+    setBusy(null)
+  }
 
   // PM (project_members 테이블에 role='PM'로 저장. 기존 PM 있으면 제거 후 추가)
   const [pmSelect, setPmSelect] = useState(pmId ?? '')
@@ -194,6 +215,35 @@ export default function ProjectSettingsModal({
                   <button onClick={() => setCustMode('view')} className="text-xs text-gray-500 hover:underline">취소</button>
                 </div>
               </div>
+            )}
+          </section>
+
+          {/* Dropbox */}
+          <section>
+            <p className="text-xs font-semibold text-gray-700 mb-1.5">Dropbox 폴더</p>
+            <div className="flex gap-2">
+              <input
+                value={dbxInput} onChange={e => setDbxInput(e.target.value)}
+                placeholder="https://www.dropbox.com/home/..."
+                className="flex-1 border border-gray-200 rounded px-2.5 py-1.5 text-sm"
+              />
+              <button onClick={saveDropbox} disabled={busy === 'dropbox' || dbxInput === (dropboxUrl ?? '')}
+                className="px-3 py-1.5 text-xs bg-gray-900 text-white rounded disabled:bg-gray-300">저장</button>
+            </div>
+            <div className="flex items-center gap-2 mt-1.5">
+              {dropboxUrl && (
+                <a href={dropboxUrl} target="_blank" rel="noopener noreferrer" className="text-[11px] text-blue-500 hover:underline">현재 폴더 열기 ↗</a>
+              )}
+              {dropboxUrl && (
+                <button onClick={syncDropbox} disabled={busy === 'sync'}
+                  className="text-[11px] text-blue-500 hover:underline disabled:opacity-50"
+                  title="프로젝트명과 Dropbox 폴더명을 일치시킴">
+                  {busy === 'sync' ? '동기화 중...' : '🔄 폴더명 동기화'}
+                </button>
+              )}
+            </div>
+            {syncMsg && (
+              <p className={`text-[11px] mt-1 ${syncMsg.ok ? 'text-green-600' : 'text-red-500'}`}>{syncMsg.text}</p>
             )}
           </section>
 

@@ -5,6 +5,8 @@ import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import ProjectClaudeChat from '@/components/ProjectClaudeChat'
 import MarkdownText from '@/components/MarkdownText'
+import MarkdownToolbar, { handleMarkdownShortcut } from '@/components/MarkdownToolbar'
+import { useRef } from 'react'
 import ProjectSettingsModal from './ProjectSettingsModal'
 import {
   updateProjectMemo,
@@ -18,6 +20,7 @@ import {
   generateAndSavePendingDiscussion,
   generateAndSuggestTasks,
   createAndLinkCalendarEvent,
+  listProjectDropboxFiles,
 } from '../project-actions'
 import { updateTask, deleteTask } from '../../../sales/tasks/actions'
 
@@ -269,6 +272,7 @@ export default function ProjectV2Client({
         <div className="space-y-4">
           {/* 1. 메모 (인플레이스) */}
           <MemoBlock project={project} />
+          <NotesBlock project={project} />
 
           {/* 2. 2박스: 개요(빵빵이) / 협의해야할 내용 (접/펼) */}
           <TwoBoxesBlock project={project} />
@@ -305,13 +309,7 @@ export default function ProjectV2Client({
           <FinanceCard finance={finance} profitRate={profitRate} receivedRate={receivedRate} />
 
           {/* 📁 드롭박스 */}
-          {project.dropbox_url && (
-            <a href={project.dropbox_url} target="_blank" rel="noopener noreferrer"
-              className="block bg-blue-50 border border-blue-100 rounded-xl px-4 py-3 hover:bg-blue-100 transition-colors">
-              <p className="text-xs text-blue-600 font-semibold">📁 드롭박스 폴더</p>
-              <p className="text-xs text-blue-400 mt-1 truncate">열기 ↗</p>
-            </a>
-          )}
+          {project.dropbox_url && <DropboxFilesCard dropboxUrl={project.dropbox_url} />}
         </aside>
       </div>
 
@@ -326,6 +324,7 @@ export default function ProjectV2Client({
           customerId={project.customer_id ?? null}
           customer={customer ? { id: customer.id, name: customer.name } : null}
           pmId={project.pm_id}
+          dropboxUrl={project.dropbox_url}
           customersAll={customersAll}
           profiles={profiles}
           members={members}
@@ -468,60 +467,100 @@ function PlaceholderCard({ title, subtitle, small }: { title: string; subtitle: 
 }
 
 /* ── 1. 메모 (인라인 편집) ─────────────────────────────── */
-function MemoBlock({ project }: { project: Project }) {
+function MarkdownNoteBlock({
+  projectId, title, value, save, emptyText, accentClass, headerClass,
+}: {
+  projectId: string
+  title: string
+  value: string | null
+  save: (id: string, v: string) => Promise<void>
+  emptyText: string
+  accentClass?: string
+  headerClass?: string
+}) {
   const router = useRouter()
   const [, startTransition] = useTransition()
   const [editing, setEditing] = useState(false)
   const [collapsed, setCollapsed] = useState(false)
-  const [input, setInput] = useState(project.memo ?? '')
+  const [input, setInput] = useState(value ?? '')
+  const taRef = useRef<HTMLTextAreaElement>(null)
 
-  function save() {
+  function handleSave() {
     startTransition(async () => {
-      await updateProjectMemo(project.id, input)
+      await save(projectId, input)
       setEditing(false)
       router.refresh()
     })
   }
 
   return (
-    <div className="bg-white border border-gray-100 rounded-xl px-5 py-3">
+    <div className={`bg-white border rounded-xl px-5 py-3 ${accentClass ?? 'border-gray-100'}`}>
       <div className="flex items-center justify-between mb-1.5">
         <button
           onClick={() => !editing && setCollapsed(c => !c)}
-          className="flex items-center gap-1.5 text-xs font-semibold text-gray-700 hover:text-gray-900"
+          className={`flex items-center gap-1.5 text-xs font-semibold hover:opacity-80 ${headerClass ?? 'text-gray-700'}`}
         >
           <span className="text-gray-400 text-[10px]">{collapsed ? '▶' : '▼'}</span>
-          📝 메모
+          {title}
         </button>
         {!editing && !collapsed && (
-          <button onClick={() => { setInput(project.memo ?? ''); setEditing(true) }}
+          <button onClick={() => { setInput(value ?? ''); setEditing(true) }}
             className="text-[11px] text-gray-400 hover:text-gray-700">
-            {project.memo ? '편집' : '+ 추가'}
+            {value ? '편집' : '+ 추가'}
           </button>
         )}
       </div>
       {!collapsed && (
         editing ? (
           <div className="space-y-2">
-            <textarea value={input} onChange={e => setInput(e.target.value)} rows={10} autoFocus
-              placeholder={'마크다운 지원: **굵게**, *기울임*, # 제목, - 리스트, [ ] 체크박스\n\n표 예시:\n| 헤더1 | 헤더2 |\n|------|------|\n| 내용 | 내용 |'}
-              className="w-full text-sm border border-gray-200 rounded-lg px-3 py-2 resize-y focus:outline-none focus:ring-1 focus:ring-yellow-400 bg-white font-mono" />
+            <MarkdownToolbar textareaRef={taRef} value={input} onChange={setInput} />
+            <textarea ref={taRef} value={input} onChange={e => setInput(e.target.value)}
+              rows={10} autoFocus
+              onKeyDown={e => { handleMarkdownShortcut(e, input, setInput) }}
+              placeholder={'툴바 버튼 또는 단축키(⌘+B, ⌘+I) 사용. 표는 📊 표 버튼으로 삽입.'}
+              className="w-full text-sm border border-gray-200 border-t-0 rounded-b-lg px-3 py-2 resize-y focus:outline-none focus:ring-1 focus:ring-yellow-400 bg-white font-mono -mt-2" />
             <div className="flex gap-2">
-              <button onClick={save}
+              <button onClick={handleSave}
                 className="px-3 py-1.5 text-xs font-semibold rounded-lg hover:opacity-80"
                 style={{ backgroundColor: '#FFCE00', color: '#121212' }}>저장</button>
               <button onClick={() => setEditing(false)}
                 className="px-3 py-1.5 text-xs border border-gray-200 rounded-lg text-gray-500">취소</button>
-              <span className="ml-auto text-[10px] text-gray-400 self-center">마크다운 + 표 지원 (저장 후 노션처럼 표시)</span>
+              <span className="ml-auto text-[10px] text-gray-400 self-center">⌘+B 굵게 · ⌘+I 기울임 · ⌘+E 코드</span>
             </div>
           </div>
-        ) : project.memo ? (
-          <MarkdownText className="text-gray-700">{project.memo}</MarkdownText>
+        ) : value ? (
+          <MarkdownText className="text-gray-700">{value}</MarkdownText>
         ) : (
-          <p className="text-xs text-gray-400 italic">메모 없음</p>
+          <p className="text-xs text-gray-400 italic">{emptyText}</p>
         )
       )}
     </div>
+  )
+}
+
+function MemoBlock({ project }: { project: Project }) {
+  return (
+    <MarkdownNoteBlock
+      projectId={project.id}
+      title="📝 메모"
+      value={project.memo}
+      save={updateProjectMemo}
+      emptyText="메모 없음"
+    />
+  )
+}
+
+function NotesBlock({ project }: { project: Project }) {
+  return (
+    <MarkdownNoteBlock
+      projectId={project.id}
+      title="⚠ 유의사항"
+      value={project.notes}
+      save={updateProjectNotes}
+      emptyText="특이사항·주의사항을 입력하세요"
+      accentClass="border-orange-100 bg-orange-50/30"
+      headerClass="text-orange-700"
+    />
   )
 }
 
@@ -1490,13 +1529,31 @@ function CommunicationTimeline({ logs, contracts, projectId }: { logs: Log[]; co
   const [adding, setAdding] = useState(false)
   const [newType, setNewType] = useState<string>('통화')
   const [newContent, setNewContent] = useState('')
+  const [showDetails, setShowDetails] = useState(false)
+  const [newWhen, setNewWhen] = useState(() => new Date().toISOString().slice(0, 16))
+  const [newLocation, setNewLocation] = useState('')
+  const [newParticipants, setNewParticipants] = useState('')
+  const [newOutcome, setNewOutcome] = useState('')
 
   function submitNew() {
     if (!newContent.trim()) return
     const category = ['내부회의', '메모'].includes(newType) ? '내부' : '외부'
+    const participants = newParticipants.trim()
+      ? newParticipants.split(',').map(s => s.trim()).filter(Boolean)
+      : undefined
     startTransition(async () => {
-      await createProjectLog(projectId, newContent.trim(), newType, category)
-      setNewContent('')
+      await createProjectLog(
+        projectId,
+        newContent.trim(),
+        newType,
+        category,
+        showDetails ? new Date(newWhen).toISOString() : undefined,
+        showDetails ? newLocation.trim() || undefined : undefined,
+        participants,
+        showDetails ? newOutcome.trim() || undefined : undefined,
+      )
+      setNewContent(''); setNewLocation(''); setNewParticipants(''); setNewOutcome('')
+      setShowDetails(false)
       setAdding(false)
       router.refresh()
     })
@@ -1551,12 +1608,43 @@ function CommunicationTimeline({ logs, contracts, projectId }: { logs: Log[]; co
               placeholder="소통 내용을 입력하세요..." autoFocus
               onKeyDown={e => { if (e.key === 'Enter' && e.metaKey) submitNew() }}
               className="w-full text-sm border border-yellow-200 rounded-lg px-3 py-2 resize-none focus:outline-none focus:ring-1 focus:ring-yellow-400 bg-white" />
-            <div className="flex gap-2">
+
+            {/* 상세 필드 (회의록용) */}
+            {showDetails && (
+              <div className="grid grid-cols-2 gap-2 pt-1">
+                <div className="col-span-2">
+                  <label className="text-[10px] text-gray-500">일시</label>
+                  <input type="datetime-local" value={newWhen} onChange={e => setNewWhen(e.target.value)}
+                    className="w-full text-xs border border-yellow-200 rounded px-2 py-1 focus:outline-none focus:border-yellow-400" />
+                </div>
+                <div>
+                  <label className="text-[10px] text-gray-500">장소</label>
+                  <input value={newLocation} onChange={e => setNewLocation(e.target.value)} placeholder="예: 곤지암리조트"
+                    className="w-full text-xs border border-yellow-200 rounded px-2 py-1 focus:outline-none focus:border-yellow-400" />
+                </div>
+                <div>
+                  <label className="text-[10px] text-gray-500">참석자 (콤마)</label>
+                  <input value={newParticipants} onChange={e => setNewParticipants(e.target.value)} placeholder="조민현, 방준영"
+                    className="w-full text-xs border border-yellow-200 rounded px-2 py-1 focus:outline-none focus:border-yellow-400" />
+                </div>
+                <div className="col-span-2">
+                  <label className="text-[10px] text-gray-500">결정/결과</label>
+                  <input value={newOutcome} onChange={e => setNewOutcome(e.target.value)} placeholder="합의 또는 결정사항"
+                    className="w-full text-xs border border-yellow-200 rounded px-2 py-1 focus:outline-none focus:border-yellow-400" />
+                </div>
+              </div>
+            )}
+
+            <div className="flex gap-2 items-center">
               <button onClick={submitNew} disabled={!newContent.trim()}
                 className="px-3 py-1.5 text-xs font-semibold rounded-lg hover:opacity-80 disabled:opacity-40"
                 style={{ backgroundColor: '#FFCE00', color: '#121212' }}>저장 (⌘+Enter)</button>
-              <button onClick={() => { setAdding(false); setNewContent('') }}
+              <button onClick={() => { setAdding(false); setNewContent(''); setShowDetails(false) }}
                 className="px-3 py-1.5 text-xs border border-gray-200 rounded-lg text-gray-500">취소</button>
+              <button onClick={() => setShowDetails(s => !s)}
+                className="ml-auto text-[11px] text-gray-500 hover:text-gray-700 underline">
+                {showDetails ? '상세 접기' : '+ 상세 (회의록)'}
+              </button>
             </div>
           </div>
         )}
@@ -1630,6 +1718,60 @@ function CommunicationTimeline({ logs, contracts, projectId }: { logs: Log[]; co
         <div className="px-5 py-2 border-t border-gray-100 text-center">
           <span className="text-xs text-gray-400">최근 50건 표시 ({filteredLogs.length - 50}건 더 있음 — 검색으로 좁히세요)</span>
         </div>
+      )}
+    </div>
+  )
+}
+
+function DropboxFilesCard({ dropboxUrl }: { dropboxUrl: string }) {
+  type Item = { name: string; path: string; type: 'file' | 'folder' }
+  const [files, setFiles] = useState<Item[] | null>(null)
+  const [loading, setLoading] = useState(false)
+  const [collapsed, setCollapsed] = useState(true)
+
+  async function load() {
+    setLoading(true)
+    const result = await listProjectDropboxFiles(dropboxUrl)
+    setFiles(result)
+    setLoading(false)
+  }
+
+  return (
+    <div className="bg-white border border-gray-100 rounded-xl px-4 py-3 space-y-2">
+      <div className="flex items-center justify-between">
+        <button onClick={() => setCollapsed(c => !c)} className="flex items-center gap-1.5 text-xs font-semibold text-gray-700 hover:text-gray-900">
+          <span className="text-gray-400 text-[10px]">{collapsed ? '▶' : '▼'}</span>
+          📁 Dropbox 폴더
+        </button>
+        <a href={dropboxUrl} target="_blank" rel="noopener noreferrer"
+          className="text-[11px] text-blue-500 hover:underline">열기 ↗</a>
+      </div>
+      {!collapsed && (
+        <>
+          {files === null ? (
+            <button onClick={load} disabled={loading}
+              className="text-xs text-gray-500 hover:text-gray-800 underline disabled:opacity-50">
+              {loading ? '불러오는 중...' : '파일 목록 불러오기'}
+            </button>
+          ) : files.length === 0 ? (
+            <p className="text-xs text-gray-400">파일/폴더 없음</p>
+          ) : (
+            <>
+              <ul className="space-y-0.5 max-h-60 overflow-y-auto">
+                {files.map(f => (
+                  <li key={f.path} className="text-xs text-gray-600 flex items-center gap-1.5">
+                    <span>{f.type === 'folder' ? '📁' : '📄'}</span>
+                    <span className="truncate">{f.name}</span>
+                  </li>
+                ))}
+              </ul>
+              <button onClick={load} disabled={loading}
+                className="text-[11px] text-blue-500 hover:underline disabled:opacity-50">
+                {loading ? '...' : '🔄 새로고침'}
+              </button>
+            </>
+          )}
+        </>
       )}
     </div>
   )
