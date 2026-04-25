@@ -1,5 +1,18 @@
 import Anthropic from '@anthropic-ai/sdk'
 import { NextRequest, NextResponse } from 'next/server'
+import { revalidatePath } from 'next/cache'
+
+// 데이터 변경 도구. 호출되면 응답에 mutated:true 실어 클라이언트가 router.refresh().
+const MUTATING_TOOLS = new Set([
+  'create_sale', 'update_sale_revenue', 'update_sale_status',
+  'update_notion_title', 'update_notion_status',
+  'create_lead', 'update_lead', 'convert_lead_to_sale',
+  'add_project_log', 'update_project_status',
+  'update_brief_note', 'set_dropbox_url',
+  'create_calendar_event',
+  'create_project_task', 'complete_task', 'update_task', 'delete_task',
+  'regenerate_overview', 'update_pending_discussion', 'regenerate_pending_discussion',
+])
 import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { getDropboxToken, readDropboxFile, uploadTextFile, createSaleFolder } from '@/lib/dropbox'
@@ -820,6 +833,10 @@ async function executeTool(name: string, input: Record<string, unknown>, userRol
       contacted_at: contactedAt,
     })
     if (error) return { error: error.message }
+    if (projectId) {
+      revalidatePath(`/projects/${projectId}`)
+      revalidatePath(`/projects/${projectId}/v2`)
+    }
     return { success: true, message: '소통 내역을 저장했어.' }
   }
 
@@ -831,6 +848,8 @@ async function executeTool(name: string, input: Record<string, unknown>, userRol
       .update({ status: input.status, updated_at: new Date().toISOString() })
       .eq('id', projectId)
     if (error) return { error: error.message }
+    revalidatePath(`/projects/${projectId}`)
+    revalidatePath(`/projects/${projectId}/v2`)
     return { success: true, message: `프로젝트 상태를 "${input.status}"로 변경했어.` }
   }
 
@@ -927,6 +946,14 @@ async function executeTool(name: string, input: Record<string, unknown>, userRol
     return data?.[0]?.id ?? null
   }
 
+  // 프로젝트 컨텍스트의 페이지 캐시 무효화
+  function revalidateProjectPages() {
+    if (!projectId) return
+    revalidatePath(`/projects/${projectId}`)
+    revalidatePath(`/projects/${projectId}/v2`)
+    revalidatePath('/tasks')
+  }
+
   if (name === 'create_project_task') {
     if (!projectId) return { error: '프로젝트 페이지에서만 사용 가능해.' }
     const title = ((input.title as string) || '').trim()
@@ -950,6 +977,7 @@ async function executeTool(name: string, input: Record<string, unknown>, userRol
       bbang_suggested: true,
     }).select('id, title').single()
     if (error) return { error: error.message }
+    revalidateProjectPages()
     return { success: true, id: data.id, title: data.title, message: `"${data.title}" 할 일을 추가했어.` }
   }
 
@@ -969,6 +997,7 @@ async function executeTool(name: string, input: Record<string, unknown>, userRol
       .update({ status: '완료', updated_at: new Date().toISOString() })
       .eq('id', found.task.id)
     if (error) return { error: error.message }
+    revalidateProjectPages()
     return { success: true, id: found.task.id, title: found.task.title, message: `"${found.task.title}" 완료 처리했어.` }
   }
 
@@ -1004,6 +1033,7 @@ async function executeTool(name: string, input: Record<string, unknown>, userRol
     const admin = createAdminClient()
     const { error } = await admin.from('tasks').update(updates).eq('id', found.task.id)
     if (error) return { error: error.message }
+    revalidateProjectPages()
     return { success: true, id: found.task.id, title: found.task.title, updates }
   }
 
@@ -1016,6 +1046,7 @@ async function executeTool(name: string, input: Record<string, unknown>, userRol
     const admin = createAdminClient()
     const { error } = await admin.from('tasks').delete().eq('id', found.task.id)
     if (error) return { error: error.message }
+    revalidateProjectPages()
     return { success: true, id: found.task.id, title: found.task.title, message: `"${found.task.title}" 삭제했어.` }
   }
 
@@ -1178,6 +1209,7 @@ export async function POST(req: NextRequest) {
     })
 
     // tool_use 루프
+    let mutated = false
     let response = await getClient().messages.create({
       model: MODEL,
       max_tokens: 2048,
@@ -1193,6 +1225,9 @@ export async function POST(req: NextRequest) {
       const toolResults: Anthropic.ToolResultBlockParam[] = await Promise.all(
         toolUseBlocks.map(async (tu) => {
           const result = await executeTool(tu.name, tu.input as Record<string, unknown>, userRole, user.id, projectId)
+          if (MUTATING_TOOLS.has(tu.name) && result && typeof result === 'object' && !('error' in result)) {
+            mutated = true
+          }
           return {
             type: 'tool_result' as const,
             tool_use_id: tu.id,
@@ -1236,7 +1271,7 @@ export async function POST(req: NextRequest) {
       text = text.replace(/<lead-data>[\s\S]*?<\/lead-data>/, '').trim()
     }
 
-    return NextResponse.json({ text, saleData, leadData })
+    return NextResponse.json({ text, saleData, leadData, mutated })
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e)
     console.error('Chat API error:', msg)

@@ -214,6 +214,8 @@ export default function AiChat() {
         saleData: data.saleData ?? null,
         leadData: data.leadData ?? null,
       }])
+      // 빵빵이 도구가 데이터를 변경했으면 페이지 SC 재로딩
+      if (data.mutated) router.refresh()
     } catch {
       setMessages(prev => [...prev, { role: 'assistant', content: '네트워크 오류가 발생했어요.' }])
     }
