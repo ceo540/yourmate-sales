@@ -1,5 +1,6 @@
 'use client'
 
+import { useState } from 'react'
 import Link from 'next/link'
 import ProjectClaudeChat from '@/components/ProjectClaudeChat'
 
@@ -78,6 +79,39 @@ function fmtMoney(n: number) {
   return n.toLocaleString()
 }
 
+function fmtRelativeDate(iso: string | null) {
+  if (!iso) return '—'
+  const then = new Date(iso)
+  const now = new Date()
+  const diffMs = now.getTime() - then.getTime()
+  const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24))
+  if (diffDays === 0) return '오늘'
+  if (diffDays === 1) return '어제'
+  if (diffDays < 7) return `${diffDays}일 전`
+  if (diffDays < 30) return `${Math.floor(diffDays / 7)}주 전`
+  if (diffDays < 365) return `${Math.floor(diffDays / 30)}개월 전`
+  return iso.slice(0, 10)
+}
+
+const KPI_TONE: Record<string, string> = {
+  green: 'bg-green-50 text-green-700 border-green-100',
+  yellow: 'bg-yellow-50 text-yellow-700 border-yellow-100',
+  blue: 'bg-blue-50 text-blue-700 border-blue-100',
+  red: 'bg-red-50 text-red-700 border-red-100',
+  orange: 'bg-orange-50 text-orange-700 border-orange-100',
+  gray: 'bg-gray-50 text-gray-600 border-gray-100',
+}
+
+function KpiPill({ icon, label, value, tone }: { icon: string; label: string; value: string; tone: keyof typeof KPI_TONE | string }) {
+  return (
+    <div className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full border text-xs ${KPI_TONE[tone] ?? KPI_TONE.gray}`}>
+      <span>{icon}</span>
+      <span className="text-gray-500 font-medium">{label}</span>
+      <span className="font-semibold">{value}</span>
+    </div>
+  )
+}
+
 export default function ProjectV2Client({
   project, pmName, customer, contactPerson, finance,
   contracts, tasks, logs, rentals, leadIds, currentUserId,
@@ -88,6 +122,25 @@ export default function ProjectV2Client({
   const receivedRate = finance.revenue > 0
     ? Math.round((finance.received / finance.revenue) * 100)
     : 0
+
+  // 헤더 한 줄 KPI 계산
+  const pendingTaskCount = tasks.filter(t => t.status !== '완료' && t.status !== '보류').length
+  const urgentTaskCount = tasks.filter(t => (t.priority === '긴급' || t.priority === '높음') && t.status !== '완료' && t.status !== '보류').length
+  const taskCompletedRate = tasks.length > 0
+    ? Math.round((tasks.filter(t => t.status === '완료').length / tasks.length) * 100)
+    : null
+  const lastLog = logs[0]
+  const today = new Date()
+  today.setHours(0, 0, 0, 0)
+  const upcomingTasks = tasks
+    .filter(t => t.due_date && t.status !== '완료' && t.status !== '보류')
+    .map(t => ({ task: t, due: new Date(t.due_date!) }))
+    .filter(x => x.due >= today)
+    .sort((a, b) => a.due.getTime() - b.due.getTime())
+  const nextMilestone = upcomingTasks[0]
+  const nextMilestoneDays = nextMilestone
+    ? Math.ceil((nextMilestone.due.getTime() - today.getTime()) / (1000 * 60 * 60 * 24))
+    : null
 
   return (
     <div className="max-w-7xl mx-auto px-4 py-6">
@@ -116,6 +169,58 @@ export default function ProjectV2Client({
           )}
           {pmName && (
             <span className="text-xs text-gray-400">PM {pmName}</span>
+          )}
+        </div>
+
+        {/* V1.10: 핵심 KPI 한 줄 — "30초 안에 파악" */}
+        <div className="mt-3 flex items-center gap-1.5 flex-wrap text-sm">
+          {finance.revenue > 0 && (
+            <KpiPill
+              icon="💰"
+              label="수금"
+              value={`${receivedRate}%`}
+              tone={receivedRate >= 100 ? 'green' : receivedRate >= 50 ? 'yellow' : 'gray'}
+            />
+          )}
+          {taskCompletedRate !== null && (
+            <KpiPill
+              icon="✅"
+              label="진행"
+              value={`${taskCompletedRate}%`}
+              tone={taskCompletedRate === 100 ? 'green' : taskCompletedRate >= 50 ? 'blue' : 'gray'}
+            />
+          )}
+          {pendingTaskCount > 0 && (
+            <KpiPill
+              icon="📋"
+              label="진행중 업무"
+              value={`${pendingTaskCount}건`}
+              tone="gray"
+            />
+          )}
+          {urgentTaskCount > 0 && (
+            <KpiPill
+              icon="⚠"
+              label="긴급"
+              value={`${urgentTaskCount}건`}
+              tone="red"
+            />
+          )}
+          {nextMilestone && nextMilestoneDays !== null && (
+            <KpiPill
+              icon="📅"
+              label={`다음: ${nextMilestone.task.title.slice(0, 14)}${nextMilestone.task.title.length > 14 ? '…' : ''}`}
+              value={nextMilestoneDays === 0 ? 'D-day' : `D-${nextMilestoneDays}`}
+              tone={nextMilestoneDays === 0 ? 'red' : nextMilestoneDays <= 3 ? 'orange' : 'blue'}
+            />
+          )}
+          {lastLog && (
+            <KpiPill
+              icon="💬"
+              label="최근 소통"
+              value={fmtRelativeDate(lastLog.contacted_at ?? lastLog.created_at)}
+              tone="gray"
+            />
           )}
         </div>
       </div>
@@ -611,17 +716,69 @@ function ContractsTasksSection({ contracts, tasks, projectId }: {
 
 function CommunicationTimeline({ logs, contracts }: { logs: Log[]; contracts: Contract[] }) {
   const contractNameMap = Object.fromEntries(contracts.map(c => [c.id, c.name]))
+
+  // V1.11: 필터·검색
+  const [typeFilter, setTypeFilter] = useState<string>('전체')
+  const [search, setSearch] = useState('')
+
+  const availableTypes = Array.from(new Set(logs.map(l => l.log_type)))
+  const typeCounts = availableTypes.reduce<Record<string, number>>((acc, t) => {
+    acc[t] = logs.filter(l => l.log_type === t).length
+    return acc
+  }, {})
+
+  const filteredLogs = logs.filter(l => {
+    if (typeFilter !== '전체' && l.log_type !== typeFilter) return false
+    if (search.trim()) {
+      const q = search.trim().toLowerCase()
+      const matched = (l.content ?? '').toLowerCase().includes(q)
+        || (l.author_name ?? '').toLowerCase().includes(q)
+        || (l.outcome ?? '').toLowerCase().includes(q)
+        || (l.location ?? '').toLowerCase().includes(q)
+      if (!matched) return false
+    }
+    return true
+  })
+
   return (
     <div className="bg-white border border-gray-100 rounded-xl overflow-hidden">
-      <div className="px-5 py-3 border-b border-gray-100 flex items-center justify-between">
-        <p className="text-sm font-semibold text-gray-800">💬 소통 Timeline</p>
-        <span className="text-xs text-gray-400">최근 {logs.length}건</span>
+      <div className="px-5 py-3 border-b border-gray-100 space-y-2">
+        <div className="flex items-center justify-between">
+          <p className="text-sm font-semibold text-gray-800">💬 소통 Timeline</p>
+          <span className="text-xs text-gray-400">{filteredLogs.length} / {logs.length}건</span>
+        </div>
+        {logs.length > 0 && (
+          <>
+            {/* 검색 */}
+            <input
+              value={search}
+              onChange={e => setSearch(e.target.value)}
+              placeholder="🔍 내용·작성자·결과·장소 검색..."
+              className="w-full text-xs border border-gray-200 rounded-lg px-3 py-1.5 focus:outline-none focus:border-yellow-400"
+            />
+            {/* 종류 필터 */}
+            <div className="flex flex-wrap gap-1">
+              <button onClick={() => setTypeFilter('전체')}
+                className={`text-[11px] px-2 py-0.5 rounded-full border transition-all ${typeFilter === '전체' ? 'bg-gray-900 text-white border-gray-900' : 'bg-white text-gray-500 border-gray-200 hover:border-gray-400'}`}>
+                전체 {logs.length}
+              </button>
+              {availableTypes.map(t => (
+                <button key={t} onClick={() => setTypeFilter(t)}
+                  className={`text-[11px] px-2 py-0.5 rounded-full border transition-all ${typeFilter === t ? 'bg-gray-900 text-white border-gray-900' : 'bg-white text-gray-500 border-gray-200 hover:border-gray-400'}`}>
+                  {LOG_ICON[t] ?? '·'} {t} {typeCounts[t]}
+                </button>
+              ))}
+            </div>
+          </>
+        )}
       </div>
-      {logs.length === 0 ? (
-        <p className="text-center py-8 text-sm text-gray-400">소통 기록이 없습니다</p>
+      {filteredLogs.length === 0 ? (
+        <p className="text-center py-8 text-sm text-gray-400">
+          {logs.length === 0 ? '소통 기록이 없습니다' : '검색 조건에 맞는 기록이 없습니다'}
+        </p>
       ) : (
         <ul className="divide-y divide-gray-50">
-          {logs.slice(0, 30).map(l => {
+          {filteredLogs.slice(0, 50).map(l => {
             const dateStr = (l.contacted_at ?? l.created_at).slice(0, 16).replace('T', ' ')
             const icon = LOG_ICON[l.log_type] ?? '·'
             const color = LOG_COLOR[l.log_type] ?? 'bg-gray-50 text-gray-600 border-gray-100'
@@ -656,9 +813,9 @@ function CommunicationTimeline({ logs, contracts }: { logs: Log[]; contracts: Co
           })}
         </ul>
       )}
-      {logs.length > 30 && (
+      {filteredLogs.length > 50 && (
         <div className="px-5 py-2 border-t border-gray-100 text-center">
-          <span className="text-xs text-gray-400">최근 30건만 표시 — 전체 보기 기능은 추후 추가</span>
+          <span className="text-xs text-gray-400">최근 50건 표시 ({filteredLogs.length - 50}건 더 있음 — 검색으로 좁히세요)</span>
         </div>
       )}
     </div>
