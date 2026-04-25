@@ -64,6 +64,11 @@ export default function ProjectsClient({ projects, isAdmin, profiles, customers 
   const [createForm, setCreateForm] = useState({
     name: '', service_type: '', customer_id: '', pm_id: '',
   })
+  // 생성 결과 모달용 (리드 전환과 동일 패턴)
+  const [createResult, setCreateResult] = useState<{
+    id: string; project_number: string
+    dropbox_url: string | null; dropbox_error?: string
+  } | null>(null)
   // 고객사 추가 모드 상태 (select에서 "+ 새 고객사" 선택 시 활성화)
   const [newCustomer, setNewCustomer] = useState({
     name: '', contact_name: '', contact_dept: '', contact_title: '',
@@ -71,6 +76,13 @@ export default function ProjectsClient({ projects, isAdmin, profiles, customers 
   })
   const [localCustomers, setLocalCustomers] = useState(customers)
   const isAddingCustomer = createForm.customer_id === '__NEW__'
+
+  function resetCreate() {
+    setCreateOpen(false)
+    setCreateResult(null)
+    setCreateForm({ name: '', service_type: '', customer_id: '', pm_id: '' })
+    setNewCustomer({ name: '', contact_name: '', contact_dept: '', contact_title: '', contact_phone: '', contact_email: '' })
+  }
 
   // 모든 서비스 타입 (DEPT_SERVICE_GROUPS 평탄화)
   const allServiceTypes = Array.from(new Set(DEPT_SERVICE_GROUPS.flatMap(g => g.services)))
@@ -96,15 +108,23 @@ export default function ProjectsClient({ projects, isAdmin, profiles, customers 
     <div>
       {/* 새 프로젝트 추가 버튼 + 폼 */}
       <div className="mb-4">
-        {!createOpen ? (
-          <button onClick={() => setCreateOpen(true)}
-            className="text-sm font-semibold px-4 py-2 rounded-lg hover:opacity-80"
-            style={{ backgroundColor: '#FFCE00', color: '#121212' }}>
-            + 새 프로젝트
-          </button>
-        ) : (
-          <div className="bg-yellow-50 border border-yellow-200 rounded-xl p-4 space-y-2 max-w-2xl">
-            <p className="text-xs font-semibold text-yellow-800">새 프로젝트</p>
+        <button onClick={() => setCreateOpen(true)}
+          className="text-sm font-semibold px-4 py-2 rounded-lg hover:opacity-80"
+          style={{ backgroundColor: '#FFCE00', color: '#121212' }}>
+          + 새 프로젝트
+        </button>
+      </div>
+
+      {/* 새 프로젝트 모달 */}
+      {createOpen && (
+        <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/40 p-4" onClick={() => !createPending && !createResult && resetCreate()}>
+          <div onClick={e => e.stopPropagation()} className="bg-white rounded-2xl shadow-2xl max-w-xl w-full max-h-[90vh] overflow-y-auto">
+            {!createResult ? (
+          <div className="bg-yellow-50 border border-yellow-200 rounded-2xl p-5 space-y-2">
+            <div className="flex items-center justify-between">
+              <p className="text-sm font-semibold text-yellow-800">새 프로젝트 만들기</p>
+              <button onClick={resetCreate} className="text-gray-400 hover:text-gray-700 text-lg leading-none">×</button>
+            </div>
             <input autoFocus value={createForm.name} onChange={e => setCreateForm(f => ({...f, name: e.target.value}))}
               placeholder="프로젝트명 *"
               className="w-full text-sm border border-yellow-200 rounded-lg px-3 py-2 bg-white focus:outline-none focus:border-yellow-400" />
@@ -196,8 +216,13 @@ export default function ProjectsClient({ projects, isAdmin, profiles, customers 
                   customer_id: customerId,
                   pm_id: createForm.pm_id || null,
                 })
-                if (res.id) {
-                  router.push(`/projects/${res.id}`)
+                if (res.id && res.project_number !== undefined) {
+                  setCreateResult({
+                    id: res.id,
+                    project_number: res.project_number,
+                    dropbox_url: res.dropbox_url ?? null,
+                    dropbox_error: res.dropbox_error,
+                  })
                 }
               })}
                 disabled={!createForm.name.trim() || createPending || isAddingCustomer}
@@ -205,14 +230,59 @@ export default function ProjectsClient({ projects, isAdmin, profiles, customers 
                 style={{ backgroundColor: '#FFCE00', color: '#121212' }}>
                 {createPending ? '생성 중...' : '생성'}
               </button>
-              <button onClick={() => {
-                setCreateOpen(false)
-                setCreateForm({ name: '', service_type: '', customer_id: '', pm_id: '' })
-              }} className="px-4 py-2 text-sm border border-gray-200 rounded-lg text-gray-500">취소</button>
+              <button onClick={resetCreate} disabled={createPending}
+                className="px-4 py-2 text-sm border border-gray-200 rounded-lg text-gray-500 disabled:opacity-40">취소</button>
             </div>
           </div>
-        )}
-      </div>
+            ) : (
+              <div className="p-6 space-y-4">
+                <div className="text-center">
+                  <div className="text-4xl mb-2">✨</div>
+                  <p className="text-base font-semibold text-gray-900">프로젝트 생성 완료</p>
+                </div>
+                <div className="bg-gray-50 rounded-xl p-4 space-y-2 text-sm">
+                  <div className="flex items-center justify-between">
+                    <span className="text-gray-500">프로젝트 번호</span>
+                    <span className="font-bold text-gray-900">{createResult.project_number}</span>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span className="text-gray-500">건명</span>
+                    <span className="text-gray-800 truncate ml-2 max-w-[60%]">{createForm.name}</span>
+                  </div>
+                  <div className="flex items-start justify-between">
+                    <span className="text-gray-500 flex-shrink-0">드롭박스</span>
+                    <span className="text-right ml-2">
+                      {createResult.dropbox_url ? (
+                        <a href={createResult.dropbox_url} target="_blank" rel="noopener noreferrer"
+                          className="text-blue-500 hover:underline text-xs break-all">
+                          폴더 열기 ↗
+                        </a>
+                      ) : createResult.dropbox_error ? (
+                        <span className="text-red-500 text-xs">{createResult.dropbox_error}</span>
+                      ) : (
+                        <span className="text-gray-400 text-xs">서비스 미선택 — 폴더 생략</span>
+                      )}
+                    </span>
+                  </div>
+                </div>
+                <div className="flex gap-2">
+                  <button onClick={() => {
+                    if (createResult) router.push(`/projects/${createResult.id}`)
+                  }}
+                    className="flex-1 py-2.5 text-sm font-semibold rounded-lg hover:opacity-80"
+                    style={{ backgroundColor: '#FFCE00', color: '#121212' }}>
+                    프로젝트로 이동
+                  </button>
+                  <button onClick={resetCreate}
+                    className="px-4 py-2.5 text-sm border border-gray-200 rounded-lg text-gray-500">
+                    닫기
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* 검색 + 필터 */}
       <div className="flex items-center gap-3 mb-4 flex-wrap">

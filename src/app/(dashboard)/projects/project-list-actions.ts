@@ -4,6 +4,7 @@ import { createAdminClient } from '@/lib/supabase/admin'
 import { revalidatePath } from 'next/cache'
 import { SERVICE_TO_DEPT } from '@/types'
 import { generateProjectNumber } from '@/lib/projects'
+import { createSaleFolder } from '@/lib/dropbox'
 
 export async function assignProjectNumbers(): Promise<{ assigned: number }> {
   const admin = createAdminClient()
@@ -39,15 +40,24 @@ export async function assignProjectNumbers(): Promise<{ assigned: number }> {
 // 새 프로젝트 직접 생성 (리드 없이) — projects 메뉴에서 사용
 // service_type 있으면 SERVICE_TO_DEPT로 department 자동 채움.
 // 매출(sales)은 같이 만들지 않음. 프로젝트 들어가서 [+ 새 매출]로 추가.
+// 드롭박스 폴더도 자동 생성 (서비스 분류된 위치에). 실패해도 프로젝트 생성은 성공.
 export async function createProjectStandalone(data: {
   name: string
   service_type?: string | null
   customer_id?: string | null
   pm_id?: string | null
-}): Promise<{ id?: string; error?: string }> {
+}): Promise<{
+  id?: string
+  project_number?: string
+  dropbox_url?: string | null
+  dropbox_error?: string
+  error?: string
+}> {
   const admin = createAdminClient()
   const department = (data.service_type && SERVICE_TO_DEPT[data.service_type]) || null
   const projectNumber = await generateProjectNumber()
+  const folderDisplayName = `${projectNumber} ${data.name}`
+  const today = new Date().toISOString().slice(0, 10)
 
   const { data: project, error } = await admin.from('projects').insert({
     name: data.name,
@@ -68,6 +78,29 @@ export async function createProjectStandalone(data: {
       .single()
   }
 
+  // 드롭박스 폴더 자동 생성 (실패해도 프로젝트는 살아 있음)
+  let dropboxUrl: string | null = null
+  let dropboxError: string | undefined
+  if (data.service_type) {
+    try {
+      dropboxUrl = await createSaleFolder({
+        service_type: data.service_type,
+        name: folderDisplayName,
+        inflow_date: today,
+      })
+      if (dropboxUrl) {
+        await admin.from('projects').update({ dropbox_url: dropboxUrl }).eq('id', project.id)
+      }
+    } catch (e) {
+      dropboxError = e instanceof Error ? e.message : '드롭박스 폴더 생성 실패'
+    }
+  }
+
   revalidatePath('/projects')
-  return { id: project.id }
+  return {
+    id: project.id,
+    project_number: projectNumber,
+    dropbox_url: dropboxUrl,
+    dropbox_error: dropboxError,
+  }
 }
