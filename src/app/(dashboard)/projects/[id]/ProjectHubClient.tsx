@@ -20,6 +20,7 @@ import LogForm from './components/LogForm'
 import Avatar from './components/Avatar'
 import AssigneePicker from './components/AssigneePicker'
 import ContractCard from './components/ContractCard'
+import RelatedServices from './components/RelatedServices'
 
 // ── 상수 ──────────────────────────────────────────────────────────────────────
 const LOG_TYPE_STYLE: Record<string, { badge: string; bar: string; label: string }> = {
@@ -88,18 +89,24 @@ interface Lead {
 }
 interface SaleOption { id: string; name: string; revenue: number | null }
 interface Entity { id: string; name: string }
+interface RelatedRental {
+  id: string; sale_id: string | null; customer_name: string
+  status: string; rental_start: string | null; rental_end: string | null
+}
 interface Props {
   project: Project; members: Member[]; contracts: Contract[]
   tasks: Task[]; logs: Log[]; costs: CostItem[]
   profiles: Profile[]; customers: Customer[]; customer: Customer | null
   leads: Lead[]; salesOptions: SaleOption[]; entities: Entity[]
-  persons: Person[]; isAdmin: boolean; currentUserId: string
+  persons: Person[]; rentals?: RelatedRental[]
+  isAdmin: boolean; currentUserId: string
 }
 
 // ── 메인 컴포넌트 ─────────────────────────────────────────────────────────────
 export default function ProjectHubClient({
   project, members, contracts: initialContracts, tasks: initialTasks, logs: initialLogs,
-  costs: initialCosts, profiles, customers, customer, leads, salesOptions, entities, persons, isAdmin, currentUserId,
+  costs: initialCosts, profiles, customers, customer, leads, salesOptions, entities, persons,
+  rentals = [], isAdmin, currentUserId,
 }: Props) {
   const router = useRouter()
   const [localContracts, setLocalContracts] = useState(initialContracts)
@@ -501,6 +508,9 @@ export default function ProjectHubClient({
           {/* ── 업무 탭 ── */}
           {activeTab === 'work' && (
             <>
+              {/* 관련 서비스 페이지 */}
+              <RelatedServices serviceType={project.service_type ?? null} rentals={rentals} />
+
               {/* 유의사항 */}
               <div className={`border rounded-xl px-4 py-3 ${localNotes || editingNotes ? 'bg-orange-50 border-orange-200' : 'bg-white border-gray-100'}`}>
                 <div className="flex items-center justify-between mb-1">
