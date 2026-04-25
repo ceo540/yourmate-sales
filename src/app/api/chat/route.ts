@@ -1,5 +1,18 @@
 import Anthropic from '@anthropic-ai/sdk'
 import { NextRequest, NextResponse } from 'next/server'
+import { revalidatePath } from 'next/cache'
+
+// 데이터 변경 도구. 호출되면 응답에 mutated:true 실어 클라이언트가 router.refresh().
+const MUTATING_TOOLS = new Set([
+  'create_sale', 'update_sale_revenue', 'update_sale_status',
+  'update_notion_title', 'update_notion_status',
+  'create_lead', 'update_lead', 'convert_lead_to_sale',
+  'add_project_log', 'update_project_status',
+  'update_brief_note', 'set_dropbox_url',
+  'create_calendar_event',
+  'create_project_task', 'complete_task', 'update_task', 'delete_task',
+  'regenerate_overview', 'update_pending_discussion', 'regenerate_pending_discussion',
+])
 import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { getDropboxToken, readDropboxFile, uploadTextFile, createSaleFolder } from '@/lib/dropbox'
@@ -9,6 +22,11 @@ import { createEvent as createGCalEvent } from '@/lib/google-calendar'
 import { SYSTEM_PROMPT } from '@/lib/bbang/loadSchema'
 import { TOOLS } from '@/lib/bbang/tools'
 import { ensureProjectForSale, generateProjectNumber } from '@/lib/projects'
+import {
+  generateAndSaveProjectOverview,
+  generateAndSavePendingDiscussion,
+  updateProjectPendingDiscussion,
+} from '@/app/(dashboard)/projects/[id]/project-actions'
 
 export const maxDuration = 60
 
@@ -815,6 +833,10 @@ async function executeTool(name: string, input: Record<string, unknown>, userRol
       contacted_at: contactedAt,
     })
     if (error) return { error: error.message }
+    if (projectId) {
+      revalidatePath(`/projects/${projectId}`)
+      revalidatePath(`/projects/${projectId}/v2`)
+    }
     return { success: true, message: '소통 내역을 저장했어.' }
   }
 
@@ -826,6 +848,8 @@ async function executeTool(name: string, input: Record<string, unknown>, userRol
       .update({ status: input.status, updated_at: new Date().toISOString() })
       .eq('id', projectId)
     if (error) return { error: error.message }
+    revalidatePath(`/projects/${projectId}`)
+    revalidatePath(`/projects/${projectId}/v2`)
     return { success: true, message: `프로젝트 상태를 "${input.status}"로 변경했어.` }
   }
 
@@ -865,6 +889,189 @@ async function executeTool(name: string, input: Record<string, unknown>, userRol
     const { error } = await admin.from('projects').update({ dropbox_url: url, updated_at: new Date().toISOString() }).eq('id', projectId)
     if (error) return { error: error.message }
     return { success: true, message: 'Dropbox 폴더 연결했어. 이제 brief 저장이나 파일 조회 가능해.' }
+  }
+
+  // 현재 프로젝트의 첫 번째 sale.id (task의 project_id 컬럼이 sale.id를 가리킴)
+  async function getProjectFirstSaleId(): Promise<string | null> {
+    if (!projectId) return null
+    const admin = createAdminClient()
+    const { data } = await admin
+      .from('sales')
+      .select('id')
+      .eq('project_id', projectId)
+      .order('created_at', { ascending: true })
+      .limit(1)
+      .maybeSingle()
+    return data?.id ?? null
+  }
+
+  // 프로젝트 컨텍스트 내에서 task 검색 (task_id 우선, 그다음 title 부분 매칭)
+  type TaskFindResult =
+    | { kind: 'one'; task: { id: string; title: string; status: string; project_id: string | null } }
+    | { kind: 'many'; tasks: { id: string; title: string; status: string }[] }
+    | { error: string }
+  async function findProjectTask(taskId: string | undefined, title: string | undefined): Promise<TaskFindResult> {
+    if (!projectId) return { error: '프로젝트 페이지에서만 사용 가능해.' }
+    const admin = createAdminClient()
+    const { data: sales } = await admin.from('sales').select('id').eq('project_id', projectId)
+    const saleIds = (sales ?? []).map(s => s.id)
+    if (saleIds.length === 0) return { error: '이 프로젝트에 연결된 계약이 없어. 할 일은 계약 단위로 관리돼.' }
+
+    if (taskId) {
+      const { data } = await admin.from('tasks').select('id, title, status, project_id').eq('id', taskId).maybeSingle()
+      if (!data || !saleIds.includes(data.project_id ?? '')) return { error: '이 프로젝트에 해당 할 일이 없어.' }
+      return { kind: 'one', task: data }
+    }
+    if (!title) return { error: 'task_id 또는 title이 필요해.' }
+    const { data: matches } = await admin
+      .from('tasks')
+      .select('id, title, status, project_id')
+      .in('project_id', saleIds)
+      .ilike('title', `%${title}%`)
+      .limit(10)
+    if (!matches || matches.length === 0) return { error: `"${title}" 검색 결과 없음.` }
+    if (matches.length > 1) {
+      return { kind: 'many', tasks: matches.map(m => ({ id: m.id, title: m.title, status: m.status })) }
+    }
+    return { kind: 'one', task: matches[0] }
+  }
+
+  // 담당자 이름 → profile id (없으면 null). "나"는 현재 user.
+  async function resolveAssigneeId(input: string | undefined): Promise<string | null | undefined> {
+    if (input === undefined) return undefined
+    if (input === '') return null
+    if (input === '나' || input === '본인') return userId
+    const admin = createAdminClient()
+    const { data } = await admin.from('profiles').select('id').ilike('name', `%${input}%`).limit(1)
+    return data?.[0]?.id ?? null
+  }
+
+  // 프로젝트 컨텍스트의 페이지 캐시 무효화
+  function revalidateProjectPages() {
+    if (!projectId) return
+    revalidatePath(`/projects/${projectId}`)
+    revalidatePath(`/projects/${projectId}/v2`)
+    revalidatePath('/tasks')
+  }
+
+  if (name === 'create_project_task') {
+    if (!projectId) return { error: '프로젝트 페이지에서만 사용 가능해.' }
+    const title = ((input.title as string) || '').trim()
+    if (!title) return { error: '할 일 제목은 필수야.' }
+    const saleId = await getProjectFirstSaleId()
+    if (!saleId) return { error: '이 프로젝트에 연결된 계약이 없어. 계약을 먼저 만들어줘.' }
+
+    const validPriority = ['긴급', '높음', '보통', '낮음']
+    const priority = validPriority.includes(input.priority as string) ? (input.priority as string) : '보통'
+    const assigneeId = await resolveAssigneeId(input.assignee_name as string | undefined)
+
+    const admin = createAdminClient()
+    const { data, error } = await admin.from('tasks').insert({
+      project_id: saleId,
+      title,
+      status: '할 일',
+      priority,
+      due_date: (input.due_date as string) || null,
+      assignee_id: assigneeId ?? null,
+      description: (input.description as string) || null,
+      bbang_suggested: true,
+    }).select('id, title').single()
+    if (error) return { error: error.message }
+    revalidateProjectPages()
+    return { success: true, id: data.id, title: data.title, message: `"${data.title}" 할 일을 추가했어.` }
+  }
+
+  if (name === 'complete_task') {
+    const found = await findProjectTask(input.task_id as string | undefined, input.title as string | undefined)
+    if ('error' in found) return found
+    if (found.kind === 'many') {
+      return {
+        multiple: true,
+        message: `여러 건 매칭. task_id로 특정해줘.`,
+        tasks: found.tasks,
+      }
+    }
+    const admin = createAdminClient()
+    const { error } = await admin
+      .from('tasks')
+      .update({ status: '완료', updated_at: new Date().toISOString() })
+      .eq('id', found.task.id)
+    if (error) return { error: error.message }
+    revalidateProjectPages()
+    return { success: true, id: found.task.id, title: found.task.title, message: `"${found.task.title}" 완료 처리했어.` }
+  }
+
+  if (name === 'update_task') {
+    const found = await findProjectTask(input.task_id as string | undefined, input.title as string | undefined)
+    if ('error' in found) return found
+    if (found.kind === 'many') {
+      return { multiple: true, message: '여러 건 매칭. task_id로 특정해줘.', tasks: found.tasks }
+    }
+
+    const updates: Record<string, unknown> = { updated_at: new Date().toISOString() }
+    if (typeof input.new_title === 'string' && input.new_title.trim()) updates.title = input.new_title.trim()
+    if (input.priority) {
+      if (!['긴급', '높음', '보통', '낮음'].includes(input.priority as string)) {
+        return { error: '우선순위는 긴급/높음/보통/낮음 중 하나여야 해.' }
+      }
+      updates.priority = input.priority
+    }
+    if (input.due_date !== undefined) updates.due_date = (input.due_date as string) || null
+    if (input.status) {
+      if (!['할 일', '진행중', '완료', '보류'].includes(input.status as string)) {
+        return { error: '상태는 할 일/진행중/완료/보류 중 하나여야 해.' }
+      }
+      updates.status = input.status
+    }
+    if (input.assignee_name !== undefined) {
+      updates.assignee_id = await resolveAssigneeId(input.assignee_name as string)
+    }
+    if (input.description !== undefined) updates.description = (input.description as string) || null
+
+    if (Object.keys(updates).length === 1) return { error: '변경할 내용이 없어.' }
+
+    const admin = createAdminClient()
+    const { error } = await admin.from('tasks').update(updates).eq('id', found.task.id)
+    if (error) return { error: error.message }
+    revalidateProjectPages()
+    return { success: true, id: found.task.id, title: found.task.title, updates }
+  }
+
+  if (name === 'delete_task') {
+    const found = await findProjectTask(input.task_id as string | undefined, input.title as string | undefined)
+    if ('error' in found) return found
+    if (found.kind === 'many') {
+      return { multiple: true, message: '여러 건 매칭. task_id로 특정해줘.', tasks: found.tasks }
+    }
+    const admin = createAdminClient()
+    const { error } = await admin.from('tasks').delete().eq('id', found.task.id)
+    if (error) return { error: error.message }
+    revalidateProjectPages()
+    return { success: true, id: found.task.id, title: found.task.title, message: `"${found.task.title}" 삭제했어.` }
+  }
+
+  if (name === 'regenerate_overview') {
+    if (!projectId) return { error: '프로젝트 페이지에서만 사용 가능해.' }
+    const result = await generateAndSaveProjectOverview(projectId)
+    if ('error' in result) return result
+    return { success: true, summary: result.summary, message: '프로젝트 개요를 재생성했어.' }
+  }
+
+  if (name === 'update_pending_discussion') {
+    if (!projectId) return { error: '프로젝트 페이지에서만 사용 가능해.' }
+    try {
+      await updateProjectPendingDiscussion(projectId, (input.content as string) ?? '')
+      return { success: true, message: '협의사항을 업데이트했어.' }
+    } catch (e) {
+      return { error: e instanceof Error ? e.message : '협의사항 업데이트 실패' }
+    }
+  }
+
+  if (name === 'regenerate_pending_discussion') {
+    if (!projectId) return { error: '프로젝트 페이지에서만 사용 가능해.' }
+    const result = await generateAndSavePendingDiscussion(projectId)
+    if ('error' in result) return result
+    return { success: true, summary: result.summary, message: '협의사항을 재분석했어.' }
   }
 
   if (name === 'create_calendar_event') {
@@ -1002,6 +1209,7 @@ export async function POST(req: NextRequest) {
     })
 
     // tool_use 루프
+    let mutated = false
     let response = await getClient().messages.create({
       model: MODEL,
       max_tokens: 2048,
@@ -1017,6 +1225,9 @@ export async function POST(req: NextRequest) {
       const toolResults: Anthropic.ToolResultBlockParam[] = await Promise.all(
         toolUseBlocks.map(async (tu) => {
           const result = await executeTool(tu.name, tu.input as Record<string, unknown>, userRole, user.id, projectId)
+          if (MUTATING_TOOLS.has(tu.name) && result && typeof result === 'object' && !('error' in result)) {
+            mutated = true
+          }
           return {
             type: 'tool_result' as const,
             tool_use_id: tu.id,
@@ -1060,7 +1271,7 @@ export async function POST(req: NextRequest) {
       text = text.replace(/<lead-data>[\s\S]*?<\/lead-data>/, '').trim()
     }
 
-    return NextResponse.json({ text, saleData, leadData })
+    return NextResponse.json({ text, saleData, leadData, mutated })
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e)
     console.error('Chat API error:', msg)
