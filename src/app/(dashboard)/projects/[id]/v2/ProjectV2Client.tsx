@@ -133,8 +133,19 @@ export default function ProjectV2Client({
           {/* V1.7: 소통 Timeline */}
           <CommunicationTimeline logs={logs} contracts={contracts} />
 
-          <PlaceholderCard title="◆ 연관 서비스 (V1.8 예정)" subtitle={`렌탈 ${rentals.length}건 등 — 직접 추가/이동`} />
-          <PlaceholderCard title="◆ 계약 / 업무 / 메모 (V1.9 예정)" subtitle={`계약 ${contracts.length}건 · 업무 ${tasks.length}건`} />
+          {/* V1.8: 연관 서비스 */}
+          <RelatedServicesV2
+            serviceType={project.service_type}
+            rentals={rentals}
+            contracts={contracts}
+          />
+
+          {/* V1.9: 계약 + 업무 */}
+          <ContractsTasksSection
+            contracts={contracts}
+            tasks={tasks}
+            projectId={project.id}
+          />
         </div>
 
         {/* 우: 사이드 */}
@@ -402,6 +413,200 @@ const LOG_COLOR: Record<string, string> = {
   내부회의: 'bg-orange-50 text-orange-700 border-orange-100',
   메모:     'bg-yellow-50 text-yellow-700 border-yellow-100',
   기타:     'bg-gray-50 text-gray-600 border-gray-100',
+}
+
+/* ── V1.8: 연관 서비스 카드 ─────────────────────────────── */
+const RENTAL_STATUS_BADGE: Record<string, string> = {
+  유입: 'bg-gray-100 text-gray-500',
+  견적발송: 'bg-purple-100 text-purple-700',
+  렌탈확정: 'bg-yellow-100 text-yellow-700',
+  진행중: 'bg-green-100 text-green-700',
+  수거완료: 'bg-teal-100 text-teal-700',
+  검수중: 'bg-blue-100 text-blue-700',
+  완료: 'bg-gray-100 text-gray-400',
+  취소: 'bg-red-100 text-red-400',
+}
+
+function fmtRentalRange(start: string | null, end: string | null) {
+  if (!start && !end) return ''
+  const s = start ? start.slice(5).replace('-', '/') : ''
+  const e = end ? end.slice(5).replace('-', '/') : ''
+  if (s && e) return `${s} ~ ${e}`
+  return s || e
+}
+
+function RelatedServicesV2({ serviceType, rentals, contracts }: {
+  serviceType: string | null; rentals: Rental[]; contracts: Contract[]
+}) {
+  const isRentalService = serviceType === '교구대여' || serviceType === '행사대여'
+  const isSosService = serviceType === 'SOS'
+  // 미래 확장: SOS, 교육프로그램 등
+  const showSection = isRentalService || isSosService || rentals.length > 0
+  if (!showSection) return null
+
+  return (
+    <div className="bg-white border border-gray-100 rounded-xl overflow-hidden">
+      <div className="px-5 py-3 border-b border-gray-100 flex items-center justify-between">
+        <div>
+          <p className="text-sm font-semibold text-gray-800">🔗 연관 서비스</p>
+          <p className="text-[11px] text-gray-400 mt-0.5">서비스 페이지에서 세부 운영</p>
+        </div>
+        <Link href="/rentals" className="text-xs text-gray-400 hover:text-gray-700">
+          전체 렌탈 →
+        </Link>
+      </div>
+
+      {/* 렌탈 섹션 */}
+      {(isRentalService || rentals.length > 0) && (
+        <div className="px-5 py-3 border-b border-gray-50 last:border-0">
+          <div className="flex items-center justify-between mb-2">
+            <p className="text-xs font-medium text-gray-600">🛠 렌탈 ({rentals.length}건)</p>
+            <Link
+              href={`/rentals?from_project=${contracts[0]?.id ?? ''}`}
+              className="text-xs px-2.5 py-1 rounded-lg font-medium hover:opacity-80"
+              style={{ backgroundColor: '#FFCE00', color: '#121212' }}>
+              + 새 렌탈
+            </Link>
+          </div>
+          {rentals.length === 0 ? (
+            <p className="text-xs text-gray-400 py-2">등록된 렌탈 없음</p>
+          ) : (
+            <div className="space-y-1.5">
+              {rentals.map(r => (
+                <Link
+                  key={r.id}
+                  href={`/rentals/${r.id}`}
+                  className="flex items-center gap-2 px-3 py-2 rounded-lg hover:bg-gray-50 transition-colors group border border-gray-50 hover:border-gray-200"
+                >
+                  <span className="text-base">🛠</span>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm text-gray-800 truncate group-hover:text-blue-600">
+                      {r.customer_name || '(이름 없음)'}
+                    </p>
+                    {(r.rental_start || r.rental_end) && (
+                      <p className="text-[11px] text-gray-400">{fmtRentalRange(r.rental_start, r.rental_end)}</p>
+                    )}
+                  </div>
+                  {r.status && (
+                    <span className={`text-[10px] px-2 py-0.5 rounded-full flex-shrink-0 ${RENTAL_STATUS_BADGE[r.status] ?? 'bg-gray-100 text-gray-400'}`}>
+                      {r.status}
+                    </span>
+                  )}
+                </Link>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* SOS 섹션 (placeholder, 추후 구현) */}
+      {isSosService && (
+        <div className="px-5 py-3">
+          <div className="flex items-center justify-between mb-2">
+            <p className="text-xs font-medium text-gray-600">🎤 SOS 공연</p>
+            <Link href="/sos" className="text-xs text-gray-400 hover:text-gray-700">SOS 페이지 →</Link>
+          </div>
+          <p className="text-xs text-gray-400 py-2">SOS 데이터 연동은 추후 추가</p>
+        </div>
+      )}
+    </div>
+  )
+}
+
+/* ── V1.9: 계약 + 업무 요약 ─────────────────────────────── */
+const CONTRACT_STAGE_BADGE: Record<string, string> = {
+  계약: 'bg-blue-50 text-blue-600',
+  착수: 'bg-purple-50 text-purple-600',
+  선금: 'bg-yellow-50 text-yellow-700',
+  중도금: 'bg-orange-50 text-orange-600',
+  완수: 'bg-teal-50 text-teal-600',
+  계산서발행: 'bg-indigo-50 text-indigo-600',
+  잔금: 'bg-green-50 text-green-600',
+}
+const TASK_STATUS_BADGE: Record<string, string> = {
+  '할 일': 'bg-gray-100 text-gray-600',
+  진행중: 'bg-blue-100 text-blue-700',
+  검토중: 'bg-yellow-100 text-yellow-700',
+  완료: 'bg-green-100 text-green-700',
+  보류: 'bg-red-100 text-red-600',
+}
+const PRIORITY_DOT: Record<string, string> = {
+  긴급: 'bg-red-500', 높음: 'bg-orange-400', 보통: 'bg-gray-300', 낮음: 'bg-gray-200',
+}
+
+function ContractsTasksSection({ contracts, tasks, projectId }: {
+  contracts: Contract[]; tasks: Task[]; projectId: string
+}) {
+  const pendingTasks = tasks.filter(t => t.status !== '완료' && t.status !== '보류')
+
+  return (
+    <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+      {/* 계약 목록 */}
+      <div className="bg-white border border-gray-100 rounded-xl overflow-hidden">
+        <div className="px-5 py-3 border-b border-gray-100 flex items-center justify-between">
+          <p className="text-sm font-semibold text-gray-800">📜 계약 ({contracts.length}건)</p>
+          <Link href={`/projects/${projectId}`} className="text-xs text-gray-400 hover:text-gray-700">상세 편집 →</Link>
+        </div>
+        {contracts.length === 0 ? (
+          <p className="text-center py-6 text-xs text-gray-400">등록된 계약 없음</p>
+        ) : (
+          <ul className="divide-y divide-gray-50">
+            {contracts.map(c => (
+              <li key={c.id} className="px-5 py-2.5 hover:bg-gray-50/50">
+                <div className="flex items-center justify-between gap-2">
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm text-gray-800 truncate">{c.name}</p>
+                    {c.client_org && <p className="text-[11px] text-gray-400 truncate">{c.client_org}</p>}
+                  </div>
+                  <div className="flex items-center gap-1.5 flex-shrink-0">
+                    {c.contract_stage && (
+                      <span className={`text-[10px] px-2 py-0.5 rounded-full ${CONTRACT_STAGE_BADGE[c.contract_stage] ?? 'bg-gray-100 text-gray-500'}`}>
+                        {c.contract_stage}
+                      </span>
+                    )}
+                    {c.revenue !== null && c.revenue > 0 && (
+                      <span className="text-xs font-medium text-gray-600">{fmtMoney(c.revenue)}원</span>
+                    )}
+                  </div>
+                </div>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+
+      {/* 업무 목록 */}
+      <div className="bg-white border border-gray-100 rounded-xl overflow-hidden">
+        <div className="px-5 py-3 border-b border-gray-100 flex items-center justify-between">
+          <p className="text-sm font-semibold text-gray-800">✅ 업무 ({pendingTasks.length}/{tasks.length})</p>
+          <Link href={`/projects/${projectId}`} className="text-xs text-gray-400 hover:text-gray-700">상세 편집 →</Link>
+        </div>
+        {tasks.length === 0 ? (
+          <p className="text-center py-6 text-xs text-gray-400">등록된 업무 없음</p>
+        ) : (
+          <ul className="divide-y divide-gray-50">
+            {tasks.slice(0, 8).map(t => (
+              <li key={t.id} className="px-5 py-2.5">
+                <div className="flex items-center gap-2">
+                  <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${PRIORITY_DOT[t.priority ?? '보통'] ?? 'bg-gray-300'}`} />
+                  <span className={`flex-1 text-sm truncate ${t.status === '완료' ? 'line-through text-gray-300' : 'text-gray-700'}`}>{t.title}</span>
+                  {t.due_date && <span className="text-[11px] text-gray-400 flex-shrink-0">{t.due_date.slice(5)}</span>}
+                  <span className={`text-[10px] px-2 py-0.5 rounded-full flex-shrink-0 ${TASK_STATUS_BADGE[t.status] ?? 'bg-gray-100 text-gray-500'}`}>
+                    {t.status}
+                  </span>
+                </div>
+              </li>
+            ))}
+          </ul>
+        )}
+        {tasks.length > 8 && (
+          <div className="px-5 py-2 border-t border-gray-50 text-center text-xs text-gray-400">
+            +{tasks.length - 8}건 더 — 상세 페이지에서 보기
+          </div>
+        )}
+      </div>
+    </div>
+  )
 }
 
 function CommunicationTimeline({ logs, contracts }: { logs: Log[]; contracts: Contract[] }) {
