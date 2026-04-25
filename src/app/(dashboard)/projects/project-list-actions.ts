@@ -2,6 +2,8 @@
 
 import { createAdminClient } from '@/lib/supabase/admin'
 import { revalidatePath } from 'next/cache'
+import { SERVICE_TO_DEPT } from '@/types'
+import { generateProjectNumber } from '@/lib/projects'
 
 export async function assignProjectNumbers(): Promise<{ assigned: number }> {
   const admin = createAdminClient()
@@ -32,4 +34,40 @@ export async function assignProjectNumbers(): Promise<{ assigned: number }> {
 
   revalidatePath('/projects')
   return { assigned }
+}
+
+// 새 프로젝트 직접 생성 (리드 없이) — projects 메뉴에서 사용
+// service_type 있으면 SERVICE_TO_DEPT로 department 자동 채움.
+// 매출(sales)은 같이 만들지 않음. 프로젝트 들어가서 [+ 새 매출]로 추가.
+export async function createProjectStandalone(data: {
+  name: string
+  service_type?: string | null
+  customer_id?: string | null
+  pm_id?: string | null
+}): Promise<{ id?: string; error?: string }> {
+  const admin = createAdminClient()
+  const department = (data.service_type && SERVICE_TO_DEPT[data.service_type]) || null
+  const projectNumber = await generateProjectNumber()
+
+  const { data: project, error } = await admin.from('projects').insert({
+    name: data.name,
+    service_type: data.service_type ?? null,
+    department,
+    customer_id: data.customer_id ?? null,
+    pm_id: data.pm_id ?? null,
+    status: '진행중',
+    project_number: projectNumber,
+  }).select('id').single()
+
+  if (error || !project) return { error: error?.message ?? '생성 실패' }
+
+  if (data.pm_id) {
+    await admin
+      .from('project_members')
+      .insert({ project_id: project.id, profile_id: data.pm_id, role: 'PM' })
+      .single()
+  }
+
+  revalidatePath('/projects')
+  return { id: project.id }
 }
