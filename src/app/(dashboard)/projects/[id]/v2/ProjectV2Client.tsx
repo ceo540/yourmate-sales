@@ -472,6 +472,7 @@ function MemoBlock({ project }: { project: Project }) {
   const router = useRouter()
   const [, startTransition] = useTransition()
   const [editing, setEditing] = useState(false)
+  const [collapsed, setCollapsed] = useState(false)
   const [input, setInput] = useState(project.memo ?? '')
 
   function save() {
@@ -485,31 +486,40 @@ function MemoBlock({ project }: { project: Project }) {
   return (
     <div className="bg-white border border-gray-100 rounded-xl px-5 py-3">
       <div className="flex items-center justify-between mb-1.5">
-        <p className="text-xs font-semibold text-gray-700">📝 메모</p>
-        {!editing && (
+        <button
+          onClick={() => !editing && setCollapsed(c => !c)}
+          className="flex items-center gap-1.5 text-xs font-semibold text-gray-700 hover:text-gray-900"
+        >
+          <span className="text-gray-400 text-[10px]">{collapsed ? '▶' : '▼'}</span>
+          📝 메모
+        </button>
+        {!editing && !collapsed && (
           <button onClick={() => { setInput(project.memo ?? ''); setEditing(true) }}
             className="text-[11px] text-gray-400 hover:text-gray-700">
             {project.memo ? '편집' : '+ 추가'}
           </button>
         )}
       </div>
-      {editing ? (
-        <div className="space-y-2">
-          <textarea value={input} onChange={e => setInput(e.target.value)} rows={3} autoFocus
-            placeholder="프로젝트 일반 메모..."
-            className="w-full text-sm border border-gray-200 rounded-lg px-3 py-2 resize-none focus:outline-none focus:ring-1 focus:ring-yellow-400 bg-white" />
-          <div className="flex gap-2">
-            <button onClick={save}
-              className="px-3 py-1.5 text-xs font-semibold rounded-lg hover:opacity-80"
-              style={{ backgroundColor: '#FFCE00', color: '#121212' }}>저장</button>
-            <button onClick={() => setEditing(false)}
-              className="px-3 py-1.5 text-xs border border-gray-200 rounded-lg text-gray-500">취소</button>
+      {!collapsed && (
+        editing ? (
+          <div className="space-y-2">
+            <textarea value={input} onChange={e => setInput(e.target.value)} rows={10} autoFocus
+              placeholder={'마크다운 지원: **굵게**, *기울임*, # 제목, - 리스트, [ ] 체크박스\n\n표 예시:\n| 헤더1 | 헤더2 |\n|------|------|\n| 내용 | 내용 |'}
+              className="w-full text-sm border border-gray-200 rounded-lg px-3 py-2 resize-y focus:outline-none focus:ring-1 focus:ring-yellow-400 bg-white font-mono" />
+            <div className="flex gap-2">
+              <button onClick={save}
+                className="px-3 py-1.5 text-xs font-semibold rounded-lg hover:opacity-80"
+                style={{ backgroundColor: '#FFCE00', color: '#121212' }}>저장</button>
+              <button onClick={() => setEditing(false)}
+                className="px-3 py-1.5 text-xs border border-gray-200 rounded-lg text-gray-500">취소</button>
+              <span className="ml-auto text-[10px] text-gray-400 self-center">마크다운 + 표 지원 (저장 후 노션처럼 표시)</span>
+            </div>
           </div>
-        </div>
-      ) : project.memo ? (
-        <p className="text-sm text-gray-700 whitespace-pre-line">{project.memo}</p>
-      ) : (
-        <p className="text-xs text-gray-400 italic">메모 없음</p>
+        ) : project.memo ? (
+          <MarkdownText className="text-gray-700">{project.memo}</MarkdownText>
+        ) : (
+          <p className="text-xs text-gray-400 italic">메모 없음</p>
+        )
       )}
     </div>
   )
