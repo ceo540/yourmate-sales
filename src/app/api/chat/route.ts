@@ -1290,7 +1290,16 @@ export async function POST(req: NextRequest) {
       text = text.replace(/<lead-data>[\s\S]*?<\/lead-data>/, '').trim()
     }
 
-    return NextResponse.json({ text, saleData, leadData, mutated })
+    return NextResponse.json({
+      text, saleData, leadData, mutated,
+      _debug: {
+        model: MODEL,
+        mode,
+        projectId: projectId ?? null,
+        todayIso,
+        systemPromptHead: systemWithDate.slice(0, 500),
+      },
+    })
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e)
     console.error('Chat API error:', msg)
