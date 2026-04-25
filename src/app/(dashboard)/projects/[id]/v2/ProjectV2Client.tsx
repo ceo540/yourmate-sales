@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import ProjectClaudeChat from '@/components/ProjectClaudeChat'
 import MarkdownText from '@/components/MarkdownText'
+import ProjectSettingsModal from './ProjectSettingsModal'
 import {
   updateProjectMemo,
   updateProjectNotes,
@@ -90,6 +91,8 @@ interface Props {
   profiles: ProfileOpt[]
   isAdmin: boolean
   currentUserId: string
+  members: { profile_id: string; role: string; name: string }[]
+  customersAll: { id: string; name: string; type: string | null }[]
 }
 
 const STATUS_CLR: Record<string, string> = {
@@ -141,7 +144,9 @@ function KpiPill({ icon, label, value, tone }: { icon: string; label: string; va
 export default function ProjectV2Client({
   project, pmName, customer, contactPerson, finance,
   contracts, tasks, logs, rentals, leadIds, profiles, currentUserId,
+  members, customersAll,
 }: Props) {
+  const [showSettings, setShowSettings] = useState(false)
   const profitRate = finance.revenue > 0
     ? Math.round(((finance.revenue - finance.cost) / finance.revenue) * 100)
     : null
@@ -196,6 +201,13 @@ export default function ProjectV2Client({
           {pmName && (
             <span className="text-xs text-gray-400">PM {pmName}</span>
           )}
+          <button
+            onClick={() => setShowSettings(true)}
+            className="ml-auto text-gray-400 hover:text-gray-700 p-1.5 rounded hover:bg-gray-100"
+            title="프로젝트 설정"
+          >
+            ⚙️
+          </button>
         </div>
 
         {/* V1.10: 핵심 KPI 한 줄 — "30초 안에 파악" */}
@@ -306,6 +318,20 @@ export default function ProjectV2Client({
       <p className="text-center text-xs text-gray-300 mt-8">
         V2는 구축 중입니다. 한 단계씩 채워집니다.
       </p>
+
+      {showSettings && (
+        <ProjectSettingsModal
+          projectId={project.id}
+          projectName={project.name}
+          customerId={project.customer_id ?? null}
+          customer={customer ? { id: customer.id, name: customer.name } : null}
+          pmId={project.pm_id}
+          customersAll={customersAll}
+          profiles={profiles}
+          members={members}
+          onClose={() => setShowSettings(false)}
+        />
+      )}
     </div>
   )
 }

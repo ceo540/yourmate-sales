@@ -26,6 +26,7 @@ export default async function ProjectV2Page({ params }: { params: Promise<{ id: 
     { data: contractsRaw },
     { data: profilesRaw },
     { data: customer },
+    { data: customersAll },
     { data: logsRaw },
     { data: leadsRaw },
   ] = await Promise.all([
@@ -35,6 +36,7 @@ export default async function ProjectV2Page({ params }: { params: Promise<{ id: 
     project.customer_id
       ? admin.from('customers').select('id, name, type, contact_name, phone, contact_email').eq('id', project.customer_id).maybeSingle()
       : Promise.resolve({ data: null }),
+    admin.from('customers').select('id, name, type').order('name').limit(500),
     admin.from('project_logs')
       .select('id, content, log_type, log_category, contacted_at, created_at, author_id, location, participants, outcome, sale_id')
       .eq('project_id', id)
@@ -147,6 +149,12 @@ export default async function ProjectV2Page({ params }: { params: Promise<{ id: 
       leadIds={(leadsRaw ?? []).map((l: any) => l.id)}
       isAdmin={isAdmin}
       currentUserId={user.id}
+      members={(membersRaw ?? []).map((m: any) => ({
+        profile_id: m.profile_id,
+        role: m.role,
+        name: profileNameMap[m.profile_id] ?? '',
+      }))}
+      customersAll={(customersAll ?? []).map((c: any) => ({ id: c.id, name: c.name, type: c.type ?? null }))}
     />
   )
 }
