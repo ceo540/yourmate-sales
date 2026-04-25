@@ -159,6 +159,7 @@ export default async function ProjectPage({ params }: { params: Promise<{ id: st
           notes: project.notes ?? null,
           customer_id: project.customer_id ?? null,
           pm_id: project.pm_id ?? null,
+          project_number: project.project_number ?? null,
           linked_calendar_events: (project.linked_calendar_events as any[]) ?? [],
         }}
         members={members}
