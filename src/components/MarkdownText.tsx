@@ -1,6 +1,7 @@
 'use client'
 
 import ReactMarkdown from 'react-markdown'
+import remarkGfm from 'remark-gfm'
 
 interface Props {
   children: string
@@ -13,6 +14,7 @@ export default function MarkdownText({ children, className = '' }: Props) {
   return (
     <div className={className}>
       <ReactMarkdown
+        remarkPlugins={[remarkGfm]}
         components={{
           h1: ({ children }) => <h1 className="text-base font-bold mt-3 mb-1.5 text-gray-900">{children}</h1>,
           h2: ({ children }) => <h2 className="text-sm font-bold mt-3 mb-1 text-gray-900">{children}</h2>,
@@ -22,7 +24,14 @@ export default function MarkdownText({ children, className = '' }: Props) {
           em: ({ children }) => <em className="italic">{children}</em>,
           ul: ({ children }) => <ul className="list-disc pl-5 space-y-0.5 mb-1.5 text-sm text-gray-700">{children}</ul>,
           ol: ({ children }) => <ol className="list-decimal pl-5 space-y-0.5 mb-1.5 text-sm text-gray-700">{children}</ol>,
-          li: ({ children }) => <li className="text-sm leading-relaxed">{children}</li>,
+          li: ({ children, ...props }) => {
+            // GFM task list (- [ ] / - [x]) 지원
+            const isTask = (props as { className?: string }).className?.includes('task-list-item')
+            if (isTask) return <li className="list-none -ml-5 text-sm leading-relaxed flex gap-1.5 items-start">{children}</li>
+            return <li className="text-sm leading-relaxed">{children}</li>
+          },
+          input: ({ ...props }) => <input {...props} disabled className="mt-1 accent-blue-600" />,
+          del: ({ children }) => <del className="text-gray-400">{children}</del>,
           code: ({ children }) => <code className="bg-gray-100 px-1 py-0.5 rounded text-[12px] font-mono">{children}</code>,
           a: ({ children, href }) => <a href={href} className="text-blue-600 hover:underline" target="_blank" rel="noopener noreferrer">{children}</a>,
           hr: () => <hr className="my-2 border-gray-200" />,
