@@ -397,6 +397,11 @@ export default function ProjectHubClient({
               <div className="flex items-center gap-2 mb-1">
                 {project.service_type && <span className="text-xs bg-purple-50 text-purple-600 px-2 py-0.5 rounded-full">{project.service_type}</span>}
                 {project.department && <span className="text-xs text-gray-400">{project.department}</span>}
+                <a href={`/projects/${project.id}/v2`}
+                  className="ml-auto text-xs px-2 py-0.5 rounded-full font-bold hover:opacity-80"
+                  style={{ backgroundColor: '#FFCE00', color: '#121212' }}>
+                  ✨ V2 미리보기
+                </a>
               </div>
               {editingName ? (
                 <div className="flex items-center gap-2">
