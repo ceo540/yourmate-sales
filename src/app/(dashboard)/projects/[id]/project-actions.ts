@@ -199,6 +199,106 @@ ${logSummary || '없음'}
   return { summary }
 }
 
+// V2 빵빵이가 할 일 자동 추천 — tasks에 bbang_suggested=true로 일괄 생성
+// 프로젝트·계약·기존 업무·최근 소통 분석 → 누락된 할 일 N개 제안 후 즉시 추가
+export async function generateAndSuggestTasks(projectId: string): Promise<{ added: number; titles: string[] } | { error: string }> {
+  const admin = createAdminClient()
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return { error: 'Unauthorized' }
+
+  const [{ data: project }, { data: contracts }] = await Promise.all([
+    admin.from('projects').select('id, name, service_type, status').eq('id', projectId).single(),
+    admin.from('sales').select('id, name, contract_stage').eq('project_id', projectId),
+  ])
+  if (!project) return { error: '프로젝트를 찾을 수 없습니다' }
+  const firstContract = (contracts ?? [])[0]
+  if (!firstContract) return { error: '계약이 1건 이상 있어야 할 일을 추가할 수 있어요' }
+
+  const contractIds = (contracts ?? []).map(c => c.id)
+  const [{ data: tasks }, { data: logs }] = await Promise.all([
+    admin.from('tasks').select('title, status').in('project_id', contractIds).limit(50),
+    admin.from('project_logs')
+      .select('content, log_type, contacted_at, outcome')
+      .eq('project_id', projectId)
+      .order('contacted_at', { ascending: false })
+      .limit(15),
+  ])
+
+  const existingTaskTitles = (tasks ?? []).map((t: any) => t.title).join('\n - ')
+  const logSummary = (logs ?? []).slice(0, 8).map((l: any) =>
+    `- ${(l.contacted_at ?? '').slice(0, 10)} [${l.log_type}] ${(l.content ?? '').slice(0, 80)}${l.outcome ? ` → ${l.outcome.slice(0, 50)}` : ''}`
+  ).join('\n')
+
+  const prompt = `너는 프로젝트 매니저 어시스턴트야. 아래 프로젝트에서 **누락된 할 일**을 추천해줘.
+
+[프로젝트]
+- 이름: ${project.name}
+- 서비스: ${project.service_type ?? '미입력'}
+- 상태: ${project.status}
+- 계약 단계: ${(contracts ?? []).map((c: any) => c.contract_stage ?? '계약').join(', ')}
+
+[기존 업무 (이미 등록됨, 중복 제안 금지)]
+ - ${existingTaskTitles || '(없음)'}
+
+[최근 소통]
+${logSummary || '없음'}
+
+추천 기준:
+1. 서비스 타입 표준 워크플로우 누락 항목 (예: 행사대여면 답사·물품체크·운반·세팅·수거)
+2. 최근 소통에서 약속한 후속 조치
+3. 계약 단계 진전 위해 필요한 작업
+4. 기존 업무 중복은 절대 금지
+
+JSON 배열로 반환 (3~6개):
+[{"title": "할 일 제목", "priority": "긴급|높음|보통|낮음", "due_date": "YYYY-MM-DD 또는 null"}]
+
+JSON만 반환. 마크다운 코드블록 없이.`
+
+  const client = new Anthropic()
+  const message = await client.messages.create({
+    model: 'claude-haiku-4-5-20251001',
+    max_tokens: 800,
+    messages: [{ role: 'user', content: prompt }],
+  })
+  logApiUsage({ model: 'claude-haiku-4-5-20251001', endpoint: 'project-task-suggest', userId: user.id, inputTokens: message.usage.input_tokens, outputTokens: message.usage.output_tokens }).catch(() => {})
+
+  const raw = ((message.content[0] as any)?.text ?? '').trim()
+  const jsonMatch = raw.match(/\[[\s\S]*\]/)
+  if (!jsonMatch) return { error: 'AI 응답 파싱 실패' }
+
+  let suggestions: { title: string; priority?: string; due_date?: string | null }[] = []
+  try {
+    suggestions = JSON.parse(jsonMatch[0])
+  } catch {
+    return { error: 'JSON 파싱 실패' }
+  }
+
+  if (!Array.isArray(suggestions) || suggestions.length === 0) {
+    return { error: '추천된 할 일이 없습니다' }
+  }
+
+  const titles: string[] = []
+  for (const s of suggestions) {
+    if (!s.title?.trim()) continue
+    const validPriority = ['긴급', '높음', '보통', '낮음'].includes(s.priority ?? '') ? s.priority : '보통'
+    await admin.from('tasks').insert({
+      project_id: firstContract.id,
+      title: s.title.trim(),
+      status: '할 일',
+      priority: validPriority,
+      due_date: s.due_date || null,
+      bbang_suggested: true,
+    })
+    titles.push(s.title.trim())
+  }
+
+  revalidatePath(`/projects/${projectId}/v2`)
+  revalidatePath(`/projects/${projectId}`)
+
+  return { added: titles.length, titles }
+}
+
 // V2 빵빵이 협의·미결 사항 자동 분석 — projects.pending_discussion 자동 채움
 // 최근 소통·미완 업무 분석해서 "지금 협의해야 할 사항" 추출
 export async function generateAndSavePendingDiscussion(projectId: string): Promise<{ summary: string } | { error: string }> {

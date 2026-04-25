@@ -15,6 +15,7 @@ import {
   updateProjectPendingDiscussion,
   generateAndSaveProjectOverview,
   generateAndSavePendingDiscussion,
+  generateAndSuggestTasks,
 } from '../project-actions'
 
 interface Project {
@@ -52,6 +53,7 @@ interface Contract {
 interface Task {
   id: string; title: string; status: string; priority: string | null
   due_date: string | null; project_id: string | null
+  bbang_suggested?: boolean
 }
 interface Log {
   id: string; content: string; log_type: string; log_category: string | null
@@ -801,6 +803,8 @@ function TasksSection({ tasks, contracts, projectId }: { tasks: Task[]; contract
   const [, startTransition] = useTransition()
   const pendingTasks = tasks.filter(t => t.status !== '완료' && t.status !== '보류')
   const [newTitle, setNewTitle] = useState('')
+  const [suggesting, setSuggesting] = useState(false)
+  const [suggestMsg, setSuggestMsg] = useState<string | null>(null)
   const canAdd = contracts.length > 0
   function add() {
     if (!newTitle.trim() || !canAdd) return
@@ -812,11 +816,40 @@ function TasksSection({ tasks, contracts, projectId }: { tasks: Task[]; contract
       router.refresh()
     })
   }
+
+  async function suggest() {
+    setSuggesting(true)
+    setSuggestMsg(null)
+    try {
+      const res = await generateAndSuggestTasks(projectId)
+      if ('error' in res) {
+        setSuggestMsg(`⚠ ${res.error}`)
+      } else {
+        setSuggestMsg(`🤖 ${res.added}건 추천 추가됨`)
+        router.refresh()
+      }
+      setTimeout(() => setSuggestMsg(null), 4000)
+    } catch (e: any) {
+      setSuggestMsg(`⚠ ${e?.message ?? '실패'}`)
+    } finally {
+      setSuggesting(false)
+    }
+  }
+
   return (
     <div className="bg-white border border-gray-100 rounded-xl overflow-hidden">
-      <div className="px-5 py-3 border-b border-gray-100 flex items-center justify-between">
+      <div className="px-5 py-3 border-b border-gray-100 flex items-center justify-between gap-2 flex-wrap">
         <p className="text-sm font-semibold text-gray-800">✅ 할일 ({pendingTasks.length}/{tasks.length})</p>
-        <Link href={`/projects/${projectId}`} className="text-xs text-gray-400 hover:text-gray-700">상세 편집 →</Link>
+        <div className="flex items-center gap-2">
+          {suggestMsg && <span className="text-[11px] text-gray-500">{suggestMsg}</span>}
+          {canAdd && (
+            <button onClick={suggest} disabled={suggesting}
+              className="text-xs px-2.5 py-1 rounded-lg border border-blue-200 text-blue-600 hover:bg-blue-50 disabled:opacity-50">
+              {suggesting ? '🤖 분석 중...' : '🤖 빵빵이 추천'}
+            </button>
+          )}
+          <Link href={`/projects/${projectId}`} className="text-xs text-gray-400 hover:text-gray-700">상세 편집 →</Link>
+        </div>
       </div>
       {canAdd && (
         <div className="px-5 py-2 bg-yellow-50 border-b border-yellow-100">
@@ -836,9 +869,14 @@ function TasksSection({ tasks, contracts, projectId }: { tasks: Task[]; contract
       ) : (
         <ul className="divide-y divide-gray-50">
           {tasks.slice(0, 12).map(t => (
-            <li key={t.id} className="px-5 py-2.5">
+            <li key={t.id} className={`px-5 py-2.5 ${t.bbang_suggested ? 'bg-blue-50/40' : ''}`}>
               <div className="flex items-center gap-2">
                 <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${PRIORITY_DOT[t.priority ?? '보통'] ?? 'bg-gray-300'}`} />
+                {t.bbang_suggested && (
+                  <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-blue-100 text-blue-700 font-semibold flex-shrink-0" title="빵빵이가 추천한 할 일">
+                    🤖
+                  </span>
+                )}
                 <span className={`flex-1 text-sm truncate ${t.status === '완료' ? 'line-through text-gray-300' : 'text-gray-700'}`}>{t.title}</span>
                 {t.due_date && <span className="text-[11px] text-gray-400 flex-shrink-0">{t.due_date.slice(5)}</span>}
                 <span className={`text-[10px] px-2 py-0.5 rounded-full flex-shrink-0 ${TASK_STATUS_BADGE[t.status] ?? 'bg-gray-100 text-gray-500'}`}>

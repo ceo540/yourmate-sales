@@ -49,7 +49,7 @@ export default async function ProjectV2Page({ params }: { params: Promise<{ id: 
   const contractIds = (contractsRaw ?? []).map(c => c.id)
   const [{ data: tasksRaw }, { data: costsRaw }, { data: rentalsRaw }] = await Promise.all([
     contractIds.length > 0
-      ? admin.from('tasks').select('*').in('project_id', contractIds).order('created_at')
+      ? admin.from('tasks').select('id, title, status, priority, due_date, project_id, bbang_suggested').in('project_id', contractIds).order('created_at')
       : Promise.resolve({ data: [] }),
     contractIds.length > 0
       ? admin.from('sale_costs').select('*').in('sale_id', contractIds).order('created_at')
@@ -133,6 +133,7 @@ export default async function ProjectV2Page({ params }: { params: Promise<{ id: 
       tasks={(tasksRaw ?? []).map((t: any) => ({
         id: t.id, title: t.title, status: t.status, priority: t.priority ?? null,
         due_date: t.due_date ?? null, project_id: t.project_id ?? null,
+        bbang_suggested: !!t.bbang_suggested,
       }))}
       logs={logs}
       rentals={(rentalsRaw ?? []).map((r: any) => ({
