@@ -4,6 +4,7 @@ import { useState, useTransition } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { assignProjectNumbers, createProjectStandalone } from './project-list-actions'
+import { quickCreateCustomer } from '../customers/actions'
 import { DEPT_SERVICE_GROUPS } from '@/types'
 
 const SVC_COLOR: Record<string, string> = {
@@ -63,6 +64,10 @@ export default function ProjectsClient({ projects, isAdmin, profiles, customers 
   const [createForm, setCreateForm] = useState({
     name: '', service_type: '', customer_id: '', pm_id: '',
   })
+  // 고객사 추가 모드 상태 (select에서 "+ 새 고객사" 선택 시 활성화)
+  const [newCustomerName, setNewCustomerName] = useState('')
+  const [localCustomers, setLocalCustomers] = useState(customers)
+  const isAddingCustomer = createForm.customer_id === '__NEW__'
 
   // 모든 서비스 타입 (DEPT_SERVICE_GROUPS 평탄화)
   const allServiceTypes = Array.from(new Set(DEPT_SERVICE_GROUPS.flatMap(g => g.services)))
@@ -109,7 +114,8 @@ export default function ProjectsClient({ projects, isAdmin, profiles, customers 
               <select value={createForm.customer_id} onChange={e => setCreateForm(f => ({...f, customer_id: e.target.value}))}
                 className="text-sm border border-yellow-200 rounded-lg px-3 py-2 bg-white focus:outline-none focus:border-yellow-400">
                 <option value="">고객사 (선택)</option>
-                {customers.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                {localCustomers.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                <option value="__NEW__">+ 새 고객사 추가</option>
               </select>
               <select value={createForm.pm_id} onChange={e => setCreateForm(f => ({...f, pm_id: e.target.value}))}
                 className="text-sm border border-yellow-200 rounded-lg px-3 py-2 bg-white focus:outline-none focus:border-yellow-400">
@@ -117,21 +123,48 @@ export default function ProjectsClient({ projects, isAdmin, profiles, customers 
                 {profiles.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
               </select>
             </div>
+            {isAddingCustomer && (
+              <div className="flex gap-2">
+                <input value={newCustomerName} onChange={e => setNewCustomerName(e.target.value)}
+                  placeholder="새 고객사 이름 *"
+                  className="flex-1 text-sm border border-yellow-300 rounded-lg px-3 py-2 bg-white focus:outline-none focus:border-yellow-500" />
+                <button onClick={async () => {
+                  if (!newCustomerName.trim()) return
+                  const res = await quickCreateCustomer(newCustomerName.trim())
+                  if ('id' in res) {
+                    setLocalCustomers(prev => [...prev, { id: res.id, name: newCustomerName.trim() }])
+                    setCreateForm(f => ({ ...f, customer_id: res.id }))
+                    setNewCustomerName('')
+                  }
+                }}
+                  disabled={!newCustomerName.trim()}
+                  className="px-3 py-2 text-xs font-semibold rounded-lg hover:opacity-80 disabled:opacity-40"
+                  style={{ backgroundColor: '#FFCE00', color: '#121212' }}>
+                  고객사 추가
+                </button>
+                <button onClick={() => { setCreateForm(f => ({ ...f, customer_id: '' })); setNewCustomerName('') }}
+                  className="px-3 py-2 text-xs border border-gray-200 rounded-lg text-gray-500">
+                  취소
+                </button>
+              </div>
+            )}
             <p className="text-[11px] text-gray-500">생성 후 프로젝트 페이지로 이동합니다. 매출(계약)은 들어가서 [+ 새 매출]로 추가하세요.</p>
             <div className="flex gap-2">
               <button onClick={() => startCreate(async () => {
                 if (!createForm.name.trim()) return
+                // __NEW__ 상태면 customer_id 비활성 (사용자가 새 고객사를 추가하지 않은 채 생성한 경우)
+                const customerId = createForm.customer_id === '__NEW__' ? null : (createForm.customer_id || null)
                 const res = await createProjectStandalone({
                   name: createForm.name.trim(),
                   service_type: createForm.service_type || null,
-                  customer_id: createForm.customer_id || null,
+                  customer_id: customerId,
                   pm_id: createForm.pm_id || null,
                 })
                 if (res.id) {
                   router.push(`/projects/${res.id}`)
                 }
               })}
-                disabled={!createForm.name.trim() || createPending}
+                disabled={!createForm.name.trim() || createPending || isAddingCustomer}
                 className="px-4 py-2 text-sm font-semibold rounded-lg hover:opacity-80 disabled:opacity-40"
                 style={{ backgroundColor: '#FFCE00', color: '#121212' }}>
                 {createPending ? '생성 중...' : '생성'}
