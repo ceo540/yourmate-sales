@@ -159,7 +159,8 @@ ${logs && logs.length > 0 ? `\n## 최근 소통내역\n${logs.map(l => `- [${l.l
    - "계약 페이지로 이동하세요" (create_task가 자동 매칭함)
    - "화면에만 보여드린 거예요" (반드시 도구로 저장)
 4. 도구 호출이 실제 에러를 반환하면 그 에러 메시지를 그대로 사용자에게 전달. 추측·각색 금지.
-5. 의도 명확하면 즉시 실행. 삭제만 1회 확인.`
+5. 의도 명확하면 즉시 실행. 삭제만 1회 확인.
+6. update_task / complete_task / delete_task에서 같은 제목 매칭이 여러 건이면 시스템이 번호 + 마감일·상태·생성일 + 전체 task_id를 보여줘. 사용자에게 그대로 친절하게 표시하고 어느 것인지 물어봐. 사용자가 "①/②/첫번째/두번째/1번/2번"이라고 답하면 그 순서대로 직전 매칭 결과의 task_id를 선택해서 도구 재호출. id 8자리만 떼서 호출 금지 — 반드시 전체 UUID 사용.`
 
   const systemBlocks = [
     { type: 'text' as const, text: TOP_POLICY },
@@ -529,11 +530,18 @@ ${logs && logs.length > 0 ? `\n## 최근 소통내역\n${logs.map(l => `- [${l.l
                   const { data } = await admin.from('tasks').select('id, title, project_id').eq('id', input.task_id).maybeSingle()
                   if (data && saleIds.includes(data.project_id ?? '')) task = { id: data.id, title: data.title }
                 } else if (input.title) {
-                  const { data } = await admin.from('tasks').select('id, title').in('project_id', saleIds).ilike('title', `%${input.title}%`).limit(5)
+                  const { data } = await admin
+                    .from('tasks')
+                    .select('id, title, status, due_date, created_at, bbang_suggested')
+                    .in('project_id', saleIds)
+                    .ilike('title', `%${input.title}%`)
+                    .order('created_at', { ascending: false })
+                    .limit(5)
                   if (data && data.length === 1) task = data[0]
                   else if (data && data.length > 1) {
                     multiple = true
-                    result = `"${input.title}" 매칭 ${data.length}건. task_id로 특정해줘:\n${data.map(t => `- ${t.title} (id: ${t.id.slice(0, 8)})`).join('\n')}`
+                    result = `"${input.title}" 매칭 ${data.length}건. 사용자에게 어느 것인지 친절하게 보여주고 task_id로 재호출:\n` +
+                      data.map((t, i) => `${i + 1}. "${t.title}" — 상태:${t.status}${t.due_date ? `, 마감:${t.due_date}` : ''}, 생성:${t.created_at?.slice(0, 10)}${t.bbang_suggested ? ', 🤖빵빵이추가' : ''}\n   task_id=${t.id}`).join('\n')
                   }
                 }
                 if (!task && !multiple) {
