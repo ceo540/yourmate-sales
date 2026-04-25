@@ -423,8 +423,8 @@ export default function SalesReportClient({ sales: initialSales, vendors, entiti
                 <tr>
                   <td colSpan={totalCols} className="py-16 text-center text-sm text-gray-400">
                     해당 기간에 매출 건이 없어요.{' '}
-                    <Link href="/sales/new" className="text-yellow-600 font-medium hover:underline">
-                      새 매출 건 추가하기 →
+                    <Link href="/projects" className="text-yellow-600 font-medium hover:underline">
+                      새 프로젝트 추가하기 →
                     </Link>
                   </td>
                 </tr>
