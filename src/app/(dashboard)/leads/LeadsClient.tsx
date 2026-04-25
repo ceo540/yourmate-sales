@@ -17,6 +17,8 @@ type PersonOption = {
   customerId: string | null; customerRegion: string; customerType: string; relationId: string | null
 }
 
+type CustomerOptionForm = { id: string; name: string; type: string | null }
+
 interface LeadFormProps {
   form: FormState
   setForm: React.Dispatch<React.SetStateAction<FormState>>
@@ -26,16 +28,46 @@ interface LeadFormProps {
   isAdmin: boolean
   profiles: { id: string; name: string }[]
   persons: PersonOption[]
+  customers: CustomerOptionForm[]
 }
 
-function LeadForm({ form, setForm, onSubmit, onCancel, isPending, isAdmin, profiles, persons }: LeadFormProps) {
+function LeadForm({ form, setForm, onSubmit, onCancel, isPending, isAdmin, profiles, persons, customers }: LeadFormProps) {
   const [personSearch, setPersonSearch] = useState(form.contact_name)
   const [showPersonDrop, setShowPersonDrop] = useState(false)
   const [localPersons, setLocalPersons] = useState<PersonOption[]>([])
   const [showAddForm, setShowAddForm] = useState(false)
   const [newPhone, setNewPhone] = useState('')
   const [newEmail, setNewEmail] = useState('')
+  const [newDept, setNewDept] = useState('')
+  const [newTitle, setNewTitle] = useState('')
   const [isAddingPerson, setIsAddingPerson] = useState(false)
+
+  // 기관(고객사) 검색·추가 패턴 — 메모리 정책: 항상 "선택 + 직접 추가"
+  const [customerSearch, setCustomerSearch] = useState(form.client_org)
+  const [showCustomerDrop, setShowCustomerDrop] = useState(false)
+  const [localCustomers, setLocalCustomers] = useState<CustomerOptionForm[]>([])
+  const [isAddingCustomer, setIsAddingCustomer] = useState(false)
+  const allCustomers = [...customers, ...localCustomers]
+  const matchingCustomers = allCustomers
+    .filter(c => !customerSearch || c.name.toLowerCase().includes(customerSearch.toLowerCase()))
+    .slice(0, 6)
+  const exactCustomerMatch = allCustomers.some(c => c.name === customerSearch.trim())
+
+  async function handleAddCustomer() {
+    if (!customerSearch.trim()) return
+    setIsAddingCustomer(true)
+    try {
+      const { quickCreateCustomer } = await import('../customers/actions')
+      const result = await quickCreateCustomer(customerSearch.trim())
+      if ('error' in result) { alert('고객사 추가 실패: ' + result.error); return }
+      const newCust: CustomerOptionForm = { id: result.id, name: customerSearch.trim(), type: '기타' }
+      setLocalCustomers(prev => [...prev, newCust])
+      setForm(f => ({ ...f, client_org: customerSearch.trim() }))
+      setShowCustomerDrop(false)
+    } finally {
+      setIsAddingCustomer(false)
+    }
+  }
 
   const allPersons = [...persons, ...localPersons]
   const selectedPerson = form.person_id ? allPersons.find(p => p.id === form.person_id) : null
@@ -67,13 +99,23 @@ function LeadForm({ form, setForm, onSubmit, onCancel, isPending, isAdmin, profi
     if (!personSearch.trim()) return
     setIsAddingPerson(true)
     try {
-      const result = await createPerson({ name: personSearch.trim(), phone: newPhone || undefined, email: newEmail || undefined })
+      const result = await createPerson({
+        name: personSearch.trim(),
+        phone: newPhone || undefined,
+        email: newEmail || undefined,
+        dept: newDept || undefined,
+        title: newTitle || undefined,
+        customer_name: form.client_org || undefined,
+      })
       if ('error' in result) { alert('추가 실패: ' + result.error); return }
-      const newP: PersonOption = { id: result.id, name: result.name, phone: result.phone, email: result.email, currentOrg: '', title: '', dept: '', customerId: null, customerRegion: '', customerType: '', relationId: null }
+      const newP: PersonOption = {
+        id: result.id, name: result.name, phone: result.phone, email: result.email,
+        currentOrg: form.client_org || '', title: newTitle, dept: newDept,
+        customerId: null, customerRegion: '', customerType: '', relationId: null,
+      }
       setLocalPersons(prev => [...prev, newP])
       selectPerson(newP)
-      setNewPhone('')
-      setNewEmail('')
+      setNewPhone(''); setNewEmail(''); setNewDept(''); setNewTitle('')
     } finally {
       setIsAddingPerson(false)
     }
@@ -147,9 +189,16 @@ function LeadForm({ form, setForm, onSubmit, onCancel, isPending, isAdmin, profi
           <div className="mt-2 p-3 border border-blue-200 rounded-lg bg-blue-50 space-y-2">
             <p className="text-xs font-semibold text-blue-700">새 담당자 추가 — {personSearch.trim()}</p>
             <div className="grid grid-cols-2 gap-2">
+              <input value={newDept} onChange={e => setNewDept(e.target.value)} placeholder="부서 (수의계약 한도용)" className={INPUT_CLS + ' text-xs'} />
+              <input value={newTitle} onChange={e => setNewTitle(e.target.value)} placeholder="직급" className={INPUT_CLS + ' text-xs'} />
+            </div>
+            <div className="grid grid-cols-2 gap-2">
               <input value={newPhone} onChange={e => setNewPhone(e.target.value)} placeholder="휴대폰 (선택)" className={INPUT_CLS + ' text-xs'} />
               <input value={newEmail} onChange={e => setNewEmail(e.target.value)} placeholder="이메일 (선택)" className={INPUT_CLS + ' text-xs'} />
             </div>
+            {form.client_org && (
+              <p className="text-[11px] text-gray-500">기관: <b>{form.client_org}</b> 와 자동 연결됩니다</p>
+            )}
             <div className="flex gap-2">
               <button type="button" onClick={handleAddPerson} disabled={isAddingPerson}
                 className="px-3 py-1.5 text-xs font-semibold rounded-lg disabled:opacity-50"
@@ -169,8 +218,39 @@ function LeadForm({ form, setForm, onSubmit, onCancel, isPending, isAdmin, profi
         <p className="text-xs text-gray-400 mt-1">입력 시 목록·드롭박스 폴더명으로 사용됩니다.</p>
       </div>
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-        <div><label className={LABEL_CLS}>기관명</label>
-          <input className={INPUT_CLS} value={form.client_org} onChange={e => setForm(f => ({ ...f, client_org: e.target.value }))} /></div>
+        <div>
+          <label className={LABEL_CLS}>기관명</label>
+          <div className="relative">
+            <input
+              className={INPUT_CLS}
+              value={customerSearch}
+              onChange={e => { setCustomerSearch(e.target.value); setShowCustomerDrop(true); setForm(f => ({ ...f, client_org: e.target.value })) }}
+              onFocus={() => setShowCustomerDrop(true)}
+              onBlur={() => setTimeout(() => setShowCustomerDrop(false), 150)}
+              placeholder="기관 검색하거나 직접 입력..."
+            />
+            {showCustomerDrop && (matchingCustomers.length > 0 || (customerSearch.trim() && !exactCustomerMatch)) && (
+              <div className="absolute z-50 top-full left-0 right-0 bg-white border border-gray-200 rounded-lg shadow-lg mt-1 max-h-64 overflow-y-auto">
+                {matchingCustomers.map(c => (
+                  <button key={c.id} type="button"
+                    onMouseDown={() => { setForm(f => ({ ...f, client_org: c.name })); setCustomerSearch(c.name); setShowCustomerDrop(false) }}
+                    className="w-full px-3 py-2 text-left hover:bg-yellow-50 border-b border-gray-50 last:border-0">
+                    <p className="text-sm font-medium text-gray-800">
+                      {c.name}
+                      {c.type ? <span className="text-gray-400 font-normal"> · {c.type}</span> : ''}
+                    </p>
+                  </button>
+                ))}
+                {customerSearch.trim() && !exactCustomerMatch && (
+                  <button type="button" onMouseDown={handleAddCustomer} disabled={isAddingCustomer}
+                    className="w-full px-3 py-2.5 text-left text-sm text-blue-600 hover:bg-blue-50 font-medium border-t border-gray-100 disabled:opacity-50">
+                    {isAddingCustomer ? '추가 중...' : `+ "${customerSearch.trim()}" 새 기관으로 추가`}
+                  </button>
+                )}
+              </div>
+            )}
+          </div>
+        </div>
         <div>
           <label className={LABEL_CLS}>담당자명</label>
           {selectedPerson ? (
@@ -386,10 +466,13 @@ function LogItem({ log, isAdmin, onDelete }: { log: LeadLog; isAdmin: boolean; o
 }
 
 // ── Props / EMPTY_FORM ────────────────────────────────────────────
+interface CustomerOption { id: string; name: string; type: string | null }
+
 interface Props {
   leads: Lead[]
   profiles: { id: string; name: string }[]
   persons: PersonOption[]
+  customers: CustomerOption[]
   currentUserId: string
   isAdmin: boolean
   initialClientOrg?: string
@@ -403,7 +486,7 @@ const EMPTY_FORM: FormState = {
 }
 
 // ── Main Component ────────────────────────────────────────────────
-export default function LeadsClient({ leads, profiles, persons, currentUserId, isAdmin, initialClientOrg }: Props) {
+export default function LeadsClient({ leads, profiles, persons, customers, currentUserId, isAdmin, initialClientOrg }: Props) {
   const router = useRouter()
   const [statusFilter, setStatusFilter] = useState<string>('활성')
   const [searchTerm, setSearchTerm] = useState('')
@@ -1798,7 +1881,7 @@ export default function LeadsClient({ leads, profiles, persons, currentUserId, i
               form={form} setForm={setForm}
               onSubmit={handleUpdate} onCancel={() => setShowEditModal(false)}
               isPending={isPending} isAdmin={isAdmin}
-              profiles={profiles} persons={persons}
+              profiles={profiles} persons={persons} customers={customers}
             />
             <div className="mt-4 pt-4 border-t border-gray-100">
               <p className="text-xs text-gray-400 mb-2">드롭박스 URL {selectedLead.dropbox_url ? '수정' : '직접 입력'}</p>
@@ -1824,7 +1907,7 @@ export default function LeadsClient({ leads, profiles, persons, currentUserId, i
           <div className="absolute inset-0 bg-black/40" onClick={() => setShowCreateModal(false)} />
           <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto p-6">
             <h2 className="text-lg font-bold text-gray-900 mb-4">새 리드 등록</h2>
-            <LeadForm form={form} setForm={setForm} onSubmit={handleCreate} onCancel={() => setShowCreateModal(false)} isPending={isPending} isAdmin={isAdmin} profiles={profiles} persons={persons} />
+            <LeadForm form={form} setForm={setForm} onSubmit={handleCreate} onCancel={() => setShowCreateModal(false)} isPending={isPending} isAdmin={isAdmin} profiles={profiles} persons={persons} customers={customers} />
           </div>
         </div>
       )}
