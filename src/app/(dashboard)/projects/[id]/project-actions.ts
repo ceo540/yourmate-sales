@@ -205,7 +205,8 @@ export async function linkSaleToProject(projectId: string, saleId: string) {
 }
 
 // 프로젝트 내에서 새 매출(계약) 직접 생성 — 수의계약 분리 등
-// 프로젝트의 service_type/department/customer를 상속해서 채움
+// 프로젝트의 service_type/department/customer를 상속해서 채움.
+// 건명 미입력 시 프로젝트명 그대로 사용. 유입일은 오늘 자동.
 export async function createSaleForProject(projectId: string, data: {
   name: string
   revenue: number
@@ -213,18 +214,19 @@ export async function createSaleForProject(projectId: string, data: {
   contract_stage?: string
   contract_type?: string | null
   contract_split_reason?: string | null
-  inflow_date?: string | null
-  payment_date?: string | null
 }) {
   const admin = createAdminClient()
   const { data: project } = await admin
     .from('projects')
-    .select('service_type, department, customer_id, pm_id, project_number')
+    .select('name, service_type, department, customer_id, pm_id, project_number')
     .eq('id', projectId)
     .single()
 
+  const finalName = data.name.trim() || project?.name || '(이름 없음)'
+  const today = new Date().toISOString().slice(0, 10)
+
   const { data: sale, error } = await admin.from('sales').insert({
-    name: data.name,
+    name: finalName,
     project_id: projectId,
     service_type: project?.service_type ?? null,
     department: project?.department ?? null,
@@ -236,8 +238,7 @@ export async function createSaleForProject(projectId: string, data: {
     contract_stage: data.contract_stage ?? '계약',
     contract_type: data.contract_type ?? null,
     contract_split_reason: data.contract_split_reason ?? null,
-    inflow_date: data.inflow_date ?? null,
-    payment_date: data.payment_date ?? null,
+    inflow_date: today,
   }).select('*, payment_schedules(*)').single()
 
   if (error) return { error: error.message }

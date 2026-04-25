@@ -209,7 +209,7 @@ export default function ProjectHubClient({
   const [creatingSale, setCreatingSale] = useState(false)
   const [newSaleForm, setNewSaleForm] = useState({
     name: '', revenue: '', entity_id: '', contract_stage: '계약',
-    contract_type: '', contract_split_reason: '', inflow_date: '', payment_date: '',
+    contract_type: '', contract_split_reason: '',
   })
 
   // KPI
@@ -985,7 +985,7 @@ export default function ProjectHubClient({
                   <div className="px-4 py-3 bg-yellow-50 border-b border-yellow-100 space-y-2">
                     <p className="text-xs font-semibold text-yellow-800">새 매출 추가 (수의계약 분리 등)</p>
                     <input autoFocus value={newSaleForm.name} onChange={e => setNewSaleForm(f => ({...f, name: e.target.value}))}
-                      placeholder={`건명 (예: ${project.name} - 사업자A)`}
+                      placeholder={`건명 (비우면 "${project.name}" 자동)`}
                       className="w-full text-sm border border-yellow-200 rounded-lg px-3 py-2 bg-white focus:outline-none focus:border-yellow-400" />
                     <div className="grid grid-cols-2 gap-2">
                       <input type="number" value={newSaleForm.revenue} onChange={e => setNewSaleForm(f => ({...f, revenue: e.target.value}))}
@@ -1011,26 +1011,17 @@ export default function ProjectHubClient({
                     <input value={newSaleForm.contract_split_reason} onChange={e => setNewSaleForm(f => ({...f, contract_split_reason: e.target.value}))}
                       placeholder="계약 분리 사유 (선택, 예: 사업자 분리)"
                       className="w-full text-sm border border-yellow-200 rounded-lg px-3 py-2 bg-white focus:outline-none focus:border-yellow-400" />
-                    <div className="grid grid-cols-2 gap-2">
-                      <input type="date" value={newSaleForm.inflow_date} onChange={e => setNewSaleForm(f => ({...f, inflow_date: e.target.value}))}
-                        placeholder="유입일"
-                        className="text-sm border border-yellow-200 rounded-lg px-3 py-2 bg-white focus:outline-none focus:border-yellow-400" />
-                      <input type="date" value={newSaleForm.payment_date} onChange={e => setNewSaleForm(f => ({...f, payment_date: e.target.value}))}
-                        placeholder="계약일"
-                        className="text-sm border border-yellow-200 rounded-lg px-3 py-2 bg-white focus:outline-none focus:border-yellow-400" />
-                    </div>
+                    <p className="text-[11px] text-gray-400">유입일은 오늘로, 계약일은 비워두고 시작 — 계약 카드에서 언제든 수정 가능</p>
                     <div className="flex gap-2">
                       <button onClick={() => startTransition(async () => {
-                        if (!newSaleForm.name.trim()) return
+                        const finalName = newSaleForm.name.trim() || project.name
                         const result = await createSaleForProject(project.id, {
-                          name: newSaleForm.name.trim(),
+                          name: finalName,
                           revenue: Number(newSaleForm.revenue) || 0,
                           entity_id: newSaleForm.entity_id || null,
                           contract_stage: newSaleForm.contract_stage,
                           contract_type: newSaleForm.contract_type || null,
                           contract_split_reason: newSaleForm.contract_split_reason || null,
-                          inflow_date: newSaleForm.inflow_date || null,
-                          payment_date: newSaleForm.payment_date || null,
                         })
                         if ('sale' in result && result.sale) {
                           const entityName = newSaleForm.entity_id
@@ -1047,18 +1038,18 @@ export default function ProjectHubClient({
                             assignee_id: result.sale.assignee_id ?? null, entity_id: result.sale.entity_id ?? null,
                           }])
                           setNewSaleForm({ name: '', revenue: '', entity_id: '', contract_stage: '계약',
-                            contract_type: '', contract_split_reason: '', inflow_date: '', payment_date: '' })
+                            contract_type: '', contract_split_reason: '' })
                           setCreatingSale(false)
                         }
                       })}
-                        disabled={!newSaleForm.name.trim() || isPending}
+                        disabled={isPending}
                         className="px-3 py-1.5 text-xs font-semibold rounded-lg hover:opacity-80 disabled:opacity-40" style={{ backgroundColor: '#FFCE00', color: '#121212' }}>
                         추가
                       </button>
                       <button onClick={() => {
                         setCreatingSale(false)
                         setNewSaleForm({ name: '', revenue: '', entity_id: '', contract_stage: '계약',
-                          contract_type: '', contract_split_reason: '', inflow_date: '', payment_date: '' })
+                          contract_type: '', contract_split_reason: '' })
                       }} className="px-3 py-1.5 text-xs border border-gray-200 rounded-lg text-gray-500">취소</button>
                     </div>
                   </div>
