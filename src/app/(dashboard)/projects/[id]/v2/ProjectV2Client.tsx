@@ -18,7 +18,7 @@ import {
   generateAndSuggestTasks,
   createAndLinkCalendarEvent,
 } from '../project-actions'
-import { updateTask } from '../../../sales/tasks/actions'
+import { updateTask, deleteTask } from '../../../sales/tasks/actions'
 
 interface Project {
   id: string
@@ -1065,6 +1065,15 @@ function TaskRow({ task, profiles, projectId, serviceType }: {
             <button onClick={() => setCalOpen(o => !o)}
               className="px-3 py-1.5 text-xs font-medium rounded-lg border border-blue-200 text-blue-600 hover:bg-blue-50">
               📅 캘린더에 추가
+            </button>
+            <button onClick={() => {
+              if (!confirm(`"${task.title}" 할일을 삭제할까요?`)) return
+              startTransition(async () => {
+                await deleteTask(task.id, task.project_id ?? null)
+                router.refresh()
+              })
+            }} className="ml-auto px-3 py-1.5 text-xs font-medium rounded-lg border border-red-200 text-red-500 hover:bg-red-50">
+              🗑 삭제
             </button>
             {savedMsg && <span className="text-[11px] text-green-600">{savedMsg}</span>}
             {calMsg && <span className="text-[11px] text-gray-500">{calMsg}</span>}
