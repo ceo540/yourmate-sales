@@ -53,8 +53,11 @@ export async function createProjectStandalone(data: {
   dropbox_error?: string
   error?: string
 }> {
+  if (!data.service_type) {
+    return { error: '서비스는 필수입니다.' }
+  }
   const admin = createAdminClient()
-  const department = (data.service_type && SERVICE_TO_DEPT[data.service_type]) || null
+  const department = SERVICE_TO_DEPT[data.service_type] || null
   const projectNumber = await generateProjectNumber()
   const folderDisplayName = `${projectNumber} ${data.name}`
   const today = new Date().toISOString().slice(0, 10)

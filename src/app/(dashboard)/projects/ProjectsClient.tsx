@@ -131,7 +131,7 @@ export default function ProjectsClient({ projects, isAdmin, profiles, customers 
             <div className="grid grid-cols-3 gap-2">
               <select value={createForm.service_type} onChange={e => setCreateForm(f => ({...f, service_type: e.target.value}))}
                 className="text-sm border border-yellow-200 rounded-lg px-3 py-2 bg-white focus:outline-none focus:border-yellow-400">
-                <option value="">서비스 (선택)</option>
+                <option value="">서비스 *</option>
                 {allServiceTypes.map(s => <option key={s} value={s}>{s}</option>)}
               </select>
               <select value={createForm.customer_id} onChange={e => setCreateForm(f => ({...f, customer_id: e.target.value}))}
@@ -225,7 +225,7 @@ export default function ProjectsClient({ projects, isAdmin, profiles, customers 
                   })
                 }
               })}
-                disabled={!createForm.name.trim() || createPending || isAddingCustomer}
+                disabled={!createForm.name.trim() || !createForm.service_type || createPending || isAddingCustomer}
                 className="px-4 py-2 text-sm font-semibold rounded-lg hover:opacity-80 disabled:opacity-40"
                 style={{ backgroundColor: '#FFCE00', color: '#121212' }}>
                 {createPending ? '생성 중...' : '생성'}
