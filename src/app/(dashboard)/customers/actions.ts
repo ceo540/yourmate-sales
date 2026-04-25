@@ -16,6 +16,68 @@ export async function quickCreateCustomer(name: string): Promise<{ id: string } 
   return { id: data.id }
 }
 
+// 기관 + 담당자(부서/직급 포함) 한번에 등록
+// 담당자 정보는 모두 선택. 이름이 있으면 persons 테이블 + job_history에 등록
+// 부서는 수의계약 한도 파악에 중요해서 항상 입력 가능하게 유지
+export async function quickCreateCustomerWithContact(data: {
+  name: string
+  contact?: {
+    name?: string
+    dept?: string
+    title?: string
+    phone?: string
+    email?: string
+  } | null
+}): Promise<{ customer_id: string; person_id?: string } | { error: string }> {
+  const supabase = createAdminClient()
+  const contactName = data.contact?.name?.trim() || ''
+  const customerInsert: Record<string, unknown> = {
+    name: data.name,
+    type: '기타',
+    status: '활성',
+  }
+  // 담당자 정보가 있으면 customers의 contact_* 필드에도 채움 (요약용)
+  if (contactName) customerInsert.contact_name = contactName
+  if (data.contact?.phone) customerInsert.phone = data.contact.phone
+  if (data.contact?.email) customerInsert.contact_email = data.contact.email
+
+  const { data: customer, error: cErr } = await supabase
+    .from('customers')
+    .insert(customerInsert)
+    .select('id')
+    .single()
+  if (cErr || !customer) return { error: cErr?.message ?? '고객사 생성 실패' }
+
+  let personId: string | undefined
+  if (contactName) {
+    const { data: person, error: pErr } = await supabase
+      .from('persons')
+      .insert({
+        name: contactName,
+        phone: data.contact?.phone ?? null,
+        email: data.contact?.email ?? null,
+      })
+      .select('id')
+      .single()
+    if (!pErr && person) {
+      personId = person.id
+      // job_history 연결 — dept/title 있으면 함께
+      await supabase.from('person_org_relations').insert({
+        person_id: person.id,
+        customer_id: customer.id,
+        dept: data.contact?.dept ?? null,
+        title: data.contact?.title ?? null,
+        started_at: new Date().toISOString().slice(0, 10),
+        ended_at: null,
+        is_current: true,
+      })
+    }
+  }
+
+  revalidatePath('/customers')
+  return { customer_id: customer.id, person_id: personId }
+}
+
 export async function createCustomer(fd: FormData) {
   const supabase = createAdminClient()
   const { error } = await supabase.from('customers').insert({

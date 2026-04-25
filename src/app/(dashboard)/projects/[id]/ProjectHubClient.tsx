@@ -82,6 +82,7 @@ interface Project {
   id: string; name: string; service_type: string | null; department: string | null
   status: string; dropbox_url: string | null; memo: string | null; notes: string | null
   customer_id: string | null; pm_id: string | null
+  project_number: string | null
   linked_calendar_events?: LinkedCalEvent[]
 }
 interface Lead {
@@ -410,6 +411,11 @@ export default function ProjectHubClient({
                 </div>
               ) : (
                 <div className="flex items-center gap-2 group">
+                  {project.project_number && (
+                    <span className="text-xs font-semibold text-gray-500 bg-gray-100 px-2 py-0.5 rounded-full flex-shrink-0">
+                      {project.project_number}
+                    </span>
+                  )}
                   <h1 className="text-xl font-bold text-gray-900 leading-tight">{localName}</h1>
                   <button onClick={() => { setEditingName(true); setNameInput(localName) }}
                     className="text-gray-300 hover:text-gray-600 opacity-0 group-hover:opacity-100 transition-opacity text-sm flex-shrink-0">✏</button>

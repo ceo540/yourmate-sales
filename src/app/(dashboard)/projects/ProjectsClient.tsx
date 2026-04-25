@@ -4,7 +4,7 @@ import { useState, useTransition } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { assignProjectNumbers, createProjectStandalone } from './project-list-actions'
-import { quickCreateCustomer } from '../customers/actions'
+import { quickCreateCustomerWithContact } from '../customers/actions'
 import { DEPT_SERVICE_GROUPS } from '@/types'
 
 const SVC_COLOR: Record<string, string> = {
@@ -65,7 +65,10 @@ export default function ProjectsClient({ projects, isAdmin, profiles, customers 
     name: '', service_type: '', customer_id: '', pm_id: '',
   })
   // 고객사 추가 모드 상태 (select에서 "+ 새 고객사" 선택 시 활성화)
-  const [newCustomerName, setNewCustomerName] = useState('')
+  const [newCustomer, setNewCustomer] = useState({
+    name: '', contact_name: '', contact_dept: '', contact_title: '',
+    contact_phone: '', contact_email: '',
+  })
   const [localCustomers, setLocalCustomers] = useState(customers)
   const isAddingCustomer = createForm.customer_id === '__NEW__'
 
@@ -124,28 +127,61 @@ export default function ProjectsClient({ projects, isAdmin, profiles, customers 
               </select>
             </div>
             {isAddingCustomer && (
-              <div className="flex gap-2">
-                <input value={newCustomerName} onChange={e => setNewCustomerName(e.target.value)}
+              <div className="border border-yellow-300 rounded-lg p-3 space-y-2 bg-white">
+                <input value={newCustomer.name} onChange={e => setNewCustomer(c => ({...c, name: e.target.value}))}
                   placeholder="새 고객사 이름 *"
-                  className="flex-1 text-sm border border-yellow-300 rounded-lg px-3 py-2 bg-white focus:outline-none focus:border-yellow-500" />
-                <button onClick={async () => {
-                  if (!newCustomerName.trim()) return
-                  const res = await quickCreateCustomer(newCustomerName.trim())
-                  if ('id' in res) {
-                    setLocalCustomers(prev => [...prev, { id: res.id, name: newCustomerName.trim() }])
-                    setCreateForm(f => ({ ...f, customer_id: res.id }))
-                    setNewCustomerName('')
-                  }
-                }}
-                  disabled={!newCustomerName.trim()}
-                  className="px-3 py-2 text-xs font-semibold rounded-lg hover:opacity-80 disabled:opacity-40"
-                  style={{ backgroundColor: '#FFCE00', color: '#121212' }}>
-                  고객사 추가
-                </button>
-                <button onClick={() => { setCreateForm(f => ({ ...f, customer_id: '' })); setNewCustomerName('') }}
-                  className="px-3 py-2 text-xs border border-gray-200 rounded-lg text-gray-500">
-                  취소
-                </button>
+                  className="w-full text-sm border border-yellow-200 rounded-lg px-3 py-2 focus:outline-none focus:border-yellow-500" />
+                <div className="grid grid-cols-3 gap-2">
+                  <input value={newCustomer.contact_name} onChange={e => setNewCustomer(c => ({...c, contact_name: e.target.value}))}
+                    placeholder="담당자 이름"
+                    className="text-sm border border-yellow-200 rounded-lg px-3 py-2 focus:outline-none focus:border-yellow-500" />
+                  <input value={newCustomer.contact_dept} onChange={e => setNewCustomer(c => ({...c, contact_dept: e.target.value}))}
+                    placeholder="부서 (수의계약 한도용)"
+                    className="text-sm border border-yellow-200 rounded-lg px-3 py-2 focus:outline-none focus:border-yellow-500" />
+                  <input value={newCustomer.contact_title} onChange={e => setNewCustomer(c => ({...c, contact_title: e.target.value}))}
+                    placeholder="직급"
+                    className="text-sm border border-yellow-200 rounded-lg px-3 py-2 focus:outline-none focus:border-yellow-500" />
+                </div>
+                <div className="grid grid-cols-2 gap-2">
+                  <input value={newCustomer.contact_phone} onChange={e => setNewCustomer(c => ({...c, contact_phone: e.target.value}))}
+                    placeholder="연락처"
+                    className="text-sm border border-yellow-200 rounded-lg px-3 py-2 focus:outline-none focus:border-yellow-500" />
+                  <input value={newCustomer.contact_email} onChange={e => setNewCustomer(c => ({...c, contact_email: e.target.value}))}
+                    placeholder="이메일"
+                    className="text-sm border border-yellow-200 rounded-lg px-3 py-2 focus:outline-none focus:border-yellow-500" />
+                </div>
+                <p className="text-[11px] text-gray-500">고객사명 외 필드는 모두 선택. 담당자 이름이 있으면 담당자 DB(부서/직급 포함)에도 등록됩니다.</p>
+                <div className="flex gap-2">
+                  <button onClick={async () => {
+                    if (!newCustomer.name.trim()) return
+                    const res = await quickCreateCustomerWithContact({
+                      name: newCustomer.name.trim(),
+                      contact: newCustomer.contact_name.trim() ? {
+                        name: newCustomer.contact_name.trim(),
+                        dept: newCustomer.contact_dept.trim() || undefined,
+                        title: newCustomer.contact_title.trim() || undefined,
+                        phone: newCustomer.contact_phone.trim() || undefined,
+                        email: newCustomer.contact_email.trim() || undefined,
+                      } : null,
+                    })
+                    if ('customer_id' in res) {
+                      setLocalCustomers(prev => [...prev, { id: res.customer_id, name: newCustomer.name.trim() }])
+                      setCreateForm(f => ({ ...f, customer_id: res.customer_id }))
+                      setNewCustomer({ name: '', contact_name: '', contact_dept: '', contact_title: '', contact_phone: '', contact_email: '' })
+                    }
+                  }}
+                    disabled={!newCustomer.name.trim()}
+                    className="px-3 py-2 text-xs font-semibold rounded-lg hover:opacity-80 disabled:opacity-40"
+                    style={{ backgroundColor: '#FFCE00', color: '#121212' }}>
+                    고객사 추가
+                  </button>
+                  <button onClick={() => {
+                    setCreateForm(f => ({ ...f, customer_id: '' }))
+                    setNewCustomer({ name: '', contact_name: '', contact_dept: '', contact_title: '', contact_phone: '', contact_email: '' })
+                  }} className="px-3 py-2 text-xs border border-gray-200 rounded-lg text-gray-500">
+                    취소
+                  </button>
+                </div>
               </div>
             )}
             <p className="text-[11px] text-gray-500">생성 후 프로젝트 페이지로 이동합니다. 매출(계약)은 들어가서 [+ 새 매출]로 추가하세요.</p>
