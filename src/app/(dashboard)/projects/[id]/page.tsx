@@ -49,12 +49,15 @@ export default async function ProjectPage({ params }: { params: Promise<{ id: st
 
   const contractIds = (contractsRaw ?? []).map(c => c.id)
 
-  const [{ data: tasksRaw }, { data: costsRaw }] = await Promise.all([
+  const [{ data: tasksRaw }, { data: costsRaw }, { data: rentalsRaw }] = await Promise.all([
     contractIds.length > 0
       ? admin.from('tasks').select('*').in('project_id', contractIds).order('created_at')
       : Promise.resolve({ data: [] }),
     contractIds.length > 0
       ? admin.from('sale_costs').select('*').in('sale_id', contractIds).order('created_at')
+      : Promise.resolve({ data: [] }),
+    contractIds.length > 0
+      ? admin.from('rentals').select('id, sale_id, customer_name, status, rental_start, rental_end').in('sale_id', contractIds).order('created_at')
       : Promise.resolve({ data: [] }),
   ])
 
@@ -170,6 +173,10 @@ export default async function ProjectPage({ params }: { params: Promise<{ id: st
         leads={leads}
         entities={entities ?? []}
         persons={(personsRaw ?? []).map((p: any) => ({ id: p.id, name: p.name, phone: p.phone ?? null, email: p.email ?? null }))}
+        rentals={(rentalsRaw ?? []).map((r: any) => ({
+          id: r.id, sale_id: r.sale_id, customer_name: r.customer_name ?? '',
+          status: r.status ?? '', rental_start: r.rental_start ?? null, rental_end: r.rental_end ?? null,
+        }))}
         isAdmin={isAdmin}
         currentUserId={user.id}
       />
