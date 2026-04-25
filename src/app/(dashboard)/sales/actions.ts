@@ -121,7 +121,6 @@ export async function updateProgressStatus(saleId: string, status: ProgressStatu
   revalidatePath('/sales/report')
   revalidatePath('/sales')
   revalidatePath(`/sales/${saleId}`)
-  revalidatePath('/pipeline')
 }
 
 export async function updateSaleInline(id: string, data: {

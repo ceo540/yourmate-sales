@@ -307,7 +307,6 @@ export async function convertLeadToSale(leadId: string) {
   revalidatePath('/projects')
   revalidatePath('/dashboard')
   revalidatePath('/sales/report')
-  revalidatePath('/pipeline')
 
   return { success: true, sale_id: sale!.id, project_id: project?.id ?? null, project_number: projectNumber }
 }
@@ -363,7 +362,6 @@ export async function addSaleToLead(leadId: string, data: {
 
   revalidatePath('/leads')
   revalidatePath('/sales/report')
-  revalidatePath('/pipeline')
 
   return { sale_id: sale!.id }
 }
