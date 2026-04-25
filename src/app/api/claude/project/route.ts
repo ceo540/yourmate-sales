@@ -142,7 +142,27 @@ ${logs && logs.length > 0 ? `\n## 최근 소통내역\n${logs.map(l => `- [${l.l
     } catch { /* 읽기 실패 무시 */ }
   }
 
+  const today = new Date().toLocaleDateString('ko-KR', { year: 'numeric', month: 'long', day: 'numeric', weekday: 'long', timeZone: 'Asia/Seoul' })
+  const todayIso = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Seoul' })
+
+  const TOP_POLICY = `# 🔴 최우선 규칙
+1. 오늘 날짜는 ${today} (ISO: ${todayIso}). "내일/다음주" 등 상대 날짜는 반드시 이 날짜 기준 계산. 절대 다른 연도(2025 등)로 추정 금지.
+2. 사용자가 할일 추가/수정/완료/삭제, 개요 정리, 협의사항 갱신, 상태 변경, 메모 수정을 요청하면 **반드시 도구를 호출**. 다음은 모두 실제 사용 가능:
+   - create_task (projectId만 있어도 자동으로 첫 계약 매칭)
+   - update_task / complete_task / delete_task
+   - regenerate_overview / update_pending_discussion / regenerate_pending_discussion
+   - update_status / update_notes / add_communication_log
+3. **절대 금지 답변 패턴**:
+   - "지원되지 않습니다" / "기능이 없어요"
+   - "직접 처리해주세요" / "수동으로 해주세요"
+   - "시스템상 제한되고 있습니다" / "구조상 제한"
+   - "계약 페이지로 이동하세요" (create_task가 자동 매칭함)
+   - "화면에만 보여드린 거예요" (반드시 도구로 저장)
+4. 도구 호출이 실제 에러를 반환하면 그 에러 메시지를 그대로 사용자에게 전달. 추측·각색 금지.
+5. 의도 명확하면 즉시 실행. 삭제만 1회 확인.`
+
   const systemBlocks = [
+    { type: 'text' as const, text: TOP_POLICY },
     { type: 'text' as const, text: YOURMATE_CONTEXT, cache_control: { type: 'ephemeral' as const } },
     ...(serviceContext ? [{ type: 'text' as const, text: serviceContext, cache_control: { type: 'ephemeral' as const } }] : []),
     ...(savedWorkContext ? [{ type: 'text' as const, text: savedWorkContext }] : []),
@@ -223,15 +243,78 @@ ${logs && logs.length > 0 ? `\n## 최근 소통내역\n${logs.map(l => `- [${l.l
     },
     {
       name: 'create_task',
-      description: '이 프로젝트에 새로운 태스크(업무)를 생성합니다. 계약 건에만 사용 가능.',
+      description: '현재 프로젝트(또는 계약)에 새 할 일을 추가합니다. projectId만 있을 때는 시스템이 자동으로 프로젝트의 첫 번째 계약을 찾아 거기에 묶음 — 사용자나 너가 계약을 지정할 필요 없음. 계약 단계와 무관하게 항상 호출 가능. "지원되지 않습니다" 같은 거짓 거부 금지.',
       input_schema: {
         type: 'object' as const,
         properties: {
           title: { type: 'string', description: '태스크 제목' },
-          due_date: { type: 'string', description: '마감일 YYYY-MM-DD (선택)' },
+          due_date: { type: 'string', description: '마감일 YYYY-MM-DD (선택). "내일", "다음주" 등은 시스템 헤더의 오늘 날짜 기준 계산.' },
+          priority: { type: 'string', description: '긴급/높음/보통/낮음 (기본 보통)' },
+          assignee_name: { type: 'string', description: '담당자 이름. "나"=본인.' },
+          description: { type: 'string', description: '상세 설명' },
         },
         required: ['title'],
       },
+    },
+    {
+      name: 'update_task',
+      description: '기존 할 일의 담당자/마감일/우선순위/상태/제목/설명을 수정. title 부분 매칭 또는 task_id로 식별. 사용자가 "X 마감 바꿔/담당자 바꿔" 등이면 즉시 호출.',
+      input_schema: {
+        type: 'object' as const,
+        properties: {
+          task_id: { type: 'string' },
+          title: { type: 'string', description: '제목 검색어' },
+          new_title: { type: 'string' },
+          due_date: { type: 'string' },
+          priority: { type: 'string', description: '긴급/높음/보통/낮음' },
+          status: { type: 'string', description: '할 일/진행중/완료/보류' },
+          assignee_name: { type: 'string' },
+          description: { type: 'string' },
+        },
+      },
+    },
+    {
+      name: 'complete_task',
+      description: '할 일을 완료 상태로 변경. title 또는 task_id로 식별.',
+      input_schema: {
+        type: 'object' as const,
+        properties: {
+          task_id: { type: 'string' },
+          title: { type: 'string', description: '제목 검색어' },
+        },
+      },
+    },
+    {
+      name: 'delete_task',
+      description: '할 일을 삭제. 사용자에게 한 번 확인받은 뒤 호출. "지원 안됨" 거짓 거부 금지 — 이 도구로 실제 삭제 가능.',
+      input_schema: {
+        type: 'object' as const,
+        properties: {
+          task_id: { type: 'string' },
+          title: { type: 'string' },
+        },
+      },
+    },
+    {
+      name: 'regenerate_overview',
+      description: '프로젝트 자동 개요(상단 박스)를 최신 데이터로 재생성. "현황 정리해줘", "개요 갱신" 요청 시 즉시 호출.',
+      input_schema: { type: 'object' as const, properties: {} },
+    },
+    {
+      name: 'update_pending_discussion',
+      description: '프로젝트 협의/미결 사항 박스 전체를 새 markdown으로 덮어쓰기. 추가하려면 기존 + 새 내용 합쳐서 보내. "협의사항에 X 추가해줘" 요청 시 호출.',
+      input_schema: {
+        type: 'object' as const,
+        properties: {
+          content: { type: 'string', description: '저장할 markdown 전문' },
+        },
+        required: ['content'],
+      },
+    },
+    {
+      name: 'regenerate_pending_discussion',
+      description: '협의사항 박스를 자동 재분석. "지금 협의할 거 다시 뽑아줘" 요청 시 호출.',
+      input_schema: { type: 'object' as const, properties: {} },
     },
   ]
 
@@ -391,20 +474,145 @@ ${logs && logs.length > 0 ? `\n## 최근 소통내역\n${logs.map(l => `- [${l.l
               }
 
             } else if (block.name === 'create_task') {
-              if (!saleId) {
-                result = '태스크는 계약 건에만 추가할 수 있습니다.'
+              send('\n*(태스크 생성 중...)*\n')
+              // saleId 없으면 projectId의 첫 sale 자동 매칭
+              let targetSaleId = saleId ?? null
+              if (!targetSaleId && projectId) {
+                const { data: firstSale } = await admin
+                  .from('sales').select('id')
+                  .eq('project_id', projectId)
+                  .order('created_at', { ascending: true })
+                  .limit(1).maybeSingle()
+                targetSaleId = firstSale?.id ?? null
+              }
+              if (!targetSaleId) {
+                result = '이 프로젝트에 연결된 계약이 없어. 계약을 먼저 만들어줘.'
               } else {
-                send('\n*(태스크 생성 중...)*\n')
+                const validPriority = ['긴급', '높음', '보통', '낮음']
+                const priority = validPriority.includes(input.priority) ? input.priority : '보통'
+                let assigneeId: string | null = null
+                if (input.assignee_name) {
+                  if (input.assignee_name === '나' || input.assignee_name === '본인') assigneeId = user.id
+                  else {
+                    const { data } = await admin.from('profiles').select('id').ilike('name', `%${input.assignee_name}%`).limit(1)
+                    assigneeId = data?.[0]?.id ?? null
+                  }
+                }
                 const { error } = await admin.from('tasks').insert({
-                  project_id: saleId,
+                  project_id: targetSaleId,
                   title: input.title,
                   status: '할 일',
-                  priority: '보통',
+                  priority,
                   due_date: input.due_date || null,
-                  assignee_id: null,
+                  assignee_id: assigneeId,
+                  description: input.description || null,
+                  bbang_suggested: true,
                 })
                 result = error ? `생성 실패: ${error.message}` : `태스크 "${input.title}"를 생성했습니다.`
                 if (!error) revalidate()
+              }
+
+            } else if (block.name === 'update_task' || block.name === 'complete_task' || block.name === 'delete_task') {
+              // 프로젝트의 모든 sale id 수집 후 task 검색
+              let saleIds: string[] = []
+              if (saleId) saleIds = [saleId]
+              else if (projectId) {
+                const { data: sales } = await admin.from('sales').select('id').eq('project_id', projectId)
+                saleIds = (sales ?? []).map(s => s.id)
+              }
+              if (saleIds.length === 0) {
+                result = '연결된 계약이 없어 할 일을 찾을 수 없어.'
+              } else {
+                let task: { id: string; title: string } | null = null
+                let multiple = false
+                if (input.task_id) {
+                  const { data } = await admin.from('tasks').select('id, title, project_id').eq('id', input.task_id).maybeSingle()
+                  if (data && saleIds.includes(data.project_id ?? '')) task = { id: data.id, title: data.title }
+                } else if (input.title) {
+                  const { data } = await admin.from('tasks').select('id, title').in('project_id', saleIds).ilike('title', `%${input.title}%`).limit(5)
+                  if (data && data.length === 1) task = data[0]
+                  else if (data && data.length > 1) {
+                    multiple = true
+                    result = `"${input.title}" 매칭 ${data.length}건. task_id로 특정해줘:\n${data.map(t => `- ${t.title} (id: ${t.id.slice(0, 8)})`).join('\n')}`
+                  }
+                }
+                if (!task && !multiple) {
+                  result = '해당 할 일을 찾을 수 없어.'
+                } else if (task) {
+                  if (block.name === 'complete_task') {
+                    send('\n*(할 일 완료 처리...)*\n')
+                    const { error } = await admin.from('tasks').update({ status: '완료', updated_at: new Date().toISOString() }).eq('id', task.id)
+                    result = error ? `실패: ${error.message}` : `"${task.title}" 완료 처리.`
+                    if (!error) revalidate()
+                  } else if (block.name === 'delete_task') {
+                    send('\n*(할 일 삭제...)*\n')
+                    const { error } = await admin.from('tasks').delete().eq('id', task.id)
+                    result = error ? `실패: ${error.message}` : `"${task.title}" 삭제.`
+                    if (!error) revalidate()
+                  } else {
+                    // update_task
+                    const updates: Record<string, unknown> = { updated_at: new Date().toISOString() }
+                    if (input.new_title?.trim()) updates.title = input.new_title.trim()
+                    if (input.priority && ['긴급','높음','보통','낮음'].includes(input.priority)) updates.priority = input.priority
+                    if (input.status && ['할 일','진행중','완료','보류'].includes(input.status)) updates.status = input.status
+                    if (input.due_date !== undefined) updates.due_date = input.due_date || null
+                    if (input.description !== undefined) updates.description = input.description || null
+                    if (input.assignee_name !== undefined) {
+                      if (input.assignee_name === '') updates.assignee_id = null
+                      else if (input.assignee_name === '나' || input.assignee_name === '본인') updates.assignee_id = user.id
+                      else {
+                        const { data } = await admin.from('profiles').select('id').ilike('name', `%${input.assignee_name}%`).limit(1)
+                        updates.assignee_id = data?.[0]?.id ?? null
+                      }
+                    }
+                    if (Object.keys(updates).length === 1) {
+                      result = '변경할 내용이 없어.'
+                    } else {
+                      send('\n*(할 일 수정...)*\n')
+                      const { error } = await admin.from('tasks').update(updates).eq('id', task.id)
+                      result = error ? `실패: ${error.message}` : `"${task.title}" 수정 완료.`
+                      if (!error) revalidate()
+                    }
+                  }
+                }
+              }
+
+            } else if (block.name === 'regenerate_overview') {
+              if (!projectId) {
+                result = '프로젝트 페이지에서만 사용 가능.'
+              } else {
+                send('\n*(개요 재생성 중...)*\n')
+                const { generateAndSaveProjectOverview } = await import('@/app/(dashboard)/projects/[id]/project-actions')
+                const r = await generateAndSaveProjectOverview(projectId)
+                result = 'error' in r ? `실패: ${r.error}` : '프로젝트 개요를 재생성했어.'
+                if ('summary' in r) revalidate()
+              }
+
+            } else if (block.name === 'update_pending_discussion') {
+              if (!projectId) {
+                result = '프로젝트 페이지에서만 사용 가능.'
+              } else {
+                send('\n*(협의사항 저장...)*\n')
+                const { error } = await admin.from('projects')
+                  .update({ pending_discussion: input.content || null, updated_at: new Date().toISOString() })
+                  .eq('id', projectId)
+                result = error ? `실패: ${error.message}` : '협의사항을 업데이트했어.'
+                if (!error) {
+                  revalidatePath(`/projects/${projectId}/v2`)
+                  revalidatePath(`/projects/${projectId}`)
+                  revalidate()
+                }
+              }
+
+            } else if (block.name === 'regenerate_pending_discussion') {
+              if (!projectId) {
+                result = '프로젝트 페이지에서만 사용 가능.'
+              } else {
+                send('\n*(협의사항 재분석 중...)*\n')
+                const { generateAndSavePendingDiscussion } = await import('@/app/(dashboard)/projects/[id]/project-actions')
+                const r = await generateAndSavePendingDiscussion(projectId)
+                result = 'error' in r ? `실패: ${r.error}` : '협의사항을 재분석했어.'
+                if ('summary' in r) revalidate()
               }
             }
 
