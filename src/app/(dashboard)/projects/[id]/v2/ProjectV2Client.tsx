@@ -14,6 +14,7 @@ import {
   updateProjectWorkDescription,
   updateProjectPendingDiscussion,
   generateAndSaveProjectOverview,
+  generateAndSavePendingDiscussion,
 } from '../project-actions'
 
 interface Project {
@@ -478,19 +479,103 @@ function MemoBlock({ project }: { project: Project }) {
   )
 }
 
-/* ── 2. 2박스: 개요(빵빵이) / 협의해야할 내용 (접/펼) ─── */
+/* ── 2. 2박스: 개요(빵빵이) / 협의해야할 내용 (빵빵이) ─── */
 function TwoBoxesBlock({ project }: { project: Project }) {
   return (
     <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
       <OverviewSummaryBox project={project} />
-      <EditableBox
-        projectId={project.id}
-        title="💭 협의해야할 내용"
-        subtitle="미해결 이슈 · 빵빵이 자동 제안 (예정)"
-        value={project.pending_discussion}
-        save={updateProjectPendingDiscussion}
-        emptyText="아직 결정 안 된 사항, 클라이언트와 협의 필요한 항목"
-      />
+      <PendingDiscussionBox project={project} />
+    </div>
+  )
+}
+
+/* 협의해야할 내용 박스 — 빵빵이 자동 분석 + 직접 수정 */
+function PendingDiscussionBox({ project }: { project: Project }) {
+  const router = useRouter()
+  const [, startTransition] = useTransition()
+  const [open, setOpen] = useState(true)
+  const [editing, setEditing] = useState(false)
+  const [input, setInput] = useState(project.pending_discussion ?? '')
+  const [generating, setGenerating] = useState(false)
+  const [genError, setGenError] = useState<string | null>(null)
+
+  function save() {
+    startTransition(async () => {
+      await updateProjectPendingDiscussion(project.id, input)
+      setEditing(false)
+      router.refresh()
+    })
+  }
+
+  async function generate() {
+    setGenerating(true)
+    setGenError(null)
+    try {
+      const res = await generateAndSavePendingDiscussion(project.id)
+      if ('error' in res) setGenError(res.error)
+      else { setInput(res.summary); router.refresh() }
+    } catch (e: any) {
+      setGenError(e?.message ?? '실패')
+    } finally {
+      setGenerating(false)
+    }
+  }
+
+  return (
+    <div className="bg-white border border-gray-100 rounded-xl overflow-hidden">
+      <button onClick={() => setOpen(o => !o)}
+        className="w-full px-4 py-2.5 flex items-center justify-between hover:bg-gray-50 transition-colors text-left">
+        <div>
+          <p className="text-xs font-semibold text-gray-700">💭 협의해야할 내용</p>
+          <p className="text-[10px] text-gray-400">빵빵이가 미결·협의 사항 분석</p>
+        </div>
+        <span className="text-gray-300 text-xs">{open ? '▲' : '▼'}</span>
+      </button>
+      {open && (
+        <div className="px-4 py-3 border-t border-gray-50 space-y-2">
+          {editing ? (
+            <>
+              <textarea value={input} onChange={e => setInput(e.target.value)} rows={8} autoFocus
+                className="w-full text-sm border border-gray-200 rounded-lg px-3 py-2 resize-y focus:outline-none focus:ring-1 focus:ring-yellow-400 bg-white" />
+              <div className="flex gap-2">
+                <button onClick={save}
+                  className="px-3 py-1.5 text-xs font-semibold rounded-lg hover:opacity-80"
+                  style={{ backgroundColor: '#FFCE00', color: '#121212' }}>저장</button>
+                <button onClick={() => { setEditing(false); setInput(project.pending_discussion ?? '') }}
+                  className="px-3 py-1.5 text-xs border border-gray-200 rounded-lg text-gray-500">취소</button>
+              </div>
+            </>
+          ) : project.pending_discussion ? (
+            <>
+              <MarkdownText>{project.pending_discussion}</MarkdownText>
+              <div className="flex gap-2 pt-1 border-t border-gray-50">
+                <button onClick={generate} disabled={generating}
+                  className="text-[11px] text-blue-500 hover:text-blue-700 disabled:opacity-40">
+                  {generating ? '🤖 분석 중...' : '🤖 다시 분석'}
+                </button>
+                <button onClick={() => { setInput(project.pending_discussion ?? ''); setEditing(true) }}
+                  className="text-[11px] text-gray-400 hover:text-gray-700">직접 수정</button>
+              </div>
+            </>
+          ) : (
+            <>
+              <p className="text-[11px] text-gray-400 italic">아직 협의·미결 사항 분석이 없습니다.</p>
+              <div className="flex gap-2">
+                <button onClick={generate} disabled={generating}
+                  className="px-3 py-1.5 text-xs font-semibold rounded-lg hover:opacity-80 disabled:opacity-40"
+                  style={{ backgroundColor: '#FFCE00', color: '#121212' }}>
+                  {generating ? '🤖 분석 중...' : '🤖 빵빵이로 분석'}
+                </button>
+                <button onClick={() => { setInput(''); setEditing(true) }}
+                  className="px-3 py-1.5 text-xs border border-gray-200 rounded-lg text-gray-500">직접 작성</button>
+              </div>
+            </>
+          )}
+          {genError && (
+            <p className="text-[11px] text-red-500">⚠ {genError}</p>
+          )}
+        </div>
+      )}
     </div>
   )
 }

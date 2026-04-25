@@ -199,6 +199,91 @@ ${logSummary || '없음'}
   return { summary }
 }
 
+// V2 빵빵이 협의·미결 사항 자동 분석 — projects.pending_discussion 자동 채움
+// 최근 소통·미완 업무 분석해서 "지금 협의해야 할 사항" 추출
+export async function generateAndSavePendingDiscussion(projectId: string): Promise<{ summary: string } | { error: string }> {
+  const admin = createAdminClient()
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return { error: 'Unauthorized' }
+
+  const [{ data: project }, { data: contracts }] = await Promise.all([
+    admin.from('projects').select('id, name, status, memo, notes').eq('id', projectId).single(),
+    admin.from('sales').select('id, contract_stage').eq('project_id', projectId),
+  ])
+  if (!project) return { error: '프로젝트를 찾을 수 없습니다' }
+
+  const contractIds = (contracts ?? []).map(c => c.id)
+  const [{ data: tasks }, { data: logs }] = await Promise.all([
+    contractIds.length > 0
+      ? admin.from('tasks').select('title, status, priority, due_date, description').in('project_id', contractIds).limit(40)
+      : Promise.resolve({ data: [] }),
+    admin.from('project_logs')
+      .select('content, log_type, contacted_at, outcome')
+      .eq('project_id', projectId)
+      .order('contacted_at', { ascending: false })
+      .limit(20),
+  ])
+
+  const pendingTasks = (tasks ?? []).filter((t: any) => t.status !== '완료' && t.status !== '보류')
+  const taskSummary = pendingTasks.map((t: any) =>
+    `- [${t.status}${t.priority ? ` · ${t.priority}` : ''}] ${t.title}${t.due_date ? ` (${t.due_date.slice(5)})` : ''}${t.description ? ` — ${t.description.slice(0, 60)}` : ''}`
+  ).join('\n')
+  const logSummary = (logs ?? []).slice(0, 10).map((l: any) =>
+    `- [${l.log_type}] ${(l.contacted_at ?? '').slice(0, 10)}: ${(l.content ?? '').slice(0, 100)}${l.outcome ? ` → ${l.outcome.slice(0, 60)}` : ''}`
+  ).join('\n')
+
+  const prompt = `너는 프로젝트 매니저 어시스턴트야. 아래 데이터를 보고 **지금 즉시 협의·결정·확인이 필요한 항목**을 추출해줘.
+
+[프로젝트]
+- 이름: ${project.name}
+- 상태: ${project.status}
+${project.memo ? `- 메모: ${project.memo}` : ''}
+${project.notes ? `- 유의사항: ${project.notes}` : ''}
+- 계약 단계: ${(contracts ?? []).map((c: any) => c.contract_stage ?? '계약').join(', ') || '없음'}
+
+[진행중·검토중 업무]
+${taskSummary || '없음'}
+
+[최근 소통·결과]
+${logSummary || '없음'}
+
+추출 기준:
+1. 클라이언트에게 회신·확인 받아야 할 항목
+2. 내부에서 결정 미룬 사항
+3. 빠르게 처리하면 다음 단계 진행 가능한 작업
+4. 마감 임박했지만 아직 미결인 사항
+
+출력 (markdown, 4~8개 항목):
+**🔥 빠르게 해결**
+- 항목 (왜 필요한지 한 줄)
+
+**❓ 협의 필요**
+- 항목
+
+**📌 확인 필요**
+- 항목
+
+해당 카테고리에 항목 없으면 그 섹션 자체를 빼. 너무 많으면 가장 중요한 것부터 8개. 마크다운 코드블록 없이.`
+
+  const client = new Anthropic()
+  const message = await client.messages.create({
+    model: 'claude-haiku-4-5-20251001',
+    max_tokens: 600,
+    messages: [{ role: 'user', content: prompt }],
+  })
+  logApiUsage({ model: 'claude-haiku-4-5-20251001', endpoint: 'project-pending', userId: user.id, inputTokens: message.usage.input_tokens, outputTokens: message.usage.output_tokens }).catch(() => {})
+
+  const summary = ((message.content[0] as any)?.text ?? '').trim()
+  if (!summary) return { error: '협의사항 분석 실패' }
+
+  await admin.from('projects').update({ pending_discussion: summary, updated_at: new Date().toISOString() }).eq('id', projectId)
+  revalidatePath(`/projects/${projectId}/v2`)
+  revalidatePath(`/projects/${projectId}`)
+
+  return { summary }
+}
+
 export async function addProjectMember(projectId: string, profileId: string, role: string) {
   const admin = createAdminClient()
   const { error } = await admin
