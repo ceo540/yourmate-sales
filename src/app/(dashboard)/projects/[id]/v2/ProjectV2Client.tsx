@@ -4,6 +4,7 @@ import { useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import ProjectClaudeChat from '@/components/ProjectClaudeChat'
+import MarkdownText from '@/components/MarkdownText'
 import {
   updateProjectMemo,
   updateProjectNotes,
@@ -246,16 +247,10 @@ export default function ProjectV2Client({
           {/* 1. 메모 (인플레이스) */}
           <MemoBlock project={project} />
 
-          {/* 2. 3박스: 개요 / 과업내용 / 협의내용 (접/펼) */}
-          <ThreeBoxesBlock project={project} />
+          {/* 2. 2박스: 개요(빵빵이) / 협의해야할 내용 (접/펼) */}
+          <TwoBoxesBlock project={project} />
 
-          {/* 3. 한눈에 (KPI 요약) */}
-          <ProjectGlanceSection
-            project={project} customer={customer} pmName={pmName}
-            contracts={contracts} tasks={tasks} finance={finance}
-          />
-
-          {/* 4. 할일 (tasks) */}
+          {/* 3. 할일 (tasks) */}
           <TasksSection tasks={tasks} contracts={contracts} projectId={project.id} />
 
           {/* 5. 일정 (due_date 임박 순) */}
@@ -483,23 +478,15 @@ function MemoBlock({ project }: { project: Project }) {
   )
 }
 
-/* ── 2. 3박스: 개요(빵빵이) / 과업내용 / 협의내용 (접/펼) ─── */
-function ThreeBoxesBlock({ project }: { project: Project }) {
+/* ── 2. 2박스: 개요(빵빵이) / 협의해야할 내용 (접/펼) ─── */
+function TwoBoxesBlock({ project }: { project: Project }) {
   return (
-    <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
       <OverviewSummaryBox project={project} />
       <EditableBox
         projectId={project.id}
-        title="✅ 과업 내용 / 해야할 일"
-        subtitle="자유 작성"
-        value={project.work_description}
-        save={updateProjectWorkDescription}
-        emptyText="과업 범위, 산출물, 주요 일정 등을 자유롭게 정리하세요"
-      />
-      <EditableBox
-        projectId={project.id}
         title="💭 협의해야할 내용"
-        subtitle="미해결 이슈 정리"
+        subtitle="미해결 이슈 · 빵빵이 자동 제안 (예정)"
         value={project.pending_discussion}
         save={updateProjectPendingDiscussion}
         emptyText="아직 결정 안 된 사항, 클라이언트와 협의 필요한 항목"
@@ -570,7 +557,7 @@ function OverviewSummaryBox({ project }: { project: Project }) {
             </>
           ) : project.overview_summary ? (
             <>
-              <p className="text-sm text-gray-700 whitespace-pre-line">{project.overview_summary}</p>
+              <MarkdownText>{project.overview_summary}</MarkdownText>
               <div className="flex gap-2 pt-1 border-t border-gray-50">
                 <button onClick={generate} disabled={generating}
                   className="text-[11px] text-blue-500 hover:text-blue-700 disabled:opacity-40">

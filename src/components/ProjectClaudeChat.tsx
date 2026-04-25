@@ -1,6 +1,7 @@
 'use client'
 import { useState, useRef, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
+import MarkdownText from './MarkdownText'
 
 interface Message {
   role: 'user' | 'assistant'
@@ -254,9 +255,9 @@ export default function ProjectClaudeChat({ leadId, saleId, projectId, projectNa
             {messages.map((msg, i) => (
               <div key={i} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
                 <div
-                  className={`max-w-[85%] rounded-lg px-3 py-2 text-sm whitespace-pre-wrap break-words ${
+                  className={`max-w-[85%] rounded-lg px-3 py-2 text-sm break-words ${
                     msg.role === 'user'
-                      ? 'bg-blue-500 text-white'
+                      ? 'bg-blue-500 text-white whitespace-pre-wrap'
                       : 'bg-gray-100 text-gray-800'
                   }`}
                 >
@@ -266,8 +267,10 @@ export default function ProjectClaudeChat({ leadId, saleId, projectId, projectNa
                       <span className="animate-bounce" style={{ animationDelay: '150ms' }}>●</span>
                       <span className="animate-bounce" style={{ animationDelay: '300ms' }}>●</span>
                     </span>
+                  ) : msg.role === 'assistant' ? (
+                    <MarkdownText>{msg.content}</MarkdownText>
                   ) : (
-                    msg.content
+                    <span className="whitespace-pre-wrap">{msg.content}</span>
                   )}
                   {msg.role === 'assistant' && msg.content && (
                     <div className="mt-2 flex flex-wrap gap-2 border-t border-gray-200 pt-1.5">
