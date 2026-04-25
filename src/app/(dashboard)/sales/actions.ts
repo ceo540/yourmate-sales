@@ -4,6 +4,7 @@ import { revalidatePath } from 'next/cache'
 import { redirect } from 'next/navigation'
 import { SERVICE_TO_DEPT, ProgressStatus } from '@/types'
 import { createSaleFolder } from '@/lib/dropbox'
+import { ensureProjectForSale, generateProjectNumber } from '@/lib/projects'
 
 export async function createSale(formData: FormData) {
   const supabase = await createClient()
@@ -12,14 +13,17 @@ export async function createSale(formData: FormData) {
   const name = formData.get('name') as string
   const inflow_date = (formData.get('inflow_date') as string) || null
   const manualDropboxUrl = (formData.get('dropbox_url') as string) || null
+  const assignee_id = (formData.get('assignee_id') as string) || null
+  const customer_id = (formData.get('customer_id') as string) || null
+  const project_number = await generateProjectNumber()
 
   const { data: sale } = await supabase.from('sales').insert({
     name,
     department,
-    assignee_id: (formData.get('assignee_id') as string) || null,
+    assignee_id,
     entity_id: (formData.get('entity_id') as string) || null,
     client_org: (formData.get('client_org') as string) || null,
-    customer_id: (formData.get('customer_id') as string) || null,
+    customer_id,
     service_type,
     revenue: formData.get('revenue') ? Number(formData.get('revenue')) : 0,
     contract_stage: (formData.get('contract_stage') as string) || '계약',
@@ -28,14 +32,31 @@ export async function createSale(formData: FormData) {
     inflow_date,
     payment_date: (formData.get('payment_date') as string) || null,
     dropbox_url: manualDropboxUrl,
+    project_number,
   }).select('id').single()
 
   // 수동 입력이 없을 때만 자동 생성
+  let finalDropboxUrl: string | null = manualDropboxUrl
   if (sale && !manualDropboxUrl) {
     const dropboxUrl = await createSaleFolder({ service_type, name, inflow_date })
     if (dropboxUrl) {
       await supabase.from('sales').update({ dropbox_url: dropboxUrl }).eq('id', sale.id)
+      finalDropboxUrl = dropboxUrl
     }
+  }
+
+  // 프로젝트 자동 생성 (orphan sales 방지)
+  if (sale) {
+    await ensureProjectForSale({
+      saleId: sale.id,
+      name,
+      service_type,
+      department,
+      customer_id,
+      pm_id: assignee_id,
+      project_number,
+      dropbox_url: finalDropboxUrl,
+    })
   }
 
   redirect('/sales/report')

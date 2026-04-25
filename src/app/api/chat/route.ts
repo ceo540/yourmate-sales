@@ -8,6 +8,7 @@ import { logApiUsage } from '@/lib/api-usage'
 import { createEvent as createGCalEvent } from '@/lib/google-calendar'
 import { SYSTEM_PROMPT } from '@/lib/bbang/loadSchema'
 import { TOOLS } from '@/lib/bbang/tools'
+import { ensureProjectForSale, generateProjectNumber } from '@/lib/projects'
 
 export const maxDuration = 60
 
@@ -115,12 +116,26 @@ async function executeTool(name: string, input: Record<string, unknown>, userRol
       '콘텐츠제작': '002_creative', '행사운영': '002_creative', '행사대여': '002_creative', '프로젝트': '002_creative',
     }
     const department = (serviceType && DEPT_MAP[serviceType]) || null
+    const projectNumber = await generateProjectNumber()
 
     const { data: saleRow, error: insertErr } = await supabase.from('sales').insert({
       name: saleName, client_org: clientOrg, service_type: serviceType, department,
       revenue, contract_stage: '계약', memo, inflow_date: inflowDate, dropbox_url: dropboxUrl,
+      project_number: projectNumber,
     }).select('id').single()
     if (insertErr) return { error: insertErr.message }
+
+    // 프로젝트 자동 생성 (orphan sales 방지)
+    await ensureProjectForSale({
+      saleId: saleRow.id,
+      name: saleName,
+      service_type: serviceType,
+      department,
+      customer_id: null,
+      pm_id: userId,
+      project_number: projectNumber,
+      dropbox_url: dropboxUrl,
+    })
 
     if (input.create_notion === false) return { success: true, id: saleRow.id, name: saleName }
 
@@ -648,9 +663,11 @@ async function executeTool(name: string, input: Record<string, unknown>, userRol
       '콘텐츠제작': '002_creative', '행사운영': '002_creative', '행사대여': '002_creative', '프로젝트': '002_creative',
     }
     const department = (serviceType && DEPT_MAP[serviceType]) || null
+    const convProjectNumber = await generateProjectNumber()
+    const convName = `${convProjectNumber} ${finalLead.client_org || '(리드전환)'}`
 
     const { data: sale, error: saleErr } = await supabase.from('sales').insert({
-      name: `${finalLead.client_org || '(리드전환)'}`,
+      name: convName,
       client_org: finalLead.client_org,
       service_type: serviceType,
       department,
@@ -659,12 +676,27 @@ async function executeTool(name: string, input: Record<string, unknown>, userRol
       contract_stage: '계약',
       memo: finalLead.initial_content,
       inflow_date: finalLead.inflow_date || new Date().toISOString().slice(0, 10),
+      project_number: convProjectNumber,
+      lead_id: finalLead.id,
     }).select('id').single()
 
     if (saleErr) return { error: saleErr.message }
 
+    // 프로젝트 자동 생성 (orphan sales 방지)
+    const projectId = await ensureProjectForSale({
+      saleId: sale.id,
+      name: convName,
+      service_type: serviceType,
+      department,
+      customer_id: null,
+      pm_id: (finalLead.assignee_id as string | null) ?? null,
+      project_number: convProjectNumber,
+      dropbox_url: null,
+    })
+
     await supabase.from('leads').update({
       converted_sale_id: sale.id,
+      project_id: projectId,
       status: '완료',
       updated_at: new Date().toISOString(),
     }).eq('id', finalLead.id)

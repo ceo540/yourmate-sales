@@ -6,6 +6,7 @@ import crypto from 'crypto'
 import { logApiUsage } from '@/lib/api-usage'
 import { searchDropbox, listDropboxFolder, readDropboxFile } from '@/lib/dropbox'
 import { sendGroupMessage, notifyLeadConverted } from '@/lib/channeltalk'
+import { ensureProjectForSale, generateProjectNumber } from '@/lib/projects'
 
 const MODEL = 'claude-haiku-4-5-20251001'
 const anthropic = new Anthropic()
@@ -313,6 +314,7 @@ async function executeTool(name: string, input: Record<string, unknown>): Promis
       '콘텐츠제작': '002_creative', '행사운영': '002_creative', '행사대여': '002_creative', '프로젝트': '002_creative',
     }
     const department = (serviceType && DEPT_MAP[serviceType]) || null
+    const ctProjectNumber = await generateProjectNumber()
     const { data: saleRow, error } = await supabase.from('sales').insert({
       name: saleName,
       client_org: (input.client_org as string | null) || null,
@@ -322,8 +324,22 @@ async function executeTool(name: string, input: Record<string, unknown>): Promis
       contract_stage: '계약',
       memo: (input.memo as string | null) || null,
       inflow_date: (input.inflow_date as string) || new Date().toISOString().split('T')[0],
+      project_number: ctProjectNumber,
     }).select('id').single()
     if (error) return { error: error.message }
+
+    // 프로젝트 자동 생성 (orphan sales 방지)
+    await ensureProjectForSale({
+      saleId: saleRow.id,
+      name: saleName,
+      service_type: serviceType,
+      department,
+      customer_id: null,
+      pm_id: null,
+      project_number: ctProjectNumber,
+      dropbox_url: null,
+    })
+
     return { success: true, id: saleRow.id, name: saleName }
   }
 
@@ -521,15 +537,33 @@ async function executeTool(name: string, input: Record<string, unknown>): Promis
       '콘텐츠제작': '002_creative', '행사운영': '002_creative', '행사대여': '002_creative', '프로젝트': '002_creative',
     }
     const serviceType = finalLead.service_type as string | null
+    const department = (serviceType && DEPT_MAP[serviceType]) || null
+    const convProjectNumber = await generateProjectNumber()
+    const convName = `${convProjectNumber} ${finalLead.client_org || '(리드전환)'}`
     const { data: sale, error: saleErr } = await supabase.from('sales').insert({
-      name: `${finalLead.client_org || '(리드전환)'}`,
+      name: convName,
       client_org: finalLead.client_org, service_type: serviceType,
-      department: (serviceType && DEPT_MAP[serviceType]) || null,
+      department,
       assignee_id: finalLead.assignee_id, revenue: 0, contract_stage: '계약',
       memo: finalLead.initial_content, inflow_date: finalLead.inflow_date || new Date().toISOString().slice(0, 10),
+      project_number: convProjectNumber,
+      lead_id: finalLead.id,
     }).select('id').single()
     if (saleErr) return { error: saleErr.message }
-    await supabase.from('leads').update({ converted_sale_id: sale.id, status: '완료', updated_at: new Date().toISOString() }).eq('id', finalLead.id)
+
+    // 프로젝트 자동 생성 (orphan sales 방지)
+    const projectId = await ensureProjectForSale({
+      saleId: sale.id,
+      name: convName,
+      service_type: serviceType,
+      department,
+      customer_id: null,
+      pm_id: (finalLead.assignee_id as string | null) ?? null,
+      project_number: convProjectNumber,
+      dropbox_url: null,
+    })
+
+    await supabase.from('leads').update({ converted_sale_id: sale.id, project_id: projectId, status: '완료', updated_at: new Date().toISOString() }).eq('id', finalLead.id)
     notifyLeadConverted({
       clientOrg: (finalLead.client_org as string | null) ?? null,
       serviceType: serviceType ?? null,
