@@ -15,7 +15,7 @@ export default async function ProjectsPage() {
   const isAdmin = isAdminOrManager(profile?.role)
 
   // 프로젝트 목록 — sales join으로 단계/매출 정보 포함
-  const [{ data: projectsRaw }, { data: profiles }] = await Promise.all([
+  const [{ data: projectsRaw }, { data: profiles }, { data: customers }] = await Promise.all([
     admin.from('projects')
       .select(`
         id, name, service_type, status, project_number, customer_id, pm_id, created_at,
@@ -23,7 +23,8 @@ export default async function ProjectsPage() {
         customers(id, name)
       `)
       .order('created_at', { ascending: false }),
-    admin.from('profiles').select('id, name'),
+    admin.from('profiles').select('id, name').order('name'),
+    admin.from('customers').select('id, name').order('name'),
   ])
 
   const profileMap = createProfileNameMap(profiles)
@@ -52,7 +53,12 @@ export default async function ProjectsPage() {
           총 {projects.length}건 · 진행중 {projects.filter(p => p.status === '진행중').length}건
         </p>
       </div>
-      <ProjectsClient projects={projects} isAdmin={isAdmin} />
+      <ProjectsClient
+        projects={projects}
+        isAdmin={isAdmin}
+        profiles={(profiles ?? []).map(p => ({ id: p.id, name: p.name ?? '' }))}
+        customers={(customers ?? []).map(c => ({ id: c.id, name: c.name }))}
+      />
     </div>
   )
 }

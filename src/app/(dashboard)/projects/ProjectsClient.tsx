@@ -2,7 +2,9 @@
 
 import { useState, useTransition } from 'react'
 import Link from 'next/link'
-import { assignProjectNumbers } from './project-list-actions'
+import { useRouter } from 'next/navigation'
+import { assignProjectNumbers, createProjectStandalone } from './project-list-actions'
+import { DEPT_SERVICE_GROUPS } from '@/types'
 
 const SVC_COLOR: Record<string, string> = {
   'SOS': '#7C3AED', '교육프로그램': '#2563EB', '납품설치': '#2563EB',
@@ -42,12 +44,28 @@ interface Project {
   inflow_date: string | null
 }
 
-export default function ProjectsClient({ projects, isAdmin }: { projects: Project[]; isAdmin: boolean }) {
+interface SimpleOption { id: string; name: string }
+
+export default function ProjectsClient({ projects, isAdmin, profiles, customers }: {
+  projects: Project[]
+  isAdmin: boolean
+  profiles: SimpleOption[]
+  customers: SimpleOption[]
+}) {
+  const router = useRouter()
   const [search, setSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState('전체')
   const [svcFilter, setSvcFilter] = useState('전체')
   const [assignPending, startAssign] = useTransition()
+  const [createPending, startCreate] = useTransition()
   const [assignMsg, setAssignMsg] = useState('')
+  const [createOpen, setCreateOpen] = useState(false)
+  const [createForm, setCreateForm] = useState({
+    name: '', service_type: '', customer_id: '', pm_id: '',
+  })
+
+  // 모든 서비스 타입 (DEPT_SERVICE_GROUPS 평탄화)
+  const allServiceTypes = Array.from(new Set(DEPT_SERVICE_GROUPS.flatMap(g => g.services)))
 
   const svcTypes = ['전체', ...Array.from(new Set(projects.map(p => p.service_type).filter(Boolean) as string[]))]
 
@@ -68,6 +86,65 @@ export default function ProjectsClient({ projects, isAdmin }: { projects: Projec
 
   return (
     <div>
+      {/* 새 프로젝트 추가 버튼 + 폼 */}
+      <div className="mb-4">
+        {!createOpen ? (
+          <button onClick={() => setCreateOpen(true)}
+            className="text-sm font-semibold px-4 py-2 rounded-lg hover:opacity-80"
+            style={{ backgroundColor: '#FFCE00', color: '#121212' }}>
+            + 새 프로젝트
+          </button>
+        ) : (
+          <div className="bg-yellow-50 border border-yellow-200 rounded-xl p-4 space-y-2 max-w-2xl">
+            <p className="text-xs font-semibold text-yellow-800">새 프로젝트</p>
+            <input autoFocus value={createForm.name} onChange={e => setCreateForm(f => ({...f, name: e.target.value}))}
+              placeholder="프로젝트명 *"
+              className="w-full text-sm border border-yellow-200 rounded-lg px-3 py-2 bg-white focus:outline-none focus:border-yellow-400" />
+            <div className="grid grid-cols-3 gap-2">
+              <select value={createForm.service_type} onChange={e => setCreateForm(f => ({...f, service_type: e.target.value}))}
+                className="text-sm border border-yellow-200 rounded-lg px-3 py-2 bg-white focus:outline-none focus:border-yellow-400">
+                <option value="">서비스 (선택)</option>
+                {allServiceTypes.map(s => <option key={s} value={s}>{s}</option>)}
+              </select>
+              <select value={createForm.customer_id} onChange={e => setCreateForm(f => ({...f, customer_id: e.target.value}))}
+                className="text-sm border border-yellow-200 rounded-lg px-3 py-2 bg-white focus:outline-none focus:border-yellow-400">
+                <option value="">고객사 (선택)</option>
+                {customers.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+              </select>
+              <select value={createForm.pm_id} onChange={e => setCreateForm(f => ({...f, pm_id: e.target.value}))}
+                className="text-sm border border-yellow-200 rounded-lg px-3 py-2 bg-white focus:outline-none focus:border-yellow-400">
+                <option value="">PM (선택)</option>
+                {profiles.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+              </select>
+            </div>
+            <p className="text-[11px] text-gray-500">생성 후 프로젝트 페이지로 이동합니다. 매출(계약)은 들어가서 [+ 새 매출]로 추가하세요.</p>
+            <div className="flex gap-2">
+              <button onClick={() => startCreate(async () => {
+                if (!createForm.name.trim()) return
+                const res = await createProjectStandalone({
+                  name: createForm.name.trim(),
+                  service_type: createForm.service_type || null,
+                  customer_id: createForm.customer_id || null,
+                  pm_id: createForm.pm_id || null,
+                })
+                if (res.id) {
+                  router.push(`/projects/${res.id}`)
+                }
+              })}
+                disabled={!createForm.name.trim() || createPending}
+                className="px-4 py-2 text-sm font-semibold rounded-lg hover:opacity-80 disabled:opacity-40"
+                style={{ backgroundColor: '#FFCE00', color: '#121212' }}>
+                {createPending ? '생성 중...' : '생성'}
+              </button>
+              <button onClick={() => {
+                setCreateOpen(false)
+                setCreateForm({ name: '', service_type: '', customer_id: '', pm_id: '' })
+              }} className="px-4 py-2 text-sm border border-gray-200 rounded-lg text-gray-500">취소</button>
+            </div>
+          </div>
+        )}
+      </div>
+
       {/* 검색 + 필터 */}
       <div className="flex items-center gap-3 mb-4 flex-wrap">
         <input
