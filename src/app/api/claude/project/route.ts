@@ -150,7 +150,7 @@ ${logs && logs.length > 0 ? `\n## 최근 소통내역\n${logs.map(l => `- [${l.l
 2. 사용자가 할일 추가/수정/완료/삭제, 개요 정리, 협의사항 갱신, 상태 변경, 메모 수정·추가를 요청하면 **반드시 도구를 호출**. 다음은 모두 실제 사용 가능:
    - create_task (projectId만 있어도 자동으로 첫 계약 매칭)
    - update_task / complete_task / delete_task
-   - regenerate_overview / update_pending_discussion / regenerate_pending_discussion
+   - regenerate_overview / update_overview / update_pending_discussion / regenerate_pending_discussion
    - add_project_memo / update_project_memo / delete_project_memo (메모 카드 — 회의록·카톡 정리 등 별도 보존)
    - update_status / update_notes / add_communication_log
 3. **절대 금지 답변 패턴**:
@@ -299,8 +299,19 @@ ${logs && logs.length > 0 ? `\n## 최근 소통내역\n${logs.map(l => `- [${l.l
     },
     {
       name: 'regenerate_overview',
-      description: '프로젝트 자동 개요(상단 박스)를 최신 데이터로 재생성. "현황 정리해줘", "개요 갱신" 요청 시 즉시 호출.',
+      description: '프로젝트 자동 개요(상단 박스)를 빵빵이가 자동 재분석해서 다시 채움. "현황 정리해줘/자동으로 다시 뽑아줘" 등 자동 갱신 요청 시 호출.',
       input_schema: { type: 'object' as const, properties: {} },
+    },
+    {
+      name: 'update_overview',
+      description: '프로젝트 자동 개요 박스의 내용을 직접 덮어쓰기. 사용자가 "개요에 X 추가해줘", "개요를 ~로 바꿔줘", 또는 직접 작성한 내용 저장 요청 시 호출. 기존 내용에 추가하려면 기존 + 새 내용 합쳐서 보내. markdown 가능.',
+      input_schema: {
+        type: 'object' as const,
+        properties: {
+          content: { type: 'string', description: '저장할 markdown 전문' },
+        },
+        required: ['content'],
+      },
     },
     {
       name: 'update_pending_discussion',
@@ -631,6 +642,21 @@ ${logs && logs.length > 0 ? `\n## 최근 소통내역\n${logs.map(l => `- [${l.l
                 const r = await generateAndSaveProjectOverview(projectId)
                 result = 'error' in r ? `실패: ${r.error}` : '프로젝트 개요를 재생성했어.'
                 if ('summary' in r) revalidate()
+              }
+
+            } else if (block.name === 'update_overview') {
+              if (!projectId) {
+                result = '프로젝트 페이지에서만 사용 가능.'
+              } else {
+                send('\n*(개요 저장...)*\n')
+                const { error } = await admin.from('projects')
+                  .update({ overview_summary: input.content || null, updated_at: new Date().toISOString() })
+                  .eq('id', projectId)
+                result = error ? `실패: ${error.message}` : '개요를 업데이트했어.'
+                if (!error) {
+                  revalidatePath(`/projects/${projectId}`)
+                  revalidate()
+                }
               }
 
             } else if (block.name === 'update_pending_discussion') {
