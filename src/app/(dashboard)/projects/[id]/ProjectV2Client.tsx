@@ -739,7 +739,7 @@ function NotesBlock({ project }: { project: Project }) {
 /* ── 2. 2박스: 개요(빵빵이) / 협의해야할 내용 (빵빵이) ─── */
 function TwoBoxesBlock({ project }: { project: Project }) {
   return (
-    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+    <div className="space-y-3">
       <OverviewSummaryBox project={project} />
       <PendingDiscussionBox project={project} />
     </div>
