@@ -611,26 +611,34 @@ export default function LeadsClient({ leads, profiles, persons, customers, curre
     setLoadingLogs(false)
   }, [])
 
+  // 캐시된 요약 사용. 변경은 명시적 [다시 분석] 버튼으로만.
   useEffect(() => {
+    setLeadSummary(selectedLead?.summary_cache ?? null)
+  }, [selectedLead?.id, selectedLead?.summary_cache])
+
+  async function regenerateSummary() {
     if (!selectedLead) return
     const nonInitial = leadLogs.filter(l => l.log_type !== '최초유입')
-    if (nonInitial.length === 0) { setLeadSummary(null); return }
-    let cancelled = false
     setLoadingSummary(true)
-    fetch('/api/lead-summary', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        initial_content: selectedLead.initial_content ?? null,
-        logs: nonInitial.map(l => ({ content: l.content, log_type: l.log_type, contacted_at: l.contacted_at })),
-      }),
-    })
-      .then(r => r.json())
-      .then(d => { if (!cancelled) setLeadSummary(d.summary ?? null) })
-      .catch(() => {})
-      .finally(() => { if (!cancelled) setLoadingSummary(false) })
-    return () => { cancelled = true }
-  }, [leadLogs, selectedLead?.id])
+    try {
+      const r = await fetch('/api/lead-summary', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          lead_id: selectedLead.id,
+          initial_content: selectedLead.initial_content ?? null,
+          logs: nonInitial.map(l => ({ content: l.content, log_type: l.log_type, contacted_at: l.contacted_at })),
+          force: true,
+        }),
+      })
+      const d = await r.json()
+      setLeadSummary(d.summary ?? null)
+      setSelectedLead(prev => prev ? { ...prev, summary_cache: d.summary, summary_updated_at: new Date().toISOString() } : prev)
+      router.refresh()
+    } finally {
+      setLoadingSummary(false)
+    }
+  }
 
   useEffect(() => {
     if (!selectedLead) { setLeadLogs([]); setLeadSummary(null); setLogsCollapsed(true); return }
@@ -1548,11 +1556,19 @@ export default function LeadsClient({ leads, profiles, persons, customers, curre
                 {/* ── 요약 · 최초 문의 ── */}
                 {(selectedLead.initial_content || loadingSummary || leadSummary) && (
                   <div className="bg-white rounded-2xl p-5" style={{ boxShadow: '0 1px 4px rgba(0,0,0,0.06)' }}>
-                    <button onClick={() => toggleSection('summary')}
-                      className="w-full flex items-center gap-2 text-left mb-2.5">
-                      <span className="text-gray-400 text-[10px]">{openSections.summary ? '▼' : '▶'}</span>
-                      <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider">요약 · 최초 문의</p>
-                    </button>
+                    <div className="flex items-center justify-between mb-2.5">
+                      <button onClick={() => toggleSection('summary')}
+                        className="flex items-center gap-2 text-left">
+                        <span className="text-gray-400 text-[10px]">{openSections.summary ? '▼' : '▶'}</span>
+                        <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider">요약 · 최초 문의</p>
+                      </button>
+                      {openSections.summary && (
+                        <button onClick={regenerateSummary} disabled={loadingSummary}
+                          className="text-[11px] text-blue-500 hover:text-blue-700 disabled:opacity-40">
+                          {loadingSummary ? '🤖 분석 중...' : leadSummary ? '🤖 다시 분석' : '🤖 빵빵이 분석'}
+                        </button>
+                      )}
+                    </div>
                     {openSections.summary && (<>
                     {selectedLead.initial_content && (
                       <div>

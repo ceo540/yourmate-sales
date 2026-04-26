@@ -152,6 +152,7 @@ ${logs && logs.length > 0 ? `\n## 최근 소통내역\n${logs.map(l => `- [${l.l
    - update_task / complete_task / delete_task
    - regenerate_overview / update_overview / update_pending_discussion / regenerate_pending_discussion
    - add_project_memo / update_project_memo / delete_project_memo (메모 카드 — 회의록·카톡 정리 등 별도 보존)
+   - regenerate_lead_summary / update_lead_summary (리드 요약 박스)
    - update_status / update_notes / add_communication_log
 3. **절대 금지 답변 패턴**:
    - "지원되지 않습니다" / "기능이 없어요"
@@ -328,6 +329,22 @@ ${logs && logs.length > 0 ? `\n## 최근 소통내역\n${logs.map(l => `- [${l.l
       name: 'regenerate_pending_discussion',
       description: '협의사항 박스를 자동 재분석. "지금 협의할 거 다시 뽑아줘" 요청 시 호출.',
       input_schema: { type: 'object' as const, properties: {} },
+    },
+    {
+      name: 'regenerate_lead_summary',
+      description: '리드의 요약(summary_cache)을 최초 문의 + 소통 내역 기반으로 재생성. 사용자가 "리드 요약 다시 뽑아줘", "정리 갱신" 등이라고 하면 호출. leadId 있을 때만 동작.',
+      input_schema: { type: 'object' as const, properties: {} },
+    },
+    {
+      name: 'update_lead_summary',
+      description: '리드 요약(summary_cache)을 직접 텍스트로 덮어쓰기. 사용자가 직접 작성한 정리 내용을 저장할 때 사용. 자동 분석 원하면 regenerate_lead_summary 사용.',
+      input_schema: {
+        type: 'object' as const,
+        properties: {
+          content: { type: 'string', description: '저장할 markdown 또는 plain text' },
+        },
+        required: ['content'],
+      },
     },
     {
       name: 'rename_brief_file',
@@ -692,6 +709,57 @@ ${logs && logs.length > 0 ? `\n## 최근 소통내역\n${logs.map(l => `- [${l.l
                 const r = await generateAndSavePendingDiscussion(projectId)
                 result = 'error' in r ? `실패: ${r.error}` : '협의사항을 재분석했어.'
                 if ('summary' in r) revalidate()
+              }
+
+            } else if (block.name === 'regenerate_lead_summary') {
+              if (!leadId) {
+                result = '리드 컨텍스트에서만 사용 가능.'
+              } else {
+                send('\n*(리드 요약 재생성 중...)*\n')
+                const { data: lead } = await admin.from('leads').select('initial_content').eq('id', leadId).single()
+                const { data: logs } = await admin
+                  .from('project_logs')
+                  .select('content, log_type, contacted_at')
+                  .eq('lead_id', leadId)
+                  .order('contacted_at', { ascending: false })
+                  .limit(30)
+                const baseUrl = req.headers.get('origin') || ''
+                try {
+                  const r = await fetch(`${baseUrl}/api/lead-summary`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', cookie: req.headers.get('cookie') ?? '' },
+                    body: JSON.stringify({
+                      lead_id: leadId,
+                      initial_content: lead?.initial_content ?? null,
+                      logs: logs ?? [],
+                      force: true,
+                    }),
+                  })
+                  const d = await r.json()
+                  if (d.error) result = `실패: ${d.error}`
+                  else {
+                    result = '리드 요약을 재생성했어.'
+                    revalidatePath('/leads')
+                    revalidate()
+                  }
+                } catch (e: unknown) {
+                  result = '실패: ' + (e instanceof Error ? e.message : String(e))
+                }
+              }
+
+            } else if (block.name === 'update_lead_summary') {
+              if (!leadId) {
+                result = '리드 컨텍스트에서만 사용 가능.'
+              } else {
+                send('\n*(리드 요약 저장...)*\n')
+                const { error } = await admin.from('leads')
+                  .update({ summary_cache: input.content || null, summary_updated_at: new Date().toISOString() })
+                  .eq('id', leadId)
+                result = error ? `실패: ${error.message}` : '리드 요약을 업데이트했어.'
+                if (!error) {
+                  revalidatePath('/leads')
+                  revalidate()
+                }
               }
 
             } else if (block.name === 'rename_brief_file') {

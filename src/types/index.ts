@@ -235,6 +235,8 @@ export interface Lead {
   dropbox_url: string | null
   quotation_url: string | null
   linked_calendar_events: { id: string; calendarKey: string; title: string; date: string; color: string }[] | null
+  summary_cache?: string | null
+  summary_updated_at?: string | null
   created_at: string
   updated_at: string
   relatedSales?: RelatedSale[]
