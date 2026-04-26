@@ -560,6 +560,7 @@ export default function LeadsClient({ leads, profiles, persons, customers, curre
   const [newLeadLogType, setNewLeadLogType] = useState('통화')
   const [leadLogShowDetails, setLeadLogShowDetails] = useState(false)
   const [showBasicInfo, setShowBasicInfo] = useState(false)
+  const [showLogs, setShowLogs] = useState(true)
   const [leadLogLocation, setLeadLogLocation] = useState('')
   const [leadLogParticipants, setLeadLogParticipants] = useState('')
   const [leadLogOutcome, setLeadLogOutcome] = useState('')
@@ -1598,9 +1599,15 @@ export default function LeadsClient({ leads, profiles, persons, customers, curre
 
                 {/* ── 소통 내역 ── */}
                 <div className="bg-white rounded-2xl p-5" style={{ boxShadow: '0 1px 4px rgba(0,0,0,0.06)' }}>
-                  <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-4">
-                    소통 내역 <span className="normal-case font-normal">{leadLogs.length}건</span>
-                  </p>
+                  <button onClick={() => setShowLogs(s => !s)}
+                    className="w-full flex items-center gap-2 text-left mb-4">
+                    <span className="text-gray-400 text-[10px]">{showLogs ? '▼' : '▶'}</span>
+                    <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider">
+                      소통 내역 <span className="normal-case font-normal">{leadLogs.length}건</span>
+                    </p>
+                  </button>
+
+                  {showLogs && (<>
 
                   {/* 소통 입력 폼 */}
                   <div className="border border-gray-200 rounded-xl p-3.5 bg-gray-50 mb-4">
@@ -1685,6 +1692,7 @@ export default function LeadsClient({ leads, profiles, persons, customers, curre
                       )}
                     </>
                   )}
+                  </>)}
                 </div>
 
                 {/* ── 캘린더 일정 ── */}
