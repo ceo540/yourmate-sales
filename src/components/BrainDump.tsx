@@ -10,12 +10,16 @@ const STORAGE_KEY = 'bbang-braindump-messages'
 
 // 대시보드 빠른 빵빵이 — 사용자가 자유롭게 쏟아내는 메모/고민/할일을
 // 빵빵이가 분석하고 매칭되는 리드/프로젝트로 안내하거나 직접 도구 실행.
+// 음성 녹음 업로드 → Whisper → 자동 분석 가능 (모바일 회의 후).
 export default function BrainDump() {
   const router = useRouter()
   const [messages, setMessages] = useState<Msg[]>([])
   const [input, setInput] = useState('')
   const [loading, setLoading] = useState(false)
+  const [transcribing, setTranscribing] = useState(false)
+  const [transcribeStatus, setTranscribeStatus] = useState<string | null>(null)
   const bottomRef = useRef<HTMLDivElement>(null)
+  const fileInputRef = useRef<HTMLInputElement>(null)
 
   // localStorage 복원 (mount 시 한 번)
   useEffect(() => {
@@ -70,6 +74,42 @@ export default function BrainDump() {
     localStorage.removeItem(STORAGE_KEY)
   }
 
+  async function handleFile(file: File) {
+    if (!file.type.startsWith('audio/') && !/\.(m4a|mp3|wav|webm|ogg|mp4)$/i.test(file.name)) {
+      setTranscribeStatus('음성 파일만 가능 (mp3/m4a/wav/webm 등)')
+      return
+    }
+    if (file.size > 25 * 1024 * 1024) {
+      setTranscribeStatus('파일이 너무 커 (Whisper 25MB 한도). 잘라서 올려줘.')
+      return
+    }
+    setTranscribing(true)
+    setTranscribeStatus(`📤 업로드 중... (${(file.size / 1024 / 1024).toFixed(1)}MB)`)
+    try {
+      const fd = new FormData()
+      fd.append('file', file)
+      const res = await fetch('/api/transcribe', { method: 'POST', body: fd })
+      const data = await res.json()
+      if (data.error) {
+        setTranscribeStatus(`❌ ${data.error}`)
+        return
+      }
+      const text = (data.text || '').trim()
+      if (!text) {
+        setTranscribeStatus('변환된 텍스트가 비어있어')
+        return
+      }
+      // 결과를 input에 자동 입력 (사용자가 검토 후 전송)
+      setInput(prev => prev ? `${prev}\n\n${text}` : text)
+      setTranscribeStatus(`✅ 변환 완료 (${text.length}자). 검토 후 보내기.`)
+      setTimeout(() => setTranscribeStatus(null), 5000)
+    } catch (e) {
+      setTranscribeStatus(`❌ ${e instanceof Error ? e.message : '실패'}`)
+    } finally {
+      setTranscribing(false)
+    }
+  }
+
   return (
     <div className="bg-white rounded-xl flex flex-col" style={{ boxShadow: '0 1px 4px rgba(0,0,0,0.06)', minHeight: 400 }}>
       <div className="px-5 py-3 border-b border-gray-100 flex items-center justify-between">
@@ -120,12 +160,37 @@ export default function BrainDump() {
           value={input}
           onChange={e => setInput(e.target.value)}
           onKeyDown={e => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) send() }}
-          placeholder="여기에 자유롭게 쓰세요. ⌘+Enter로 전송."
+          placeholder="여기에 자유롭게 쓰거나 🎙 녹음 업로드. ⌘+Enter로 전송."
           rows={3}
           className="w-full text-sm border border-gray-200 rounded-lg px-3 py-2 resize-none focus:outline-none focus:ring-1 focus:ring-yellow-400"
         />
-        <div className="flex justify-between items-center mt-2">
-          <span className="text-[11px] text-gray-400">⌘+Enter 또는 보내기 클릭</span>
+        {transcribeStatus && (
+          <p className="text-[11px] text-gray-500 mt-1.5">{transcribeStatus}</p>
+        )}
+        <div className="flex justify-between items-center gap-2 mt-2 flex-wrap">
+          <div className="flex items-center gap-1.5">
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="audio/*,.m4a,.mp3,.wav,.webm,.ogg,.mp4"
+              className="hidden"
+              onChange={e => {
+                const f = e.target.files?.[0]
+                if (f) handleFile(f)
+                if (fileInputRef.current) fileInputRef.current.value = ''
+              }}
+            />
+            <button
+              type="button"
+              onClick={() => fileInputRef.current?.click()}
+              disabled={transcribing}
+              className="px-3 py-1.5 text-xs border border-gray-200 rounded-lg hover:bg-gray-50 disabled:opacity-40 flex items-center gap-1"
+              title="녹음 파일 업로드 (m4a, mp3 등 - 최대 25MB)"
+            >
+              🎙 {transcribing ? '변환 중...' : '녹음'}
+            </button>
+            <span className="text-[11px] text-gray-400 hidden sm:inline">⌘+Enter</span>
+          </div>
           <button
             onClick={send}
             disabled={!input.trim() || loading}
