@@ -24,8 +24,8 @@ import {
   createProjectMemo,
   updateProjectMemoCard,
   deleteProjectMemo,
-} from '../project-actions'
-import { updateTask, deleteTask } from '../../../sales/tasks/actions'
+} from './project-actions'
+import { updateTask, deleteTask } from '../../sales/tasks/actions'
 
 interface Project {
   id: string
@@ -195,9 +195,6 @@ export default function ProjectV2Client({
       <div className="mb-5">
         <div className="flex items-center gap-2 mb-2 text-xs">
           <Link href="/projects" className="text-gray-400 hover:text-gray-700">← 프로젝트 목록</Link>
-          <span className="text-gray-300">·</span>
-          <Link href={`/projects/${project.id}`} className="text-gray-400 hover:text-gray-700">기존 페이지</Link>
-          <span className="ml-2 text-[10px] px-2 py-0.5 rounded-full font-bold" style={{ backgroundColor: '#FFCE00', color: '#121212' }}>V2 미리보기</span>
         </div>
         <div className="flex items-center gap-3 flex-wrap">
           {project.project_number && (
@@ -325,10 +322,6 @@ export default function ProjectV2Client({
           {project.dropbox_url && <DropboxFilesCard dropboxUrl={project.dropbox_url} />}
         </aside>
       </div>
-
-      <p className="text-center text-xs text-gray-300 mt-8">
-        V2는 구축 중입니다. 한 단계씩 채워집니다.
-      </p>
 
       {showSettings && (
         <ProjectSettingsModal
@@ -1123,8 +1116,7 @@ function TasksSection({ tasks, contracts, projectId, profiles, serviceType }: {
               {suggesting ? '🤖 분석 중...' : '🤖 빵빵이 추천'}
             </button>
           )}
-          <Link href={`/projects/${projectId}`} className="text-xs text-gray-400 hover:text-gray-700">상세 편집 →</Link>
-        </div>
+          </div>
       </div>
       {canAdd && (
         <div className="px-5 py-2 bg-yellow-50 border-b border-yellow-100 space-y-1.5">
@@ -1419,7 +1411,6 @@ function ContractsSection({ contracts, projectId }: { contracts: Contract[]; pro
     <div className="bg-white border border-gray-100 rounded-xl overflow-hidden">
       <div className="px-5 py-3 border-b border-gray-100 flex items-center justify-between">
         <p className="text-sm font-semibold text-gray-800">📜 계약 관리 ({contracts.length}건)</p>
-        <Link href={`/projects/${projectId}`} className="text-xs text-gray-400 hover:text-gray-700">상세 편집 →</Link>
       </div>
       {contracts.length === 0 ? (
         <p className="text-center py-6 text-xs text-gray-400">등록된 계약 없음</p>
@@ -1617,8 +1608,7 @@ function ContractsTasksSection({ contracts, tasks, projectId }: {
       <div className="bg-white border border-gray-100 rounded-xl overflow-hidden">
         <div className="px-5 py-3 border-b border-gray-100 flex items-center justify-between">
           <p className="text-sm font-semibold text-gray-800">📜 계약 ({contracts.length}건)</p>
-          <Link href={`/projects/${projectId}`} className="text-xs text-gray-400 hover:text-gray-700">상세 편집 →</Link>
-        </div>
+          </div>
         {contracts.length === 0 ? (
           <p className="text-center py-6 text-xs text-gray-400">등록된 계약 없음</p>
         ) : (
@@ -1651,8 +1641,7 @@ function ContractsTasksSection({ contracts, tasks, projectId }: {
       <div className="bg-white border border-gray-100 rounded-xl overflow-hidden">
         <div className="px-5 py-3 border-b border-gray-100 flex items-center justify-between">
           <p className="text-sm font-semibold text-gray-800">✅ 업무 ({pendingTasks.length}/{tasks.length})</p>
-          <Link href={`/projects/${projectId}`} className="text-xs text-gray-400 hover:text-gray-700">상세 편집 →</Link>
-        </div>
+          </div>
         {/* 빠른 추가 */}
         {canAddTask && (
           <div className="px-5 py-2 bg-yellow-50 border-b border-yellow-100">

@@ -10,8 +10,8 @@ import {
   removeProjectMember,
   deleteProject,
   updateProjectDropbox,
-} from '../project-actions'
-import { syncProjectName } from '../sync-project-name-action'
+} from './project-actions'
+import { syncProjectName } from './sync-project-name-action'
 
 type Profile = { id: string; name: string }
 type Customer = { id: string; name: string; type: string | null }

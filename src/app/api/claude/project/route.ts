@@ -147,10 +147,11 @@ ${logs && logs.length > 0 ? `\n## 최근 소통내역\n${logs.map(l => `- [${l.l
 
   const TOP_POLICY = `# 🔴 최우선 규칙
 1. 오늘 날짜는 ${today} (ISO: ${todayIso}). "내일/다음주" 등 상대 날짜는 반드시 이 날짜 기준 계산. 절대 다른 연도(2025 등)로 추정 금지.
-2. 사용자가 할일 추가/수정/완료/삭제, 개요 정리, 협의사항 갱신, 상태 변경, 메모 수정을 요청하면 **반드시 도구를 호출**. 다음은 모두 실제 사용 가능:
+2. 사용자가 할일 추가/수정/완료/삭제, 개요 정리, 협의사항 갱신, 상태 변경, 메모 수정·추가를 요청하면 **반드시 도구를 호출**. 다음은 모두 실제 사용 가능:
    - create_task (projectId만 있어도 자동으로 첫 계약 매칭)
    - update_task / complete_task / delete_task
    - regenerate_overview / update_pending_discussion / regenerate_pending_discussion
+   - add_project_memo / update_project_memo / delete_project_memo (메모 카드 — 회의록·카톡 정리 등 별도 보존)
    - update_status / update_notes / add_communication_log
 3. **절대 금지 답변 패턴**:
    - "지원되지 않습니다" / "기능이 없어요"
@@ -316,6 +317,42 @@ ${logs && logs.length > 0 ? `\n## 최근 소통내역\n${logs.map(l => `- [${l.l
       name: 'regenerate_pending_discussion',
       description: '협의사항 박스를 자동 재분석. "지금 협의할 거 다시 뽑아줘" 요청 시 호출.',
       input_schema: { type: 'object' as const, properties: {} },
+    },
+    {
+      name: 'add_project_memo',
+      description: '프로젝트에 새 메모 카드를 추가. 회의 정리, 카톡 분석 결과, 통화 메모 등을 별도 카드로 보존하고 싶을 때 사용. 마크다운 지원 (제목/리스트/표/체크박스). 사용자가 "메모 추가/메모로 정리/카드로 남겨" 등 말하면 즉시 호출.',
+      input_schema: {
+        type: 'object' as const,
+        properties: {
+          title: { type: 'string', description: '메모 제목 (선택). 없으면 자동으로 "YYYY-MM-DD 메모".' },
+          content: { type: 'string', description: '메모 본문 (markdown). 표/리스트/체크박스 활용 권장.' },
+        },
+        required: ['content'],
+      },
+    },
+    {
+      name: 'update_project_memo',
+      description: '기존 메모 카드의 제목 또는 내용을 수정. memo_id 또는 title 부분 매칭으로 식별. 매칭 여러 건이면 시스템이 목록 반환 → memo_id로 재호출.',
+      input_schema: {
+        type: 'object' as const,
+        properties: {
+          memo_id: { type: 'string', description: '메모 UUID' },
+          title: { type: 'string', description: '제목 검색어 (memo_id 없을 때)' },
+          new_title: { type: 'string', description: '새 제목' },
+          content: { type: 'string', description: '새 본문 (전체 덮어쓰기)' },
+        },
+      },
+    },
+    {
+      name: 'delete_project_memo',
+      description: '메모 카드 삭제. 사용자에게 한 번 확인받은 뒤 호출.',
+      input_schema: {
+        type: 'object' as const,
+        properties: {
+          memo_id: { type: 'string' },
+          title: { type: 'string', description: '제목 검색어' },
+        },
+      },
     },
   ]
 
@@ -621,6 +658,79 @@ ${logs && logs.length > 0 ? `\n## 최근 소통내역\n${logs.map(l => `- [${l.l
                 const r = await generateAndSavePendingDiscussion(projectId)
                 result = 'error' in r ? `실패: ${r.error}` : '협의사항을 재분석했어.'
                 if ('summary' in r) revalidate()
+              }
+
+            } else if (block.name === 'add_project_memo') {
+              if (!projectId) {
+                result = '프로젝트 페이지에서만 사용 가능.'
+              } else {
+                send('\n*(메모 카드 추가 중...)*\n')
+                const today = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Seoul' })
+                const title = (input.title?.trim()) || `${today} 메모`
+                const content = input.content || ''
+                const { data: row, error } = await admin.from('project_memos').insert({
+                  project_id: projectId,
+                  title,
+                  content,
+                  author_id: user.id,
+                }).select('id').single()
+                if (error) result = `실패: ${error.message}`
+                else {
+                  result = `메모 카드 "${title}" 추가 완료 (id: ${row.id.slice(0, 8)})`
+                  revalidatePath(`/projects/${projectId}/v2`)
+                  revalidatePath(`/projects/${projectId}`)
+                  revalidate()
+                }
+              }
+
+            } else if (block.name === 'update_project_memo' || block.name === 'delete_project_memo') {
+              if (!projectId) {
+                result = '프로젝트 페이지에서만 사용 가능.'
+              } else {
+                let memo: { id: string; title: string | null } | null = null
+                let multiple = false
+                if (input.memo_id) {
+                  const { data } = await admin.from('project_memos').select('id, title, project_id').eq('id', input.memo_id).maybeSingle()
+                  if (data && data.project_id === projectId) memo = { id: data.id, title: data.title }
+                } else if (input.title) {
+                  const { data } = await admin.from('project_memos')
+                    .select('id, title, content, created_at')
+                    .eq('project_id', projectId)
+                    .ilike('title', `%${input.title}%`)
+                    .order('created_at', { ascending: false })
+                    .limit(5)
+                  if (data && data.length === 1) memo = data[0]
+                  else if (data && data.length > 1) {
+                    multiple = true
+                    result = `"${input.title}" 매칭 ${data.length}건. memo_id로 특정해서 재호출:\n` +
+                      data.map((m, i) => `${i + 1}. "${m.title || '제목없음'}" — 생성:${m.created_at?.slice(0, 10)}\n   memo_id=${m.id}`).join('\n')
+                  }
+                }
+                if (!memo && !multiple) {
+                  result = '해당 메모를 찾을 수 없어.'
+                } else if (memo) {
+                  if (block.name === 'delete_project_memo') {
+                    send('\n*(메모 삭제 중...)*\n')
+                    const { error } = await admin.from('project_memos').delete().eq('id', memo.id)
+                    result = error ? `실패: ${error.message}` : `"${memo.title || '메모'}" 삭제.`
+                  } else {
+                    send('\n*(메모 수정 중...)*\n')
+                    const updates: Record<string, unknown> = { updated_at: new Date().toISOString() }
+                    if (input.new_title !== undefined) updates.title = input.new_title || null
+                    if (input.content !== undefined) updates.content = input.content || null
+                    if (Object.keys(updates).length === 1) {
+                      result = '변경할 내용이 없어. new_title 또는 content를 줘.'
+                    } else {
+                      const { error } = await admin.from('project_memos').update(updates).eq('id', memo.id)
+                      result = error ? `실패: ${error.message}` : `"${memo.title || '메모'}" 수정 완료.`
+                    }
+                  }
+                  if (!result.startsWith('실패') && !result.startsWith('변경')) {
+                    revalidatePath(`/projects/${projectId}/v2`)
+                    revalidatePath(`/projects/${projectId}`)
+                    revalidate()
+                  }
+                }
               }
             }
 

@@ -1,9 +1,9 @@
 import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { notFound, redirect } from 'next/navigation'
-import { createProfileMap, createProfileNameMap } from '@/lib/utils'
 import { isAdminOrManager } from '@/lib/permissions'
-import ProjectHubClient from './ProjectHubClient'
+import { createProfileNameMap } from '@/lib/utils'
+import ProjectV2Client from './ProjectV2Client'
 
 export default async function ProjectPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
@@ -12,7 +12,6 @@ export default async function ProjectPage({ params }: { params: Promise<{ id: st
   if (!user) redirect('/login')
 
   const admin = createAdminClient()
-
   const [{ data: profile }, { data: project }] = await Promise.all([
     admin.from('profiles').select('id, role, name').eq('id', user.id).single(),
     admin.from('projects').select('*').eq('id', id).single(),
@@ -24,34 +23,35 @@ export default async function ProjectPage({ params }: { params: Promise<{ id: st
   const [
     { data: membersRaw },
     { data: contractsRaw },
-    { data: profiles },
-    { data: customers },
+    { data: profilesRaw },
+    { data: customer },
+    { data: customersAll },
     { data: logsRaw },
-    { data: salesOptionsRaw },
-    { data: entities },
     { data: leadsRaw },
-    { data: personsRaw },
+    { data: memosRaw },
   ] = await Promise.all([
     admin.from('project_members').select('profile_id, role').eq('project_id', id),
-    admin.from('sales').select('*, payment_schedules(*)').eq('project_id', id).order('created_at'),
-    admin.from('profiles').select('id, name').order('name'),
-    admin.from('customers').select('id, name, type, contact_name, phone, contact_email').order('name'),
+    admin.from('sales').select('id, name, revenue, contract_stage, progress_status, inflow_date, payment_date, client_org, contract_split_reason, dropbox_url, assignee_id, entity_id, payment_schedules(*)').eq('project_id', id).order('created_at'),
+    admin.from('profiles').select('id, name'),
+    project.customer_id
+      ? admin.from('customers').select('id, name, type, contact_name, phone, contact_email').eq('id', project.customer_id).maybeSingle()
+      : Promise.resolve({ data: null }),
+    admin.from('customers').select('id, name, type').order('name').limit(500),
     admin.from('project_logs')
       .select('id, content, log_type, log_category, contacted_at, created_at, author_id, location, participants, outcome, sale_id')
       .eq('project_id', id)
       .order('contacted_at', { ascending: false })
       .limit(100),
-    admin.from('sales').select('id, name, revenue').is('project_id', null).order('created_at', { ascending: false }).limit(200),
-    admin.from('business_entities').select('id, name'),
-    admin.from('leads').select('id, lead_id, project_name, status, inflow_date, assignee_id').eq('project_id', id),
-    admin.from('persons').select('id, name, phone, email').order('name').limit(500),
+    admin.from('leads').select('id, lead_id').eq('project_id', id),
+    admin.from('project_memos').select('id, title, content, created_at, updated_at, author_id').eq('project_id', id).order('created_at', { ascending: false }),
   ])
 
-  const contractIds = (contractsRaw ?? []).map(c => c.id)
+  const profileNameMap = createProfileNameMap(profilesRaw)
 
+  const contractIds = (contractsRaw ?? []).map(c => c.id)
   const [{ data: tasksRaw }, { data: costsRaw }, { data: rentalsRaw }] = await Promise.all([
     contractIds.length > 0
-      ? admin.from('tasks').select('*').in('project_id', contractIds).order('created_at')
+      ? admin.from('tasks').select('id, title, status, priority, due_date, project_id, assignee_id, description, bbang_suggested').in('project_id', contractIds).order('created_at')
       : Promise.resolve({ data: [] }),
     contractIds.length > 0
       ? admin.from('sale_costs').select('*').in('sale_id', contractIds).order('created_at')
@@ -61,126 +61,104 @@ export default async function ProjectPage({ params }: { params: Promise<{ id: st
       : Promise.resolve({ data: [] }),
   ])
 
-  const profileMap = createProfileMap(profiles)
-  const entityMap = Object.fromEntries((entities ?? []).map(e => [e.id, e.name]))
+  const pmMember = (membersRaw ?? []).find(m => m.role === 'PM')
+  const pmId = pmMember?.profile_id ?? project.pm_id ?? null
+  const pmName = pmId ? (profileNameMap[pmId] ?? null) : null
 
-  // FK 조인 금지 (CLAUDE.md) — profileMap으로 수동 조인
-  const members = (membersRaw ?? []).map((m: { profile_id: string; role: string }) => ({
-    profile_id: m.profile_id,
-    role: m.role,
-    name: profileMap[m.profile_id]?.name ?? '알 수 없음',
-  }))
-
-  const contracts = (contractsRaw ?? []).map(c => ({
-    ...c,
-    payment_schedules: (c as any).payment_schedules ?? [],
-    assignee_name: (c as any).assignee_id ? (profileMap[(c as any).assignee_id]?.name ?? null) : null,
-    entity_name: (c as any).entity_id ? (entityMap[(c as any).entity_id] ?? null) : null,
-    entity_id: (c as any).entity_id ?? null,
-    payment_date: (c as any).payment_date ?? null,
-    dropbox_url: (c as any).dropbox_url ?? null,
-  }))
-
-  const tasks = (tasksRaw ?? []).map(t => ({
-    ...t,
-    assignee: t.assignee_id ? (profileMap[t.assignee_id] ?? null) : null,
-  }))
-
-  // 이 프로젝트에 연결된 리드들의 소통내역도 함께 조회 (계약 전환 전 히스토리 보존)
-  const leadIds = (leadsRaw ?? []).map((l: any) => l.id)
-  let leadLogsRaw: any[] = []
-  if (leadIds.length > 0) {
-    const { data } = await admin.from('project_logs')
-      .select('id, content, log_type, log_category, contacted_at, created_at, author_id, location, participants, outcome, sale_id, lead_id')
-      .in('lead_id', leadIds)
-      .order('contacted_at', { ascending: false })
-      .limit(200)
-    leadLogsRaw = data ?? []
+  let contactPerson: { name: string; dept: string | null; title: string | null; phone: string | null; email: string | null } | null = null
+  if (project.customer_id) {
+    const { data: rels } = await admin
+      .from('person_org_relations')
+      .select('dept, title, persons(id, name, phone, email)')
+      .eq('customer_id', project.customer_id)
+      .eq('is_current', true)
+      .limit(1)
+    const rel = (rels as any[])?.[0]
+    if (rel?.persons) {
+      contactPerson = {
+        name: rel.persons.name,
+        dept: rel.dept ?? null,
+        title: rel.title ?? null,
+        phone: rel.persons.phone ?? null,
+        email: rel.persons.email ?? null,
+      }
+    }
   }
 
-  // 프로젝트 로그 + 리드 로그 모두 합산하여 author 조회
-  const authorIds = [...new Set([
-    ...(logsRaw ?? []).map((l: any) => l.author_id),
-    ...leadLogsRaw.map((l: any) => l.author_id),
-  ].filter(Boolean))]
-  let logAuthorMap: Record<string, string> = {}
-  if (authorIds.length > 0) {
-    const { data: logProfiles } = await admin.from('profiles').select('id, name').in('id', authorIds)
-    logAuthorMap = createProfileNameMap(logProfiles)
-  }
-
-  // 프로젝트 로그와 리드 로그를 합쳐 contacted_at 기준 내림차순 정렬
-  const projectLogs = (logsRaw ?? []).map((l: any) => ({
-    ...l, lead_id: null,
-    author: l.author_id ? { name: logAuthorMap[l.author_id] ?? '알 수 없음' } : null,
+  const logs = (logsRaw ?? []).map(l => ({
+    id: l.id, content: l.content, log_type: l.log_type, log_category: l.log_category ?? null,
+    contacted_at: l.contacted_at, created_at: l.created_at,
+    author_name: l.author_id ? (profileNameMap[l.author_id] ?? null) : null,
+    sale_id: l.sale_id ?? null,
+    location: l.location ?? null,
+    participants: l.participants ?? null,
+    outcome: l.outcome ?? null,
   }))
-  const leadLogs = leadLogsRaw.map((l: any) => ({
-    ...l,
-    author: l.author_id ? { name: logAuthorMap[l.author_id] ?? '알 수 없음' } : null,
-  }))
-  const logs = [...projectLogs, ...leadLogs].sort((a, b) => {
-    const da = new Date(a.contacted_at ?? a.created_at).getTime()
-    const db = new Date(b.contacted_at ?? b.created_at).getTime()
-    return db - da
-  })
 
-  const customer = project.customer_id
-    ? (customers ?? []).find(c => c.id === project.customer_id) ?? null
-    : null
-
-  const costs = (costsRaw ?? [])
-
-  const leadAssigneeIds = [...new Set((leadsRaw ?? []).map((l: any) => l.assignee_id).filter(Boolean))]
-  let leadAssigneeMap: Record<string, string> = {}
-  if (leadAssigneeIds.length > 0) {
-    const { data: lp } = await admin.from('profiles').select('id, name').in('id', leadAssigneeIds)
-    leadAssigneeMap = createProfileNameMap(lp)
-  }
-  const leads = (leadsRaw ?? []).map((l: any) => ({
-    id: l.id,
-    lead_id: l.lead_id ?? '',
-    project_name: l.project_name ?? null,
-    status: l.status ?? null,
-    inflow_date: l.inflow_date ?? null,
-    assignee_name: l.assignee_id ? (leadAssigneeMap[l.assignee_id] ?? null) : null,
-  }))
+  const totalRevenue = (contractsRaw ?? []).reduce((s, c: any) => s + (c.revenue ?? 0), 0)
+  const totalCost = (costsRaw ?? []).reduce((s, c: any) => s + (c.amount ?? 0), 0)
+  const totalReceived = (contractsRaw ?? []).reduce((sum, c: any) => {
+    return sum + ((c.payment_schedules ?? []).filter((p: any) => p.is_received).reduce((s: number, p: any) => s + (p.amount ?? 0), 0))
+  }, 0)
 
   return (
-    <>
-      <ProjectHubClient
-        project={{
-          id: project.id,
-          name: project.name,
-          service_type: project.service_type ?? null,
-          department: project.department ?? null,
-          status: project.status ?? '진행중',
-          dropbox_url: project.dropbox_url ?? null,
-          memo: project.memo ?? null,
-          notes: project.notes ?? null,
-          customer_id: project.customer_id ?? null,
-          pm_id: project.pm_id ?? null,
-          project_number: project.project_number ?? null,
-          linked_calendar_events: (project.linked_calendar_events as any[]) ?? [],
-        }}
-        members={members}
-        contracts={contracts}
-        tasks={tasks}
-        logs={logs}
-        costs={costs}
-        profiles={profiles ?? []}
-        customers={customers ?? []}
-        customer={customer}
-        salesOptions={(salesOptionsRaw ?? []).map(s => ({ id: s.id, name: s.name, revenue: s.revenue ?? null }))}
-        leads={leads}
-        entities={entities ?? []}
-        persons={(personsRaw ?? []).map((p: any) => ({ id: p.id, name: p.name, phone: p.phone ?? null, email: p.email ?? null }))}
-        rentals={(rentalsRaw ?? []).map((r: any) => ({
-          id: r.id, sale_id: r.sale_id, customer_name: r.customer_name ?? '',
-          status: r.status ?? '', rental_start: r.rental_start ?? null, rental_end: r.rental_end ?? null,
-        }))}
-        isAdmin={isAdmin}
-        currentUserId={user.id}
-      />
-    </>
+    <ProjectV2Client
+      project={{
+        id: project.id,
+        name: project.name,
+        project_number: project.project_number ?? null,
+        service_type: project.service_type ?? null,
+        department: project.department ?? null,
+        status: project.status ?? '진행중',
+        dropbox_url: project.dropbox_url ?? null,
+        memo: project.memo ?? null,
+        notes: project.notes ?? null,
+        overview_summary: project.overview_summary ?? null,
+        work_description: project.work_description ?? null,
+        pending_discussion: project.pending_discussion ?? null,
+        customer_id: project.customer_id ?? null,
+        pm_id: pmId,
+      }}
+      pmName={pmName}
+      customer={customer ? { id: customer.id, name: customer.name, type: customer.type ?? null, contact_name: customer.contact_name ?? null, phone: customer.phone ?? null, contact_email: customer.contact_email ?? null } : null}
+      contactPerson={contactPerson}
+      finance={{ revenue: totalRevenue, cost: totalCost, received: totalReceived, contractCount: (contractsRaw ?? []).length }}
+      contracts={(contractsRaw ?? []).map((c: any) => ({
+        id: c.id, name: c.name, revenue: c.revenue ?? null,
+        contract_stage: c.contract_stage ?? null, progress_status: c.progress_status ?? null,
+        client_org: c.client_org ?? null,
+      }))}
+      tasks={(tasksRaw ?? []).map((t: any) => ({
+        id: t.id, title: t.title, status: t.status, priority: t.priority ?? null,
+        due_date: t.due_date ?? null, project_id: t.project_id ?? null,
+        assignee_id: t.assignee_id ?? null,
+        assignee_name: t.assignee_id ? (profileNameMap[t.assignee_id] ?? null) : null,
+        description: t.description ?? null,
+        bbang_suggested: !!t.bbang_suggested,
+      }))}
+      profiles={(profilesRaw ?? []).map(p => ({ id: p.id, name: p.name ?? '' }))}
+      logs={logs}
+      rentals={(rentalsRaw ?? []).map((r: any) => ({
+        id: r.id, sale_id: r.sale_id, customer_name: r.customer_name ?? '',
+        status: r.status ?? '', rental_start: r.rental_start ?? null, rental_end: r.rental_end ?? null,
+      }))}
+      leadIds={(leadsRaw ?? []).map((l: any) => l.id)}
+      isAdmin={isAdmin}
+      currentUserId={user.id}
+      members={(membersRaw ?? []).map((m: any) => ({
+        profile_id: m.profile_id,
+        role: m.role,
+        name: profileNameMap[m.profile_id] ?? '',
+      }))}
+      customersAll={(customersAll ?? []).map((c: any) => ({ id: c.id, name: c.name, type: c.type ?? null }))}
+      memos={(memosRaw ?? []).map((m: any) => ({
+        id: m.id,
+        title: m.title ?? null,
+        content: m.content ?? null,
+        created_at: m.created_at,
+        updated_at: m.updated_at,
+        author_name: m.author_id ? (profileNameMap[m.author_id] ?? null) : null,
+      }))}
+    />
   )
 }
