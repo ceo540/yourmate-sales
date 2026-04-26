@@ -7,6 +7,9 @@ import { createLead, updateLead, deleteLead, convertLeadToSale, addSaleToLead, c
 import { createLeadLog, getLeadLogs, deleteLeadLog } from './lead-log-actions'
 import ProjectClaudeChat from '@/components/ProjectClaudeChat'
 import MarkdownNoteBlock from '@/components/MarkdownNoteBlock'
+import dynamic from 'next/dynamic'
+
+const BlockNoteEditor = dynamic(() => import('@/components/BlockNoteEditor'), { ssr: false })
 import { LOG_TYPE_COLORS } from '@/lib/constants'
 
 const LABEL_CLS = 'block text-xs font-medium text-gray-500 mb-1'
@@ -1529,13 +1532,9 @@ export default function LeadsClient({ leads, profiles, persons, customers, curre
 
                   {/* 소통 입력 폼 */}
                   <div className="border border-gray-200 rounded-xl p-3.5 bg-gray-50 mb-4">
-                    <textarea
-                      value={newLeadLog}
-                      onChange={e => setNewLeadLog(e.target.value)}
-                      placeholder="소통 내용, 전화 전사록, 이메일 내용 등 자유롭게..."
-                      rows={2}
-                      className="w-full text-sm bg-white border border-gray-200 rounded-lg px-3 py-2 resize-none focus:outline-none focus:border-yellow-400 mb-2"
-                    />
+                    <div className="border border-gray-200 rounded-lg overflow-hidden bg-white mb-2">
+                      <BlockNoteEditor initialMarkdown={newLeadLog} onChangeMarkdown={setNewLeadLog} />
+                    </div>
                     <div className="flex items-center gap-2 mb-2">
                       <label className="text-xs text-gray-400 shrink-0">소통 일시</label>
                       <input type="datetime-local" value={leadLogContactedAt}

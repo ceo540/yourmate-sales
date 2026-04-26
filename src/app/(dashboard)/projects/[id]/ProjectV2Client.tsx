@@ -717,8 +717,9 @@ function PendingDiscussionBox({ project }: { project: Project }) {
         <div className="px-4 py-3 border-t border-gray-50 space-y-2">
           {editing ? (
             <>
-              <textarea value={input} onChange={e => setInput(e.target.value)} rows={8} autoFocus
-                className="w-full text-sm border border-gray-200 rounded-lg px-3 py-2 resize-y focus:outline-none focus:ring-1 focus:ring-yellow-400 bg-white" />
+              <div className="border border-gray-200 rounded-lg overflow-hidden bg-white">
+                <BlockNoteEditor initialMarkdown={input} onChangeMarkdown={setInput} />
+              </div>
               <div className="flex gap-2">
                 <button onClick={save}
                   className="px-3 py-1.5 text-xs font-semibold rounded-lg hover:opacity-80"
@@ -812,8 +813,9 @@ function OverviewSummaryBox({ project }: { project: Project }) {
         <div className="px-4 py-3 border-t border-gray-50 space-y-2">
           {editing ? (
             <>
-              <textarea value={input} onChange={e => setInput(e.target.value)} rows={8} autoFocus
-                className="w-full text-sm border border-gray-200 rounded-lg px-3 py-2 resize-y focus:outline-none focus:ring-1 focus:ring-yellow-400 bg-white" />
+              <div className="border border-gray-200 rounded-lg overflow-hidden bg-white">
+                <BlockNoteEditor initialMarkdown={input} onChangeMarkdown={setInput} />
+              </div>
               <div className="flex gap-2">
                 <button onClick={save}
                   className="px-3 py-1.5 text-xs font-semibold rounded-lg hover:opacity-80"
@@ -894,8 +896,9 @@ function EditableBox({ projectId, title, subtitle, value, save, emptyText }: {
         <div className="px-4 py-3 border-t border-gray-50 space-y-2">
           {editing ? (
             <>
-              <textarea value={input} onChange={e => setInput(e.target.value)} rows={6} autoFocus
-                className="w-full text-sm border border-gray-200 rounded-lg px-3 py-2 resize-y focus:outline-none focus:ring-1 focus:ring-yellow-400 bg-white" />
+              <div className="border border-gray-200 rounded-lg overflow-hidden bg-white">
+                <BlockNoteEditor initialMarkdown={input} onChangeMarkdown={setInput} />
+              </div>
               <div className="flex gap-2">
                 <button onClick={handleSave}
                   className="px-3 py-1.5 text-xs font-semibold rounded-lg hover:opacity-80"
@@ -906,7 +909,7 @@ function EditableBox({ projectId, title, subtitle, value, save, emptyText }: {
             </>
           ) : value ? (
             <>
-              <p className="text-sm text-gray-700 whitespace-pre-line">{value}</p>
+              <MarkdownText className="text-gray-700">{value}</MarkdownText>
               <button onClick={() => { setInput(value); setEditing(true) }}
                 className="text-[11px] text-gray-400 hover:text-gray-700">편집</button>
             </>
@@ -1697,10 +1700,9 @@ function CommunicationTimeline({ logs, contracts, projectId }: { logs: Log[]; co
                 </button>
               ))}
             </div>
-            <textarea value={newContent} onChange={e => setNewContent(e.target.value)} rows={2}
-              placeholder="소통 내용을 입력하세요..." autoFocus
-              onKeyDown={e => { if (e.key === 'Enter' && e.metaKey) submitNew() }}
-              className="w-full text-sm border border-yellow-200 rounded-lg px-3 py-2 resize-none focus:outline-none focus:ring-1 focus:ring-yellow-400 bg-white" />
+            <div className="border border-yellow-200 rounded-lg overflow-hidden bg-white">
+              <BlockNoteEditor initialMarkdown={newContent} onChangeMarkdown={setNewContent} />
+            </div>
 
             {/* 상세 필드 (회의록용) */}
             {showDetails && (
