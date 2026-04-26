@@ -80,6 +80,57 @@ export async function updateProjectMemo(projectId: string, memo: string) {
   revalidatePath(`/projects/${projectId}`)
 }
 
+// project_memos 멀티 메모
+export async function createProjectMemo(
+  projectId: string,
+  data: { title: string; content: string },
+): Promise<{ id: string } | { error: string }> {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return { error: 'Unauthorized' }
+
+  const admin = createAdminClient()
+  const { data: row, error } = await admin
+    .from('project_memos')
+    .insert({
+      project_id: projectId,
+      title: data.title || null,
+      content: data.content || null,
+      author_id: user.id,
+    })
+    .select('id')
+    .single()
+  if (error) return { error: error.message }
+  revalidatePath(`/projects/${projectId}/v2`)
+  revalidatePath(`/projects/${projectId}`)
+  return { id: row.id }
+}
+
+export async function updateProjectMemoCard(
+  memoId: string,
+  projectId: string,
+  data: { title?: string; content?: string },
+): Promise<{ error?: string }> {
+  const admin = createAdminClient()
+  const updates: Record<string, unknown> = { updated_at: new Date().toISOString() }
+  if (data.title !== undefined) updates.title = data.title || null
+  if (data.content !== undefined) updates.content = data.content || null
+  const { error } = await admin.from('project_memos').update(updates).eq('id', memoId)
+  if (error) return { error: error.message }
+  revalidatePath(`/projects/${projectId}/v2`)
+  revalidatePath(`/projects/${projectId}`)
+  return {}
+}
+
+export async function deleteProjectMemo(memoId: string, projectId: string): Promise<{ error?: string }> {
+  const admin = createAdminClient()
+  const { error } = await admin.from('project_memos').delete().eq('id', memoId)
+  if (error) return { error: error.message }
+  revalidatePath(`/projects/${projectId}/v2`)
+  revalidatePath(`/projects/${projectId}`)
+  return {}
+}
+
 // V2 3박스용 필드 업데이트
 export async function updateProjectOverviewSummary(projectId: string, value: string) {
   const admin = createAdminClient()

@@ -29,6 +29,7 @@ export default async function ProjectV2Page({ params }: { params: Promise<{ id: 
     { data: customersAll },
     { data: logsRaw },
     { data: leadsRaw },
+    { data: memosRaw },
   ] = await Promise.all([
     admin.from('project_members').select('profile_id, role').eq('project_id', id),
     admin.from('sales').select('id, name, revenue, contract_stage, progress_status, inflow_date, payment_date, client_org, contract_split_reason, dropbox_url, assignee_id, entity_id, payment_schedules(*)').eq('project_id', id).order('created_at'),
@@ -43,6 +44,7 @@ export default async function ProjectV2Page({ params }: { params: Promise<{ id: 
       .order('contacted_at', { ascending: false })
       .limit(100),
     admin.from('leads').select('id, lead_id').eq('project_id', id),
+    admin.from('project_memos').select('id, title, content, created_at, updated_at, author_id').eq('project_id', id).order('created_at', { ascending: false }),
   ])
 
   const profileMap = createProfileMap(profilesRaw)
@@ -155,6 +157,14 @@ export default async function ProjectV2Page({ params }: { params: Promise<{ id: 
         name: profileNameMap[m.profile_id] ?? '',
       }))}
       customersAll={(customersAll ?? []).map((c: any) => ({ id: c.id, name: c.name, type: c.type ?? null }))}
+      memos={(memosRaw ?? []).map((m: any) => ({
+        id: m.id,
+        title: m.title ?? null,
+        content: m.content ?? null,
+        created_at: m.created_at,
+        updated_at: m.updated_at,
+        author_name: m.author_id ? (profileNameMap[m.author_id] ?? null) : null,
+      }))}
     />
   )
 }

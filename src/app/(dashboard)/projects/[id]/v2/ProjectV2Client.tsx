@@ -21,6 +21,9 @@ import {
   generateAndSuggestTasks,
   createAndLinkCalendarEvent,
   listProjectDropboxFiles,
+  createProjectMemo,
+  updateProjectMemoCard,
+  deleteProjectMemo,
 } from '../project-actions'
 import { updateTask, deleteTask } from '../../../sales/tasks/actions'
 
@@ -80,6 +83,15 @@ interface Rental {
 
 interface ProfileOpt { id: string; name: string }
 
+type Memo = {
+  id: string
+  title: string | null
+  content: string | null
+  created_at: string
+  updated_at: string
+  author_name: string | null
+}
+
 interface Props {
   project: Project
   pmName: string | null
@@ -96,6 +108,7 @@ interface Props {
   currentUserId: string
   members: { profile_id: string; role: string; name: string }[]
   customersAll: { id: string; name: string; type: string | null }[]
+  memos: Memo[]
 }
 
 const STATUS_CLR: Record<string, string> = {
@@ -147,7 +160,7 @@ function KpiPill({ icon, label, value, tone }: { icon: string; label: string; va
 export default function ProjectV2Client({
   project, pmName, customer, contactPerson, finance,
   contracts, tasks, logs, rentals, leadIds, profiles, currentUserId,
-  members, customersAll,
+  members, customersAll, memos,
 }: Props) {
   const [showSettings, setShowSettings] = useState(false)
   const profitRate = finance.revenue > 0
@@ -271,7 +284,7 @@ export default function ProjectV2Client({
         {/* 좌: 메인 */}
         <div className="space-y-4">
           {/* 1. 메모 (인플레이스) */}
-          <MemoBlock project={project} />
+          <MemosBlock projectId={project.id} memos={memos} legacyMemo={project.memo} />
           <NotesBlock project={project} />
 
           {/* 2. 2박스: 개요(빵빵이) / 협의해야할 내용 (접/펼) */}
@@ -538,15 +551,181 @@ function MarkdownNoteBlock({
   )
 }
 
-function MemoBlock({ project }: { project: Project }) {
+// 메모 카드 리스트 — project_memos 테이블 기반 multiple
+function MemosBlock({ projectId, memos, legacyMemo }: {
+  projectId: string
+  memos: Memo[]
+  legacyMemo: string | null
+}) {
+  const router = useRouter()
+  const [, startTransition] = useTransition()
+  const [collapsed, setCollapsed] = useState(false)
+  const [adding, setAdding] = useState(false)
+  const [newTitle, setNewTitle] = useState('')
+  const [newContent, setNewContent] = useState('')
+  const taRef = useRef<HTMLTextAreaElement>(null)
+  const [legacyImported, setLegacyImported] = useState(false)
+
+  function add() {
+    if (!newContent.trim() && !newTitle.trim()) return
+    startTransition(async () => {
+      await createProjectMemo(projectId, { title: newTitle.trim(), content: newContent.trim() })
+      setNewTitle(''); setNewContent(''); setAdding(false)
+      router.refresh()
+    })
+  }
+
+  // 레거시 projects.memo가 있고 아직 카드로 옮겨지지 않았으면 안내 + "카드로 변환" 버튼
+  async function importLegacy() {
+    if (!legacyMemo) return
+    startTransition(async () => {
+      await createProjectMemo(projectId, { title: '메모', content: legacyMemo })
+      // 레거시 필드 비우기
+      await updateProjectMemo(projectId, '')
+      setLegacyImported(true)
+      router.refresh()
+    })
+  }
+
   return (
-    <MarkdownNoteBlock
-      projectId={project.id}
-      title="📝 메모"
-      value={project.memo}
-      save={updateProjectMemo}
-      emptyText="메모 없음"
-    />
+    <div className="bg-white border border-gray-100 rounded-xl px-5 py-3">
+      <div className="flex items-center justify-between mb-1.5">
+        <button
+          onClick={() => setCollapsed(c => !c)}
+          className="flex items-center gap-1.5 text-xs font-semibold text-gray-700 hover:text-gray-900"
+        >
+          <span className="text-gray-400 text-[10px]">{collapsed ? '▶' : '▼'}</span>
+          📝 메모 <span className="text-gray-400 font-normal">({memos.length})</span>
+        </button>
+        {!collapsed && (
+          <button onClick={() => setAdding(s => !s)}
+            className="text-[11px] text-gray-400 hover:text-gray-700">
+            {adding ? '닫기' : '+ 새 메모'}
+          </button>
+        )}
+      </div>
+
+      {!collapsed && (
+        <div className="space-y-2">
+          {/* 레거시 memo 마이그레이션 안내 */}
+          {legacyMemo && !legacyImported && (
+            <div className="bg-yellow-50 border border-yellow-200 rounded p-2 text-xs">
+              <p className="text-gray-700 mb-1">기존 메모 1건이 있어. 새 카드 시스템으로 변환할까?</p>
+              <button onClick={importLegacy}
+                className="px-2 py-1 text-xs font-semibold rounded bg-yellow-300 hover:bg-yellow-400">
+                카드로 변환
+              </button>
+            </div>
+          )}
+
+          {/* 새 메모 추가 폼 */}
+          {adding && (
+            <div className="border border-yellow-200 rounded-lg p-3 space-y-2 bg-yellow-50/30">
+              <input value={newTitle} onChange={e => setNewTitle(e.target.value)}
+                placeholder="제목 (선택)"
+                className="w-full text-sm font-semibold border border-gray-200 rounded px-2.5 py-1.5 focus:outline-none focus:ring-1 focus:ring-yellow-400 bg-white" />
+              <MarkdownToolbar textareaRef={taRef} value={newContent} onChange={setNewContent} />
+              <textarea ref={taRef} value={newContent} onChange={e => setNewContent(e.target.value)}
+                rows={6} autoFocus
+                onKeyDown={e => { handleMarkdownShortcut(e, newContent, setNewContent) }}
+                placeholder="내용 (마크다운 지원)"
+                className="w-full text-sm border border-gray-200 border-t-0 rounded-b-lg px-3 py-2 resize-y focus:outline-none focus:ring-1 focus:ring-yellow-400 bg-white font-mono -mt-2" />
+              <div className="flex gap-2">
+                <button onClick={add} disabled={!newContent.trim() && !newTitle.trim()}
+                  className="px-3 py-1.5 text-xs font-semibold rounded-lg hover:opacity-80 disabled:opacity-40"
+                  style={{ backgroundColor: '#FFCE00', color: '#121212' }}>저장</button>
+                <button onClick={() => { setAdding(false); setNewTitle(''); setNewContent('') }}
+                  className="px-3 py-1.5 text-xs border border-gray-200 rounded-lg text-gray-500">취소</button>
+              </div>
+            </div>
+          )}
+
+          {/* 메모 카드 리스트 */}
+          {memos.length === 0 && !adding && !legacyMemo && (
+            <p className="text-xs text-gray-400 italic">메모 없음. + 새 메모 클릭해서 추가.</p>
+          )}
+          {memos.map(m => <MemoCard key={m.id} memo={m} projectId={projectId} />)}
+        </div>
+      )}
+    </div>
+  )
+}
+
+function MemoCard({ memo, projectId }: { memo: Memo; projectId: string }) {
+  const router = useRouter()
+  const [, startTransition] = useTransition()
+  const [editing, setEditing] = useState(false)
+  const [collapsed, setCollapsed] = useState(false)
+  const [title, setTitle] = useState(memo.title ?? '')
+  const [content, setContent] = useState(memo.content ?? '')
+  const taRef = useRef<HTMLTextAreaElement>(null)
+
+  function save() {
+    startTransition(async () => {
+      await updateProjectMemoCard(memo.id, projectId, { title, content })
+      setEditing(false)
+      router.refresh()
+    })
+  }
+
+  function remove() {
+    if (!confirm(`"${memo.title || '메모'}" 삭제할까?`)) return
+    startTransition(async () => {
+      await deleteProjectMemo(memo.id, projectId)
+      router.refresh()
+    })
+  }
+
+  return (
+    <div className="border border-gray-100 rounded-lg p-3 hover:border-gray-200 transition-colors">
+      <div className="flex items-start justify-between gap-2 mb-1">
+        <button onClick={() => !editing && setCollapsed(c => !c)}
+          className="flex-1 text-left flex items-center gap-1.5 group">
+          <span className="text-gray-400 text-[10px]">{collapsed ? '▶' : '▼'}</span>
+          {editing ? (
+            <input value={title} onChange={e => setTitle(e.target.value)}
+              placeholder="제목 (선택)"
+              onClick={e => e.stopPropagation()}
+              className="flex-1 text-sm font-semibold border border-gray-200 rounded px-2 py-1 bg-white" />
+          ) : (
+            <span className="text-sm font-semibold text-gray-800 group-hover:text-gray-900">
+              {memo.title || <span className="text-gray-400 italic font-normal">제목 없음</span>}
+            </span>
+          )}
+        </button>
+        <div className="flex items-center gap-1.5 flex-shrink-0">
+          <span className="text-[10px] text-gray-400">
+            {memo.author_name ? `${memo.author_name} · ` : ''}{memo.created_at?.slice(5, 10)}
+          </span>
+          {!editing && !collapsed && (
+            <>
+              <button onClick={() => setEditing(true)} className="text-[11px] text-blue-500 hover:underline">편집</button>
+              <button onClick={remove} className="text-[11px] text-red-500 hover:underline">삭제</button>
+            </>
+          )}
+        </div>
+      </div>
+
+      {!collapsed && (editing ? (
+        <div className="space-y-2 mt-2">
+          <MarkdownToolbar textareaRef={taRef} value={content} onChange={setContent} />
+          <textarea ref={taRef} value={content} onChange={e => setContent(e.target.value)}
+            rows={8} onKeyDown={e => { handleMarkdownShortcut(e, content, setContent) }}
+            className="w-full text-sm border border-gray-200 border-t-0 rounded-b px-3 py-2 resize-y focus:outline-none focus:ring-1 focus:ring-yellow-400 bg-white font-mono -mt-2" />
+          <div className="flex gap-2">
+            <button onClick={save}
+              className="px-3 py-1.5 text-xs font-semibold rounded hover:opacity-80"
+              style={{ backgroundColor: '#FFCE00', color: '#121212' }}>저장</button>
+            <button onClick={() => { setEditing(false); setTitle(memo.title ?? ''); setContent(memo.content ?? '') }}
+              className="px-3 py-1.5 text-xs border border-gray-200 rounded text-gray-500">취소</button>
+          </div>
+        </div>
+      ) : memo.content ? (
+        <MarkdownText className="text-gray-700 mt-1">{memo.content}</MarkdownText>
+      ) : (
+        <p className="text-xs text-gray-400 italic mt-1">내용 없음</p>
+      ))}
+    </div>
   )
 }
 
