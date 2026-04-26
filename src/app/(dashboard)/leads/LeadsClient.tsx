@@ -559,9 +559,9 @@ export default function LeadsClient({ leads, profiles, persons, customers, curre
   const [newLeadLog, setNewLeadLog] = useState('')
   const [newLeadLogType, setNewLeadLogType] = useState('통화')
   const [leadLogShowDetails, setLeadLogShowDetails] = useState(false)
-  // 사이드 패널 박스별 접기 상태 (basicInfo만 default 접힘, 나머지 펼침)
+  // 사이드 패널 박스별 접기 상태 — 요약·최초 문의만 default 펼침, 나머지 접힘
   const [openSections, setOpenSections] = useState<Record<string, boolean>>({
-    basicInfo: false, summary: true, logs: true, calendar: true, remind: true, bbang: true, sales: true, quote: true,
+    basicInfo: false, summary: true, logs: false, calendar: false, remind: false, bbang: false, sales: false, quote: false,
   })
   const toggleSection = (key: string) => setOpenSections(s => ({ ...s, [key]: !s[key] }))
   const [leadLogLocation, setLeadLogLocation] = useState('')
