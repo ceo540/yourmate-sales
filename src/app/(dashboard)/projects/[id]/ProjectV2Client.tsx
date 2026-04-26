@@ -280,12 +280,12 @@ export default function ProjectV2Client({
       <div className="grid grid-cols-1 lg:grid-cols-[1fr_320px] gap-5">
         {/* 좌: 메인 */}
         <div className="space-y-4">
-          {/* 1. 메모 (인플레이스) */}
+          {/* 1. 자동 개요 + 협의해야할 내용 (빵빵이) — 항상 최상단 */}
+          <TwoBoxesBlock project={project} />
+
+          {/* 2. 메모 (multiple 카드) */}
           <MemosBlock projectId={project.id} memos={memos} legacyMemo={project.memo} />
           <NotesBlock project={project} />
-
-          {/* 2. 2박스: 개요(빵빵이) / 협의해야할 내용 (접/펼) */}
-          <TwoBoxesBlock project={project} />
 
           {/* 3. 할일 (tasks) */}
           <TasksSection tasks={tasks} contracts={contracts} projectId={project.id} profiles={profiles} serviceType={project.service_type} />

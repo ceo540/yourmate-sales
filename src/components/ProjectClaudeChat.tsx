@@ -48,7 +48,11 @@ export default function ProjectClaudeChat({ leadId, saleId, projectId, projectNa
   }, [messages, chatKey])
 
   useEffect(() => {
-    if (open) bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
+    // 챗 컨테이너 내부만 스크롤 (페이지 전체 스크롤 방지)
+    if (open && bottomRef.current) {
+      const container = bottomRef.current.parentElement
+      if (container) container.scrollTop = container.scrollHeight
+    }
   }, [messages, open])
 
   async function send() {
