@@ -62,11 +62,28 @@ export default async function DashboardPage() {
   if (!isAdmin) remindQ = remindQ.eq('assignee_id', user.id)
 
   let projectsQ = admin.from('projects')
-    .select('id, name, service_type, status, project_number, customer_id')
+    .select('id, name, service_type, status, project_number, customer_id, pending_discussion')
     .eq('status', '진행중')
     .order('created_at', { ascending: false })
     .limit(6)
   if (!isAdmin) projectsQ = projectsQ.eq('pm_id', user.id)
+
+  // 빵빵이 액션: 활성 리드 중 summary_cache 있는 것 + 활성 프로젝트 중 pending_discussion 있는 것
+  let actionLeadsQ = admin.from('leads')
+    .select('id, project_name, client_org, service_type, summary_cache')
+    .not('status', 'in', '(완료,취소)')
+    .not('summary_cache', 'is', null)
+    .order('updated_at', { ascending: false })
+    .limit(50)
+  if (!isAdmin) actionLeadsQ = actionLeadsQ.eq('assignee_id', user.id)
+
+  let actionProjectsQ = admin.from('projects')
+    .select('id, name, project_number, service_type, pending_discussion')
+    .eq('status', '진행중')
+    .not('pending_discussion', 'is', null)
+    .order('updated_at', { ascending: false })
+    .limit(30)
+  if (!isAdmin) actionProjectsQ = actionProjectsQ.eq('pm_id', user.id)
 
   const revenueQ = admin.from('sales')
     .select('revenue')
@@ -80,6 +97,8 @@ export default async function DashboardPage() {
     { data: revenueRows },
     { data: deliveries },
     { data: concerts },
+    { data: actionLeads },
+    { data: actionProjects },
   ] = await Promise.all([
     taskQ,
     remindQ,
@@ -90,7 +109,45 @@ export default async function DashboardPage() {
       .gte('delivery_date', today).limit(5),
     admin.from('sos_concerts').select('id, name, year, month')
       .gte('year', now.getFullYear()).limit(5),
+    actionLeadsQ,
+    actionProjectsQ,
   ])
+
+  // summary_cache의 "다음:" 라인만 추출
+  type Action = { id: string; type: 'lead' | 'project'; name: string; subtitle: string; action: string; href: string; service_type: string | null }
+  const leadActions: Action[] = (actionLeads ?? []).flatMap(l => {
+    const next = l.summary_cache?.split('\n').find((line: string) => line.trim().startsWith('다음:'))?.replace(/^다음:\s*/, '').trim()
+    if (!next || next === '없음' || next === '—') return []
+    return [{
+      id: l.id, type: 'lead' as const,
+      name: l.project_name || l.client_org || '(이름 없음)',
+      subtitle: l.client_org || '—',
+      action: next,
+      href: '/leads',
+      service_type: l.service_type ?? null,
+    }]
+  })
+
+  // pending_discussion 첫 항목 (markdown 헤더 + 첫 bullet)
+  const projActions: Action[] = (actionProjects ?? []).flatMap(p => {
+    const text = p.pending_discussion as string | null
+    if (!text) return []
+    // 첫 번째 bullet 또는 첫 줄 추출
+    const firstAction = text.split('\n').map((s: string) => s.trim())
+      .find((s: string) => /^[-*]\s/.test(s) && s.length > 5)
+      ?.replace(/^[-*]\s+/, '').slice(0, 100)
+    if (!firstAction) return []
+    return [{
+      id: p.id, type: 'project' as const,
+      name: p.name,
+      subtitle: p.project_number ?? '—',
+      action: firstAction,
+      href: `/projects/${p.id}`,
+      service_type: p.service_type ?? null,
+    }]
+  })
+
+  const allActions = [...leadActions, ...projActions]
 
   // 이번달 매출 집계
   const monthRevenue = (revenueRows ?? []).reduce((sum, r) => sum + (r.revenue ?? 0), 0)
@@ -144,6 +201,52 @@ export default async function DashboardPage() {
             <p className="text-xs text-gray-400 mt-1">{c.sub}</p>
           </div>
         ))}
+      </div>
+
+      {/* 🤖 빵빵이의 오늘 할 일 — 모든 활성 리드/프로젝트의 다음 액션 종합 */}
+      <div className={`${CARD} mb-4`} style={SHADOW}>
+        <div className="flex items-center justify-between mb-4">
+          <h3 className={SECTION_HDR + ' mb-0'}>🤖 빵빵이의 오늘 할 일</h3>
+          <span className="text-xs text-gray-400">{allActions.length}건</span>
+        </div>
+        {allActions.length === 0 ? (
+          <div className="py-6 text-center">
+            <p className="text-sm text-gray-400 mb-2">아직 빵빵이가 분석한 액션이 없어요</p>
+            <p className="text-[11px] text-gray-300">리드/프로젝트에 들어가서 [🤖 빵빵이 분석] 또는 [🤖 다시 분석]을 누르면 여기에 모입니다</p>
+          </div>
+        ) : (
+          <div className="space-y-1">
+            {allActions.slice(0, 12).map(a => {
+              const svcColor = SVC_COLOR[a.service_type ?? ''] ?? '#6B7280'
+              return (
+                <Link key={`${a.type}-${a.id}`} href={a.href}
+                  className="flex items-start gap-3 py-2 px-2 hover:bg-gray-50 rounded transition-colors -mx-2">
+                  <span className={`text-[10px] px-1.5 py-0.5 rounded font-bold flex-shrink-0 mt-0.5 ${
+                    a.type === 'lead' ? 'bg-yellow-100 text-yellow-700' : 'bg-blue-100 text-blue-700'
+                  }`}>
+                    {a.type === 'lead' ? '리드' : '프로젝트'}
+                  </span>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm text-blue-700 font-medium leading-snug">🤖 {a.action}</p>
+                    <p className="text-[11px] text-gray-500 mt-0.5 truncate">
+                      <span className="font-medium text-gray-700">{a.name}</span>
+                      {a.subtitle !== '—' && <span className="text-gray-400"> · {a.subtitle}</span>}
+                    </p>
+                  </div>
+                  {a.service_type && (
+                    <span className="text-[10px] px-1.5 py-0.5 rounded border font-medium flex-shrink-0 mt-0.5"
+                      style={{ color: svcColor, borderColor: svcColor + '40', background: svcColor + '10' }}>
+                      {a.service_type}
+                    </span>
+                  )}
+                </Link>
+              )
+            })}
+            {allActions.length > 12 && (
+              <p className="text-[11px] text-gray-400 text-center pt-2">+{allActions.length - 12}건 더</p>
+            )}
+          </div>
+        )}
       </div>
 
       {/* 메인 그리드 */}
