@@ -149,6 +149,17 @@ export default async function DashboardPage() {
 
   const allActions = [...leadActions, ...projActions]
 
+  // task → 프로젝트 URL 매핑 (task.project_id = sale.id, sale.project_id = 진짜 project)
+  const taskSaleIds = [...new Set((tasks ?? []).map(t => t.project_id).filter(Boolean) as string[])]
+  let taskProjectMap: Record<string, string> = {}
+  if (taskSaleIds.length > 0) {
+    const { data: salesForTasks } = await admin
+      .from('sales').select('id, project_id').in('id', taskSaleIds)
+    taskProjectMap = Object.fromEntries(
+      (salesForTasks ?? []).filter(s => s.project_id).map(s => [s.id, s.project_id as string])
+    )
+  }
+
   // 이번달 매출 집계
   const monthRevenue = (revenueRows ?? []).reduce((sum, r) => sum + (r.revenue ?? 0), 0)
 
@@ -295,9 +306,11 @@ export default async function DashboardPage() {
           ) : (tasks ?? []).map(t => {
             const diff = t.due_date ? dday(t.due_date) : null
             const badge = diff !== null ? ddayLabel(diff) : null
+            const projectUrl = t.project_id ? taskProjectMap[t.project_id] : null
+            const href = projectUrl ? `/projects/${projectUrl}` : '/tasks'
             return (
-              <div key={t.id}
-                className="flex items-start gap-3 py-2.5 border-b border-gray-50 last:border-0">
+              <Link key={t.id} href={href}
+                className="flex items-start gap-3 py-2.5 border-b border-gray-50 last:border-0 hover:bg-gray-50 -mx-2 px-2 rounded transition-colors">
                 <div className="w-4 h-4 rounded border-2 border-gray-300 flex-shrink-0 mt-0.5" />
                 <div className="flex-1 min-w-0">
                   <p className="text-sm font-medium text-gray-900 truncate">{t.title}</p>
@@ -311,7 +324,7 @@ export default async function DashboardPage() {
                   )}
                   {t.priority === '긴급' && <span className="text-[10px] text-red-500 font-bold">긴급</span>}
                 </div>
-              </div>
+              </Link>
             )
           })}
           <Link href="/tasks" className="block text-xs text-gray-400 hover:text-gray-600 text-center mt-3">
