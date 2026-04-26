@@ -1,9 +1,12 @@
 'use client'
 
-import { useRef, useState, useTransition } from 'react'
+import { useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
+import dynamic from 'next/dynamic'
 import MarkdownText from './MarkdownText'
-import MarkdownToolbar, { handleMarkdownShortcut } from './MarkdownToolbar'
+
+// BlockNote는 client-only. dynamic import로 SSR 회피.
+const BlockNoteEditor = dynamic(() => import('./BlockNoteEditor'), { ssr: false })
 
 // 공용 마크다운 노트 박스 — 제목 + 접기/펼치기 + 인라인 편집 + 툴바 + 단축키
 // 프로젝트 메모/유의사항, 리드 메모 등 어디서든 재사용.
@@ -31,7 +34,6 @@ export default function MarkdownNoteBlock({
   const [editing, setEditing] = useState(false)
   const [collapsed, setCollapsed] = useState(defaultCollapsed)
   const [input, setInput] = useState(value ?? '')
-  const taRef = useRef<HTMLTextAreaElement>(null)
 
   function handleSave() {
     startTransition(async () => {
@@ -61,19 +63,19 @@ export default function MarkdownNoteBlock({
       {!collapsed && (
         editing ? (
           <div className="space-y-2">
-            <MarkdownToolbar textareaRef={taRef} value={input} onChange={setInput} />
-            <textarea ref={taRef} value={input} onChange={e => setInput(e.target.value)}
-              rows={rows} autoFocus
-              onKeyDown={e => { handleMarkdownShortcut(e, input, setInput) }}
-              placeholder={'툴바 버튼 또는 단축키(⌘+B, ⌘+I) 사용. 표는 📊 표 버튼으로 삽입.'}
-              className="w-full text-sm border border-gray-200 border-t-0 rounded-b-lg px-3 py-2 resize-y focus:outline-none focus:ring-1 focus:ring-yellow-400 bg-white font-mono -mt-2" />
+            <div className="border border-gray-200 rounded-lg overflow-hidden bg-white">
+              <BlockNoteEditor
+                initialMarkdown={input}
+                onChangeMarkdown={setInput}
+              />
+            </div>
             <div className="flex gap-2">
               <button onClick={handleSave}
                 className="px-3 py-1.5 text-xs font-semibold rounded-lg hover:opacity-80"
                 style={{ backgroundColor: '#FFCE00', color: '#121212' }}>저장</button>
               <button onClick={() => setEditing(false)}
                 className="px-3 py-1.5 text-xs border border-gray-200 rounded-lg text-gray-500">취소</button>
-              <span className="ml-auto text-[10px] text-gray-400 self-center">⌘+B 굵게 · ⌘+I 기울임 · ⌘+E 코드</span>
+              <span className="ml-auto text-[10px] text-gray-400 self-center">/ 슬래시 메뉴 · 표는 셀 직접 편집</span>
             </div>
           </div>
         ) : value ? (
