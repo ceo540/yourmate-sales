@@ -261,6 +261,20 @@ export async function convertLeadToSale(leadId: string) {
     }
     if (finalDropboxUrl) {
       await supabase.from('sales').update({ dropbox_url: finalDropboxUrl }).eq('id', sale.id)
+
+      // brief 파일명도 새 정책(<번호> <건이름>.md)으로 자동 갱신
+      try {
+        const { getBriefFilename, findExistingBriefFile } = await import('@/lib/brief-generator')
+        const { renameDropboxFile } = await import('@/lib/dropbox')
+        const targetFilename = getBriefFilename({
+          project_name: displayName || saleFullName,
+          project_number: projectNumber,
+        })
+        const existing = await findExistingBriefFile(finalDropboxUrl, targetFilename)
+        if (existing && existing !== targetFilename) {
+          await renameDropboxFile(finalDropboxUrl, existing, targetFilename).catch(() => null)
+        }
+      } catch { /* brief rename 실패는 무시 */ }
     }
   }
 

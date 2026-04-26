@@ -189,6 +189,38 @@ export async function uploadTextFile(params: {
   return { ok: true as const, filename: params.filename, savedPath: json.path_display as string }
 }
 
+// 드롭박스 단일 파일 rename (move_v2). 폴더 안에서 파일 이름만 변경.
+export async function renameDropboxFile(
+  folderWebUrl: string,
+  oldFilename: string,
+  newFilename: string,
+): Promise<{ ok: true } | { error: string }> {
+  const token = await getDropboxToken()
+  if (!token) return { error: '드롭박스 토큰 없음' }
+  const WEB_BASE = 'https://www.dropbox.com/home'
+  if (!folderWebUrl.startsWith(WEB_BASE)) return { error: 'URL 형식 오류' }
+  if (oldFilename === newFilename) return { ok: true }
+
+  const folderPath = decodeURIComponent(folderWebUrl.replace(WEB_BASE, '')).replace(/\/$/, '')
+  const fromPath = `${folderPath}/${oldFilename}`
+  const toPath = `${folderPath}/${newFilename}`
+
+  const res = await fetch('https://api.dropboxapi.com/2/files/move_v2', {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${token}`,
+      'Content-Type': 'application/json',
+      'Dropbox-API-Path-Root': JSON.stringify({ '.tag': 'root', 'root': ROOT_NAMESPACE }),
+    },
+    body: JSON.stringify({ from_path: fromPath, to_path: toPath, allow_shared_folder: true, autorename: false }),
+  })
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}))
+    return { error: `파일 이름 변경 실패: ${JSON.stringify(err).slice(0, 200)}` }
+  }
+  return { ok: true }
+}
+
 // 드롭박스 폴더명 변경 (현재 sale.name 기준으로 rename)
 export async function renameDropboxFolder(
   dropboxUrl: string,

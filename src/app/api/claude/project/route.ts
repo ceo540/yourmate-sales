@@ -330,6 +330,14 @@ ${logs && logs.length > 0 ? `\n## 최근 소통내역\n${logs.map(l => `- [${l.l
       input_schema: { type: 'object' as const, properties: {} },
     },
     {
+      name: 'rename_brief_file',
+      description: 'Dropbox 폴더의 brief 파일 이름을 정책에 맞게 자동 갱신. 리드는 <건이름>.md, 전환 후 sale/project는 <번호> <건이름>.md로 변경. 사용자가 "brief 파일명 정리해줘", "이름 갱신해줘" 등이라고 하면 호출.',
+      input_schema: {
+        type: 'object' as const,
+        properties: {},
+      },
+    },
+    {
       name: 'add_project_memo',
       description: '프로젝트에 새 메모 카드를 추가. 회의 정리, 카톡 분석 결과, 통화 메모 등을 별도 카드로 보존하고 싶을 때 사용. 마크다운 지원 (제목/리스트/표/체크박스). 사용자가 "메모 추가/메모로 정리/카드로 남겨" 등 말하면 즉시 호출.',
       input_schema: {
@@ -684,6 +692,53 @@ ${logs && logs.length > 0 ? `\n## 최근 소통내역\n${logs.map(l => `- [${l.l
                 const r = await generateAndSavePendingDiscussion(projectId)
                 result = 'error' in r ? `실패: ${r.error}` : '협의사항을 재분석했어.'
                 if ('summary' in r) revalidate()
+              }
+
+            } else if (block.name === 'rename_brief_file') {
+              send('\n*(brief 파일명 갱신 중...)*\n')
+              try {
+                const { getBriefFilename, findExistingBriefFile } = await import('@/lib/brief-generator')
+                const { renameDropboxFile } = await import('@/lib/dropbox')
+
+                let dbxUrl: string | null = null
+                let projectName: string | null = null
+                let projectNumber: string | null = null
+                let fallbackId: string | null = null
+
+                if (projectId) {
+                  const { data: p } = await admin.from('projects').select('name, project_number, dropbox_url').eq('id', projectId).single()
+                  dbxUrl = p?.dropbox_url ?? null
+                  projectName = p?.name ?? null
+                  projectNumber = p?.project_number ?? null
+                } else if (saleId) {
+                  const { data: s } = await admin.from('sales').select('name, project_number, dropbox_url').eq('id', saleId).single()
+                  dbxUrl = s?.dropbox_url ?? null
+                  projectName = s?.name ?? null
+                  projectNumber = s?.project_number ?? null
+                } else if (leadId) {
+                  const { data: l } = await admin.from('leads').select('lead_id, project_name, dropbox_url').eq('id', leadId).single()
+                  dbxUrl = l?.dropbox_url ?? null
+                  projectName = l?.project_name ?? null
+                  fallbackId = l?.lead_id ?? null
+                }
+
+                if (!dbxUrl) {
+                  result = '연결된 Dropbox 폴더가 없어. 먼저 폴더를 연결해줘.'
+                } else {
+                  const targetFilename = getBriefFilename({ project_name: projectName, project_number: projectNumber, fallback_id: fallbackId })
+                  const existing = await findExistingBriefFile(dbxUrl, targetFilename)
+                  if (!existing) {
+                    result = `폴더에 brief 파일이 없어. 먼저 [📄 Brief 갱신] 또는 update_brief_note로 생성해줘.`
+                  } else if (existing === targetFilename) {
+                    result = `이미 정책 이름(${targetFilename}) 그대로야. 변경 없음.`
+                  } else {
+                    const r = await renameDropboxFile(dbxUrl, existing, targetFilename)
+                    result = 'error' in r ? `실패: ${r.error}` : `"${existing}" → "${targetFilename}" 갱신 완료.`
+                    if (!('error' in r)) revalidate()
+                  }
+                }
+              } catch (e: unknown) {
+                result = '실패: ' + (e instanceof Error ? e.message : String(e))
               }
 
             } else if (block.name === 'add_project_memo') {

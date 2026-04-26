@@ -559,8 +559,11 @@ export default function LeadsClient({ leads, profiles, persons, customers, curre
   const [newLeadLog, setNewLeadLog] = useState('')
   const [newLeadLogType, setNewLeadLogType] = useState('통화')
   const [leadLogShowDetails, setLeadLogShowDetails] = useState(false)
-  const [showBasicInfo, setShowBasicInfo] = useState(false)
-  const [showLogs, setShowLogs] = useState(true)
+  // 사이드 패널 박스별 접기 상태 (basicInfo만 default 접힘, 나머지 펼침)
+  const [openSections, setOpenSections] = useState<Record<string, boolean>>({
+    basicInfo: false, summary: true, logs: true, calendar: true, remind: true, bbang: true, sales: true, quote: true,
+  })
+  const toggleSection = (key: string) => setOpenSections(s => ({ ...s, [key]: !s[key] }))
   const [leadLogLocation, setLeadLogLocation] = useState('')
   const [leadLogParticipants, setLeadLogParticipants] = useState('')
   const [leadLogOutcome, setLeadLogOutcome] = useState('')
@@ -1378,11 +1381,11 @@ export default function LeadsClient({ leads, profiles, persons, customers, curre
 
                 {/* ── 기본 정보 2열 카드 (default 접힘) ── */}
                 <div className="bg-white rounded-2xl px-4 py-2.5" style={{ boxShadow: '0 1px 4px rgba(0,0,0,0.06)' }}>
-                  <button onClick={() => setShowBasicInfo(s => !s)}
+                  <button onClick={() => toggleSection('basicInfo')}
                     className="w-full flex items-center gap-2 text-left">
-                    <span className="text-gray-400 text-[10px]">{showBasicInfo ? '▼' : '▶'}</span>
+                    <span className="text-gray-400 text-[10px]">{openSections.basicInfo ? '▼' : '▶'}</span>
                     <span className="text-xs font-semibold text-gray-400 uppercase tracking-wider">기본 정보</span>
-                    {!showBasicInfo && (
+                    {!openSections.basicInfo && (
                       <span className="text-[11px] text-gray-500 ml-auto truncate">
                         {selectedLead.contact_name && `👤 ${selectedLead.contact_name}`}
                         {selectedLead.client_org && ` · 🏢 ${selectedLead.client_org}`}
@@ -1391,7 +1394,7 @@ export default function LeadsClient({ leads, profiles, persons, customers, curre
                     )}
                   </button>
                 </div>
-                {showBasicInfo && (
+                {openSections.basicInfo && (
                 <div className="grid grid-cols-2 gap-4">
 
                   {/* 담당자 카드 */}
@@ -1545,7 +1548,12 @@ export default function LeadsClient({ leads, profiles, persons, customers, curre
                 {/* ── 요약 · 최초 문의 ── */}
                 {(selectedLead.initial_content || loadingSummary || leadSummary) && (
                   <div className="bg-white rounded-2xl p-5" style={{ boxShadow: '0 1px 4px rgba(0,0,0,0.06)' }}>
-                    <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2.5">요약 · 최초 문의</p>
+                    <button onClick={() => toggleSection('summary')}
+                      className="w-full flex items-center gap-2 text-left mb-2.5">
+                      <span className="text-gray-400 text-[10px]">{openSections.summary ? '▼' : '▶'}</span>
+                      <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider">요약 · 최초 문의</p>
+                    </button>
+                    {openSections.summary && (<>
                     {selectedLead.initial_content && (
                       <div>
                         <p className="text-[11px] font-semibold text-gray-400 mb-1">최초 문의 내용</p>
@@ -1584,6 +1592,7 @@ export default function LeadsClient({ leads, profiles, persons, customers, curre
                         )}
                       </div>
                     )}
+                    </>)}
                   </div>
                 )}
 
@@ -1599,15 +1608,15 @@ export default function LeadsClient({ leads, profiles, persons, customers, curre
 
                 {/* ── 소통 내역 ── */}
                 <div className="bg-white rounded-2xl p-5" style={{ boxShadow: '0 1px 4px rgba(0,0,0,0.06)' }}>
-                  <button onClick={() => setShowLogs(s => !s)}
+                  <button onClick={() => toggleSection('logs')}
                     className="w-full flex items-center gap-2 text-left mb-4">
-                    <span className="text-gray-400 text-[10px]">{showLogs ? '▼' : '▶'}</span>
+                    <span className="text-gray-400 text-[10px]">{openSections.logs ? '▼' : '▶'}</span>
                     <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider">
                       소통 내역 <span className="normal-case font-normal">{leadLogs.length}건</span>
                     </p>
                   </button>
 
-                  {showLogs && (<>
+                  {openSections.logs && (<>
 
                   {/* 소통 입력 폼 */}
                   <div className="border border-gray-200 rounded-xl p-3.5 bg-gray-50 mb-4">
@@ -1702,13 +1711,18 @@ export default function LeadsClient({ leads, profiles, persons, customers, curre
                   return (
                     <div className="bg-white rounded-2xl p-5" style={{ boxShadow: '0 1px 4px rgba(0,0,0,0.06)' }}>
                       <div className="flex items-center justify-between mb-3">
-                        <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider">캘린더 일정</p>
-                        <button onClick={() => setShowCalCreate(v => !v)}
+                        <button onClick={() => toggleSection('calendar')}
+                          className="flex items-center gap-2 text-left">
+                          <span className="text-gray-400 text-[10px]">{openSections.calendar ? '▼' : '▶'}</span>
+                          <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider">캘린더 일정</p>
+                        </button>
+                        {openSections.calendar && <button onClick={() => setShowCalCreate(v => !v)}
                           className="text-xs text-gray-400 hover:text-gray-700 px-2 py-1 rounded hover:bg-gray-50">
                           {showCalCreate ? '취소' : '+ 일정 추가'}
-                        </button>
+                        </button>}
                       </div>
 
+                      {openSections.calendar && (<>
                       {showCalCreate && (
                         <div className="mb-3 p-3 bg-blue-50 rounded-xl space-y-2 border border-blue-100">
                           <select value={calCreateKey} onChange={e => setCalCreateKey(e.target.value)}
@@ -1780,16 +1794,23 @@ export default function LeadsClient({ leads, profiles, persons, customers, curre
                           ))}
                         </div>
                       )}
+                      </>)}
                     </div>
                   )
                 })()}
 
                 {/* ── 리마인드 ── */}
                 <div className="bg-white rounded-2xl p-4" style={{ boxShadow: '0 1px 4px rgba(0,0,0,0.06)' }}>
-                  <div className="flex items-center gap-2 mb-3">
+                  <button onClick={() => toggleSection('remind')}
+                    className="w-full flex items-center gap-2 text-left mb-3">
+                    <span className="text-gray-400 text-[10px]">{openSections.remind ? '▼' : '▶'}</span>
                     <span className="text-sm">🔔</span>
                     <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider">리마인드</p>
-                  </div>
+                    {!openSections.remind && selectedLead.remind_date && (
+                      <span className="ml-auto text-[11px] text-gray-500">{selectedLead.remind_date}</span>
+                    )}
+                  </button>
+                  {openSections.remind && (<>
                   {selectedLead.remind_date ? (
                     <div className="flex items-center gap-3 p-3 bg-gray-50 rounded-xl">
                       <div className="flex items-center gap-2 flex-1">
@@ -1835,21 +1856,36 @@ export default function LeadsClient({ leads, profiles, persons, customers, curre
                       />
                     </div>
                   )}
+                  </>)}
                 </div>
 
                 {/* ── Claude 협업 ── */}
-                <ProjectClaudeChat
-                  leadId={selectedLead.id}
-                  serviceType={selectedLead.service_type}
-                  projectName={selectedLead.project_name}
-                  dropboxUrl={selectedLead.dropbox_url}
-                />
+                <div className="bg-white rounded-2xl px-4 py-2.5" style={{ boxShadow: '0 1px 4px rgba(0,0,0,0.06)' }}>
+                  <button onClick={() => toggleSection('bbang')}
+                    className="w-full flex items-center gap-2 text-left mb-2">
+                    <span className="text-gray-400 text-[10px]">{openSections.bbang ? '▼' : '▶'}</span>
+                    <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider">🤖 빵빵이 협업</p>
+                  </button>
+                  {openSections.bbang && (
+                    <ProjectClaudeChat
+                      leadId={selectedLead.id}
+                      serviceType={selectedLead.service_type}
+                      projectName={selectedLead.project_name}
+                      dropboxUrl={selectedLead.dropbox_url}
+                    />
+                  )}
+                </div>
 
 
                 {/* ── 연관 매출건 ── */}
                 {selectedLead.relatedSales && selectedLead.relatedSales.length > 0 && (
                   <div className="bg-white rounded-2xl p-5" style={{ boxShadow: '0 1px 4px rgba(0,0,0,0.06)' }}>
-                    <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">연관 매출건 ({selectedLead.relatedSales.length})</p>
+                    <button onClick={() => toggleSection('sales')}
+                      className="w-full flex items-center gap-2 text-left mb-3">
+                      <span className="text-gray-400 text-[10px]">{openSections.sales ? '▼' : '▶'}</span>
+                      <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider">연관 매출건 ({selectedLead.relatedSales.length})</p>
+                    </button>
+                    {openSections.sales && (
                     <div className="space-y-1.5">
                       {selectedLead.relatedSales.map((sale: { id: string; name: string; revenue: number | null; contract_stage: string; progress_status?: string | null; project_id?: string | null }) => (
                         <a key={sale.id} href={sale.project_id ? `/projects/${sale.project_id}` : `/sales/${sale.id}`}
@@ -1879,18 +1915,25 @@ export default function LeadsClient({ leads, profiles, persons, customers, curre
                         </a>
                       ))}
                     </div>
+                    )}
                   </div>
                 )}
 
                 {/* ── 견적서 ── */}
                 {selectedLead.quotation_url && (
                   <div className="bg-white rounded-2xl p-5" style={{ boxShadow: '0 1px 4px rgba(0,0,0,0.06)' }}>
-                    <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">견적서</p>
+                    <button onClick={() => toggleSection('quote')}
+                      className="w-full flex items-center gap-2 text-left mb-3">
+                      <span className="text-gray-400 text-[10px]">{openSections.quote ? '▼' : '▶'}</span>
+                      <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider">견적서</p>
+                    </button>
+                    {openSections.quote && (
                     <a href={selectedLead.quotation_url} target="_blank" rel="noopener noreferrer"
                       className="flex items-center gap-2 text-sm text-green-700 hover:text-green-900 bg-green-50 rounded-lg px-3 py-2 border border-green-100">
                       <span>📄</span>
                       <span className="underline truncate">구글 시트 견적서 열기</span>
                     </a>
+                    )}
                   </div>
                 )}
 

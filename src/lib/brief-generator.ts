@@ -1,7 +1,47 @@
 import { createAdminClient } from './supabase/admin'
-import { createSaleFolder, uploadTextFile, readDropboxFile } from './dropbox'
+import { createSaleFolder, uploadTextFile, readDropboxFile, renameDropboxFile, listDropboxFolder } from './dropbox'
 
 const AI_NOTES_HEADER = '## AI 협업 노트'
+
+// 파일명에 쓸 수 없는 문자 sanitize (Dropbox는 / \ : 등 제한)
+function sanitizeFilename(s: string): string {
+  return s.replace(/[\/\\:*?"<>|]/g, '_').replace(/\s+/g, ' ').trim()
+}
+
+// brief 파일 이름 정책
+// - 리드: <건이름>.md (project_name 없으면 lead_id)
+// - sale/project: <project_number> <건이름>.md
+export function getBriefFilename(opts: {
+  project_name?: string | null
+  project_number?: string | null
+  fallback_id?: string | null
+}): string {
+  const name = opts.project_name?.trim() || opts.fallback_id?.trim() || 'brief'
+  const safeName = sanitizeFilename(name)
+  if (opts.project_number) {
+    return sanitizeFilename(`${opts.project_number} ${safeName}`) + '.md'
+  }
+  return safeName + '.md'
+}
+
+// 폴더 안에서 brief 파일 후보 찾기 (현재 정책 이름 → 옛 brief.md → 첫 .md 파일)
+export async function findExistingBriefFile(
+  dropboxUrl: string,
+  preferredName: string,
+): Promise<string | null> {
+  if (!dropboxUrl) return null
+  const folderPath = decodeURIComponent(dropboxUrl.replace('https://www.dropbox.com/home', '')).replace(/\/$/, '')
+  // 1순위: 정책 이름
+  const tryRead = await readDropboxFile(`${folderPath}/${preferredName}`).catch(() => null)
+  if (tryRead && !('error' in tryRead)) return preferredName
+  // 2순위: brief.md
+  const tryBrief = await readDropboxFile(`${folderPath}/brief.md`).catch(() => null)
+  if (tryBrief && !('error' in tryBrief)) return 'brief.md'
+  // 3순위: 폴더 안 첫 .md 파일
+  const files = await listDropboxFolder(folderPath).catch(() => [])
+  const md = files.find(f => f.type === 'file' && f.name.endsWith('.md'))
+  return md?.name ?? null
+}
 
 // 기존 brief.md에서 AI 협업 노트 섹션 추출 (재생성 시 보존용)
 function extractAiNotes(content: string): string {
@@ -126,12 +166,28 @@ export async function createOrUpdateLeadBrief(leadId: string): Promise<void> {
     channel: lead.channel,
   })
 
-  // 기존 AI 협업 노트 보존 (DB 재생성 시 덮어쓰지 않도록)
-  const existingBrief = await readDropboxFile(
-    decodeURIComponent(folderUrl.replace('https://www.dropbox.com/home', '')).replace(/\/$/, '') + '/brief.md'
-  ).catch(() => null)
-  const aiNotes = existingBrief && !('error' in existingBrief) ? extractAiNotes(existingBrief.text) : ''
+  // 정책 파일명 (리드: <project_name>.md, project_number 없음)
+  const targetFilename = getBriefFilename({
+    project_name: lead.project_name,
+    fallback_id: lead.lead_id as string,
+  })
+
+  // 기존 brief 파일 찾기 (정책이름 → brief.md → 폴더 첫 .md)
+  const folderPath = decodeURIComponent(folderUrl.replace('https://www.dropbox.com/home', '')).replace(/\/$/, '')
+  const existingFilename = await findExistingBriefFile(folderUrl, targetFilename)
+
+  // 기존 AI 노트 보존
+  let aiNotes = ''
+  if (existingFilename) {
+    const existing = await readDropboxFile(`${folderPath}/${existingFilename}`).catch(() => null)
+    if (existing && !('error' in existing)) aiNotes = extractAiNotes(existing.text)
+  }
   const finalContent = aiNotes ? content.trimEnd() + '\n\n---\n\n' + aiNotes : content
 
-  await uploadTextFile({ folderWebUrl: folderUrl, filename: 'brief.md', content: finalContent }).catch(() => {})
+  // 기존 파일이 다른 이름이면 새 이름으로 rename (마이그레이션)
+  if (existingFilename && existingFilename !== targetFilename) {
+    await renameDropboxFile(folderUrl, existingFilename, targetFilename).catch(() => null)
+  }
+
+  await uploadTextFile({ folderWebUrl: folderUrl, filename: targetFilename, content: finalContent }).catch(() => {})
 }
