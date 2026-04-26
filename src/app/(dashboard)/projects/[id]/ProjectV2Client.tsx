@@ -5,9 +5,10 @@ import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import ProjectClaudeChat from '@/components/ProjectClaudeChat'
 import MarkdownText from '@/components/MarkdownText'
-import MarkdownToolbar, { handleMarkdownShortcut } from '@/components/MarkdownToolbar'
 import MarkdownNoteBlock from '@/components/MarkdownNoteBlock'
-import { useRef } from 'react'
+import dynamic from 'next/dynamic'
+
+const BlockNoteEditor = dynamic(() => import('@/components/BlockNoteEditor'), { ssr: false })
 import ProjectSettingsModal from './ProjectSettingsModal'
 import {
   updateProjectMemo,
@@ -500,7 +501,6 @@ function MemosBlock({ projectId, memos, legacyMemo }: {
   const [adding, setAdding] = useState(false)
   const [newTitle, setNewTitle] = useState('')
   const [newContent, setNewContent] = useState('')
-  const taRef = useRef<HTMLTextAreaElement>(null)
   const [legacyImported, setLegacyImported] = useState(false)
 
   function add() {
@@ -561,12 +561,9 @@ function MemosBlock({ projectId, memos, legacyMemo }: {
               <input value={newTitle} onChange={e => setNewTitle(e.target.value)}
                 placeholder="제목 (선택)"
                 className="w-full text-sm font-semibold border border-gray-200 rounded px-2.5 py-1.5 focus:outline-none focus:ring-1 focus:ring-yellow-400 bg-white" />
-              <MarkdownToolbar textareaRef={taRef} value={newContent} onChange={setNewContent} />
-              <textarea ref={taRef} value={newContent} onChange={e => setNewContent(e.target.value)}
-                rows={6} autoFocus
-                onKeyDown={e => { handleMarkdownShortcut(e, newContent, setNewContent) }}
-                placeholder="내용 (마크다운 지원)"
-                className="w-full text-sm border border-gray-200 border-t-0 rounded-b-lg px-3 py-2 resize-y focus:outline-none focus:ring-1 focus:ring-yellow-400 bg-white font-mono -mt-2" />
+              <div className="border border-gray-200 rounded-lg overflow-hidden bg-white">
+                <BlockNoteEditor initialMarkdown={newContent} onChangeMarkdown={setNewContent} />
+              </div>
               <div className="flex gap-2">
                 <button onClick={add} disabled={!newContent.trim() && !newTitle.trim()}
                   className="px-3 py-1.5 text-xs font-semibold rounded-lg hover:opacity-80 disabled:opacity-40"
@@ -595,7 +592,6 @@ function MemoCard({ memo, projectId }: { memo: Memo; projectId: string }) {
   const [collapsed, setCollapsed] = useState(false)
   const [title, setTitle] = useState(memo.title ?? '')
   const [content, setContent] = useState(memo.content ?? '')
-  const taRef = useRef<HTMLTextAreaElement>(null)
 
   function save() {
     startTransition(async () => {
@@ -645,10 +641,9 @@ function MemoCard({ memo, projectId }: { memo: Memo; projectId: string }) {
 
       {!collapsed && (editing ? (
         <div className="space-y-2 mt-2">
-          <MarkdownToolbar textareaRef={taRef} value={content} onChange={setContent} />
-          <textarea ref={taRef} value={content} onChange={e => setContent(e.target.value)}
-            rows={8} onKeyDown={e => { handleMarkdownShortcut(e, content, setContent) }}
-            className="w-full text-sm border border-gray-200 border-t-0 rounded-b px-3 py-2 resize-y focus:outline-none focus:ring-1 focus:ring-yellow-400 bg-white font-mono -mt-2" />
+          <div className="border border-gray-200 rounded overflow-hidden bg-white">
+            <BlockNoteEditor initialMarkdown={content} onChangeMarkdown={setContent} />
+          </div>
           <div className="flex gap-2">
             <button onClick={save}
               className="px-3 py-1.5 text-xs font-semibold rounded hover:opacity-80"
