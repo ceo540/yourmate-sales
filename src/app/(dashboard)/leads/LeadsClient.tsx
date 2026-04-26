@@ -559,6 +559,7 @@ export default function LeadsClient({ leads, profiles, persons, customers, curre
   const [newLeadLog, setNewLeadLog] = useState('')
   const [newLeadLogType, setNewLeadLogType] = useState('통화')
   const [leadLogShowDetails, setLeadLogShowDetails] = useState(false)
+  const [showBasicInfo, setShowBasicInfo] = useState(false)
   const [leadLogLocation, setLeadLogLocation] = useState('')
   const [leadLogParticipants, setLeadLogParticipants] = useState('')
   const [leadLogOutcome, setLeadLogOutcome] = useState('')
@@ -1374,7 +1375,22 @@ export default function LeadsClient({ leads, profiles, persons, customers, curre
                   )}
                 </div>
 
-                {/* ── 기본 정보 2열 카드 ── */}
+                {/* ── 기본 정보 2열 카드 (default 접힘) ── */}
+                <div className="bg-white rounded-2xl px-4 py-2.5" style={{ boxShadow: '0 1px 4px rgba(0,0,0,0.06)' }}>
+                  <button onClick={() => setShowBasicInfo(s => !s)}
+                    className="w-full flex items-center gap-2 text-left">
+                    <span className="text-gray-400 text-[10px]">{showBasicInfo ? '▼' : '▶'}</span>
+                    <span className="text-xs font-semibold text-gray-400 uppercase tracking-wider">기본 정보</span>
+                    {!showBasicInfo && (
+                      <span className="text-[11px] text-gray-500 ml-auto truncate">
+                        {selectedLead.contact_name && `👤 ${selectedLead.contact_name}`}
+                        {selectedLead.client_org && ` · 🏢 ${selectedLead.client_org}`}
+                        {selectedLead.service_type && ` · ${selectedLead.service_type}`}
+                      </span>
+                    )}
+                  </button>
+                </div>
+                {showBasicInfo && (
                 <div className="grid grid-cols-2 gap-4">
 
                   {/* 담당자 카드 */}
@@ -1523,6 +1539,62 @@ export default function LeadsClient({ leads, profiles, persons, customers, curre
                     </div>
                   </div>
                 </div>
+                )}
+
+                {/* ── 요약 · 최초 문의 ── */}
+                {(selectedLead.initial_content || loadingSummary || leadSummary) && (
+                  <div className="bg-white rounded-2xl p-5" style={{ boxShadow: '0 1px 4px rgba(0,0,0,0.06)' }}>
+                    <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2.5">요약 · 최초 문의</p>
+                    {selectedLead.initial_content && (
+                      <div>
+                        <p className="text-[11px] font-semibold text-gray-400 mb-1">최초 문의 내용</p>
+                        <p className="text-sm text-gray-600 leading-relaxed whitespace-pre-line">{selectedLead.initial_content}</p>
+                      </div>
+                    )}
+                    {(loadingSummary || leadSummary) && (
+                      <div className="mt-3 bg-violet-50 border border-violet-100 rounded-xl p-3.5">
+                        <p className="text-[11px] font-semibold text-violet-500 mb-2.5">✦ AI 요약</p>
+                        {loadingSummary ? (
+                          <div className="space-y-2">
+                            <div className="h-3 bg-violet-100 rounded animate-pulse w-full" />
+                            <div className="h-3 bg-violet-100 rounded animate-pulse w-4/5" />
+                            <div className="h-3 bg-violet-100 rounded animate-pulse w-3/5" />
+                          </div>
+                        ) : (
+                          <div className="space-y-2">
+                            {(leadSummary ?? '').split('\n').filter(l => l.trim()).map((line, i) => {
+                              const colonIdx = line.indexOf(':')
+                              if (colonIdx === -1) return <p key={i} className="text-sm text-gray-600 leading-relaxed">{line}</p>
+                              const label = line.slice(0, colonIdx).trim()
+                              const body = line.slice(colonIdx + 1).trim()
+                              const labelStyle: Record<string, string> = {
+                                '현황': 'bg-blue-100 text-blue-700',
+                                '반응': 'bg-yellow-100 text-yellow-700',
+                                '다음': 'bg-green-100 text-green-700',
+                              }
+                              return (
+                                <div key={i} className="flex gap-2 items-start">
+                                  <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded shrink-0 mt-0.5 ${labelStyle[label] ?? 'bg-gray-100 text-gray-500'}`}>{label}</span>
+                                  <p className="text-sm text-gray-700 leading-relaxed">{body}</p>
+                                </div>
+                              )
+                            })}
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* ── 메모 (인라인 편집 + 마크다운 + 표/체크박스) ── */}
+                <MarkdownNoteBlock
+                  entityId={selectedLead.id}
+                  title="📝 메모"
+                  value={selectedLead.notes ?? null}
+                  save={updateLeadNotes}
+                  emptyText="메모 없음. + 추가 클릭해서 작성."
+                  defaultCollapsed
+                />
 
                 {/* ── 소통 내역 ── */}
                 <div className="bg-white rounded-2xl p-5" style={{ boxShadow: '0 1px 4px rgba(0,0,0,0.06)' }}>
@@ -1615,59 +1687,6 @@ export default function LeadsClient({ leads, profiles, persons, customers, curre
                   )}
                 </div>
 
-                {/* ── 리마인드 ── */}
-                <div className="bg-white rounded-2xl p-4" style={{ boxShadow: '0 1px 4px rgba(0,0,0,0.06)' }}>
-                  <div className="flex items-center gap-2 mb-3">
-                    <span className="text-sm">🔔</span>
-                    <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider">리마인드</p>
-                  </div>
-                  {selectedLead.remind_date ? (
-                    <div className="flex items-center gap-3 p-3 bg-gray-50 rounded-xl">
-                      <div className="flex items-center gap-2 flex-1">
-                        {(() => {
-                          const d = getDdayBadge(selectedLead.remind_date)
-                          return d ? <span className={`text-xs px-2 py-0.5 rounded-lg font-bold ${d.color}`}>{d.label}</span> : null
-                        })()}
-                        <span className="text-xs text-gray-600">{selectedLead.remind_date}</span>
-                      </div>
-                      <input
-                        type="date"
-                        defaultValue={selectedLead.remind_date}
-                        onChange={e => {
-                          startTransition(async () => {
-                            await updateLead(selectedLead.id, { remind_date: e.target.value || null })
-                            setSelectedLead(prev => prev ? { ...prev, remind_date: e.target.value || null } : prev)
-                          })
-                        }}
-                        className="text-xs border border-gray-200 rounded-lg px-2 py-1 bg-white focus:outline-none focus:border-yellow-400"
-                      />
-                      <button
-                        onClick={() => {
-                          startTransition(async () => {
-                            await updateLead(selectedLead.id, { remind_date: null })
-                            setSelectedLead(prev => prev ? { ...prev, remind_date: null } : prev)
-                          })
-                        }}
-                        className="text-xs text-gray-300 hover:text-red-400 transition-colors">삭제</button>
-                    </div>
-                  ) : (
-                    <div className="flex items-center justify-between p-3 bg-gray-50 rounded-xl">
-                      <span className="text-xs text-gray-400">리마인드가 설정되어 있지 않습니다.</span>
-                      <input
-                        type="date"
-                        onChange={e => {
-                          if (!e.target.value) return
-                          startTransition(async () => {
-                            await updateLead(selectedLead.id, { remind_date: e.target.value })
-                            setSelectedLead(prev => prev ? { ...prev, remind_date: e.target.value } : prev)
-                          })
-                        }}
-                        className="text-xs border border-gray-200 rounded-lg px-2 py-1 bg-white focus:outline-none focus:border-yellow-400 cursor-pointer"
-                      />
-                    </div>
-                  )}
-                </div>
-
                 {/* ── 캘린더 일정 ── */}
                 {(() => {
                   const CALENDAR_LABELS: Record<string, string> = { main: '개인/전체', sos: '사운드오브스쿨', rental: '렌탈일정', artqium: '아트키움' }
@@ -1757,6 +1776,59 @@ export default function LeadsClient({ leads, profiles, persons, customers, curre
                   )
                 })()}
 
+                {/* ── 리마인드 ── */}
+                <div className="bg-white rounded-2xl p-4" style={{ boxShadow: '0 1px 4px rgba(0,0,0,0.06)' }}>
+                  <div className="flex items-center gap-2 mb-3">
+                    <span className="text-sm">🔔</span>
+                    <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider">리마인드</p>
+                  </div>
+                  {selectedLead.remind_date ? (
+                    <div className="flex items-center gap-3 p-3 bg-gray-50 rounded-xl">
+                      <div className="flex items-center gap-2 flex-1">
+                        {(() => {
+                          const d = getDdayBadge(selectedLead.remind_date)
+                          return d ? <span className={`text-xs px-2 py-0.5 rounded-lg font-bold ${d.color}`}>{d.label}</span> : null
+                        })()}
+                        <span className="text-xs text-gray-600">{selectedLead.remind_date}</span>
+                      </div>
+                      <input
+                        type="date"
+                        defaultValue={selectedLead.remind_date}
+                        onChange={e => {
+                          startTransition(async () => {
+                            await updateLead(selectedLead.id, { remind_date: e.target.value || null })
+                            setSelectedLead(prev => prev ? { ...prev, remind_date: e.target.value || null } : prev)
+                          })
+                        }}
+                        className="text-xs border border-gray-200 rounded-lg px-2 py-1 bg-white focus:outline-none focus:border-yellow-400"
+                      />
+                      <button
+                        onClick={() => {
+                          startTransition(async () => {
+                            await updateLead(selectedLead.id, { remind_date: null })
+                            setSelectedLead(prev => prev ? { ...prev, remind_date: null } : prev)
+                          })
+                        }}
+                        className="text-xs text-gray-300 hover:text-red-400 transition-colors">삭제</button>
+                    </div>
+                  ) : (
+                    <div className="flex items-center justify-between p-3 bg-gray-50 rounded-xl">
+                      <span className="text-xs text-gray-400">리마인드가 설정되어 있지 않습니다.</span>
+                      <input
+                        type="date"
+                        onChange={e => {
+                          if (!e.target.value) return
+                          startTransition(async () => {
+                            await updateLead(selectedLead.id, { remind_date: e.target.value })
+                            setSelectedLead(prev => prev ? { ...prev, remind_date: e.target.value } : prev)
+                          })
+                        }}
+                        className="text-xs border border-gray-200 rounded-lg px-2 py-1 bg-white focus:outline-none focus:border-yellow-400 cursor-pointer"
+                      />
+                    </div>
+                  )}
+                </div>
+
                 {/* ── Claude 협업 ── */}
                 <ProjectClaudeChat
                   leadId={selectedLead.id}
@@ -1765,60 +1837,6 @@ export default function LeadsClient({ leads, profiles, persons, customers, curre
                   dropboxUrl={selectedLead.dropbox_url}
                 />
 
-                {/* ── 메모 (인라인 편집 + 마크다운 + 표/체크박스) ── */}
-                <MarkdownNoteBlock
-                  entityId={selectedLead.id}
-                  title="📝 메모"
-                  value={selectedLead.notes ?? null}
-                  save={updateLeadNotes}
-                  emptyText="메모 없음. + 추가 클릭해서 작성."
-                  defaultCollapsed
-                />
-
-                {/* ── 요약 · 최초 문의 ── */}
-                {(selectedLead.initial_content || loadingSummary || leadSummary) && (
-                  <div className="bg-white rounded-2xl p-5" style={{ boxShadow: '0 1px 4px rgba(0,0,0,0.06)' }}>
-                    <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2.5">요약 · 최초 문의</p>
-                    {selectedLead.initial_content && (
-                      <div>
-                        <p className="text-[11px] font-semibold text-gray-400 mb-1">최초 문의 내용</p>
-                        <p className="text-sm text-gray-600 leading-relaxed whitespace-pre-line">{selectedLead.initial_content}</p>
-                      </div>
-                    )}
-                    {(loadingSummary || leadSummary) && (
-                      <div className="mt-3 bg-violet-50 border border-violet-100 rounded-xl p-3.5">
-                        <p className="text-[11px] font-semibold text-violet-500 mb-2.5">✦ AI 요약</p>
-                        {loadingSummary ? (
-                          <div className="space-y-2">
-                            <div className="h-3 bg-violet-100 rounded animate-pulse w-full" />
-                            <div className="h-3 bg-violet-100 rounded animate-pulse w-4/5" />
-                            <div className="h-3 bg-violet-100 rounded animate-pulse w-3/5" />
-                          </div>
-                        ) : (
-                          <div className="space-y-2">
-                            {(leadSummary ?? '').split('\n').filter(l => l.trim()).map((line, i) => {
-                              const colonIdx = line.indexOf(':')
-                              if (colonIdx === -1) return <p key={i} className="text-sm text-gray-600 leading-relaxed">{line}</p>
-                              const label = line.slice(0, colonIdx).trim()
-                              const body = line.slice(colonIdx + 1).trim()
-                              const labelStyle: Record<string, string> = {
-                                '현황': 'bg-blue-100 text-blue-700',
-                                '반응': 'bg-yellow-100 text-yellow-700',
-                                '다음': 'bg-green-100 text-green-700',
-                              }
-                              return (
-                                <div key={i} className="flex gap-2 items-start">
-                                  <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded shrink-0 mt-0.5 ${labelStyle[label] ?? 'bg-gray-100 text-gray-500'}`}>{label}</span>
-                                  <p className="text-sm text-gray-700 leading-relaxed">{body}</p>
-                                </div>
-                              )
-                            })}
-                          </div>
-                        )}
-                      </div>
-                    )}
-                  </div>
-                )}
 
                 {/* ── 연관 매출건 ── */}
                 {selectedLead.relatedSales && selectedLead.relatedSales.length > 0 && (
