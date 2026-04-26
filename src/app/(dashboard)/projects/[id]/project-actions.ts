@@ -199,11 +199,11 @@ export async function generateAndSaveProjectOverview(projectId: string): Promise
   const taskSummary = (tasks ?? []).map((t: any) =>
     `- [${t.status}${t.priority ? ` · ${t.priority}` : ''}] ${t.title}${t.due_date ? ` (${t.due_date.slice(5)})` : ''}`
   ).join('\n')
-  const logSummary = (logs ?? []).slice(0, 8).map((l: any) =>
-    `- [${l.log_type}] ${(l.contacted_at ?? '').slice(0, 10)}: ${(l.content ?? '').slice(0, 80)}`
+  const logSummary = (logs ?? []).slice(0, 15).map((l: any) =>
+    `- [${l.log_type}] ${(l.contacted_at ?? '').slice(0, 10)}: ${l.content ?? ''}${l.outcome ? `\n    → 결정: ${l.outcome}` : ''}${l.location ? ` 📍${l.location}` : ''}${l.participants?.length ? ` 참석:${l.participants.join(',')}` : ''}`
   ).join('\n')
 
-  const prompt = `다음 프로젝트 정보로 짧고 명확한 "프로젝트 개요"를 작성해줘. 제3자가 읽어도 5초 안에 파악되게.
+  const prompt = `다음 데이터로 프로젝트 종합 개요를 markdown으로 작성해. 제3자가 이 한 페이지만 봐도 프로젝트 전체를 파악할 수 있게 풍부하게 정리해.
 
 [프로젝트]
 - 이름: ${project.name}
@@ -218,27 +218,40 @@ ${project.notes ? `- 유의사항: ${project.notes}` : ''}
 [업무 (${(tasks ?? []).length}개)]
 ${taskSummary || '없음'}
 
-[최근 소통]
+[최근 소통·회의록]
 ${logSummary || '없음'}
 
-아래 형식의 markdown으로 짧게 (총 8~12줄):
-**한줄 요약**: (이 프로젝트가 무엇이고 지금 어떤 상태인지 한 문장)
+작성 가이드:
+- 충분히 디테일하게. 짧게 줄이지 말고, 데이터에 있는 사실은 다 살려서 정리.
+- 다음 섹션을 markdown으로:
 
-**핵심 정보**:
-- 항목별로 짧게 (3~5줄)
+**한줄 요약**
+이 프로젝트가 무엇이고 지금 어떤 상태인지 1~2문장.
 
-**현재 상황 / 다음 할 일**:
-- 가장 중요한 1~3가지
+**📋 프로젝트 정보**
+- 고객사·서비스·매출·계약 단계 등 핵심 정보 정리
 
-마크다운 코드블록 없이 markdown 텍스트만 반환.`
+**✅ 확정 사항**
+- 합의·결정·완료된 것들 (최근 소통의 결정사항, 완료된 업무 활용)
+
+**⏳ 진행 중**
+- 현재 작업 중인 항목들
+
+**🔴 즉시 처리 필요**
+- 마감 임박·미결·고객 답변 대기 등
+
+**📌 일정·중요 날짜**
+- 행사일, 납기, 마감 등
+
+해당 섹션 데이터 없으면 그 섹션은 빼. 표가 효과적이면 markdown 표 사용. 풍부하지만 군더더기 없이.`
 
   const client = new Anthropic()
   const message = await client.messages.create({
-    model: 'claude-haiku-4-5-20251001',
-    max_tokens: 600,
+    model: 'claude-sonnet-4-6',
+    max_tokens: 2000,
     messages: [{ role: 'user', content: prompt }],
   })
-  logApiUsage({ model: 'claude-haiku-4-5-20251001', endpoint: 'project-overview', userId: user.id, inputTokens: message.usage.input_tokens, outputTokens: message.usage.output_tokens }).catch(() => {})
+  logApiUsage({ model: 'claude-sonnet-4-6', endpoint: 'project-overview', userId: user.id, inputTokens: message.usage.input_tokens, outputTokens: message.usage.output_tokens }).catch(() => {})
 
   const summary = ((message.content[0] as any)?.text ?? '').trim()
   if (!summary) return { error: '개요 생성 실패' }
@@ -388,13 +401,13 @@ export async function generateAndSavePendingDiscussion(projectId: string): Promi
 
   const pendingTasks = (tasks ?? []).filter((t: any) => t.status !== '완료' && t.status !== '보류')
   const taskSummary = pendingTasks.map((t: any) =>
-    `- [${t.status}${t.priority ? ` · ${t.priority}` : ''}] ${t.title}${t.due_date ? ` (${t.due_date.slice(5)})` : ''}${t.description ? ` — ${t.description.slice(0, 60)}` : ''}`
+    `- [${t.status}${t.priority ? ` · ${t.priority}` : ''}] ${t.title}${t.due_date ? ` (${t.due_date.slice(5)})` : ''}${t.description ? `\n    상세: ${t.description}` : ''}`
   ).join('\n')
-  const logSummary = (logs ?? []).slice(0, 10).map((l: any) =>
-    `- [${l.log_type}] ${(l.contacted_at ?? '').slice(0, 10)}: ${(l.content ?? '').slice(0, 100)}${l.outcome ? ` → ${l.outcome.slice(0, 60)}` : ''}`
+  const logSummary = (logs ?? []).slice(0, 15).map((l: any) =>
+    `- [${l.log_type}] ${(l.contacted_at ?? '').slice(0, 10)}: ${l.content ?? ''}${l.outcome ? `\n    → 결과: ${l.outcome}` : ''}`
   ).join('\n')
 
-  const prompt = `너는 프로젝트 매니저 어시스턴트야. 아래 데이터를 보고 **지금 즉시 협의·결정·확인이 필요한 항목**을 추출해줘.
+  const prompt = `너는 프로젝트 매니저 어시스턴트야. 아래 데이터를 보고 **지금 즉시 협의·결정·확인이 필요한 항목**을 충분히 디테일하게 정리해.
 
 [프로젝트]
 - 이름: ${project.name}
@@ -409,31 +422,34 @@ ${taskSummary || '없음'}
 [최근 소통·결과]
 ${logSummary || '없음'}
 
-추출 기준:
-1. 클라이언트에게 회신·확인 받아야 할 항목
-2. 내부에서 결정 미룬 사항
-3. 빠르게 처리하면 다음 단계 진행 가능한 작업
-4. 마감 임박했지만 아직 미결인 사항
+작성 가이드:
+- 짧게 줄이지 말고, 데이터에 있는 사실은 다 살려서 정리.
+- 각 항목마다 무엇이 필요한지, 왜 중요한지, 누구의 답변/결정이 필요한지 명시.
+- 표가 효과적이면 markdown 표 사용.
 
-출력 (markdown, 4~8개 항목):
-**🔥 빠르게 해결**
-- 항목 (왜 필요한지 한 줄)
+출력 (markdown):
 
-**❓ 협의 필요**
-- 항목
+**🔥 빠르게 해결 (오늘/내일 처리)**
+- 항목별로 상세히
 
-**📌 확인 필요**
-- 항목
+**❓ 협의 필요 (의사결정 대기)**
+- 항목별로 누구와 무엇을 협의할지
 
-해당 카테고리에 항목 없으면 그 섹션 자체를 빼. 너무 많으면 가장 중요한 것부터 8개. 마크다운 코드블록 없이.`
+**📌 고객 회신 대기**
+- 우리가 보낸 후 답변 기다리는 것
+
+**⚠️ 마감 임박 미결**
+- 데드라인 가까운데 안 끝난 것
+
+해당 카테고리에 항목 없으면 그 섹션 빼. 마크다운 코드블록 없이.`
 
   const client = new Anthropic()
   const message = await client.messages.create({
-    model: 'claude-haiku-4-5-20251001',
-    max_tokens: 600,
+    model: 'claude-sonnet-4-6',
+    max_tokens: 1500,
     messages: [{ role: 'user', content: prompt }],
   })
-  logApiUsage({ model: 'claude-haiku-4-5-20251001', endpoint: 'project-pending', userId: user.id, inputTokens: message.usage.input_tokens, outputTokens: message.usage.output_tokens }).catch(() => {})
+  logApiUsage({ model: 'claude-sonnet-4-6', endpoint: 'project-pending', userId: user.id, inputTokens: message.usage.input_tokens, outputTokens: message.usage.output_tokens }).catch(() => {})
 
   const summary = ((message.content[0] as any)?.text ?? '').trim()
   if (!summary) return { error: '협의사항 분석 실패' }
