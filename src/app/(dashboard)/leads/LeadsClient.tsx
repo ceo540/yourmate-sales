@@ -757,7 +757,11 @@ export default function LeadsClient({ leads, profiles, persons, customers, curre
   async function handleSaveDropboxUrl(leadId: string) {
     if (!dropboxInput.trim()) return
     const newUrl = dropboxInput.trim()
-    await updateLeadDropboxUrl(leadId, newUrl)
+    const r = await updateLeadDropboxUrl(leadId, newUrl)
+    if (r.error) {
+      alert(`Dropbox URL 저장 실패: ${r.error}`)
+      return
+    }
     setSelectedLead(prev => prev ? { ...prev, dropbox_url: newUrl } : prev)
     setDropboxInput('')
     setShowDropboxInput(false)

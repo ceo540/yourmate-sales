@@ -493,10 +493,12 @@ export async function updateLeadPersonAndCustomer(
   return {}
 }
 
-export async function updateLeadDropboxUrl(leadId: string, url: string): Promise<void> {
-  const supabase = await createClient()
-  await supabase.from('leads').update({ dropbox_url: url, updated_at: new Date().toISOString() }).eq('id', leadId)
+export async function updateLeadDropboxUrl(leadId: string, url: string): Promise<{ error?: string }> {
+  const admin = createAdminClient()
+  const { error } = await admin.from('leads').update({ dropbox_url: url, updated_at: new Date().toISOString() }).eq('id', leadId)
+  if (error) return { error: error.message }
   revalidatePath('/leads')
+  return {}
 }
 
 export async function syncLeadDropboxFolderName(
@@ -507,8 +509,8 @@ export async function syncLeadDropboxFolderName(
   const result = await renameDropboxFolder(currentDropboxUrl, newProjectName)
   if ('error' in result) return result
 
-  const supabase = await createClient()
-  await supabase.from('leads').update({ dropbox_url: result.newUrl, updated_at: new Date().toISOString() }).eq('id', leadId)
+  const admin = createAdminClient()
+  await admin.from('leads').update({ dropbox_url: result.newUrl, updated_at: new Date().toISOString() }).eq('id', leadId)
   revalidatePath('/leads')
   return { newUrl: result.newUrl }
 }
