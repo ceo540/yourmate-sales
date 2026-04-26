@@ -485,6 +485,7 @@ function NotesBlock({ project }: { project: Project }) {
       emptyText="특이사항·주의사항을 입력하세요"
       accentClass="border-orange-100 bg-orange-50/30"
       headerClass="text-orange-700"
+      defaultCollapsed
     />
   )
 }
@@ -497,7 +498,7 @@ function MemosBlock({ projectId, memos, legacyMemo }: {
 }) {
   const router = useRouter()
   const [, startTransition] = useTransition()
-  const [collapsed, setCollapsed] = useState(false)
+  const [collapsed, setCollapsed] = useState(true)
   const [adding, setAdding] = useState(false)
   const [newTitle, setNewTitle] = useState('')
   const [newContent, setNewContent] = useState('')
@@ -589,7 +590,7 @@ function MemoCard({ memo, projectId }: { memo: Memo; projectId: string }) {
   const router = useRouter()
   const [, startTransition] = useTransition()
   const [editing, setEditing] = useState(false)
-  const [collapsed, setCollapsed] = useState(false)
+  const [collapsed, setCollapsed] = useState(true)
   const [title, setTitle] = useState(memo.title ?? '')
   const [content, setContent] = useState(memo.content ?? '')
 
@@ -675,7 +676,7 @@ function TwoBoxesBlock({ project }: { project: Project }) {
 function PendingDiscussionBox({ project }: { project: Project }) {
   const router = useRouter()
   const [, startTransition] = useTransition()
-  const [open, setOpen] = useState(true)
+  const [open, setOpen] = useState(false)
   const [editing, setEditing] = useState(false)
   const [input, setInput] = useState(project.pending_discussion ?? '')
   const [generating, setGenerating] = useState(false)
@@ -767,7 +768,7 @@ function PendingDiscussionBox({ project }: { project: Project }) {
 function OverviewSummaryBox({ project }: { project: Project }) {
   const router = useRouter()
   const [, startTransition] = useTransition()
-  const [open, setOpen] = useState(true)
+  const [open, setOpen] = useState(false)
   const [editing, setEditing] = useState(false)
   const [input, setInput] = useState(project.overview_summary ?? '')
   const [generating, setGenerating] = useState(false)
@@ -870,7 +871,7 @@ function EditableBox({ projectId, title, subtitle, value, save, emptyText }: {
 }) {
   const router = useRouter()
   const [, startTransition] = useTransition()
-  const [open, setOpen] = useState(true)
+  const [open, setOpen] = useState(false)
   const [editing, setEditing] = useState(false)
   const [input, setInput] = useState(value ?? '')
 

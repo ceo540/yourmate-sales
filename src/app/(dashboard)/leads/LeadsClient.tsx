@@ -1772,6 +1772,7 @@ export default function LeadsClient({ leads, profiles, persons, customers, curre
                   value={selectedLead.notes ?? null}
                   save={updateLeadNotes}
                   emptyText="메모 없음. + 추가 클릭해서 작성."
+                  defaultCollapsed
                 />
 
                 {/* ── 요약 · 최초 문의 ── */}
