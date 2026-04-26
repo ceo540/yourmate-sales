@@ -493,6 +493,12 @@ export async function updateLeadPersonAndCustomer(
   return {}
 }
 
+export async function updateLeadNotes(leadId: string, notes: string): Promise<void> {
+  const admin = createAdminClient()
+  await admin.from('leads').update({ notes: notes || null, updated_at: new Date().toISOString() }).eq('id', leadId)
+  revalidatePath('/leads')
+}
+
 export async function updateLeadDropboxUrl(leadId: string, url: string): Promise<{ error?: string }> {
   const admin = createAdminClient()
   const { error } = await admin.from('leads').update({ dropbox_url: url, updated_at: new Date().toISOString() }).eq('id', leadId)

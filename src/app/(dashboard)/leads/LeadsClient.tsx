@@ -3,9 +3,10 @@ import { useState, useTransition, useEffect, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import ReactMarkdown from 'react-markdown'
 import { Lead, LeadStatus, LEAD_STATUSES, LEAD_CHANNELS, LEAD_SOURCES } from '@/types'
-import { createLead, updateLead, deleteLead, convertLeadToSale, addSaleToLead, createLeadFolder, updateLeadDropboxUrl, syncLeadDropboxFolderName, createPerson, updateLeadPersonAndCustomer, previewProjectNumber, refreshLeadBrief, createAndLinkLeadCalendarEvent, unlinkLeadCalendarEvent } from './actions'
+import { createLead, updateLead, deleteLead, convertLeadToSale, addSaleToLead, createLeadFolder, updateLeadDropboxUrl, updateLeadNotes, syncLeadDropboxFolderName, createPerson, updateLeadPersonAndCustomer, previewProjectNumber, refreshLeadBrief, createAndLinkLeadCalendarEvent, unlinkLeadCalendarEvent } from './actions'
 import { createLeadLog, getLeadLogs, deleteLeadLog } from './lead-log-actions'
 import ProjectClaudeChat from '@/components/ProjectClaudeChat'
+import MarkdownNoteBlock from '@/components/MarkdownNoteBlock'
 import { LOG_TYPE_COLORS } from '@/lib/constants'
 
 const LABEL_CLS = 'block text-xs font-medium text-gray-500 mb-1'
@@ -554,6 +555,10 @@ export default function LeadsClient({ leads, profiles, persons, customers, curre
   const [logsCollapsed, setLogsCollapsed] = useState(true)
   const [newLeadLog, setNewLeadLog] = useState('')
   const [newLeadLogType, setNewLeadLogType] = useState('통화')
+  const [leadLogShowDetails, setLeadLogShowDetails] = useState(false)
+  const [leadLogLocation, setLeadLogLocation] = useState('')
+  const [leadLogParticipants, setLeadLogParticipants] = useState('')
+  const [leadLogOutcome, setLeadLogOutcome] = useState('')
   const [leadLogContactedAt, setLeadLogContactedAt] = useState(() => {
     const d = new Date(); const pad = (n: number) => String(n).padStart(2, '0')
     return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`
@@ -810,13 +815,21 @@ export default function LeadsClient({ leads, profiles, persons, customers, curre
     if (!newLeadLog.trim() || !selectedLead) return
     setNewLeadLogType(type)
     setLeadLogError(null)
+    const participants = leadLogParticipants.trim()
+      ? leadLogParticipants.split(',').map(s => s.trim()).filter(Boolean)
+      : undefined
     startTransition(async () => {
       try {
         await createLeadLog(
           selectedLead.id, newLeadLog, type,
           leadLogContactedAt ? new Date(leadLogContactedAt).toISOString() : undefined,
+          leadLogShowDetails ? leadLogLocation.trim() || undefined : undefined,
+          leadLogShowDetails ? participants : undefined,
+          leadLogShowDetails ? leadLogOutcome.trim() || undefined : undefined,
         )
         setNewLeadLog('')
+        setLeadLogLocation(''); setLeadLogParticipants(''); setLeadLogOutcome('')
+        setLeadLogShowDetails(false)
         const now = new Date(); const pad = (n: number) => String(n).padStart(2, '0')
         setLeadLogContactedAt(`${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}T${pad(now.getHours())}:${pad(now.getMinutes())}`)
         await refreshLeadLogs(selectedLead.id)
@@ -1528,7 +1541,32 @@ export default function LeadsClient({ leads, profiles, persons, customers, curre
                       <input type="datetime-local" value={leadLogContactedAt}
                         onChange={e => setLeadLogContactedAt(e.target.value)}
                         className="text-xs border border-gray-200 rounded-lg px-2 py-1.5 bg-white focus:outline-none focus:border-yellow-400" />
+                      <button type="button" onClick={() => setLeadLogShowDetails(s => !s)}
+                        className="ml-auto text-[11px] text-gray-500 hover:text-gray-700 underline">
+                        {leadLogShowDetails ? '상세 접기' : '+ 상세 (회의록)'}
+                      </button>
                     </div>
+
+                    {/* 상세 회의록 필드 */}
+                    {leadLogShowDetails && (
+                      <div className="grid grid-cols-2 gap-2 mb-2">
+                        <div>
+                          <label className="text-[10px] text-gray-500">장소</label>
+                          <input value={leadLogLocation} onChange={e => setLeadLogLocation(e.target.value)} placeholder="예: 곤지암"
+                            className="w-full text-xs bg-white border border-gray-200 rounded px-2 py-1 focus:outline-none focus:border-yellow-400" />
+                        </div>
+                        <div>
+                          <label className="text-[10px] text-gray-500">참석자 (콤마)</label>
+                          <input value={leadLogParticipants} onChange={e => setLeadLogParticipants(e.target.value)} placeholder="조민현, 방준영"
+                            className="w-full text-xs bg-white border border-gray-200 rounded px-2 py-1 focus:outline-none focus:border-yellow-400" />
+                        </div>
+                        <div className="col-span-2">
+                          <label className="text-[10px] text-gray-500">결정/결과</label>
+                          <input value={leadLogOutcome} onChange={e => setLeadLogOutcome(e.target.value)} placeholder="합의 또는 결정사항"
+                            className="w-full text-xs bg-white border border-gray-200 rounded px-2 py-1 focus:outline-none focus:border-yellow-400" />
+                        </div>
+                      </div>
+                    )}
                     <div className="flex items-center gap-2 mb-2">
                       <button type="button"
                         onClick={() => {
@@ -1728,31 +1766,21 @@ export default function LeadsClient({ leads, profiles, persons, customers, curre
                   dropboxUrl={selectedLead.dropbox_url}
                 />
 
-                {/* ── 요약 · 메모 ── */}
-                {(selectedLead.notes || selectedLead.initial_content || loadingSummary || leadSummary) && (
+                {/* ── 메모 (인라인 편집 + 마크다운 + 표/체크박스) ── */}
+                <MarkdownNoteBlock
+                  entityId={selectedLead.id}
+                  title="📝 메모"
+                  value={selectedLead.notes ?? null}
+                  save={updateLeadNotes}
+                  emptyText="메모 없음. + 추가 클릭해서 작성."
+                />
+
+                {/* ── 요약 · 최초 문의 ── */}
+                {(selectedLead.initial_content || loadingSummary || leadSummary) && (
                   <div className="bg-white rounded-2xl p-5" style={{ boxShadow: '0 1px 4px rgba(0,0,0,0.06)' }}>
-                    <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2.5">요약 · 메모</p>
-                    {selectedLead.notes ? (
-                      <div className="prose prose-sm max-w-none text-gray-700
-                        [&_h1]:text-base [&_h1]:font-bold [&_h1]:mt-3 [&_h1]:mb-1
-                        [&_h2]:text-sm [&_h2]:font-bold [&_h2]:mt-3 [&_h2]:mb-1
-                        [&_h3]:text-sm [&_h3]:font-semibold [&_h3]:mt-2 [&_h3]:mb-0.5
-                        [&_p]:leading-relaxed [&_p]:mb-1
-                        [&_ul]:pl-4 [&_ul]:list-disc [&_ul]:space-y-0.5
-                        [&_ol]:pl-4 [&_ol]:list-decimal [&_ol]:space-y-0.5
-                        [&_li]:text-sm
-                        [&_hr]:border-gray-200 [&_hr]:my-2
-                        [&_strong]:font-semibold
-                        [&_table]:w-full [&_table]:text-xs [&_table]:border-collapse [&_table]:overflow-x-auto [&_table]:block
-                        [&_th]:bg-gray-50 [&_th]:px-2 [&_th]:py-1 [&_th]:border [&_th]:border-gray-200 [&_th]:font-medium [&_th]:whitespace-nowrap
-                        [&_td]:px-2 [&_td]:py-1 [&_td]:border [&_td]:border-gray-100 [&_td]:whitespace-nowrap">
-                        <ReactMarkdown>{selectedLead.notes}</ReactMarkdown>
-                      </div>
-                    ) : (
-                      <p className="text-sm text-gray-400 italic">메모 없음 — 수정하기에서 추가하세요.</p>
-                    )}
+                    <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2.5">요약 · 최초 문의</p>
                     {selectedLead.initial_content && (
-                      <div className="mt-3 pt-3 border-t border-gray-100">
+                      <div>
                         <p className="text-[11px] font-semibold text-gray-400 mb-1">최초 문의 내용</p>
                         <p className="text-sm text-gray-600 leading-relaxed whitespace-pre-line">{selectedLead.initial_content}</p>
                       </div>

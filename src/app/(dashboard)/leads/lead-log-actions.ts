@@ -4,7 +4,15 @@ import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { createProfileNameMap } from '@/lib/utils'
 
-export async function createLeadLog(leadId: string, content: string, logType: string, contactedAt?: string) {
+export async function createLeadLog(
+  leadId: string,
+  content: string,
+  logType: string,
+  contactedAt?: string,
+  location?: string,
+  participants?: string[],
+  outcome?: string,
+) {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) throw new Error('Unauthorized')
@@ -17,6 +25,9 @@ export async function createLeadLog(leadId: string, content: string, logType: st
     log_type: logType,
     author_id: user.id,
     contacted_at: contactedAt || new Date().toISOString(),
+    location: location || null,
+    participants: participants?.length ? participants : null,
+    outcome: outcome || null,
   })
 
   if (error) {
