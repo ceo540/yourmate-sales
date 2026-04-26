@@ -807,37 +807,59 @@ async function executeTool(name: string, input: Record<string, unknown>, userRol
 
   if (name === 'add_project_log') {
     const admin = createAdminClient()
-    let saleId: string | null = null
-    let leadId: string | null = null
+    let saleId: string | null = (input.sale_id as string) || null
+    let leadId: string | null = (input.lead_id as string) || null
 
-    if (projectId) {
-      const { data: rel } = await admin
-        .from('project_sales_relations')
-        .select('sale_id')
-        .eq('project_id', projectId)
-        .limit(1)
-        .single()
-      saleId = rel?.sale_id ?? null
+    // input에 명시 없으면 projectId 컨텍스트에서 자동 매핑
+    if (!saleId && !leadId && projectId) {
+      const { data: sales } = await admin.from('sales').select('id').eq('project_id', projectId).order('created_at').limit(1)
+      saleId = sales?.[0]?.id ?? null
+    }
+
+    // lead_id, sale_id 둘 다 없으면 error (BrainDump에서 search 안 한 경우)
+    if (!saleId && !leadId) {
+      return { error: '소통 내역을 저장하려면 lead_id 또는 sale_id가 필요해. 먼저 search_leads / get_sales로 찾은 뒤 그 id를 넘겨줘.' }
+    }
+
+    // ID 검증 (오타·환각 방지)
+    if (leadId) {
+      const { data: leadCheck } = await admin.from('leads').select('id').eq('id', leadId).maybeSingle()
+      if (!leadCheck) return { error: `lead_id ${leadId} 존재하지 않음. search_leads로 다시 찾아줘.` }
+    }
+    if (saleId) {
+      const { data: saleCheck } = await admin.from('sales').select('id').eq('id', saleId).maybeSingle()
+      if (!saleCheck) return { error: `sale_id ${saleId} 존재하지 않음. get_sales로 다시 찾아줘.` }
     }
 
     const contactedAt = (input.contacted_at as string)
       ? new Date(input.contacted_at as string).toISOString()
       : new Date().toISOString()
 
-    const { error } = await admin.from('project_logs').insert({
+    const participantsInput = input.participants as string[] | undefined
+    const { data: inserted, error } = await admin.from('project_logs').insert({
       lead_id: leadId,
       sale_id: saleId,
       content: input.content,
       log_type: (input.log_type as string) || '메모',
       author_id: userId,
       contacted_at: contactedAt,
-    })
+      location: (input.location as string) || null,
+      participants: participantsInput?.length ? participantsInput : null,
+      outcome: (input.outcome as string) || null,
+    }).select('id').single()
+
     if (error) return { error: error.message }
+    revalidatePath('/leads')
     if (projectId) {
       revalidatePath(`/projects/${projectId}`)
       revalidatePath(`/projects/${projectId}/v2`)
     }
-    return { success: true, message: '소통 내역을 저장했어.' }
+    return {
+      success: true,
+      log_id: inserted?.id,
+      target: leadId ? `lead ${leadId.slice(0, 8)}` : `sale ${saleId?.slice(0, 8)}`,
+      message: leadId ? '리드 소통 내역 저장 완료' : '계약 소통 내역 저장 완료',
+    }
   }
 
   if (name === 'update_project_status') {
@@ -961,11 +983,32 @@ async function executeTool(name: string, input: Record<string, unknown>, userRol
     const saleId = await getProjectFirstSaleId()
     if (!saleId) return { error: '이 프로젝트에 연결된 계약이 없어. 계약을 먼저 만들어줘.' }
 
+    const admin = createAdminClient()
+
+    // 중복 체크 — 같은 프로젝트의 진행 중인 task 중 제목 유사 (force=true 시 무시)
+    if (!input.force) {
+      const { data: existing } = await admin
+        .from('tasks')
+        .select('id, title, status, due_date')
+        .eq('project_id', saleId)
+        .neq('status', '완료')
+        .neq('status', '보류')
+        .ilike('title', `%${title}%`)
+        .limit(5)
+      if (existing && existing.length > 0) {
+        return {
+          duplicate_warning: true,
+          message: `유사한 할일이 이미 ${existing.length}건 있어. 정말 추가할거면 force=true로 재호출:\n` +
+            existing.map(t => `- "${t.title}" [${t.status}${t.due_date ? `, 마감 ${t.due_date}` : ''}]`).join('\n'),
+          existing,
+        }
+      }
+    }
+
     const validPriority = ['긴급', '높음', '보통', '낮음']
     const priority = validPriority.includes(input.priority as string) ? (input.priority as string) : '보통'
     const assigneeId = await resolveAssigneeId(input.assignee_name as string | undefined)
 
-    const admin = createAdminClient()
     const { data, error } = await admin.from('tasks').insert({
       project_id: saleId,
       title,
@@ -1182,33 +1225,45 @@ export async function POST(req: NextRequest) {
 사용자가 머릿속의 생각·고민·할일·미팅 정리·소통 메모 등을 자유롭게 쏟아내는 모드.
 프로젝트/리드 컨텍스트가 *없으니* 너가 직접 매칭해서 처리해.
 
-처리 흐름:
-1. **분석**: 사용자 메시지에서 어떤 건(리드/프로젝트/계약)에 해당하는지 파악
-   - 기관명·프로젝트명·담당자 단서 활용
-   - 모호하면 search_leads / get_sales / search_notion_projects 등으로 검색
-2. **매칭**: 후보가 1건이면 바로 처리, 여러 건이면 사용자에게 한 번 확인
-3. **실행**: 적절한 도구 호출
-   - 소통/통화/이메일 메모 → add_project_log (sale 매칭 후) 또는 update_lead의 contact_log
+🔴 **절대 금지 (환각)**
+- 도구 호출 없이 "추가했어요/등록했어요/저장했어요" 답변 ← 절대 금지. 실제 도구 호출 결과 success가 떠야 그렇게 말해.
+- 도구 호출했어도 결과가 error면 그 에러 메시지 그대로 사용자에게 전달.
+- 모르는 lead_id/sale_id 추측 금지. 반드시 search_leads/get_sales 결과로 받은 실제 UUID만 사용.
+
+📋 **처리 흐름**
+1. **분석**: 사용자 메시지에서 어떤 건에 해당하는지 파악 (기관명·프로젝트명·담당자 단서)
+2. **검색**: search_leads / get_sales 호출. 후보가 1건이면 그대로, 여러 건이면 사용자 확인.
+3. **실행**: 적절한 도구를 *반드시* 호출
+   - 통화/이메일/미팅 메모 → **add_project_log** (lead_id 또는 sale_id input 필수 — search 결과 id 그대로 전달)
    - 새 리드 등록 → create_lead
    - 새 계약건 등록 → create_sale
    - 매출/계약 단계 변경 → update_sale_status
    - 리드 상태 변경 → update_lead status
-   - 캘린더 일정 → create_calendar_event
-   - 할 일 추가 (특정 프로젝트의) → 그 프로젝트 페이지로 가서 처리하거나 search_leads/get_sales로 매칭 후 안내
-4. **요약 응답**: 처리한 내용 + 처리 못한 내용을 짧게 정리. 추가 액션 필요하면 안내.
+   - **캘린더 일정 → create_calendar_event** (calendar_key/title/date 필수)
+   - 견적서 매출 변경 → update_sale_revenue
+4. **결과 보고**: 도구가 success 반환하면 짧게 "✅ 평택 리드에 소통 저장 / 캘린더 5/18 등록 완료" 식으로. 실패하면 에러 그대로.
 
-**여러 건 한꺼번에 쏟아낸 경우:**
-- 예: "평택 강사 5/15 답변 / 봉일천 견적 내일 / 이화여대 답사 일정"
-- 각 건을 분리해서 차례대로 처리 (또는 매칭 검증 후 실행)
-- 마지막에 처리 결과 한 줄씩 요약
+📝 **add_project_log 필수 절차** (자주 실수하는 부분)
+1. search_leads("평택")로 lead 찾기 → 응답에서 \`id\` (UUID) 얻기
+2. add_project_log({ lead_id: "그-id", content: "...", log_type: "통화" }) 호출
+3. 응답에 success:true 있어야 진짜 저장됨. 없으면 실패.
 
-**매칭 안 되거나 새로 등록할지 모호한 경우:**
-- "이 건은 새 리드/프로젝트로 등록할까, 아니면 기존 건에 메모 추가할까?" 한 번 묻기
+📅 **create_calendar_event 필수 절차**
+- calendar_key: main(개인/전체) | sos(공연) | rental(렌탈) | artqium(아트키움) 중 하나
+- title, date(YYYY-MM-DD) 필수
+- 시간 있으면 start_time/end_time, 없으면 종일
+- 응답 success 확인 후 보고
 
-**중요**:
-- 사용자가 자유롭게 쓴 거라 정보 부족할 수 있음. 추측 금지. 모호하면 짧게 확인.
-- 처리 가능한 건은 즉시 실행. "확인 후 처리하세요" 같은 미루기 금지.
-- 응답은 짧고 명확하게. 줄바꿈 충분히. 마크다운 표/체크리스트 활용.`,
+🗂️ **여러 건 한꺼번에 쏟아낸 경우**
+- 예: "평택 강사 5/15 답변 / 봉일천 견적 내일 / 이화여대 답사 5/20"
+- 각 건을 분리해서 차례대로 도구 호출
+- 마지막에 처리 결과 한 줄씩 요약 (✅/❌)
+
+🤔 **매칭 모호한 경우**
+- "이 건은 새 리드로 등록할까, 기존 건에 메모 추가할까?" 한 번 묻기
+- 사용자 답변 후 즉시 실행
+
+응답: 마크다운 사용. 처리 결과 명확히. 거짓 보고 절대 금지.`,
     }
     const modeCtx = mode ? (MODE_CONTEXT[mode] || '') : ''
 

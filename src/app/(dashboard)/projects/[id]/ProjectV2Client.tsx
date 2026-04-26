@@ -1190,7 +1190,7 @@ function TaskRow({ task, profiles, projectId, serviceType }: {
   }
 
   return (
-    <li className={task.bbang_suggested ? 'bg-blue-50/40' : ''}>
+    <li className={`group relative ${task.bbang_suggested ? 'bg-blue-50/40' : ''}`}>
       {/* 요약 row */}
       <button onClick={() => setExpanded(e => !e)} className="w-full px-5 py-2.5 hover:bg-gray-50 text-left">
         <div className="flex items-center gap-2">
@@ -1204,6 +1204,21 @@ function TaskRow({ task, profiles, projectId, serviceType }: {
           <span className={`text-[10px] px-2 py-0.5 rounded-full flex-shrink-0 ${TASK_STATUS_BADGE[task.status] ?? 'bg-gray-100 text-gray-500'}`}>{task.status}</span>
           <span className="text-gray-300 text-xs flex-shrink-0">{expanded ? '▲' : '▼'}</span>
         </div>
+      </button>
+      {/* 빠른 삭제 — 행 우측 호버 시 노출 (펼치기와 별도) */}
+      <button
+        onClick={e => {
+          e.stopPropagation()
+          if (!confirm(`"${task.title}" 삭제?`)) return
+          startTransition(async () => {
+            await deleteTask(task.id, task.project_id ?? null)
+            router.refresh()
+          })
+        }}
+        title="할일 삭제"
+        className="absolute right-1 top-1/2 -translate-y-1/2 w-7 h-7 flex items-center justify-center rounded text-gray-300 hover:text-red-500 hover:bg-red-50 md:opacity-0 md:group-hover:opacity-100 transition-opacity text-sm"
+      >
+        ✕
       </button>
 
       {/* 상세 편집 */}

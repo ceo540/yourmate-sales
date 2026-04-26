@@ -263,13 +263,18 @@ export const TOOLS: Anthropic.Tool[] = [
   },
   {
     name: 'add_project_log',
-    description: '현재 열린 프로젝트/리드에 소통 내역을 직접 등록합니다. 통화 내용, 이메일, 미팅 결과 등을 기록할 때 사용.',
+    description: '소통 내역(통화/이메일/미팅) 등록. 프로젝트 페이지에서는 자동으로 현재 프로젝트의 첫 계약에 연결. 대시보드(BrainDump)에서는 lead_id 또는 sale_id를 명시적으로 줘야 함 — search_leads/get_sales로 먼저 찾은 후 그 UUID를 전달.',
     input_schema: {
       type: 'object' as const,
       properties: {
         content: { type: 'string', description: '소통 내용 (필수)' },
-        log_type: { type: 'string', description: '통화 / 이메일 / 방문 / 내부회의 / 메모 / 기타' },
+        log_type: { type: 'string', description: '통화 / 이메일 / 방문 / 미팅 / 내부회의 / 메모 / 기타' },
         contacted_at: { type: 'string', description: '날짜 YYYY-MM-DD (없으면 오늘)' },
+        lead_id: { type: 'string', description: '리드 UUID (search_leads 결과의 id 필드). projectId 컨텍스트 없을 때 필수.' },
+        sale_id: { type: 'string', description: '계약 UUID. lead_id 대신 sale에 직접 기록할 때.' },
+        location: { type: 'string', description: '장소 (선택, 회의록용)' },
+        participants: { type: 'array', items: { type: 'string' }, description: '참석자 이름 배열 (선택, 회의록용)' },
+        outcome: { type: 'string', description: '결정/결과 (선택, 회의록용)' },
       },
       required: ['content'],
     },
@@ -287,15 +292,16 @@ export const TOOLS: Anthropic.Tool[] = [
   },
   {
     name: 'create_project_task',
-    description: '현재 프로젝트에 할 일 추가. 시스템이 자동으로 프로젝트의 첫 번째 계약을 찾아 거기에 묶음 — 사용자나 너가 계약을 지정할 필요 없음. 계약 단계(진행중/완료 등)와 무관하게 항상 호출 가능. 사용자가 "할일 추가/만들어/등록"이라고 하면 절대 추측 거부 말고 무조건 즉시 호출. 실패하면 시스템이 정확한 에러 메시지 반환.',
+    description: '현재 프로젝트에 할 일 추가. 시스템이 자동으로 첫 번째 계약에 묶고 같은 제목 진행 중 할일이 있으면 중복 경고를 반환함. 사용자가 "그래도 추가" 의사 명확히 하면 force=true로 재호출.',
     input_schema: {
       type: 'object' as const,
       properties: {
         title: { type: 'string', description: '할 일 제목 (필수)' },
         priority: { type: 'string', description: '긴급 | 높음 | 보통 | 낮음 (기본 보통)' },
         due_date: { type: 'string', description: '마감일 YYYY-MM-DD' },
-        assignee_name: { type: 'string', description: '담당자 이름 (이름으로 profile 매칭). 본인이면 "나"' },
+        assignee_name: { type: 'string', description: '담당자 이름. 본인이면 "나"' },
         description: { type: 'string', description: '상세 설명/메모' },
+        force: { type: 'boolean', description: '중복 경고 무시하고 강제 추가' },
       },
       required: ['title'],
     },

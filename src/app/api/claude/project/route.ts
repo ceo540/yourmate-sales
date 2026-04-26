@@ -246,15 +246,16 @@ ${logs && logs.length > 0 ? `\n## 최근 소통내역\n${logs.map(l => `- [${l.l
     },
     {
       name: 'create_task',
-      description: '현재 프로젝트(또는 계약)에 새 할 일을 추가합니다. projectId만 있을 때는 시스템이 자동으로 프로젝트의 첫 번째 계약을 찾아 거기에 묶음 — 사용자나 너가 계약을 지정할 필요 없음. 계약 단계와 무관하게 항상 호출 가능. "지원되지 않습니다" 같은 거짓 거부 금지.',
+      description: '현재 프로젝트에 새 할 일 추가. 자동으로 첫 계약에 묶음. 시스템이 같은 제목 진행 중 할일 있는지 자동 검사 → 있으면 중복 경고 반환. 사용자가 "그래도 추가" 명시하면 force=true로 재호출.',
       input_schema: {
         type: 'object' as const,
         properties: {
           title: { type: 'string', description: '태스크 제목' },
-          due_date: { type: 'string', description: '마감일 YYYY-MM-DD (선택). "내일", "다음주" 등은 시스템 헤더의 오늘 날짜 기준 계산.' },
-          priority: { type: 'string', description: '긴급/높음/보통/낮음 (기본 보통)' },
+          due_date: { type: 'string', description: '마감일 YYYY-MM-DD' },
+          priority: { type: 'string', description: '긴급/높음/보통/낮음' },
           assignee_name: { type: 'string', description: '담당자 이름. "나"=본인.' },
           description: { type: 'string', description: '상세 설명' },
+          force: { type: 'boolean', description: '중복 경고 무시하고 강제 추가' },
         },
         required: ['title'],
       },
@@ -562,6 +563,25 @@ ${logs && logs.length > 0 ? `\n## 최근 소통내역\n${logs.map(l => `- [${l.l
               if (!targetSaleId) {
                 result = '이 프로젝트에 연결된 계약이 없어. 계약을 먼저 만들어줘.'
               } else {
+                // 중복 체크 (force 플래그 없으면)
+                const force = input.force === 'true' || (input as unknown as { force?: boolean }).force === true
+                if (!force) {
+                  const { data: existing } = await admin
+                    .from('tasks')
+                    .select('id, title, status, due_date')
+                    .eq('project_id', targetSaleId)
+                    .neq('status', '완료')
+                    .neq('status', '보류')
+                    .ilike('title', `%${input.title}%`)
+                    .limit(5)
+                  if (existing && existing.length > 0) {
+                    result = `유사한 할일 ${existing.length}건 이미 있어. force=true로 재호출 시 강제 추가:\n` +
+                      existing.map(t => `- "${t.title}" [${t.status}${t.due_date ? `, 마감 ${t.due_date}` : ''}]`).join('\n')
+                    toolResults.push({ type: 'tool_result', tool_use_id: block.id, content: result })
+                    continue
+                  }
+                }
+
                 const validPriority = ['긴급', '높음', '보통', '낮음']
                 const priority = validPriority.includes(input.priority) ? input.priority : '보통'
                 let assigneeId: string | null = null
