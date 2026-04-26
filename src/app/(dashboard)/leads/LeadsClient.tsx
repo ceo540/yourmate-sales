@@ -611,10 +611,38 @@ export default function LeadsClient({ leads, profiles, persons, customers, curre
     setLoadingLogs(false)
   }, [])
 
-  // 캐시된 요약 사용. 변경은 명시적 [다시 분석] 버튼으로만.
+  // 캐시된 요약 즉시 표시 + 백그라운드에서 stale 체크 (소통 변경 있으면 자동 재생성)
   useEffect(() => {
     setLeadSummary(selectedLead?.summary_cache ?? null)
   }, [selectedLead?.id, selectedLead?.summary_cache])
+
+  // 진입 + logs 로드 후 자동 stale 체크 (force=false → API 내부에서 비교)
+  useEffect(() => {
+    if (!selectedLead || loadingLogs) return
+    const nonInitial = leadLogs.filter(l => l.log_type !== '최초유입')
+    if (nonInitial.length === 0) return
+    let cancelled = false
+    fetch('/api/lead-summary', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        lead_id: selectedLead.id,
+        initial_content: selectedLead.initial_content ?? null,
+        logs: nonInitial.map(l => ({ content: l.content, log_type: l.log_type, contacted_at: l.contacted_at })),
+        force: false,
+      }),
+    })
+      .then(r => r.json())
+      .then(d => {
+        if (cancelled) return
+        if (d.summary && d.summary !== selectedLead.summary_cache) {
+          setLeadSummary(d.summary)
+          setSelectedLead(prev => prev ? { ...prev, summary_cache: d.summary, summary_updated_at: new Date().toISOString() } : prev)
+        }
+      })
+      .catch(() => {})
+    return () => { cancelled = true }
+  }, [selectedLead?.id, leadLogs, loadingLogs])
 
   async function regenerateSummary() {
     if (!selectedLead) return
@@ -1116,6 +1144,16 @@ export default function LeadsClient({ leads, profiles, persons, customers, curre
                       )}
                     </div>
                   </div>
+                  {/* Row 4: 빵빵이 다음 액션 (summary_cache에서 "다음:" 라인 추출) */}
+                  {(() => {
+                    const next = lead.summary_cache?.split('\n').find(l => l.trim().startsWith('다음:'))?.replace(/^다음:\s*/, '').trim()
+                    if (!next) return null
+                    return (
+                      <p className="text-[11px] text-blue-600 truncate mt-1.5 bg-blue-50 px-2 py-0.5 rounded">
+                        🤖 {next}
+                      </p>
+                    )
+                  })()}
                 </button>
               )
             })}
