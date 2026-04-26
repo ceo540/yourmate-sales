@@ -4,6 +4,7 @@ import { redirect } from 'next/navigation'
 import Link from 'next/link'
 import { isAdmin as checkIsAdmin } from '@/lib/permissions'
 import DashboardMemo from './DashboardMemo'
+import BrainDump from '@/components/BrainDump'
 
 const SVC_COLOR: Record<string, string> = {
   'SOS': '#7C3AED', '교육프로그램': '#2563EB', '납품설치': '#2563EB',
@@ -212,6 +213,11 @@ export default async function DashboardPage() {
             <p className="text-xs text-gray-400 mt-1">{c.sub}</p>
           </div>
         ))}
+      </div>
+
+      {/* 🤖 빵빵이에게 쏟아내기 (빠른 메모/명령) */}
+      <div className="mb-4">
+        <BrainDump />
       </div>
 
       {/* 🤖 빵빵이의 오늘 할 일 — 모든 활성 리드/프로젝트의 다음 액션 종합 */}
