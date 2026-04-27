@@ -803,18 +803,32 @@ export default function LeadsClient({ leads, profiles, persons, customers, curre
     }
   }
 
+  const [savingDropbox, setSavingDropbox] = useState(false)
   async function handleSaveDropboxUrl(leadId: string) {
-    if (!dropboxInput.trim()) return
-    const newUrl = dropboxInput.trim()
-    const r = await updateLeadDropboxUrl(leadId, newUrl)
-    if (r.error) {
-      alert(`Dropbox URL 저장 실패: ${r.error}`)
+    const newUrl = dropboxInput.trim() || (selectedLead?.dropbox_url ?? '').trim()
+    if (!newUrl) {
+      alert('URL이 비어있어. 입력해줘.')
       return
     }
-    setSelectedLead(prev => prev ? { ...prev, dropbox_url: newUrl } : prev)
-    setDropboxInput('')
-    setShowDropboxInput(false)
-    router.refresh()
+    if (newUrl === selectedLead?.dropbox_url) {
+      alert('이전과 같은 URL이야. 변경 사항 없음.')
+      return
+    }
+    setSavingDropbox(true)
+    try {
+      const r = await updateLeadDropboxUrl(leadId, newUrl)
+      if (r.error) {
+        alert(`Dropbox URL 저장 실패: ${r.error}`)
+        return
+      }
+      setSelectedLead(prev => prev ? { ...prev, dropbox_url: newUrl } : prev)
+      setDropboxInput('')
+      setShowDropboxInput(false)
+      router.refresh()
+      alert('✅ Dropbox URL 저장 완료')
+    } finally {
+      setSavingDropbox(false)
+    }
   }
 
   async function handleSyncDropboxUrl() {
@@ -2053,8 +2067,11 @@ export default function LeadsClient({ leads, profiles, persons, customers, curre
                   placeholder="https://www.dropbox.com/..."
                   className="flex-1 text-xs border border-gray-200 rounded-lg px-2 py-1.5 focus:outline-none focus:border-yellow-400" />
                 <button onClick={() => handleSaveDropboxUrl(selectedLead.id)}
-                  className="text-xs px-3 py-1.5 rounded-lg font-medium"
-                  style={{ backgroundColor: '#FFCE00', color: '#121212' }}>저장</button>
+                  disabled={savingDropbox}
+                  className="text-xs px-3 py-1.5 rounded-lg font-medium disabled:opacity-40"
+                  style={{ backgroundColor: '#FFCE00', color: '#121212' }}>
+                  {savingDropbox ? '저장 중...' : '저장'}
+                </button>
               </div>
             </div>
           </div>
