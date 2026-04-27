@@ -3,7 +3,7 @@ import { useState, useTransition, useEffect, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import ReactMarkdown from 'react-markdown'
 import { Lead, LeadStatus, LEAD_STATUSES, LEAD_CHANNELS, LEAD_SOURCES } from '@/types'
-import { createLead, updateLead, deleteLead, convertLeadToSale, addSaleToLead, createLeadFolder, updateLeadDropboxUrl, updateLeadNotes, syncLeadDropboxFolderName, createPerson, updateLeadPersonAndCustomer, previewProjectNumber, refreshLeadBrief, createAndLinkLeadCalendarEvent, unlinkLeadCalendarEvent } from './actions'
+import { createLead, updateLead, deleteLead, convertLeadToSale, addSaleToLead, createLeadFolder, updateLeadDropboxUrl, updateLeadNotes, syncLeadDropboxFolderName, createPerson, updateLeadPersonAndCustomer, previewProjectNumber, refreshLeadBrief, createAndLinkLeadCalendarEvent, unlinkLeadCalendarEvent, linkLeadCalendarEvent, searchCalendarEvents } from './actions'
 import { createLeadLog, getLeadLogs, deleteLeadLog } from './lead-log-actions'
 import ProjectClaudeChat from '@/components/ProjectClaudeChat'
 import MarkdownNoteBlock from '@/components/MarkdownNoteBlock'
@@ -524,6 +524,10 @@ export default function LeadsClient({ leads, profiles, persons, customers, curre
   // Calendar
   const [localLinkedEvents, setLocalLinkedEvents] = useState<{ id: string; calendarKey: string; title: string; date: string; color: string }[]>([])
   const [showCalCreate, setShowCalCreate] = useState(false)
+  const [showCalSearch, setShowCalSearch] = useState(false)
+  const [calSearchQuery, setCalSearchQuery] = useState('')
+  const [calSearchResults, setCalSearchResults] = useState<{ id: string; calendarKey: string; title: string; date: string; color: string; isAllDay: boolean }[] | null>(null)
+  const [calSearchLoading, setCalSearchLoading] = useState(false)
   const [calCreateKey, setCalCreateKey] = useState('main')
   const [calCreateTitle, setCalCreateTitle] = useState('')
   const [calCreateDate, setCalCreateDate] = useState('')
@@ -1784,11 +1788,84 @@ export default function LeadsClient({ leads, profiles, persons, customers, curre
                           <span className="text-gray-400 text-[10px]">{openSections.calendar ? '▼' : '▶'}</span>
                           <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider">캘린더 일정</p>
                         </button>
-                        {openSections.calendar && <button onClick={() => setShowCalCreate(v => !v)}
-                          className="text-xs text-gray-400 hover:text-gray-700 px-2 py-1 rounded hover:bg-gray-50">
-                          {showCalCreate ? '취소' : '+ 일정 추가'}
-                        </button>}
+                        {openSections.calendar && (
+                          <div className="flex items-center gap-1">
+                            <button onClick={() => { setShowCalSearch(s => !s); setShowCalCreate(false) }}
+                              className="text-xs text-gray-400 hover:text-gray-700 px-2 py-1 rounded hover:bg-gray-50">
+                              {showCalSearch ? '취소' : '🔍 기존 일정'}
+                            </button>
+                            <button onClick={() => { setShowCalCreate(v => !v); setShowCalSearch(false) }}
+                              className="text-xs text-gray-400 hover:text-gray-700 px-2 py-1 rounded hover:bg-gray-50">
+                              {showCalCreate ? '취소' : '+ 새 일정'}
+                            </button>
+                          </div>
+                        )}
                       </div>
+
+                      {/* 기존 일정 검색·연결 */}
+                      {showCalSearch && (
+                        <div className="mb-3 p-3 bg-gray-50 rounded-xl space-y-2 border border-gray-200">
+                          <div className="flex gap-2">
+                            <input
+                              value={calSearchQuery}
+                              onChange={e => setCalSearchQuery(e.target.value)}
+                              onKeyDown={async e => {
+                                if (e.key !== 'Enter') return
+                                setCalSearchLoading(true)
+                                const r = await searchCalendarEvents(calSearchQuery)
+                                setCalSearchResults('error' in r ? [] : r.results)
+                                setCalSearchLoading(false)
+                              }}
+                              placeholder="검색어 입력 후 Enter (예: 평택, 곤지암)"
+                              className="flex-1 text-xs border border-gray-200 rounded-lg px-2.5 py-1.5 focus:outline-none focus:border-yellow-400 bg-white"
+                              autoFocus
+                            />
+                            <button
+                              onClick={async () => {
+                                setCalSearchLoading(true)
+                                const r = await searchCalendarEvents(calSearchQuery)
+                                setCalSearchResults('error' in r ? [] : r.results)
+                                setCalSearchLoading(false)
+                              }}
+                              disabled={calSearchLoading}
+                              className="text-xs px-3 py-1.5 rounded-lg font-medium disabled:opacity-40"
+                              style={{ backgroundColor: '#FFCE00', color: '#121212' }}
+                            >
+                              {calSearchLoading ? '검색 중...' : '검색'}
+                            </button>
+                          </div>
+                          {calSearchResults && (
+                            calSearchResults.length === 0 ? (
+                              <p className="text-xs text-gray-400 text-center py-3">결과 없음</p>
+                            ) : (
+                              <div className="max-h-60 overflow-y-auto space-y-1 bg-white rounded-lg border border-gray-100 p-1">
+                                {calSearchResults.map(ev => {
+                                  const alreadyLinked = localLinkedEvents.some(e => e.id === ev.id)
+                                  return (
+                                    <button
+                                      key={ev.id}
+                                      disabled={alreadyLinked}
+                                      onClick={async () => {
+                                        await linkLeadCalendarEvent(selectedLead.id, ev)
+                                        setLocalLinkedEvents(prev => [...prev, ev])
+                                        setShowCalSearch(false)
+                                        setCalSearchQuery('')
+                                        setCalSearchResults(null)
+                                      }}
+                                      className="w-full flex items-center gap-2 px-2 py-1.5 text-left hover:bg-blue-50 rounded text-xs disabled:opacity-40 disabled:bg-gray-50"
+                                    >
+                                      <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ background: ev.color }} />
+                                      <span className="text-gray-500 flex-shrink-0">{ev.date}</span>
+                                      <span className="text-gray-800 flex-1 truncate">{ev.title}</span>
+                                      {alreadyLinked && <span className="text-[10px] text-gray-400 flex-shrink-0">연결됨</span>}
+                                    </button>
+                                  )
+                                })}
+                              </div>
+                            )
+                          )}
+                        </div>
+                      )}
 
                       {openSections.calendar && (<>
                       {showCalCreate && (

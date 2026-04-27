@@ -535,6 +535,28 @@ export async function syncLeadDropboxFolderName(
   return { newUrl: result.newUrl }
 }
 
+// 기존 Google Calendar 일정 검색 (리드/프로젝트 어디서든 사용)
+export async function searchCalendarEvents(query: string): Promise<{
+  results: { id: string; calendarKey: string; title: string; date: string; color: string; isAllDay: boolean }[]
+} | { error: string }> {
+  try {
+    const { searchEvents } = await import('@/lib/google-calendar')
+    const events = await searchEvents(query, 6)
+    return {
+      results: events.slice(0, 30).map(ev => ({
+        id: ev.id,
+        calendarKey: ev.calendarKey,
+        title: ev.title,
+        date: ev.date,
+        color: ev.color,
+        isAllDay: ev.isAllDay,
+      })),
+    }
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : '검색 실패' }
+  }
+}
+
 type LinkedCalEvent = { id: string; calendarKey: string; title: string; date: string; color: string }
 
 export async function linkLeadCalendarEvent(leadId: string, event: LinkedCalEvent): Promise<void> {

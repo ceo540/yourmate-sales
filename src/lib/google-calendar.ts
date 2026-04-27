@@ -86,6 +86,48 @@ export async function listEvents(year: number, month: number): Promise<GoogleCal
   return results.flat()
 }
 
+// 검색어로 모든 캘린더의 일정 검색 (현재 ~ N개월 후)
+export async function searchEvents(query: string, monthsAhead = 6): Promise<GoogleCalEvent[]> {
+  const cal = getClient()
+  const now = new Date()
+  const timeMin = new Date(now.getFullYear(), now.getMonth(), 1).toISOString()
+  const timeMax = new Date(now.getFullYear(), now.getMonth() + monthsAhead, 0, 23, 59, 59).toISOString()
+
+  const results = await Promise.all(
+    (Object.entries(CALENDAR_MAP) as [keyof typeof CALENDAR_MAP, string][]).map(async ([key, calendarId]) => {
+      try {
+        const res = await cal.events.list({
+          calendarId,
+          q: query || undefined,
+          timeMin,
+          timeMax,
+          singleEvents: true,
+          orderBy: 'startTime',
+          maxResults: 30,
+        })
+        return (res.data.items ?? []).map(ev => ({
+          id: `gcal-${key}-${ev.id}`,
+          googleEventId: ev.id!,
+          calendarId,
+          calendarKey: key,
+          title: ev.summary ?? '(제목 없음)',
+          date: (ev.start?.date ?? ev.start?.dateTime ?? '').slice(0, 10),
+          endDate: (ev.end?.date ?? ev.end?.dateTime ?? '').slice(0, 10),
+          startTime: ev.start?.dateTime ? ev.start.dateTime.slice(11, 16) : undefined,
+          endTime: ev.end?.dateTime ? ev.end.dateTime.slice(11, 16) : undefined,
+          isAllDay: !!ev.start?.date,
+          description: ev.description ?? '',
+          color: CALENDAR_COLORS[key],
+        }))
+      } catch (e) {
+        console.error(`[gcal search] ${key} error:`, e)
+        return []
+      }
+    })
+  )
+  return results.flat()
+}
+
 export async function createEvent(calendarKey: string, data: {
   title: string
   date: string
