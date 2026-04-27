@@ -309,6 +309,12 @@ export async function convertLeadToSale(leadId: string) {
     updated_at: new Date().toISOString(),
   }).eq('id', leadId)
 
+  // 리드의 할일들을 sale로 이전 (lead_id → null, project_id → sale.id)
+  await adminDb.from('tasks').update({
+    lead_id: null,
+    project_id: sale!.id,
+  }).eq('lead_id', leadId)
+
   // 채널톡 알림 (CHANNELTALK_GROUP_ID 설정 시)
   notifyLeadConverted({
     clientOrg: lead.client_org,
@@ -533,6 +539,72 @@ export async function syncLeadDropboxFolderName(
   await admin.from('leads').update({ dropbox_url: result.newUrl, updated_at: new Date().toISOString() }).eq('id', leadId)
   revalidatePath('/leads')
   return { newUrl: result.newUrl }
+}
+
+// 리드 할일 — tasks 테이블의 lead_id 컬럼 사용. 전환 시 sale로 자동 마이그.
+export async function getLeadTasks(leadId: string) {
+  const admin = createAdminClient()
+  const { data } = await admin.from('tasks')
+    .select('id, title, status, priority, due_date, description, assignee_id, bbang_suggested')
+    .eq('lead_id', leadId)
+    .order('created_at', { ascending: true })
+  return data ?? []
+}
+
+export async function createLeadTask(leadId: string, data: { title: string; due_date?: string | null; priority?: string; assignee_id?: string | null }, force = false): Promise<{ id: string; title: string } | { error: string; duplicate?: { id: string; title: string; status: string }[] }> {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return { error: 'Unauthorized' }
+
+  const admin = createAdminClient()
+  const title = data.title.trim()
+  if (!title) return { error: '제목 필수' }
+
+  if (!force) {
+    const { data: existing } = await admin.from('tasks')
+      .select('id, title, status')
+      .eq('lead_id', leadId).neq('status', '완료').neq('status', '보류')
+      .ilike('title', `%${title}%`).limit(5)
+    if (existing && existing.length > 0) {
+      return { error: '유사 할일 있음', duplicate: existing }
+    }
+  }
+
+  const validPriority = ['긴급', '높음', '보통', '낮음']
+  const priority = validPriority.includes(data.priority ?? '') ? data.priority! : '보통'
+  const { data: row, error } = await admin.from('tasks').insert({
+    lead_id: leadId,
+    title,
+    status: '할 일',
+    priority,
+    due_date: data.due_date || null,
+    assignee_id: data.assignee_id || null,
+  }).select('id, title').single()
+  if (error) return { error: error.message }
+  revalidatePath('/leads')
+  return { id: row.id, title: row.title }
+}
+
+export async function updateLeadTask(taskId: string, leadId: string, data: { title?: string; status?: string; priority?: string; due_date?: string | null; assignee_id?: string | null }) {
+  const admin = createAdminClient()
+  const updates: Record<string, unknown> = { updated_at: new Date().toISOString() }
+  if (data.title !== undefined) updates.title = data.title
+  if (data.status !== undefined) updates.status = data.status
+  if (data.priority !== undefined) updates.priority = data.priority
+  if (data.due_date !== undefined) updates.due_date = data.due_date || null
+  if (data.assignee_id !== undefined) updates.assignee_id = data.assignee_id || null
+  const { error } = await admin.from('tasks').update(updates).eq('id', taskId).eq('lead_id', leadId)
+  if (error) return { error: error.message }
+  revalidatePath('/leads')
+  return {}
+}
+
+export async function deleteLeadTask(taskId: string, leadId: string) {
+  const admin = createAdminClient()
+  const { error } = await admin.from('tasks').delete().eq('id', taskId).eq('lead_id', leadId)
+  if (error) return { error: error.message }
+  revalidatePath('/leads')
+  return {}
 }
 
 // 기존 Google Calendar 일정 검색 (리드/프로젝트 어디서든 사용)

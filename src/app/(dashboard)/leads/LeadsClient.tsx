@@ -3,7 +3,7 @@ import { useState, useTransition, useEffect, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import ReactMarkdown from 'react-markdown'
 import { Lead, LeadStatus, LEAD_STATUSES, LEAD_CHANNELS, LEAD_SOURCES } from '@/types'
-import { createLead, updateLead, deleteLead, convertLeadToSale, addSaleToLead, createLeadFolder, updateLeadDropboxUrl, updateLeadNotes, syncLeadDropboxFolderName, createPerson, updateLeadPersonAndCustomer, previewProjectNumber, refreshLeadBrief, createAndLinkLeadCalendarEvent, unlinkLeadCalendarEvent, linkLeadCalendarEvent, searchCalendarEvents } from './actions'
+import { createLead, updateLead, deleteLead, convertLeadToSale, addSaleToLead, createLeadFolder, updateLeadDropboxUrl, updateLeadNotes, syncLeadDropboxFolderName, createPerson, updateLeadPersonAndCustomer, previewProjectNumber, refreshLeadBrief, createAndLinkLeadCalendarEvent, unlinkLeadCalendarEvent, linkLeadCalendarEvent, searchCalendarEvents, getLeadTasks, createLeadTask, updateLeadTask, deleteLeadTask } from './actions'
 import { createLeadLog, getLeadLogs, deleteLeadLog } from './lead-log-actions'
 import ProjectClaudeChat from '@/components/ProjectClaudeChat'
 import MarkdownNoteBlock from '@/components/MarkdownNoteBlock'
@@ -523,6 +523,18 @@ export default function LeadsClient({ leads, profiles, persons, customers, curre
 
   // Calendar
   const [localLinkedEvents, setLocalLinkedEvents] = useState<{ id: string; calendarKey: string; title: string; date: string; color: string }[]>([])
+  // 리드 할일
+  type LeadTask = { id: string; title: string; status: string; priority: string | null; due_date: string | null; description: string | null; assignee_id: string | null; bbang_suggested: boolean }
+  const [leadTasks, setLeadTasks] = useState<LeadTask[]>([])
+  const [taskInput, setTaskInput] = useState('')
+  const [taskDue, setTaskDue] = useState('')
+  const [taskPriority, setTaskPriority] = useState('보통')
+  const [addingTask, setAddingTask] = useState(false)
+  const refreshLeadTasks = useCallback(async (leadId: string) => {
+    const r = await getLeadTasks(leadId)
+    setLeadTasks(r as LeadTask[])
+  }, [])
+
   const [showCalCreate, setShowCalCreate] = useState(false)
   const [showCalSearch, setShowCalSearch] = useState(false)
   const [calSearchQuery, setCalSearchQuery] = useState('')
@@ -565,7 +577,7 @@ export default function LeadsClient({ leads, profiles, persons, customers, curre
   const [leadLogShowDetails, setLeadLogShowDetails] = useState(false)
   // 사이드 패널 박스별 접기 상태 — 요약·최초 문의만 default 펼침, 나머지 접힘
   const [openSections, setOpenSections] = useState<Record<string, boolean>>({
-    basicInfo: false, summary: true, logs: false, calendar: false, remind: false, bbang: false, sales: false, quote: false,
+    basicInfo: false, summary: true, tasks: false, logs: false, calendar: false, remind: false, bbang: false, sales: false, quote: false,
   })
   const toggleSection = (key: string) => setOpenSections(s => ({ ...s, [key]: !s[key] }))
   const [leadLogLocation, setLeadLogLocation] = useState('')
@@ -673,8 +685,9 @@ export default function LeadsClient({ leads, profiles, persons, customers, curre
   }
 
   useEffect(() => {
-    if (!selectedLead) { setLeadLogs([]); setLeadSummary(null); setLogsCollapsed(true); return }
+    if (!selectedLead) { setLeadLogs([]); setLeadSummary(null); setLogsCollapsed(true); setLeadTasks([]); return }
     refreshLeadLogs(selectedLead.id)
+    refreshLeadTasks(selectedLead.id)
     setShowAddSaleForm(false)
     setShowDropboxInput(false)
     setDropboxInput('')
@@ -1677,6 +1690,106 @@ export default function LeadsClient({ leads, profiles, persons, customers, curre
                   emptyText="메모 없음. + 추가 클릭해서 작성."
                   defaultCollapsed
                 />
+
+                {/* ── 할일 ── */}
+                <div className="bg-white rounded-2xl px-5 py-3" style={{ boxShadow: '0 1px 4px rgba(0,0,0,0.06)' }}>
+                  <div className="flex items-center justify-between mb-2">
+                    <button onClick={() => toggleSection('tasks')}
+                      className="flex items-center gap-2 text-left">
+                      <span className="text-gray-400 text-[10px]">{openSections.tasks ? '▼' : '▶'}</span>
+                      <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider">
+                        ✅ 할일 <span className="normal-case font-normal">{leadTasks.filter(t => t.status !== '완료').length}건</span>
+                      </p>
+                    </button>
+                    {openSections.tasks && (
+                      <button onClick={() => setAddingTask(s => !s)}
+                        className="text-[11px] text-gray-400 hover:text-gray-700">
+                        {addingTask ? '취소' : '+ 추가'}
+                      </button>
+                    )}
+                  </div>
+
+                  {openSections.tasks && (
+                    <>
+                      {addingTask && (
+                        <div className="mb-2 p-2.5 bg-yellow-50 border border-yellow-200 rounded-lg space-y-2">
+                          <input value={taskInput} onChange={e => setTaskInput(e.target.value)}
+                            placeholder="할일 제목" autoFocus
+                            onKeyDown={async e => {
+                              if (e.key !== 'Enter' || !taskInput.trim()) return
+                              const r = await createLeadTask(selectedLead.id, { title: taskInput.trim(), due_date: taskDue || null, priority: taskPriority })
+                              if ('error' in r) { alert('실패: ' + r.error); return }
+                              setTaskInput(''); setTaskDue(''); setTaskPriority('보통'); setAddingTask(false)
+                              refreshLeadTasks(selectedLead.id)
+                            }}
+                            className="w-full text-sm border border-gray-200 rounded px-2.5 py-1.5 focus:outline-none focus:ring-1 focus:ring-yellow-400 bg-white" />
+                          <div className="flex gap-2">
+                            <input type="date" value={taskDue} onChange={e => setTaskDue(e.target.value)}
+                              className="text-xs border border-gray-200 rounded px-2 py-1 bg-white" />
+                            <select value={taskPriority} onChange={e => setTaskPriority(e.target.value)}
+                              className="text-xs border border-gray-200 rounded px-2 py-1 bg-white">
+                              {['긴급', '높음', '보통', '낮음'].map(p => <option key={p}>{p}</option>)}
+                            </select>
+                            <button
+                              onClick={async () => {
+                                if (!taskInput.trim()) return
+                                const r = await createLeadTask(selectedLead.id, { title: taskInput.trim(), due_date: taskDue || null, priority: taskPriority })
+                                if ('error' in r) { alert('실패: ' + r.error); return }
+                                setTaskInput(''); setTaskDue(''); setTaskPriority('보통'); setAddingTask(false)
+                                refreshLeadTasks(selectedLead.id)
+                              }}
+                              disabled={!taskInput.trim()}
+                              className="ml-auto px-3 py-1 text-xs font-semibold rounded disabled:opacity-40"
+                              style={{ backgroundColor: '#FFCE00', color: '#121212' }}
+                            >
+                              추가
+                            </button>
+                          </div>
+                        </div>
+                      )}
+
+                      {leadTasks.length === 0 && !addingTask ? (
+                        <p className="text-xs text-gray-400 italic py-2">할일 없음</p>
+                      ) : (
+                        <ul className="divide-y divide-gray-50">
+                          {leadTasks.map(t => (
+                            <li key={t.id} className="group relative flex items-center gap-2 py-2">
+                              <button
+                                onClick={async () => {
+                                  await updateLeadTask(t.id, selectedLead.id, { status: t.status === '완료' ? '할 일' : '완료' })
+                                  refreshLeadTasks(selectedLead.id)
+                                }}
+                                className={`w-4 h-4 rounded border-2 flex-shrink-0 ${t.status === '완료' ? 'bg-green-500 border-green-500' : 'border-gray-300 hover:border-gray-500'}`}
+                                title={t.status === '완료' ? '완료 취소' : '완료 처리'}
+                              >
+                                {t.status === '완료' && <span className="text-white text-[10px] block leading-none">✓</span>}
+                              </button>
+                              {t.bbang_suggested && <span className="text-[10px] flex-shrink-0" title="빵빵이 추천">🤖</span>}
+                              <span className={`flex-1 text-sm truncate ${t.status === '완료' ? 'line-through text-gray-300' : 'text-gray-700'}`}>{t.title}</span>
+                              {t.due_date && <span className="text-[11px] text-gray-400 flex-shrink-0">{t.due_date.slice(5)}</span>}
+                              <span className={`text-[10px] px-1.5 py-0.5 rounded flex-shrink-0 ${
+                                t.priority === '긴급' ? 'bg-red-100 text-red-700' :
+                                t.priority === '높음' ? 'bg-orange-100 text-orange-700' :
+                                t.priority === '낮음' ? 'bg-gray-100 text-gray-500' : 'bg-blue-50 text-blue-600'
+                              }`}>{t.priority}</span>
+                              <button
+                                onClick={async () => {
+                                  if (!confirm(`"${t.title}" 삭제?`)) return
+                                  await deleteLeadTask(t.id, selectedLead.id)
+                                  refreshLeadTasks(selectedLead.id)
+                                }}
+                                className="w-6 h-6 flex items-center justify-center rounded text-gray-300 hover:text-red-500 hover:bg-red-50 md:opacity-0 md:group-hover:opacity-100 transition-opacity text-sm flex-shrink-0"
+                                title="삭제"
+                              >
+                                ✕
+                              </button>
+                            </li>
+                          ))}
+                        </ul>
+                      )}
+                    </>
+                  )}
+                </div>
 
                 {/* ── 소통 내역 ── */}
                 <div className="bg-white rounded-2xl p-5" style={{ boxShadow: '0 1px 4px rgba(0,0,0,0.06)' }}>
