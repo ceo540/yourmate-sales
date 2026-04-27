@@ -204,16 +204,19 @@ ${logs && logs.length > 0 ? `\n## 최근 소통내역\n${logs.map(l => `- [${l.l
     // ── DB 쓰기 툴 ──
     {
       name: 'add_communication_log',
-      description: '소통 내역(통화, 이메일, 메모 등)을 이 프로젝트에 실제로 기록합니다.',
+      description: '소통 내역(통화/이메일/미팅/메모) 기록. 현재 컨텍스트(lead/sale/project) 자동 매칭. 사용자가 "통화내용 추가/메모해/소통기록 남겨" 하면 즉시 호출. "지원 안됨" 환각 답변 절대 금지.',
       input_schema: {
         type: 'object' as const,
         properties: {
-          content: { type: 'string', description: '소통 내용' },
+          content: { type: 'string', description: '소통 내용 (필수)' },
           log_type: {
             type: 'string',
             enum: LOG_TYPES,
             description: '소통 유형: 통화 / 이메일 / 방문 / 내부회의 / 메모 / 기타',
           },
+          location: { type: 'string', description: '장소 (선택)' },
+          participants: { type: 'array', items: { type: 'string' }, description: '참석자 이름 배열 (선택)' },
+          outcome: { type: 'string', description: '결정/결과 (선택)' },
         },
         required: ['content', 'log_type'],
       },
@@ -472,19 +475,38 @@ ${logs && logs.length > 0 ? `\n## 최근 소통내역\n${logs.map(l => `- [${l.l
             // ── DB 쓰기 ──
             } else if (block.name === 'add_communication_log') {
               send('\n*(소통 내역 저장 중...)*\n')
-              const { error } = await admin.from('project_logs').insert({
-                lead_id: leadId || null,
-                sale_id: saleId || null,
-                content: input.content,
-                log_type: input.log_type,
-                author_id: user.id,
-                contacted_at: new Date().toISOString(),
-              })
-              if (error) {
-                result = `저장 실패: ${error.message}`
+              // lead/sale/project 컨텍스트 중 하나는 있어야
+              if (!leadId && !saleId && !projectId) {
+                result = '컨텍스트 없음 — 어느 리드/계약/프로젝트에 기록할지 알 수 없어.'
               } else {
-                result = '소통 내역이 저장되었습니다.'
-                revalidate()
+                // projectId만 있으면 첫 sale로 자동 매핑
+                let targetSaleId: string | null = saleId || null
+                if (!leadId && !targetSaleId && projectId) {
+                  const { data: firstSale } = await admin
+                    .from('sales').select('id').eq('project_id', projectId)
+                    .order('created_at').limit(1).maybeSingle()
+                  targetSaleId = firstSale?.id ?? null
+                }
+
+                const participantsInput = (input as unknown as { participants?: string[] }).participants
+                const { data: inserted, error } = await admin.from('project_logs').insert({
+                  lead_id: leadId || null,
+                  sale_id: targetSaleId,
+                  content: input.content,
+                  log_type: input.log_type,
+                  author_id: user.id,
+                  contacted_at: new Date().toISOString(),
+                  location: input.location || null,
+                  participants: participantsInput?.length ? participantsInput : null,
+                  outcome: input.outcome || null,
+                }).select('id').single()
+                if (error) {
+                  result = `저장 실패: ${error.message}`
+                } else {
+                  const target = leadId ? `리드 ${leadId.slice(0, 8)}` : `계약 ${targetSaleId?.slice(0, 8)}`
+                  result = `✅ 소통 내역 저장 (${target}, log_id: ${inserted?.id?.slice(0, 8)})`
+                  revalidate()
+                }
               }
 
             } else if (block.name === 'update_status') {
