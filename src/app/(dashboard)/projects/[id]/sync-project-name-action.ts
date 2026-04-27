@@ -39,5 +39,11 @@ export async function syncProjectName(projectId: string): Promise<ProjectSyncRes
 
   await admin.from('projects').update({ dropbox_url: result.newUrl }).eq('id', projectId)
   revalidatePath(`/projects/${projectId}`)
-  return { success: true, dropbox: 'synced', message: '드롭박스 폴더명 변경됨' }
+  return {
+    success: true,
+    dropbox: 'synced',
+    message: result.recovered
+      ? '폴더 위치가 바뀌었지만 자동으로 찾아서 이름 변경 완료'
+      : '드롭박스 폴더명 변경됨',
+  }
 }

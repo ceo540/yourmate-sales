@@ -3,7 +3,7 @@ import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { revalidatePath } from 'next/cache'
 import { SERVICE_TO_DEPT } from '@/types'
-import { createSaleFolder, renameDropboxFolder, renameDropboxFolderFull, moveDropboxToCancel, validateDropboxUrl } from '@/lib/dropbox'
+import { createSaleFolder, renameDropboxFolder, renameDropboxFolderFull, moveDropboxToCancel, validateDropboxUrl, resolveDropboxSharedLink } from '@/lib/dropbox'
 import { syncLeadToCustomerDB } from '@/lib/customer-sync'
 import { notifyLeadConverted } from '@/lib/channeltalk'
 import { createOrUpdateLeadBrief } from '@/lib/brief-generator'
@@ -519,31 +519,42 @@ export async function updateLeadNotes(leadId: string, notes: string): Promise<vo
   revalidatePath('/leads')
 }
 
-export async function updateLeadDropboxUrl(leadId: string, url: string): Promise<{ error?: string }> {
-  // 빈 문자열이면 URL 해제로 간주 (검증 skip)
-  if (url.trim()) {
-    const v = validateDropboxUrl(url)
+export async function updateLeadDropboxUrl(leadId: string, url: string): Promise<{ error?: string; converted?: string }> {
+  let finalUrl = url.trim()
+  let converted: string | undefined
+
+  // shared link (/scl/...) 자동 변환 시도
+  if (finalUrl.includes('/scl/')) {
+    const resolvedPath = await resolveDropboxSharedLink(finalUrl)
+    if (resolvedPath) {
+      converted = `https://www.dropbox.com/home${resolvedPath}`
+      finalUrl = converted
+    }
+  }
+
+  if (finalUrl) {
+    const v = validateDropboxUrl(finalUrl)
     if (!v.ok) return { error: v.error }
   }
   const admin = createAdminClient()
-  const { error } = await admin.from('leads').update({ dropbox_url: url || null, updated_at: new Date().toISOString() }).eq('id', leadId)
+  const { error } = await admin.from('leads').update({ dropbox_url: finalUrl || null, updated_at: new Date().toISOString() }).eq('id', leadId)
   if (error) return { error: error.message }
   revalidatePath('/leads')
-  return {}
+  return converted ? { converted } : {}
 }
 
 export async function syncLeadDropboxFolderName(
   leadId: string,
   currentDropboxUrl: string,
   newProjectName: string,
-): Promise<{ newUrl: string } | { error: string }> {
+): Promise<{ newUrl: string; recovered?: boolean } | { error: string }> {
   const result = await renameDropboxFolder(currentDropboxUrl, newProjectName)
   if ('error' in result) return result
 
   const admin = createAdminClient()
   await admin.from('leads').update({ dropbox_url: result.newUrl, updated_at: new Date().toISOString() }).eq('id', leadId)
   revalidatePath('/leads')
-  return { newUrl: result.newUrl }
+  return { newUrl: result.newUrl, recovered: result.recovered }
 }
 
 // 리드 할일 — tasks 테이블의 lead_id 컬럼 사용. 전환 시 sale로 자동 마이그.

@@ -199,6 +199,60 @@ export async function uploadTextFile(params: {
   return { ok: true as const, filename: params.filename, savedPath: json.path_display as string }
 }
 
+// 폴더명으로 Dropbox 자동 검색 — 정확히 일치하는 폴더 1건만 path 반환
+export async function findDropboxFolderByName(folderName: string): Promise<string | null> {
+  const token = await getDropboxToken()
+  if (!token) return null
+  const cleanName = folderName.replace(/^(\d{6}\s|\d{2}-\d{3}\s)/, '').trim() // 날짜·번호 접두사 제거
+  if (!cleanName) return null
+
+  const res = await fetch('https://api.dropboxapi.com/2/files/search_v2', {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${token}`,
+      'Content-Type': 'application/json',
+      'Dropbox-API-Path-Root': JSON.stringify({ '.tag': 'root', root: ROOT_NAMESPACE }),
+    },
+    body: JSON.stringify({ query: cleanName, options: { max_results: 20, file_status: 'active' } }),
+  }).catch(() => null)
+  if (!res?.ok) return null
+  const data = await res.json().catch(() => null)
+  if (!data?.matches) return null
+
+  type Match = { metadata: { metadata: { '.tag': string; name: string; path_display: string } } }
+  const folders = (data.matches as Match[])
+    .filter(m => m.metadata?.metadata?.['.tag'] === 'folder')
+    .map(m => m.metadata.metadata)
+
+  // 정확한 이름 매칭 우선 (대소문자 무시)
+  const exact = folders.find(f => f.name.replace(/^(\d{6}\s|\d{2}-\d{3}\s)/, '').toLowerCase() === cleanName.toLowerCase())
+  if (exact) return exact.path_display
+
+  // 부분 매칭 — 1건만 있으면 그것
+  if (folders.length === 1) return folders[0].path_display
+
+  return null
+}
+
+// 공유 링크(/scl/...) → /home/... URL로 자동 변환
+export async function resolveDropboxSharedLink(sharedUrl: string): Promise<string | null> {
+  const token = await getDropboxToken()
+  if (!token) return null
+  const res = await fetch('https://api.dropboxapi.com/2/sharing/get_shared_link_metadata', {
+    method: 'POST',
+    headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ url: sharedUrl }),
+  }).catch(() => null)
+  if (!res?.ok) return null
+  const data = await res.json().catch(() => null)
+  const path = data?.path_lower as string | undefined
+  if (!path) return null
+  // path_lower는 /폴더이름 형식. 실제 풀 경로는 search로 다시 찾기.
+  const name = path.split('/').filter(Boolean).pop()
+  if (!name) return null
+  return await findDropboxFolderByName(name)
+}
+
 // Dropbox URL 형식 검증 — /home/ 형식만 허용 (공유 링크 /scl/ 거부)
 export function validateDropboxUrl(url: string): { ok: true } | { ok: false; error: string } {
   const trimmed = url.trim()
@@ -251,22 +305,30 @@ export async function renameDropboxFile(
 }
 
 // 드롭박스 폴더명 변경 (현재 sale.name 기준으로 rename)
+// not_found 시 자동으로 폴더 검색해서 새 경로 찾기 → 재시도.
 export async function renameDropboxFolder(
   dropboxUrl: string,
   newName: string,
-): Promise<{ newUrl: string } | { error: string }> {
+): Promise<{ newUrl: string; recovered?: boolean } | { error: string }> {
   const token = await getDropboxToken()
   if (!token) return { error: '드롭박스 토큰 없음' }
 
   const WEB_BASE = 'https://www.dropbox.com/home'
-  if (!dropboxUrl.startsWith(WEB_BASE)) return { error: '지원하지 않는 Dropbox URL 형식' }
+  let workingUrl = dropboxUrl
+  // shared link 자동 변환
+  if (workingUrl.includes('/scl/')) {
+    const resolved = await resolveDropboxSharedLink(workingUrl)
+    if (resolved) workingUrl = `${WEB_BASE}${resolved}`
+  }
+  if (!workingUrl.startsWith(WEB_BASE)) return { error: '지원하지 않는 Dropbox URL 형식' }
 
-  const fullPath = decodeURIComponent(dropboxUrl.replace(WEB_BASE, ''))
+  let fullPath = decodeURIComponent(workingUrl.replace(WEB_BASE, ''))
   const lastSlash = fullPath.lastIndexOf('/')
   if (lastSlash < 0) return { error: '잘못된 경로 형식' }
 
-  const parentPath = fullPath.substring(0, lastSlash)
-  const folderName = fullPath.substring(lastSlash + 1)
+  let parentPath = fullPath.substring(0, lastSlash)
+  let folderName = fullPath.substring(lastSlash + 1)
+  let recovered = false
 
   // 날짜 접두사 추출 (예: "260416 ")
   // newName이 이미 날짜 패턴(260416) 또는 프로젝트 번호 패턴(26-109)으로 시작하면
@@ -276,31 +338,52 @@ export async function renameDropboxFolder(
   const datePrefix = (dateMatch && !newNameAlreadyHasPrefix) ? dateMatch[1] + ' ' : ''
 
   const newFolderName = `${datePrefix}${newName}`
-  const newPath = `${parentPath}/${newFolderName}`
+  let newPath = `${parentPath}/${newFolderName}`
 
   if (newPath === fullPath) return { newUrl: dropboxUrl }
 
-  const res = await fetch('https://api.dropboxapi.com/2/files/move_v2', {
-    method: 'POST',
-    headers: {
-      'Authorization': `Bearer ${token}`,
-      'Content-Type': 'application/json',
-      'Dropbox-API-Path-Root': JSON.stringify({ '.tag': 'root', 'root': ROOT_NAMESPACE }),
-    },
-    body: JSON.stringify({
-      from_path: fullPath,
-      to_path: newPath,
-      allow_shared_folder: true,
-      autorename: false,
-    }),
-  })
+  const tryMove = async (from: string, to: string) => {
+    return await fetch('https://api.dropboxapi.com/2/files/move_v2', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'Content-Type': 'application/json',
+        'Dropbox-API-Path-Root': JSON.stringify({ '.tag': 'root', 'root': ROOT_NAMESPACE }),
+      },
+      body: JSON.stringify({ from_path: from, to_path: to, allow_shared_folder: true, autorename: false }),
+    })
+  }
+
+  let res = await tryMove(fullPath, newPath)
+
+  // not_found 시 자동 검색해서 재시도
+  if (!res.ok) {
+    const errFirst = await res.json().catch(() => ({}))
+    const errFirstStr = JSON.stringify(errFirst)
+    if (errFirstStr.includes('from_lookup/not_found')) {
+      const foundPath = await findDropboxFolderByName(folderName)
+      if (foundPath && foundPath !== fullPath) {
+        // 새 경로로 fullPath 갱신 + 재시도
+        fullPath = foundPath
+        const newLastSlash = foundPath.lastIndexOf('/')
+        parentPath = foundPath.substring(0, newLastSlash)
+        folderName = foundPath.substring(newLastSlash + 1)
+        const newDateMatch = folderName.match(/^(\d{6})\s/)
+        const newDatePrefix = (newDateMatch && !newNameAlreadyHasPrefix) ? newDateMatch[1] + ' ' : ''
+        newPath = `${parentPath}/${newDatePrefix}${newName}`
+        if (newPath === fullPath) return { newUrl: `${WEB_BASE}${fullPath}`, recovered: true }
+        res = await tryMove(fullPath, newPath)
+        recovered = true
+      }
+    }
+  }
 
   if (!res.ok) {
     const err = await res.json().catch(() => ({}))
     const errStr = JSON.stringify(err)
     // 친절한 진단 메시지
     if (errStr.includes('from_lookup/not_found')) {
-      return { error: `현재 저장된 Dropbox 폴더 경로를 찾을 수 없어. 누군가 폴더를 이동·삭제하거나 이름을 바꾼 것 같아.\n\n해결: Dropbox 웹/앱에서 그 폴더 직접 찾고 yourmate에서 새 URL 다시 붙여넣어줘.\n경로: ${fullPath}` }
+      return { error: `Dropbox 폴더를 찾을 수 없고 자동 검색도 일치하는 폴더 못 찾음.\n경로: ${fullPath}\n→ Dropbox에서 직접 찾고 yourmate에서 새 URL 붙여줘.` }
     }
     if (errStr.includes('to/conflict')) {
       return { error: `같은 이름의 폴더가 이미 있어. 다른 이름 사용 또는 기존 폴더 정리 필요.` }
@@ -311,7 +394,7 @@ export async function renameDropboxFolder(
     return { error: `드롭박스 이름 변경 실패: ${errStr.slice(0, 200)}` }
   }
 
-  return { newUrl: `${WEB_BASE}${newPath}` }
+  return { newUrl: `${WEB_BASE}${newPath}`, recovered }
 }
 
 // 폴더명 전체 교체 (날짜 접두사 무시) — 계약 전환 고유번호 적용에 사용

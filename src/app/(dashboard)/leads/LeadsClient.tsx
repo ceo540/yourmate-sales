@@ -838,11 +838,14 @@ export default function LeadsClient({ leads, profiles, persons, customers, curre
         alert(`Dropbox URL 저장 실패: ${r.error}`)
         return
       }
-      setSelectedLead(prev => prev ? { ...prev, dropbox_url: newUrl } : prev)
+      const savedUrl = r.converted || newUrl
+      setSelectedLead(prev => prev ? { ...prev, dropbox_url: savedUrl } : prev)
       setDropboxInput('')
       setShowDropboxInput(false)
       router.refresh()
-      alert('✅ Dropbox URL 저장 완료')
+      alert(r.converted
+        ? `✅ 공유 링크를 자동으로 /home/ 형식으로 변환해서 저장했어:\n${savedUrl}`
+        : '✅ Dropbox URL 저장 완료')
     } finally {
       setSavingDropbox(false)
     }
