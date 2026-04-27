@@ -105,17 +105,18 @@ const TOOLS = [
   },
   {
     name: 'add_task',
-    description: '프로젝트 할 일 추가. 시스템이 동일 제목 중복 자동 검사.',
+    description: '리드 또는 프로젝트에 할 일 추가. lead_id 또는 project_id 중 하나 필수. 시스템이 동일 제목 중복 자동 검사.',
     inputSchema: {
       type: 'object',
       properties: {
-        project_id: { type: 'string', description: '프로젝트 UUID' },
+        lead_id: { type: 'string', description: '리드 UUID (리드 할일)' },
+        project_id: { type: 'string', description: '프로젝트 UUID (계약/프로젝트 할일)' },
         title: { type: 'string', description: '할 일 제목' },
         due_date: { type: 'string', description: 'YYYY-MM-DD' },
         priority: { type: 'string', description: '긴급/높음/보통/낮음' },
         force: { type: 'boolean', description: '중복 무시' },
       },
-      required: ['project_id', 'title'],
+      required: ['title'],
     },
   },
   {
@@ -229,21 +230,27 @@ async function handleTool(name: string, input: ToolInput): Promise<unknown> {
     }
 
     case 'add_task': {
-      const projectId = input.project_id as string
+      const leadId = input.lead_id as string | undefined
+      const projectId = input.project_id as string | undefined
       const title = (input.title as string).trim()
       if (!title) return { error: '제목 필수' }
+      if (!leadId && !projectId) return { error: 'lead_id 또는 project_id 필요' }
 
-      // 프로젝트의 첫 sale 찾기 (task.project_id = sale.id)
-      const { data: firstSale } = await sb.from('sales').select('id').eq('project_id', projectId).order('created_at').limit(1).maybeSingle()
-      if (!firstSale) return { error: '이 프로젝트에 연결된 계약이 없음' }
+      let targetSaleId: string | null = null
+      if (projectId) {
+        const { data: firstSale } = await sb.from('sales').select('id').eq('project_id', projectId).order('created_at').limit(1).maybeSingle()
+        if (!firstSale) return { error: '이 프로젝트에 연결된 계약이 없음' }
+        targetSaleId = firstSale.id
+      }
 
       // 중복 체크
       if (!input.force) {
-        const { data: existing } = await sb.from('tasks')
+        let q = sb.from('tasks')
           .select('id, title, status, due_date')
-          .eq('project_id', firstSale.id)
           .neq('status', '완료').neq('status', '보류')
           .ilike('title', `%${title}%`).limit(5)
+        q = leadId ? q.eq('lead_id', leadId) : q.eq('project_id', targetSaleId!)
+        const { data: existing } = await q
         if (existing && existing.length > 0) {
           return { duplicate_warning: true, existing, message: 'force=true로 재호출 시 강제 추가' }
         }
@@ -252,14 +259,15 @@ async function handleTool(name: string, input: ToolInput): Promise<unknown> {
       const validPriority = ['긴급', '높음', '보통', '낮음']
       const priority = validPriority.includes(input.priority as string) ? (input.priority as string) : '보통'
       const { data, error } = await sb.from('tasks').insert({
-        project_id: firstSale.id,
+        lead_id: leadId || null,
+        project_id: leadId ? null : targetSaleId,
         title,
         status: '할 일',
         priority,
         due_date: (input.due_date as string) || null,
       }).select('id, title').single()
       if (error) return { error: error.message }
-      return { success: true, id: data.id, title: data.title }
+      return { success: true, id: data.id, title: data.title, target: leadId ? `lead ${leadId.slice(0, 8)}` : `sale ${targetSaleId?.slice(0, 8)}` }
     }
 
     case 'get_today_actions': {

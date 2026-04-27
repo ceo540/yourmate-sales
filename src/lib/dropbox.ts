@@ -199,6 +199,25 @@ export async function uploadTextFile(params: {
   return { ok: true as const, filename: params.filename, savedPath: json.path_display as string }
 }
 
+// Dropbox URL 형식 검증 — /home/ 형식만 허용 (공유 링크 /scl/ 거부)
+export function validateDropboxUrl(url: string): { ok: true } | { ok: false; error: string } {
+  const trimmed = url.trim()
+  if (!trimmed) return { ok: false, error: '비어있어' }
+  if (!trimmed.startsWith('https://www.dropbox.com/')) {
+    return { ok: false, error: 'Dropbox URL 형식 아님 (https://www.dropbox.com/... 으로 시작해야)' }
+  }
+  if (trimmed.includes('/scl/')) {
+    return {
+      ok: false,
+      error: '공유 링크(/scl/...) 형식은 시스템에서 다룰 수 없어. Dropbox 웹·앱에서 그 폴더 열고 주소창의 /home/... 형식 URL 복사해서 붙여줘.'
+    }
+  }
+  if (!trimmed.startsWith('https://www.dropbox.com/home')) {
+    return { ok: false, error: '/home/ 형식 URL 필요 (예: https://www.dropbox.com/home/방%20준영/...)' }
+  }
+  return { ok: true }
+}
+
 // 드롭박스 단일 파일 rename (move_v2). 폴더 안에서 파일 이름만 변경.
 export async function renameDropboxFile(
   folderWebUrl: string,

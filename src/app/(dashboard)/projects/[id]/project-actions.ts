@@ -575,10 +575,16 @@ export async function updateProjectName(
   return { newDropboxUrl }
 }
 
-export async function updateProjectDropbox(projectId: string, dropboxUrl: string) {
+export async function updateProjectDropbox(projectId: string, dropboxUrl: string): Promise<{ error?: string }> {
+  if (dropboxUrl.trim()) {
+    const { validateDropboxUrl } = await import('@/lib/dropbox')
+    const v = validateDropboxUrl(dropboxUrl)
+    if (!v.ok) return { error: v.error }
+  }
   const admin = createAdminClient()
   await admin.from('projects').update({ dropbox_url: dropboxUrl || null }).eq('id', projectId)
   revalidatePath(`/projects/${projectId}`)
+  return {}
 }
 
 export async function linkSaleToProject(projectId: string, saleId: string) {

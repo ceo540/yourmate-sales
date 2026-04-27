@@ -3,7 +3,7 @@ import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { revalidatePath } from 'next/cache'
 import { SERVICE_TO_DEPT } from '@/types'
-import { createSaleFolder, renameDropboxFolder, renameDropboxFolderFull, moveDropboxToCancel } from '@/lib/dropbox'
+import { createSaleFolder, renameDropboxFolder, renameDropboxFolderFull, moveDropboxToCancel, validateDropboxUrl } from '@/lib/dropbox'
 import { syncLeadToCustomerDB } from '@/lib/customer-sync'
 import { notifyLeadConverted } from '@/lib/channeltalk'
 import { createOrUpdateLeadBrief } from '@/lib/brief-generator'
@@ -520,8 +520,13 @@ export async function updateLeadNotes(leadId: string, notes: string): Promise<vo
 }
 
 export async function updateLeadDropboxUrl(leadId: string, url: string): Promise<{ error?: string }> {
+  // 빈 문자열이면 URL 해제로 간주 (검증 skip)
+  if (url.trim()) {
+    const v = validateDropboxUrl(url)
+    if (!v.ok) return { error: v.error }
+  }
   const admin = createAdminClient()
-  const { error } = await admin.from('leads').update({ dropbox_url: url, updated_at: new Date().toISOString() }).eq('id', leadId)
+  const { error } = await admin.from('leads').update({ dropbox_url: url || null, updated_at: new Date().toISOString() }).eq('id', leadId)
   if (error) return { error: error.message }
   revalidatePath('/leads')
   return {}

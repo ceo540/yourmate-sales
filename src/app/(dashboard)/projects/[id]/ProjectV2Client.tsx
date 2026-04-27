@@ -26,6 +26,7 @@ import {
   createProjectMemo,
   updateProjectMemoCard,
   deleteProjectMemo,
+  createSaleForProject,
 } from './project-actions'
 import { updateTask, deleteTask } from '../../sales/tasks/actions'
 
@@ -1351,12 +1352,61 @@ function ScheduleSection({ tasks }: { tasks: Task[] }) {
 
 /* ── 8. 계약 관리 (별도) ─────────────────────────────────── */
 function ContractsSection({ contracts, projectId }: { contracts: Contract[]; projectId: string }) {
+  const router = useRouter()
+  const [, startTransition] = useTransition()
+  const [adding, setAdding] = useState(false)
+  const [newName, setNewName] = useState('')
+  const [newRevenue, setNewRevenue] = useState('')
+  const [newStage, setNewStage] = useState('계약')
+  const [splitReason, setSplitReason] = useState('')
+
+  async function add() {
+    if (!newName.trim()) return
+    startTransition(async () => {
+      const r = await createSaleForProject(projectId, {
+        name: newName.trim(),
+        revenue: Number(newRevenue.replace(/[^0-9]/g, '')) || 0,
+        contract_stage: newStage,
+        contract_split_reason: splitReason.trim() || null,
+      })
+      if ('error' in r) { alert('실패: ' + r.error); return }
+      setNewName(''); setNewRevenue(''); setSplitReason(''); setNewStage('계약'); setAdding(false)
+      router.refresh()
+    })
+  }
+
   return (
     <div className="bg-white border border-gray-100 rounded-xl overflow-hidden">
       <div className="px-5 py-3 border-b border-gray-100 flex items-center justify-between">
         <p className="text-sm font-semibold text-gray-800">📜 계약 관리 ({contracts.length}건)</p>
-        <Link href={`/sales/new?project_id=${projectId}`} className="text-[11px] text-gray-400 hover:text-gray-700">+ 계약 추가</Link>
+        <button onClick={() => setAdding(s => !s)} className="text-[11px] text-gray-400 hover:text-gray-700">
+          {adding ? '취소' : '+ 계약 추가'}
+        </button>
       </div>
+      {adding && (
+        <div className="px-5 py-3 bg-yellow-50 border-b border-yellow-100 space-y-2">
+          <input value={newName} onChange={e => setNewName(e.target.value)}
+            placeholder="건명 (비우면 프로젝트명 사용)"
+            className="w-full text-sm border border-gray-200 rounded px-2.5 py-1.5 bg-white focus:outline-none focus:ring-1 focus:ring-yellow-400" />
+          <div className="flex gap-2">
+            <input value={newRevenue} onChange={e => setNewRevenue(e.target.value)}
+              placeholder="매출액 (숫자)"
+              className="flex-1 text-xs border border-gray-200 rounded px-2 py-1.5 bg-white" />
+            <select value={newStage} onChange={e => setNewStage(e.target.value)}
+              className="text-xs border border-gray-200 rounded px-2 py-1.5 bg-white">
+              {['계약', '착수', '선금', '중도금', '완수', '계산서발행', '잔금'].map(s => <option key={s}>{s}</option>)}
+            </select>
+          </div>
+          <input value={splitReason} onChange={e => setSplitReason(e.target.value)}
+            placeholder="계약 분리 사유 (선택, 한 프로젝트에 여러 계약 시)"
+            className="w-full text-xs border border-gray-200 rounded px-2 py-1.5 bg-white" />
+          <button onClick={add} disabled={!newName.trim()}
+            className="w-full py-1.5 text-xs font-semibold rounded disabled:opacity-40"
+            style={{ backgroundColor: '#FFCE00', color: '#121212' }}>
+            계약 추가
+          </button>
+        </div>
+      )}
       {contracts.length === 0 ? (
         <p className="text-center py-6 text-xs text-gray-400">등록된 계약 없음</p>
       ) : (
