@@ -10,8 +10,10 @@ import {
   removeProjectMember,
   deleteProject,
   updateProjectDropbox,
+  updateProjectServiceType,
 } from './project-actions'
 import { syncProjectName } from './sync-project-name-action'
+import { SERVICE_TO_DEPT } from '@/lib/services'
 
 type Profile = { id: string; name: string }
 type Customer = { id: string; name: string; type: string | null }
@@ -24,6 +26,7 @@ interface Props {
   customer: { id: string; name: string } | null
   pmId: string | null
   dropboxUrl: string | null
+  serviceType: string | null
   customersAll: Customer[]
   profiles: Profile[]
   members: Member[]
@@ -31,12 +34,23 @@ interface Props {
 }
 
 export default function ProjectSettingsModal({
-  projectId, projectName, customerId, customer, pmId, dropboxUrl,
+  projectId, projectName, customerId, customer, pmId, dropboxUrl, serviceType,
   customersAll, profiles, members, onClose,
 }: Props) {
   const router = useRouter()
   const [busy, setBusy] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
+
+  // 서비스 종류
+  const [svc, setSvc] = useState(serviceType ?? '')
+  async function saveSvc() {
+    if (svc === (serviceType ?? '')) return
+    setBusy('svc'); setError(null)
+    const r = await updateProjectServiceType(projectId, svc || null)
+    if (r.error) setError(r.error)
+    else router.refresh()
+    setBusy(null)
+  }
 
   // 프로젝트명
   const [name, setName] = useState(projectName)
@@ -147,6 +161,21 @@ export default function ProjectSettingsModal({
         )}
 
         <div className="p-5 space-y-5">
+          {/* 0. 서비스 종류 */}
+          <section>
+            <p className="text-xs font-semibold text-gray-700 mb-1.5">서비스 종류</p>
+            <div className="flex gap-2">
+              <select value={svc} onChange={e => setSvc(e.target.value)}
+                className="flex-1 border border-gray-200 rounded px-2.5 py-1.5 text-sm">
+                <option value="">-- 미지정 --</option>
+                {Object.keys(SERVICE_TO_DEPT).map(s => <option key={s} value={s}>{s}</option>)}
+              </select>
+              <button onClick={saveSvc} disabled={busy === 'svc' || svc === (serviceType ?? '')}
+                className="px-3 py-1.5 text-xs bg-gray-900 text-white rounded disabled:bg-gray-300">저장</button>
+            </div>
+            <p className="text-[11px] text-gray-400 mt-1">선택 시 사업부도 자동 갱신.</p>
+          </section>
+
           {/* 1. 프로젝트명 */}
           <section>
             <p className="text-xs font-semibold text-gray-700 mb-1.5">프로젝트명</p>

@@ -535,6 +535,21 @@ export async function linkProjectCustomer(projectId: string, customerId: string)
   revalidatePath(`/projects/${projectId}`)
 }
 
+export async function updateProjectServiceType(projectId: string, serviceType: string | null): Promise<{ error?: string }> {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return { error: '인증 필요' }
+  const { SERVICE_TO_DEPT } = await import('@/lib/services')
+  const admin = createAdminClient()
+  const department = serviceType ? SERVICE_TO_DEPT[serviceType] ?? null : null
+  const { error } = await admin.from('projects')
+    .update({ service_type: serviceType || null, department, updated_at: new Date().toISOString() })
+    .eq('id', projectId)
+  if (error) return { error: error.message }
+  revalidatePath(`/projects/${projectId}`)
+  return {}
+}
+
 export async function createAndLinkCustomer(
   projectId: string,
   data: { name: string; type: string; contact_name: string; phone: string; contact_email: string },

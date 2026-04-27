@@ -336,6 +336,7 @@ export default function ProjectV2Client({
           customer={customer ? { id: customer.id, name: customer.name } : null}
           pmId={project.pm_id}
           dropboxUrl={project.dropbox_url}
+          serviceType={project.service_type}
           customersAll={customersAll}
           profiles={profiles}
           members={members}
