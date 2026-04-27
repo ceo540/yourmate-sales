@@ -182,7 +182,17 @@ export async function uploadTextFile(params: {
   if (!res.ok) {
     const errBody = await res.text().catch(() => '')
     console.error('[uploadTextFile] Dropbox error', res.status, errBody, { filePath })
-    return { ok: false, error: `Dropbox ${res.status}: ${errBody.slice(0, 200)}` }
+    // 권한 오류: 사용자가 알 수 있게 친절한 메시지
+    if (errBody.includes('no_write_permission')) {
+      return {
+        ok: false,
+        error: `이 Dropbox 폴더에 쓰기 권한이 없어:\n${filePath}\n\n원인 가능성:\n- 다른 사람이 공유한 폴더이고 읽기 권한만 받았음\n- 폴더 소유주에게 편집자(Editor) 권한 요청 필요\n- 또는 yourmate가 만든 새 폴더로 변경 (drop URL 수정)`
+      }
+    }
+    if (errBody.includes('not_found')) {
+      return { ok: false, error: `Dropbox 폴더를 찾을 수 없어:\n${filePath}\n폴더가 이동·삭제됐거나 URL이 잘못됨.` }
+    }
+    return { ok: false, error: `Dropbox ${res.status}: ${errBody.slice(0, 300)}` }
   }
   const json = await res.json().catch(() => ({}))
   console.log('[uploadTextFile] saved at', json.path_display)

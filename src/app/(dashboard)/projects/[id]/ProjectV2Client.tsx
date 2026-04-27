@@ -1355,13 +1355,15 @@ function ContractsSection({ contracts, projectId }: { contracts: Contract[]; pro
     <div className="bg-white border border-gray-100 rounded-xl overflow-hidden">
       <div className="px-5 py-3 border-b border-gray-100 flex items-center justify-between">
         <p className="text-sm font-semibold text-gray-800">📜 계약 관리 ({contracts.length}건)</p>
+        <Link href={`/sales/new?project_id=${projectId}`} className="text-[11px] text-gray-400 hover:text-gray-700">+ 계약 추가</Link>
       </div>
       {contracts.length === 0 ? (
         <p className="text-center py-6 text-xs text-gray-400">등록된 계약 없음</p>
       ) : (
         <ul className="divide-y divide-gray-50">
           {contracts.map(c => (
-            <li key={c.id} className="px-5 py-2.5 hover:bg-gray-50/50">
+            <Link key={c.id} href={`/sales/${c.id}`}
+              className="block px-5 py-2.5 hover:bg-gray-50 transition-colors">
               <div className="flex items-center justify-between gap-2">
                 <div className="flex-1 min-w-0">
                   <p className="text-sm text-gray-800 truncate">{c.name}</p>
@@ -1376,9 +1378,10 @@ function ContractsSection({ contracts, projectId }: { contracts: Contract[]; pro
                   {c.revenue !== null && c.revenue > 0 && (
                     <span className="text-xs font-medium text-gray-600">{fmtMoney(c.revenue)}원</span>
                   )}
+                  <span className="text-gray-300 text-xs">→</span>
                 </div>
               </div>
-            </li>
+            </Link>
           ))}
         </ul>
       )}
