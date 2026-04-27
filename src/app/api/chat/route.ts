@@ -1285,7 +1285,9 @@ export async function POST(req: NextRequest) {
 `
       : `오늘 날짜: ${today} (ISO: ${todayIso}). 상대 날짜는 이 날짜 기준 계산.\n`
 
-    const dateHeader = `${TOP_POLICY}# 시스템 컨텍스트\n현재 사용자: ${userName} (권한: ${userRole})\n${userRole === 'member' ? '※ 이 사용자는 팀원 권한이라 본인 담당 건만 조회 가능해.\n' : ''}`
+    const AUTO_MEMORY_POLICY = `\n# 🟢 자율 메모 저장 (학습 효과)
+사용자가 명시 안 해도 회의·통화·결정사항·고객 정보 등 다음 대화에 도움될 정보를 발견하면 즉시 add_project_log / add_project_task 등으로 저장. 저장 후 "메모 남겼어" 정도로 짧게 알려줘. 매번 길게 보고 X. 판단 애매하면 한 번 물어봐.\n`
+    const dateHeader = `${TOP_POLICY}${AUTO_MEMORY_POLICY}# 시스템 컨텍스트\n현재 사용자: ${userName} (권한: ${userRole})\n${userRole === 'member' ? '※ 이 사용자는 팀원 권한이라 본인 담당 건만 조회 가능해.\n' : ''}`
     const systemWithDate = `${dateHeader}${projectContext}${modeCtx}\n${SYSTEM_PROMPT}`
 
     const apiMessages: Anthropic.MessageParam[] = messages.map((m: {

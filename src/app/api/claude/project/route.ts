@@ -28,6 +28,17 @@ export async function POST(req: NextRequest) {
   }
 
   const admin = createAdminClient()
+
+  // 현재 대화 중인 사용자 (직원 식별용)
+  const { data: currentProfile } = await admin
+    .from('profiles').select('name, role, departments').eq('id', user.id).single()
+  const userContext = `## 현재 대화 중인 사용자
+- 이름: ${currentProfile?.name ?? '(미설정)'}
+- 역할: ${currentProfile?.role ?? '직원'}
+- 사용자 ID: ${user.id}
+
+이 사용자가 "나" 또는 "내가"라고 말하면 위 사람을 가리켜. 도구의 assignee_name="나"는 이 사용자로 매핑.`
+
   let projectContext = ''
   let serviceType: string | null = null
 
@@ -164,8 +175,22 @@ ${logs && logs.length > 0 ? `\n## 최근 소통내역\n${logs.map(l => `- [${l.l
 5. 의도 명확하면 즉시 실행. 삭제만 1회 확인.
 6. update_task / complete_task / delete_task에서 같은 제목 매칭이 여러 건이면 시스템이 번호 + 마감일·상태·생성일 + 전체 task_id를 보여줘. 사용자에게 그대로 친절하게 표시하고 어느 것인지 물어봐. 사용자가 "①/②/첫번째/두번째/1번/2번"이라고 답하면 그 순서대로 직전 매칭 결과의 task_id를 선택해서 도구 재호출. id 8자리만 떼서 호출 금지 — 반드시 전체 UUID 사용.`
 
+  const AUTO_MEMORY_POLICY = `# 🟢 자율 메모 저장 (학습 효과)
+사용자가 명시 안 해도 다음과 같은 정보를 발견하면 **즉시 도구로 저장**해서 다음 대화에서 빵빵이가 자동으로 알 수 있게 해.
+
+저장 대상:
+- 회의·통화·미팅 내용 → add_communication_log (log_type 적절히, location/participants 포함)
+- 결정 사항·합의 내용 → add_communication_log + outcome 필드
+- 회사·고객 측 중요 정보·연락처·선호도 → add_project_memo
+- 향후 액션이 명확하면 → create_task
+
+저장 후 사용자에게 "이거 메모로 남겨놨어 — 다음에도 참조 가능해" 식으로 짧게 알려줘. 매번 길게 보고 X.
+판단 애매하면 사용자에게 "이거 메모로 남길까?" 한 번 물어봐.`
+
   const systemBlocks = [
     { type: 'text' as const, text: TOP_POLICY },
+    { type: 'text' as const, text: AUTO_MEMORY_POLICY },
+    { type: 'text' as const, text: userContext },
     { type: 'text' as const, text: YOURMATE_CONTEXT, cache_control: { type: 'ephemeral' as const } },
     ...(serviceContext ? [{ type: 'text' as const, text: serviceContext, cache_control: { type: 'ephemeral' as const } }] : []),
     ...(savedWorkContext ? [{ type: 'text' as const, text: savedWorkContext }] : []),
