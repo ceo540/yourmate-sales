@@ -249,7 +249,7 @@ ${logs && logs.length > 0 ? `\n## 최근 소통내역\n${logs.map(l => `- [${l.l
     },
     {
       name: 'create_task',
-      description: '현재 프로젝트에 새 할 일 추가. 자동으로 첫 계약에 묶음. 시스템이 같은 제목 진행 중 할일 있는지 자동 검사 → 있으면 중복 경고 반환. 사용자가 "그래도 추가" 명시하면 force=true로 재호출.',
+      description: '현재 컨텍스트(리드/계약/프로젝트)에 새 할 일 추가. 리드 페이지면 tasks.lead_id, 프로젝트 페이지면 첫 계약의 sale.id에 자동 매핑. 시스템이 같은 제목 진행 중 할일 있는지 자동 검사 → 중복 경고 반환. 사용자가 "그래도 추가" 명시하면 force=true.',
       input_schema: {
         type: 'object' as const,
         properties: {
@@ -572,9 +572,10 @@ ${logs && logs.length > 0 ? `\n## 최근 소통내역\n${logs.map(l => `- [${l.l
 
             } else if (block.name === 'create_task') {
               send('\n*(태스크 생성 중...)*\n')
-              // saleId 없으면 projectId의 첫 sale 자동 매칭
-              let targetSaleId = saleId ?? null
-              if (!targetSaleId && projectId) {
+              // 컨텍스트별 target 결정: leadId면 lead_id 채움, sale/project면 첫 sale의 id를 project_id에
+              let targetSaleId: string | null = saleId ?? null
+              let targetLeadId: string | null = leadId ?? null
+              if (!targetLeadId && !targetSaleId && projectId) {
                 const { data: firstSale } = await admin
                   .from('sales').select('id')
                   .eq('project_id', projectId)
@@ -582,20 +583,18 @@ ${logs && logs.length > 0 ? `\n## 최근 소통내역\n${logs.map(l => `- [${l.l
                   .limit(1).maybeSingle()
                 targetSaleId = firstSale?.id ?? null
               }
-              if (!targetSaleId) {
-                result = '이 프로젝트에 연결된 계약이 없어. 계약을 먼저 만들어줘.'
+              if (!targetLeadId && !targetSaleId) {
+                result = '리드/프로젝트 컨텍스트 없음. 또는 프로젝트에 연결된 계약이 없음.'
               } else {
                 // 중복 체크 (force 플래그 없으면)
                 const force = input.force === 'true' || (input as unknown as { force?: boolean }).force === true
                 if (!force) {
-                  const { data: existing } = await admin
-                    .from('tasks')
+                  let q = admin.from('tasks')
                     .select('id, title, status, due_date')
-                    .eq('project_id', targetSaleId)
-                    .neq('status', '완료')
-                    .neq('status', '보류')
-                    .ilike('title', `%${input.title}%`)
-                    .limit(5)
+                    .neq('status', '완료').neq('status', '보류')
+                    .ilike('title', `%${input.title}%`).limit(5)
+                  q = targetLeadId ? q.eq('lead_id', targetLeadId) : q.eq('project_id', targetSaleId!)
+                  const { data: existing } = await q
                   if (existing && existing.length > 0) {
                     result = `유사한 할일 ${existing.length}건 이미 있어. force=true로 재호출 시 강제 추가:\n` +
                       existing.map(t => `- "${t.title}" [${t.status}${t.due_date ? `, 마감 ${t.due_date}` : ''}]`).join('\n')
@@ -615,7 +614,8 @@ ${logs && logs.length > 0 ? `\n## 최근 소통내역\n${logs.map(l => `- [${l.l
                   }
                 }
                 const { error } = await admin.from('tasks').insert({
-                  project_id: targetSaleId,
+                  lead_id: targetLeadId,
+                  project_id: targetLeadId ? null : targetSaleId,
                   title: input.title,
                   status: '할 일',
                   priority,
@@ -624,34 +624,38 @@ ${logs && logs.length > 0 ? `\n## 최근 소통내역\n${logs.map(l => `- [${l.l
                   description: input.description || null,
                   bbang_suggested: true,
                 })
-                result = error ? `생성 실패: ${error.message}` : `태스크 "${input.title}"를 생성했습니다.`
+                const target = targetLeadId ? `리드 ${targetLeadId.slice(0, 8)}` : `계약 ${targetSaleId?.slice(0, 8)}`
+                result = error ? `생성 실패: ${error.message}` : `태스크 "${input.title}" 생성 (${target}).`
                 if (!error) revalidate()
               }
 
             } else if (block.name === 'update_task' || block.name === 'complete_task' || block.name === 'delete_task') {
-              // 프로젝트의 모든 sale id 수집 후 task 검색
+              // 컨텍스트별 검색 범위: leadId면 lead_id로, sale/project면 sale.id 모음으로
               let saleIds: string[] = []
-              if (saleId) saleIds = [saleId]
-              else if (projectId) {
-                const { data: sales } = await admin.from('sales').select('id').eq('project_id', projectId)
-                saleIds = (sales ?? []).map(s => s.id)
+              const targetLeadId: string | null = leadId ?? null
+              if (!targetLeadId) {
+                if (saleId) saleIds = [saleId]
+                else if (projectId) {
+                  const { data: sales } = await admin.from('sales').select('id').eq('project_id', projectId)
+                  saleIds = (sales ?? []).map(s => s.id)
+                }
               }
-              if (saleIds.length === 0) {
-                result = '연결된 계약이 없어 할 일을 찾을 수 없어.'
+              if (!targetLeadId && saleIds.length === 0) {
+                result = '연결된 계약/리드 없음.'
               } else {
                 let task: { id: string; title: string } | null = null
                 let multiple = false
                 if (input.task_id) {
-                  const { data } = await admin.from('tasks').select('id, title, project_id').eq('id', input.task_id).maybeSingle()
-                  if (data && saleIds.includes(data.project_id ?? '')) task = { id: data.id, title: data.title }
+                  const { data } = await admin.from('tasks').select('id, title, project_id, lead_id').eq('id', input.task_id).maybeSingle()
+                  const matchOk = targetLeadId ? data?.lead_id === targetLeadId : saleIds.includes(data?.project_id ?? '')
+                  if (data && matchOk) task = { id: data.id, title: data.title }
                 } else if (input.title) {
-                  const { data } = await admin
-                    .from('tasks')
+                  let q = admin.from('tasks')
                     .select('id, title, status, due_date, created_at, bbang_suggested')
-                    .in('project_id', saleIds)
                     .ilike('title', `%${input.title}%`)
-                    .order('created_at', { ascending: false })
-                    .limit(5)
+                    .order('created_at', { ascending: false }).limit(5)
+                  q = targetLeadId ? q.eq('lead_id', targetLeadId) : q.in('project_id', saleIds)
+                  const { data } = await q
                   if (data && data.length === 1) task = data[0]
                   else if (data && data.length > 1) {
                     multiple = true

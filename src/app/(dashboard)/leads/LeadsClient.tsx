@@ -2131,8 +2131,9 @@ export default function LeadsClient({ leads, profiles, persons, customers, curre
                       projectName={selectedLead.project_name}
                       dropboxUrl={selectedLead.dropbox_url}
                       onRevalidate={() => {
-                        // 빵빵이가 도구 실행해서 DB 변경됐을 때 — 클라이언트 logs 다시 fetch
+                        // 빵빵이가 도구 실행해서 DB 변경됐을 때 — 클라이언트 logs/tasks 다시 fetch
                         refreshLeadLogs(selectedLead.id)
+                        refreshLeadTasks(selectedLead.id)
                         router.refresh()
                       }}
                     />
