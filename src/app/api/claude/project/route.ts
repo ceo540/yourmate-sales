@@ -3,6 +3,7 @@ import Anthropic from '@anthropic-ai/sdk'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { createClient } from '@/lib/supabase/server'
 import { YOURMATE_CONTEXT, getServiceContext } from '@/lib/service-contexts'
+import { loadCompanyManual, loadServiceManual } from '@/lib/manual-loader'
 import { listDropboxFolder, readDropboxFile } from '@/lib/dropbox'
 import { revalidatePath } from 'next/cache'
 
@@ -128,7 +129,14 @@ ${logs && logs.length > 0 ? `\n## 최근 소통내역\n${logs.map(l => `- [${l.l
     }
   }
 
-  const serviceContext = getServiceContext(serviceType)
+  // Dropbox `7 Claude협업` 매뉴얼 우선. 실패 시 코드 fallback.
+  // → 사용자가 Dropbox에서 매뉴얼 수정하면 다음 대화부터 자동 반영 (배포 X).
+  const [dropboxCompanyManual, dropboxServiceManual] = await Promise.all([
+    loadCompanyManual(),
+    loadServiceManual(serviceType),
+  ])
+  const companyContext = dropboxCompanyManual ?? YOURMATE_CONTEXT
+  const serviceContext = dropboxServiceManual ?? getServiceContext(serviceType)
 
   // 이전 저장된 claude 작업 파일 읽기 (최근 3개)
   let savedWorkContext = ''
@@ -191,7 +199,7 @@ ${logs && logs.length > 0 ? `\n## 최근 소통내역\n${logs.map(l => `- [${l.l
     { type: 'text' as const, text: TOP_POLICY },
     { type: 'text' as const, text: AUTO_MEMORY_POLICY },
     { type: 'text' as const, text: userContext },
-    { type: 'text' as const, text: YOURMATE_CONTEXT, cache_control: { type: 'ephemeral' as const } },
+    { type: 'text' as const, text: companyContext, cache_control: { type: 'ephemeral' as const } },
     ...(serviceContext ? [{ type: 'text' as const, text: serviceContext, cache_control: { type: 'ephemeral' as const } }] : []),
     ...(savedWorkContext ? [{ type: 'text' as const, text: savedWorkContext }] : []),
     ...(projectContext ? [{ type: 'text' as const, text: projectContext }] : []),
