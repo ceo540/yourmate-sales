@@ -112,21 +112,21 @@ export default function BrainDump() {
   }
 
   return (
-    <div className="bg-white rounded-xl flex flex-col" style={{ boxShadow: '0 1px 4px rgba(0,0,0,0.06)', minHeight: 400 }}>
-      <div className="px-5 py-3 border-b border-gray-100 flex items-center justify-between">
+    <div className="bg-white rounded-xl flex flex-col" style={{ boxShadow: '0 1px 4px rgba(0,0,0,0.06)', minHeight: 450 }}>
+      <div className="px-4 sm:px-5 py-3 border-b border-gray-100 flex items-center justify-between">
         <div>
-          <h3 className="text-sm font-bold text-gray-900">🤖 빵빵이에게 쏟아내기</h3>
-          <p className="text-[11px] text-gray-400 mt-0.5">고민·할일·미팅 정리·소통 메모 등 자유롭게. 빵빵이가 매칭해서 처리.</p>
+          <h3 className="text-base sm:text-sm font-bold text-gray-900">🤖 빵빵이에게 쏟아내기</h3>
+          <p className="text-xs sm:text-[11px] text-gray-500 mt-0.5">고민·할일·미팅 정리·소통 메모 등. 빵빵이가 매칭해서 처리.</p>
         </div>
         {messages.length > 0 && (
-          <button onClick={clearChat} className="text-[11px] text-gray-400 hover:text-red-500">대화 지우기</button>
+          <button onClick={clearChat} className="text-xs sm:text-[11px] text-gray-400 hover:text-red-500 flex-shrink-0 ml-2">대화 지우기</button>
         )}
       </div>
 
-      <div className="flex-1 overflow-y-auto p-4 space-y-3" style={{ maxHeight: 500 }}>
+      <div className="flex-1 overflow-y-auto p-3 sm:p-4 space-y-3" style={{ maxHeight: 600 }}>
         {messages.length === 0 ? (
-          <div className="text-center py-6 text-xs text-gray-400">
-            <p>예시:</p>
+          <div className="text-center py-6 text-sm sm:text-xs text-gray-500">
+            <p className="font-medium">예시:</p>
             <p className="mt-1">&ldquo;평택교육지원청 강사 김덕진 5/15까지 답변 준대&rdquo;</p>
             <p>&ldquo;봉일천 견적 내일까지 보내야함&rdquo;</p>
             <p>&ldquo;오늘 미팅 정리해줘: ...&rdquo;</p>
@@ -134,14 +134,14 @@ export default function BrainDump() {
         ) : (
           messages.map((m, i) => (
             <div key={i} className={m.role === 'user' ? 'flex justify-end' : 'flex justify-start'}>
-              <div className={`max-w-[85%] rounded-lg px-3 py-2 ${
+              <div className={`max-w-[90%] sm:max-w-[85%] rounded-lg px-3 py-2.5 ${
                 m.role === 'user' ? 'bg-yellow-50 border border-yellow-200' : 'bg-gray-50'
               }`}>
                 {m.role === 'user' ? (
-                  <p className="text-sm text-gray-800 whitespace-pre-line">{m.content}</p>
+                  <p className="text-sm leading-relaxed text-gray-800 whitespace-pre-line">{m.content}</p>
                 ) : (
                   <>
-                    <MarkdownText className="text-sm">{m.content}</MarkdownText>
+                    <MarkdownText className="text-sm leading-relaxed">{m.content}</MarkdownText>
                     {/* 실제 호출된 도구 흔적 — 환각 검증용 */}
                     {m.toolTrace && m.toolTrace.length > 0 && (
                       <div className="mt-2 pt-2 border-t border-gray-200 space-y-0.5">
@@ -179,41 +179,38 @@ export default function BrainDump() {
           value={input}
           onChange={e => setInput(e.target.value)}
           onKeyDown={e => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) send() }}
-          placeholder="여기에 자유롭게 쓰거나 🎙 녹음 업로드. ⌘+Enter로 전송."
-          rows={3}
-          className="w-full text-sm border border-gray-200 rounded-lg px-3 py-2 resize-none focus:outline-none focus:ring-1 focus:ring-yellow-400"
+          placeholder="여기에 자유롭게 쓰거나 🎙 녹음 업로드"
+          rows={4}
+          className="w-full text-base sm:text-sm border border-gray-200 rounded-lg px-3 py-2.5 resize-none focus:outline-none focus:ring-1 focus:ring-yellow-400"
         />
         {transcribeStatus && (
-          <p className="text-[11px] text-gray-500 mt-1.5">{transcribeStatus}</p>
+          <p className="text-xs sm:text-[11px] text-gray-500 mt-1.5">{transcribeStatus}</p>
         )}
-        <div className="flex justify-between items-center gap-2 mt-2 flex-wrap">
-          <div className="flex items-center gap-1.5">
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept="audio/*,.m4a,.mp3,.wav,.webm,.ogg,.mp4"
-              className="hidden"
-              onChange={e => {
-                const f = e.target.files?.[0]
-                if (f) handleFile(f)
-                if (fileInputRef.current) fileInputRef.current.value = ''
-              }}
-            />
-            <button
-              type="button"
-              onClick={() => fileInputRef.current?.click()}
-              disabled={transcribing}
-              className="px-3 py-1.5 text-xs border border-gray-200 rounded-lg hover:bg-gray-50 disabled:opacity-40 flex items-center gap-1"
-              title="녹음 파일 업로드 (m4a, mp3 등 - 최대 25MB)"
-            >
-              🎙 {transcribing ? '변환 중...' : '녹음'}
-            </button>
-            <span className="text-[11px] text-gray-400 hidden sm:inline">⌘+Enter</span>
-          </div>
+        <div className="flex justify-between items-center gap-2 mt-2.5">
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept="audio/*,.m4a,.mp3,.wav,.webm,.ogg,.mp4"
+            className="hidden"
+            onChange={e => {
+              const f = e.target.files?.[0]
+              if (f) handleFile(f)
+              if (fileInputRef.current) fileInputRef.current.value = ''
+            }}
+          />
+          <button
+            type="button"
+            onClick={() => fileInputRef.current?.click()}
+            disabled={transcribing}
+            className="px-3 py-2 sm:py-1.5 text-sm sm:text-xs border border-gray-200 rounded-lg hover:bg-gray-50 disabled:opacity-40 flex items-center gap-1 min-h-[40px] sm:min-h-0"
+            title="녹음 파일 업로드 (m4a, mp3 등 - 최대 25MB)"
+          >
+            🎙 <span>{transcribing ? '변환 중...' : '녹음'}</span>
+          </button>
           <button
             onClick={send}
             disabled={!input.trim() || loading}
-            className="px-4 py-1.5 text-xs font-semibold rounded-lg hover:opacity-80 disabled:opacity-40"
+            className="px-5 py-2 sm:py-1.5 text-sm sm:text-xs font-semibold rounded-lg hover:opacity-80 disabled:opacity-40 min-h-[40px] sm:min-h-0"
             style={{ backgroundColor: '#FFCE00', color: '#121212' }}
           >
             보내기

@@ -187,7 +187,7 @@ export default async function DashboardPage() {
 
   const CARD = 'bg-white rounded-xl p-5'
   const SHADOW = { boxShadow: '0 1px 4px rgba(0,0,0,0.06)' }
-  const SECTION_HDR = 'text-sm font-bold text-gray-900 mb-4'
+  const SECTION_HDR = 'text-base sm:text-sm font-bold text-gray-900 mb-4'
 
   return (
     <div className="max-w-5xl">
@@ -208,9 +208,9 @@ export default async function DashboardPage() {
           { label: '리마인드', value: `${(reminders ?? []).length}건`, sub: '7일 이내', color: (reminders ?? []).length > 0 ? '#F59E0B' : '#6B7280' },
         ].map(c => (
           <div key={c.label} className={CARD} style={SHADOW}>
-            <p className="text-xs text-gray-400 mb-1.5">{c.label}</p>
+            <p className="text-sm sm:text-xs text-gray-500 mb-1.5">{c.label}</p>
             <p className="text-2xl font-black" style={{ color: c.color }}>{c.value}</p>
-            <p className="text-xs text-gray-400 mt-1">{c.sub}</p>
+            <p className="text-sm sm:text-xs text-gray-500 mt-1">{c.sub}</p>
           </div>
         ))}
       </div>
@@ -237,21 +237,21 @@ export default async function DashboardPage() {
               const svcColor = SVC_COLOR[a.service_type ?? ''] ?? '#6B7280'
               return (
                 <Link key={`${a.type}-${a.id}`} href={a.href}
-                  className="flex items-start gap-3 py-2 px-2 hover:bg-gray-50 rounded transition-colors -mx-2">
-                  <span className={`text-[10px] px-1.5 py-0.5 rounded font-bold flex-shrink-0 mt-0.5 ${
+                  className="flex items-start gap-3 py-2.5 px-2 hover:bg-gray-50 rounded transition-colors -mx-2">
+                  <span className={`text-xs sm:text-[10px] px-1.5 py-0.5 rounded font-bold flex-shrink-0 mt-0.5 ${
                     a.type === 'lead' ? 'bg-yellow-100 text-yellow-700' : 'bg-blue-100 text-blue-700'
                   }`}>
                     {a.type === 'lead' ? '리드' : '프로젝트'}
                   </span>
                   <div className="flex-1 min-w-0">
                     <p className="text-sm text-blue-700 font-medium leading-snug">🤖 {a.action}</p>
-                    <p className="text-[11px] text-gray-500 mt-0.5 truncate">
+                    <p className="text-xs sm:text-[11px] text-gray-500 mt-0.5 truncate">
                       <span className="font-medium text-gray-700">{a.name}</span>
                       {a.subtitle !== '—' && <span className="text-gray-400"> · {a.subtitle}</span>}
                     </p>
                   </div>
                   {a.service_type && (
-                    <span className="text-[10px] px-1.5 py-0.5 rounded border font-medium flex-shrink-0 mt-0.5"
+                    <span className="text-xs sm:text-[10px] px-1.5 py-0.5 rounded border font-medium flex-shrink-0 mt-0.5"
                       style={{ color: svcColor, borderColor: svcColor + '40', background: svcColor + '10' }}>
                       {a.service_type}
                     </span>
