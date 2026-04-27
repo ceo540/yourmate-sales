@@ -24,6 +24,7 @@ import {
   createAndLinkCalendarEvent,
   listProjectDropboxFiles,
   regenerateProjectBrief,
+  getProjectBriefContent,
   deleteProjectLog,
   createProjectMemo,
   updateProjectMemoCard,
@@ -1927,6 +1928,9 @@ function DropboxFilesCard({ dropboxUrl, projectId }: { dropboxUrl: string; proje
   const [collapsed, setCollapsed] = useState(true)
   const [briefMsg, setBriefMsg] = useState<string | null>(null)
   const [briefLoading, setBriefLoading] = useState(false)
+  const [briefContent, setBriefContent] = useState<string | null>(null)
+  const [briefViewLoading, setBriefViewLoading] = useState(false)
+  const [briefCopied, setBriefCopied] = useState(false)
 
   async function load() {
     setLoading(true)
@@ -1941,7 +1945,39 @@ function DropboxFilesCard({ dropboxUrl, projectId }: { dropboxUrl: string; proje
     const result = await regenerateProjectBrief(projectId)
     setBriefMsg('error' in result ? `❌ ${result.error}` : `✅ ${result.filename}`)
     setBriefLoading(false)
-    if ('ok' in result) load()
+    if ('ok' in result) {
+      load()
+      // 미리보기 박스 열려있으면 새 내용 다시 불러오기
+      if (briefContent !== null) viewBrief()
+    }
+  }
+
+  async function viewBrief() {
+    if (briefContent !== null) {
+      // 토글로 닫기
+      setBriefContent(null)
+      return
+    }
+    setBriefViewLoading(true)
+    setBriefMsg(null)
+    const result = await getProjectBriefContent(projectId)
+    if ('error' in result) {
+      setBriefMsg(`❌ ${result.error}`)
+    } else {
+      setBriefContent(result.content)
+    }
+    setBriefViewLoading(false)
+  }
+
+  async function copyBrief() {
+    if (!briefContent) return
+    try {
+      await navigator.clipboard.writeText(briefContent)
+      setBriefCopied(true)
+      setTimeout(() => setBriefCopied(false), 1500)
+    } catch {
+      setBriefMsg('❌ 복사 실패')
+    }
   }
 
   return (
@@ -1952,6 +1988,10 @@ function DropboxFilesCard({ dropboxUrl, projectId }: { dropboxUrl: string; proje
           📁 Dropbox 폴더
         </button>
         <div className="flex items-center gap-2">
+          <button onClick={viewBrief} disabled={briefViewLoading}
+            className="text-[11px] text-blue-500 hover:underline disabled:opacity-50">
+            {briefViewLoading ? '...' : briefContent !== null ? '📕 닫기' : '📖 Brief 보기'}
+          </button>
           <button onClick={regenBrief} disabled={briefLoading}
             className="text-[11px] text-blue-500 hover:underline disabled:opacity-50">
             {briefLoading ? '갱신중...' : '📄 Brief 갱신'}
@@ -1961,6 +2001,18 @@ function DropboxFilesCard({ dropboxUrl, projectId }: { dropboxUrl: string; proje
         </div>
       </div>
       {briefMsg && <p className="text-[11px] text-gray-500">{briefMsg}</p>}
+      {briefContent !== null && (
+        <div className="border border-gray-100 rounded-lg bg-gray-50 mt-1">
+          <div className="flex items-center justify-between px-3 py-1.5 border-b border-gray-100">
+            <span className="text-[11px] text-gray-500">brief 본문 (Claude Code에 붙여넣기용)</span>
+            <button onClick={copyBrief}
+              className={`text-[11px] px-2 py-0.5 rounded font-medium ${briefCopied ? 'bg-green-100 text-green-700' : 'bg-blue-100 text-blue-700 hover:bg-blue-200'}`}>
+              {briefCopied ? '✓ 복사됨' : '📋 전체 복사'}
+            </button>
+          </div>
+          <pre className="px-3 py-2 text-[11px] text-gray-700 whitespace-pre-wrap max-h-80 overflow-y-auto font-mono leading-relaxed">{briefContent}</pre>
+        </div>
+      )}
       {!collapsed && (
         <>
           {files === null ? (

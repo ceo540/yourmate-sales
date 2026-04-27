@@ -824,6 +824,25 @@ export async function listProjectDropboxFiles(
   return listDropboxFolder(relativePath)
 }
 
+export async function getProjectBriefContent(projectId: string): Promise<{ content: string; filename: string } | { error: string }> {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return { error: '인증 필요' }
+  const admin = createAdminClient()
+  const { data: project } = await admin.from('projects').select('name, project_number, dropbox_url').eq('id', projectId).single()
+  if (!project) return { error: '프로젝트 없음' }
+  if (!project.dropbox_url) return { error: 'Dropbox URL 없음 — ⚙️ 설정에서 폴더 연결 필요' }
+  const { getBriefFilename, findExistingBriefFile } = await import('@/lib/brief-generator')
+  const { readDropboxFile } = await import('@/lib/dropbox')
+  const targetFilename = getBriefFilename({ project_name: project.name, project_number: project.project_number })
+  const folderPath = decodeURIComponent(project.dropbox_url.replace('https://www.dropbox.com/home', '')).replace(/\/$/, '')
+  const existing = await findExistingBriefFile(project.dropbox_url, targetFilename)
+  if (!existing) return { error: 'brief 파일이 아직 없음 — [📄 Brief 갱신] 먼저 눌러줘' }
+  const r = await readDropboxFile(`${folderPath}/${existing}`)
+  if ('error' in r) return { error: r.error }
+  return { content: r.text, filename: existing }
+}
+
 export async function regenerateProjectBrief(projectId: string): Promise<{ ok: true; filename: string } | { error: string }> {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
