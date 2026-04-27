@@ -359,6 +359,14 @@ ${logs && logs.length > 0 ? `\n## 최근 소통내역\n${logs.map(l => `- [${l.l
       },
     },
     {
+      name: 'regenerate_master_brief',
+      description: 'Dropbox 폴더의 brief.md를 최신 데이터로 다시 만들기. 기본 정보·요약·할일·소통내역·캘린더 일정·메모 카드까지 모두 한 파일로 통합. 사용자가 "brief 갱신/업데이트", "마스터 파일 다시 만들어줘" 등이라고 하면 호출. AI 협업 노트는 보존됨.',
+      input_schema: {
+        type: 'object' as const,
+        properties: {},
+      },
+    },
+    {
       name: 'add_project_memo',
       description: '프로젝트에 새 메모 카드를 추가. 회의 정리, 카톡 분석 결과, 통화 메모 등을 별도 카드로 보존하고 싶을 때 사용. 마크다운 지원 (제목/리스트/표/체크박스). 사용자가 "메모 추가/메모로 정리/카드로 남겨" 등 말하면 즉시 호출.',
       input_schema: {
@@ -850,6 +858,25 @@ ${logs && logs.length > 0 ? `\n## 최근 소통내역\n${logs.map(l => `- [${l.l
                     result = 'error' in r ? `실패: ${r.error}` : `"${existing}" → "${targetFilename}" 갱신 완료.`
                     if (!('error' in r)) revalidate()
                   }
+                }
+              } catch (e: unknown) {
+                result = '실패: ' + (e instanceof Error ? e.message : String(e))
+              }
+
+            } else if (block.name === 'regenerate_master_brief') {
+              send('\n*(brief.md 마스터 갱신 중...)*\n')
+              try {
+                const { createOrUpdateLeadBrief, createOrUpdateProjectBrief } = await import('@/lib/brief-generator')
+                if (projectId) {
+                  const r = await createOrUpdateProjectBrief(projectId)
+                  result = 'error' in r ? `실패: ${r.error}` : `brief 갱신 완료 — ${r.filename}`
+                  if (!('error' in r)) revalidate()
+                } else if (leadId) {
+                  await createOrUpdateLeadBrief(leadId)
+                  result = 'brief 갱신 완료 (리드 마스터 파일).'
+                  revalidate()
+                } else {
+                  result = '리드 또는 프로젝트 페이지에서만 사용 가능.'
                 }
               } catch (e: unknown) {
                 result = '실패: ' + (e instanceof Error ? e.message : String(e))

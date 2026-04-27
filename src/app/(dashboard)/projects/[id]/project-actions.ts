@@ -809,6 +809,17 @@ export async function listProjectDropboxFiles(
   return listDropboxFolder(relativePath)
 }
 
+export async function regenerateProjectBrief(projectId: string): Promise<{ ok: true; filename: string } | { error: string }> {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return { error: '인증 필요' }
+  const { createOrUpdateProjectBrief } = await import('@/lib/brief-generator')
+  const result = await createOrUpdateProjectBrief(projectId)
+  if ('error' in result) return result
+  revalidatePath(`/projects/${projectId}`)
+  return result
+}
+
 export async function deleteProject(projectId: string): Promise<{ error?: string }> {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()

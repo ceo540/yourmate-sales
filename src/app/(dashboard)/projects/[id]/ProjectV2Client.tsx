@@ -23,6 +23,7 @@ import {
   generateAndSuggestTasks,
   createAndLinkCalendarEvent,
   listProjectDropboxFiles,
+  regenerateProjectBrief,
   createProjectMemo,
   updateProjectMemoCard,
   deleteProjectMemo,
@@ -322,7 +323,7 @@ export default function ProjectV2Client({
           <FinanceCard finance={finance} profitRate={profitRate} receivedRate={receivedRate} />
 
           {/* 📁 드롭박스 */}
-          {project.dropbox_url && <DropboxFilesCard dropboxUrl={project.dropbox_url} />}
+          {project.dropbox_url && <DropboxFilesCard dropboxUrl={project.dropbox_url} projectId={project.id} />}
         </aside>
       </div>
 
@@ -1887,11 +1888,13 @@ function CommunicationTimeline({ logs, contracts, projectId }: { logs: Log[]; co
   )
 }
 
-function DropboxFilesCard({ dropboxUrl }: { dropboxUrl: string }) {
+function DropboxFilesCard({ dropboxUrl, projectId }: { dropboxUrl: string; projectId: string }) {
   type Item = { name: string; path: string; type: 'file' | 'folder' }
   const [files, setFiles] = useState<Item[] | null>(null)
   const [loading, setLoading] = useState(false)
   const [collapsed, setCollapsed] = useState(true)
+  const [briefMsg, setBriefMsg] = useState<string | null>(null)
+  const [briefLoading, setBriefLoading] = useState(false)
 
   async function load() {
     setLoading(true)
@@ -1900,16 +1903,32 @@ function DropboxFilesCard({ dropboxUrl }: { dropboxUrl: string }) {
     setLoading(false)
   }
 
+  async function regenBrief() {
+    setBriefLoading(true)
+    setBriefMsg(null)
+    const result = await regenerateProjectBrief(projectId)
+    setBriefMsg('error' in result ? `❌ ${result.error}` : `✅ ${result.filename}`)
+    setBriefLoading(false)
+    if ('ok' in result) load()
+  }
+
   return (
     <div className="bg-white border border-gray-100 rounded-xl px-4 py-3 space-y-2">
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between gap-2">
         <button onClick={() => setCollapsed(c => !c)} className="flex items-center gap-1.5 text-xs font-semibold text-gray-700 hover:text-gray-900">
           <span className="text-gray-400 text-[10px]">{collapsed ? '▶' : '▼'}</span>
           📁 Dropbox 폴더
         </button>
-        <a href={dropboxUrl} target="_blank" rel="noopener noreferrer"
-          className="text-[11px] text-blue-500 hover:underline">열기 ↗</a>
+        <div className="flex items-center gap-2">
+          <button onClick={regenBrief} disabled={briefLoading}
+            className="text-[11px] text-blue-500 hover:underline disabled:opacity-50">
+            {briefLoading ? '갱신중...' : '📄 Brief 갱신'}
+          </button>
+          <a href={dropboxUrl} target="_blank" rel="noopener noreferrer"
+            className="text-[11px] text-blue-500 hover:underline">열기 ↗</a>
+        </div>
       </div>
+      {briefMsg && <p className="text-[11px] text-gray-500">{briefMsg}</p>}
       {!collapsed && (
         <>
           {files === null ? (
