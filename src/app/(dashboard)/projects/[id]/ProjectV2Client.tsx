@@ -24,6 +24,7 @@ import {
   createAndLinkCalendarEvent,
   listProjectDropboxFiles,
   regenerateProjectBrief,
+  deleteProjectLog,
   createProjectMemo,
   updateProjectMemoCard,
   deleteProjectMemo,
@@ -1844,39 +1845,10 @@ function CommunicationTimeline({ logs, contracts, projectId }: { logs: Log[]; co
         </p>
       ) : (
         <ul className="divide-y divide-gray-50">
-          {filteredLogs.slice(0, 50).map(l => {
-            const dateStr = (l.contacted_at ?? l.created_at).slice(0, 16).replace('T', ' ')
-            const icon = LOG_ICON[l.log_type] ?? '·'
-            const color = LOG_COLOR[l.log_type] ?? 'bg-gray-50 text-gray-600 border-gray-100'
-            const saleName = l.sale_id ? contractNameMap[l.sale_id] : null
-            return (
-              <li key={l.id} className="px-5 py-3 hover:bg-gray-50/50">
-                <div className="flex items-start gap-3">
-                  <div className={`text-xs px-2 py-1 rounded-full border font-medium flex-shrink-0 ${color}`}>
-                    <span className="mr-0.5">{icon}</span>{l.log_type}
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2 mb-1 flex-wrap">
-                      <span className="text-xs text-gray-400">{dateStr}</span>
-                      {l.author_name && <span className="text-xs text-gray-500">· {l.author_name}</span>}
-                      {saleName && <span className="text-[10px] text-purple-500 bg-purple-50 px-1.5 py-0.5 rounded">계약: {saleName.slice(0, 14)}</span>}
-                    </div>
-                    <p className="text-sm text-gray-700 whitespace-pre-line line-clamp-3">{l.content}</p>
-                    {(l.location || (l.participants && l.participants.length > 0)) && (
-                      <p className="text-[11px] text-gray-400 mt-1">
-                        {l.location && <span>📍 {l.location}</span>}
-                        {l.location && l.participants && l.participants.length > 0 && <span> · </span>}
-                        {l.participants && l.participants.length > 0 && <span>참석: {l.participants.join(', ')}</span>}
-                      </p>
-                    )}
-                    {l.outcome && (
-                      <p className="text-[11px] text-blue-600 mt-1 bg-blue-50 px-2 py-1 rounded">→ {l.outcome}</p>
-                    )}
-                  </div>
-                </div>
-              </li>
-            )
-          })}
+          {filteredLogs.slice(0, 50).map(l => (
+            <LogRow key={l.id} log={l} contractName={l.sale_id ? contractNameMap[l.sale_id] : null}
+              projectId={projectId} onChanged={() => router.refresh()} />
+          ))}
         </ul>
       )}
       {filteredLogs.length > 50 && (
@@ -1885,6 +1857,65 @@ function CommunicationTimeline({ logs, contracts, projectId }: { logs: Log[]; co
         </div>
       )}
     </div>
+  )
+}
+
+function LogRow({ log, contractName, projectId, onChanged }: {
+  log: Log; contractName: string | null; projectId: string; onChanged: () => void
+}) {
+  const [, startTransition] = useTransition()
+  const [expanded, setExpanded] = useState(false)
+  const [busy, setBusy] = useState(false)
+  const dateStr = (log.contacted_at ?? log.created_at).slice(0, 16).replace('T', ' ')
+  const icon = LOG_ICON[log.log_type] ?? '·'
+  const color = LOG_COLOR[log.log_type] ?? 'bg-gray-50 text-gray-600 border-gray-100'
+  const long = (log.content ?? '').length > 100
+
+  function handleDelete() {
+    if (!confirm('이 소통 기록을 삭제할까요?')) return
+    setBusy(true)
+    startTransition(async () => {
+      await deleteProjectLog(log.id, projectId)
+      setBusy(false)
+      onChanged()
+    })
+  }
+
+  return (
+    <li className="px-5 py-3 hover:bg-gray-50/50 group">
+      <div className="flex items-start gap-3">
+        <div className={`text-xs px-2 py-1 rounded-full border font-medium flex-shrink-0 ${color}`}>
+          <span className="mr-0.5">{icon}</span>{log.log_type}
+        </div>
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-2 mb-1 flex-wrap">
+            <span className="text-xs text-gray-400">{dateStr}</span>
+            {log.author_name && <span className="text-xs text-gray-500">· {log.author_name}</span>}
+            {contractName && <span className="text-[10px] text-purple-500 bg-purple-50 px-1.5 py-0.5 rounded">계약: {contractName.slice(0, 14)}</span>}
+            <button onClick={handleDelete} disabled={busy}
+              className="ml-auto text-xs text-gray-300 hover:text-red-400 md:opacity-0 md:group-hover:opacity-100 transition-opacity disabled:opacity-30">
+              {busy ? '...' : '✕ 삭제'}
+            </button>
+          </div>
+          <p className={`text-sm text-gray-700 whitespace-pre-line ${!expanded && long ? 'line-clamp-3' : ''}`}>{log.content}</p>
+          {long && (
+            <button onClick={() => setExpanded(v => !v)} className="mt-1 text-xs text-gray-400 hover:text-gray-600">
+              {expanded ? '▲ 접기' : '▼ 전체 보기'}
+            </button>
+          )}
+          {(log.location || (log.participants && log.participants.length > 0)) && (
+            <p className="text-[11px] text-gray-400 mt-1">
+              {log.location && <span>📍 {log.location}</span>}
+              {log.location && log.participants && log.participants.length > 0 && <span> · </span>}
+              {log.participants && log.participants.length > 0 && <span>참석: {log.participants.join(', ')}</span>}
+            </p>
+          )}
+          {log.outcome && (
+            <p className="text-[11px] text-blue-600 mt-1 bg-blue-50 px-2 py-1 rounded">→ {log.outcome}</p>
+          )}
+        </div>
+      </div>
+    </li>
   )
 }
 
