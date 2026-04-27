@@ -1317,6 +1317,7 @@ export async function POST(req: NextRequest) {
 
     // tool_use 루프
     let mutated = false
+    const toolTrace: { name: string; input: Record<string, unknown>; result: unknown; ok: boolean }[] = []
     let response = await getClient().messages.create({
       model: MODEL,
       max_tokens: 2048,
@@ -1331,8 +1332,11 @@ export async function POST(req: NextRequest) {
 
       const toolResults: Anthropic.ToolResultBlockParam[] = await Promise.all(
         toolUseBlocks.map(async (tu) => {
-          const result = await executeTool(tu.name, tu.input as Record<string, unknown>, userRole, user.id, projectId)
-          if (MUTATING_TOOLS.has(tu.name) && result && typeof result === 'object' && !('error' in result)) {
+          const input = tu.input as Record<string, unknown>
+          const result = await executeTool(tu.name, input, userRole, user.id, projectId)
+          const ok = !!result && typeof result === 'object' && !('error' in result) && !('duplicate_warning' in result) && !('multiple' in result)
+          toolTrace.push({ name: tu.name, input, result, ok })
+          if (MUTATING_TOOLS.has(tu.name) && ok) {
             mutated = true
           }
           return {
@@ -1378,7 +1382,21 @@ export async function POST(req: NextRequest) {
       text = text.replace(/<lead-data>[\s\S]*?<\/lead-data>/, '').trim()
     }
 
-    return NextResponse.json({ text, saleData, leadData, mutated })
+    return NextResponse.json({
+      text, saleData, leadData, mutated,
+      toolTrace: toolTrace.map(t => ({
+        name: t.name,
+        ok: t.ok,
+        // 에러/실패 메시지만 노출 (성공 결과는 너무 큼)
+        error: !t.ok && t.result && typeof t.result === 'object' && 'error' in t.result ? (t.result as { error: string }).error : null,
+        // 핵심 input만 (UUID 제외, 가독성)
+        inputSummary: Object.fromEntries(
+          Object.entries(t.input)
+            .filter(([k]) => !['lead_id', 'sale_id', 'memo_id', 'task_id'].includes(k))
+            .map(([k, v]) => [k, typeof v === 'string' ? v.slice(0, 100) : v])
+        ),
+      })),
+    })
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e)
     console.error('Chat API error:', msg)

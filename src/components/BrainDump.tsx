@@ -4,7 +4,8 @@ import { useState, useEffect, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import MarkdownText from './MarkdownText'
 
-type Msg = { role: 'user' | 'assistant'; content: string }
+type ToolCall = { name: string; ok: boolean; error: string | null; inputSummary: Record<string, unknown> }
+type Msg = { role: 'user' | 'assistant'; content: string; toolTrace?: ToolCall[] }
 
 const STORAGE_KEY = 'bbang-braindump-messages'
 
@@ -60,7 +61,7 @@ export default function BrainDump() {
       })
       const data = await res.json()
       const content = data.text || data.error || '답변 없음'
-      setMessages(prev => [...prev, { role: 'assistant', content }])
+      setMessages(prev => [...prev, { role: 'assistant', content, toolTrace: data.toolTrace ?? [] }])
       if (data.mutated) router.refresh()
     } catch {
       setMessages(prev => [...prev, { role: 'assistant', content: '네트워크 오류' }])
@@ -139,7 +140,25 @@ export default function BrainDump() {
                 {m.role === 'user' ? (
                   <p className="text-sm text-gray-800 whitespace-pre-line">{m.content}</p>
                 ) : (
-                  <MarkdownText className="text-sm">{m.content}</MarkdownText>
+                  <>
+                    <MarkdownText className="text-sm">{m.content}</MarkdownText>
+                    {/* 실제 호출된 도구 흔적 — 환각 검증용 */}
+                    {m.toolTrace && m.toolTrace.length > 0 && (
+                      <div className="mt-2 pt-2 border-t border-gray-200 space-y-0.5">
+                        {m.toolTrace.map((t, j) => (
+                          <p key={j} className={`text-[10px] ${t.ok ? 'text-green-600' : 'text-red-500'}`}>
+                            {t.ok ? '✅' : '❌'} <code className="bg-white px-1 rounded">{t.name}</code>
+                            {t.error && <span className="ml-1 text-red-500">— {t.error}</span>}
+                          </p>
+                        ))}
+                      </div>
+                    )}
+                    {m.toolTrace && m.toolTrace.length === 0 && m.role === 'assistant' && (
+                      <p className="text-[10px] text-orange-500 mt-2 pt-2 border-t border-gray-200">
+                        ⚠️ 도구 호출 없음 — 빵빵이가 분석만 하고 실제 저장/등록은 안 했어. 확인 필요.
+                      </p>
+                    )}
+                  </>
                 )}
               </div>
             </div>
