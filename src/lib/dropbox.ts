@@ -199,12 +199,15 @@ export async function uploadTextFile(params: {
   return { ok: true as const, filename: params.filename, savedPath: json.path_display as string }
 }
 
-// 폴더명으로 Dropbox 자동 검색 — 정확히 일치하는 폴더 1건만 path 반환
+// 폴더명으로 Dropbox 자동 검색 — *정확히 일치*하는 폴더만 path 반환.
+// 부분 매칭 자동 적용 X (잘못된 폴더 매칭 위험).
 export async function findDropboxFolderByName(folderName: string): Promise<string | null> {
   const token = await getDropboxToken()
   if (!token) return null
-  const cleanName = folderName.replace(/^(\d{6}\s|\d{2}-\d{3}\s)/, '').trim() // 날짜·번호 접두사 제거
-  if (!cleanName) return null
+  // 검색어: 원본 폴더명 그대로 (접두사 포함). exact 매칭만 하니까 가장 강한 시그널.
+  const stripPrefix = (s: string) => s.replace(/^(\d{6}\s|\d{2}-\d{3}\s)/, '').trim()
+  const targetClean = stripPrefix(folderName)
+  if (!targetClean || targetClean.length < 3) return null // 너무 짧으면 위험
 
   const res = await fetch('https://api.dropboxapi.com/2/files/search_v2', {
     method: 'POST',
@@ -213,7 +216,7 @@ export async function findDropboxFolderByName(folderName: string): Promise<strin
       'Content-Type': 'application/json',
       'Dropbox-API-Path-Root': JSON.stringify({ '.tag': 'root', root: ROOT_NAMESPACE }),
     },
-    body: JSON.stringify({ query: cleanName, options: { max_results: 20, file_status: 'active' } }),
+    body: JSON.stringify({ query: targetClean, options: { max_results: 30, file_status: 'active' } }),
   }).catch(() => null)
   if (!res?.ok) return null
   const data = await res.json().catch(() => null)
@@ -224,13 +227,11 @@ export async function findDropboxFolderByName(folderName: string): Promise<strin
     .filter(m => m.metadata?.metadata?.['.tag'] === 'folder')
     .map(m => m.metadata.metadata)
 
-  // 정확한 이름 매칭 우선 (대소문자 무시)
-  const exact = folders.find(f => f.name.replace(/^(\d{6}\s|\d{2}-\d{3}\s)/, '').toLowerCase() === cleanName.toLowerCase())
+  // *정확한* 이름 매칭만 자동 적용 (대소문자 무시, 접두사 제거 비교)
+  const exact = folders.find(f => stripPrefix(f.name).toLowerCase() === targetClean.toLowerCase())
   if (exact) return exact.path_display
 
-  // 부분 매칭 — 1건만 있으면 그것
-  if (folders.length === 1) return folders[0].path_display
-
+  // 부분 매칭은 자동 적용 X — 사용자가 수동으로 선택해야
   return null
 }
 
