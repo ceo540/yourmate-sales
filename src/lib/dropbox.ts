@@ -297,7 +297,18 @@ export async function renameDropboxFolder(
 
   if (!res.ok) {
     const err = await res.json().catch(() => ({}))
-    return { error: `드롭박스 이름 변경 실패: ${JSON.stringify(err).slice(0, 120)}` }
+    const errStr = JSON.stringify(err)
+    // 친절한 진단 메시지
+    if (errStr.includes('from_lookup/not_found')) {
+      return { error: `현재 저장된 Dropbox 폴더 경로를 찾을 수 없어. 누군가 폴더를 이동·삭제하거나 이름을 바꾼 것 같아.\n\n해결: Dropbox 웹/앱에서 그 폴더 직접 찾고 yourmate에서 새 URL 다시 붙여넣어줘.\n경로: ${fullPath}` }
+    }
+    if (errStr.includes('to/conflict')) {
+      return { error: `같은 이름의 폴더가 이미 있어. 다른 이름 사용 또는 기존 폴더 정리 필요.` }
+    }
+    if (errStr.includes('no_write_permission') || errStr.includes('insufficient_permissions')) {
+      return { error: `이 폴더 이름 변경 권한이 없어. 외부 공유 폴더면 소유주 권한 필요.` }
+    }
+    return { error: `드롭박스 이름 변경 실패: ${errStr.slice(0, 200)}` }
   }
 
   return { newUrl: `${WEB_BASE}${newPath}` }
@@ -340,7 +351,18 @@ export async function renameDropboxFolderFull(
 
   if (!res.ok) {
     const err = await res.json().catch(() => ({}))
-    return { error: `드롭박스 이름 변경 실패: ${JSON.stringify(err).slice(0, 120)}` }
+    const errStr = JSON.stringify(err)
+    // 친절한 진단 메시지
+    if (errStr.includes('from_lookup/not_found')) {
+      return { error: `현재 저장된 Dropbox 폴더 경로를 찾을 수 없어. 누군가 폴더를 이동·삭제하거나 이름을 바꾼 것 같아.\n\n해결: Dropbox 웹/앱에서 그 폴더 직접 찾고 yourmate에서 새 URL 다시 붙여넣어줘.\n경로: ${fullPath}` }
+    }
+    if (errStr.includes('to/conflict')) {
+      return { error: `같은 이름의 폴더가 이미 있어. 다른 이름 사용 또는 기존 폴더 정리 필요.` }
+    }
+    if (errStr.includes('no_write_permission') || errStr.includes('insufficient_permissions')) {
+      return { error: `이 폴더 이름 변경 권한이 없어. 외부 공유 폴더면 소유주 권한 필요.` }
+    }
+    return { error: `드롭박스 이름 변경 실패: ${errStr.slice(0, 200)}` }
   }
 
   return { newUrl: `${WEB_BASE}${newPath}` }
