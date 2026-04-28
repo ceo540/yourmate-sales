@@ -1734,6 +1734,11 @@ function ContractMoneyEditor({
 }: { sale: Contract; projectId: string; totalScheduled: number; totalReceived: number; remainder: number; onChange: () => void }) {
   const [busy, setBusy] = useState(false)
   const [revenue, setRevenue] = useState((sale.revenue ?? 0).toLocaleString())
+  function formatComma(raw: string) {
+    const digits = raw.replace(/\D/g, '')
+    if (!digits) return ''
+    return Number(digits).toLocaleString()
+  }
   async function saveRevenue() {
     const num = parseInt(revenue.replace(/,/g, '')) || 0
     if (busy || num === (sale.revenue ?? 0)) return
@@ -1748,7 +1753,7 @@ function ContractMoneyEditor({
         <div>
           <label className="text-[10px] text-gray-400">매출액</label>
           <input value={revenue}
-            onChange={e => setRevenue(e.target.value.replace(/[^0-9,]/g, '').replace(/\B(?=(\d{3})+(?!\d))/g, ','))}
+            onChange={e => setRevenue(formatComma(e.target.value))}
             onBlur={saveRevenue}
             disabled={busy}
             className="w-full text-xs border border-gray-200 rounded px-2 py-1 bg-white text-right font-mono" />
@@ -1828,7 +1833,10 @@ function PaymentSchedulesEditor({
             {['선금', '중도금', '잔금', '계산서', '기타'].map(o => <option key={o}>{o}</option>)}
           </select>
           <input value={newAmount}
-            onChange={e => setNewAmount(e.target.value.replace(/[^0-9,]/g, '').replace(/\B(?=(\d{3})+(?!\d))/g, ','))}
+            onChange={e => {
+              const d = e.target.value.replace(/\D/g, '')
+              setNewAmount(d ? Number(d).toLocaleString() : '')
+            }}
             placeholder="금액"
             className="text-[11px] border border-gray-200 rounded px-2 py-1 bg-white text-right font-mono w-24" />
           <input type="date" value={newDue} onChange={e => setNewDue(e.target.value)}
