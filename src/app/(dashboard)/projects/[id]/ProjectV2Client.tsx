@@ -44,6 +44,7 @@ import {
   analyzePdfByPath,
   applyQuoteAnalysis,
   createSaleFromQuote,
+  deleteContract,
   createProjectMemo,
   updateProjectMemoCard,
   deleteProjectMemo,
@@ -1715,6 +1716,7 @@ function ContractRow({ contract: c, projectId, entities }: { contract: Contract;
           <FinalQuoteMapper sale={c} projectId={projectId} entities={entities} onChange={() => router.refresh()} />
           <ContractMoneyEditor sale={c} projectId={projectId} totalScheduled={totalScheduled} totalReceived={totalReceived} remainder={remainder} onChange={() => router.refresh()} />
           <PaymentSchedulesEditor sale={c} projectId={projectId} onChange={() => router.refresh()} />
+          <ContractDeleteButton sale={c} projectId={projectId} onChange={() => router.refresh()} />
         </div>
       )}
     </li>
@@ -1923,6 +1925,26 @@ type Analysis = {
   matched_entity_id: string | null
   matched_entity_name: string | null
   notes: string | null
+}
+
+function ContractDeleteButton({ sale, projectId, onChange }: { sale: Contract; projectId: string; onChange: () => void }) {
+  const [busy, setBusy] = useState(false)
+  async function remove() {
+    if (!confirm(`"${sale.name}" 계약을 정말 삭제할까?\n\n관련 결제 일정·원가·할일 분리/삭제됨. Dropbox 폴더는 안전하게 그대로 둠.`)) return
+    setBusy(true)
+    const r = await deleteContract(sale.id, projectId)
+    setBusy(false)
+    if ('error' in r) { alert('삭제 실패: ' + r.error); return }
+    onChange()
+  }
+  return (
+    <div className="pt-2 border-t border-gray-200 flex justify-end">
+      <button onClick={remove} disabled={busy}
+        className="text-[11px] text-red-400 hover:text-red-600 disabled:opacity-50">
+        {busy ? '삭제 중...' : '✕ 계약 삭제'}
+      </button>
+    </div>
+  )
 }
 
 function AddContractByPdf({

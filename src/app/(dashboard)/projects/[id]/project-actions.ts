@@ -1151,6 +1151,26 @@ export async function applyQuoteAnalysis(saleId: string, data: ApplyQuoteInput, 
   return { ok: true, folder_created: folderCreated, folder_error: folderError }
 }
 
+// 계약 삭제 — sales 행 + 연결된 payment_schedules 같이 삭제.
+// 같은 프로젝트의 다른 계약이 있어야 통과 (마지막 계약은 프로젝트 보호 위해 차단).
+// Dropbox 폴더는 삭제 안 함 (옛 자료 보호 정책).
+export async function deleteContract(saleId: string, projectId: string): Promise<{ ok: true } | { error: string }> {
+  const admin = createAdminClient()
+  const { count } = await admin.from('sales').select('id', { count: 'exact', head: true }).eq('project_id', projectId)
+  if ((count ?? 0) <= 1) {
+    return { error: '프로젝트의 마지막 계약은 삭제할 수 없어. 프로젝트 자체를 삭제하려면 [프로젝트 설정] → [삭제]를 사용해.' }
+  }
+  // payment_schedules는 ON DELETE CASCADE 가능성 있지만 명시적 삭제로 안전 보장
+  await admin.from('payment_schedules').delete().eq('sale_id', saleId)
+  await admin.from('sale_costs').delete().eq('sale_id', saleId)
+  // tasks.project_id가 sale.id를 가리키니 같이 삭제 또는 분리. 단순 삭제는 위험 → 분리(project_id NULL).
+  await admin.from('tasks').update({ project_id: null }).eq('project_id', saleId)
+  const { error } = await admin.from('sales').delete().eq('id', saleId)
+  if (error) return { error: error.message }
+  revalidatePath(`/projects/${projectId}`)
+  return { ok: true }
+}
+
 export async function ensureContractFolder(saleId: string): Promise<{ ok: true; webUrl: string } | { error: string }> {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
