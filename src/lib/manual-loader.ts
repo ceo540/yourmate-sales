@@ -46,6 +46,12 @@ export async function loadCompanyManual(): Promise<string | null> {
   return readWithCache('YOURMATE_CLAUDE.md')
 }
 
+// 공통 운영 매뉴얼 (00_공통 폴더 — 견적·계약·환불 등 모든 서비스 공용)
+// 모든 빵빵이 대화에 포함됨.
+export async function loadCommonManuals(): Promise<string | null> {
+  return loadFolderManuals('00_공통')
+}
+
 // 폴더 안 모든 .md 합쳐서 가져오기 — 견적기준·SOP·FAQ 등 분할 보관 가능
 async function loadFolderManuals(folder: string): Promise<string | null> {
   const folderCacheKey = `__folder__${folder}`
