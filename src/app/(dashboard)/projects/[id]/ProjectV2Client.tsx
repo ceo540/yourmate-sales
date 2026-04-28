@@ -39,6 +39,8 @@ import {
   deletePaymentSchedule,
   listSaleFolderPdfs,
   setSaleFinalQuote,
+  analyzeFinalQuotePdf,
+  applyQuoteAnalysis,
   createProjectMemo,
   updateProjectMemoCard,
   deleteProjectMemo,
@@ -1743,12 +1745,21 @@ function ContractMoneyEditor({
     if (!digits) return ''
     return Number(digits).toLocaleString()
   }
-  async function saveRevenue() {
-    const num = parseInt(revenue.replace(/,/g, '')) || 0
-    if (busy || num === (sale.revenue ?? 0)) return
+  const currentNum = parseInt(revenue.replace(/,/g, '')) || 0
+  const isDirty = currentNum !== (sale.revenue ?? 0)
+  async function save(num: number) {
+    if (busy) return
     setBusy(true)
     await updateContractInfo(sale.id, { revenue: num }, projectId)
     setBusy(false); onChange()
+  }
+  async function saveCurrent() {
+    if (!isDirty) return
+    await save(currentNum)
+  }
+  async function syncWithSchedules() {
+    setRevenue(totalScheduled.toLocaleString())
+    await save(totalScheduled)
   }
   return (
     <div className="space-y-1.5">
@@ -1756,15 +1767,31 @@ function ContractMoneyEditor({
       <div className="grid grid-cols-2 gap-2">
         <div>
           <label className="text-[10px] text-gray-400">매출액</label>
-          <input value={revenue}
-            onChange={e => setRevenue(formatComma(e.target.value))}
-            onBlur={saveRevenue}
-            disabled={busy}
-            className="w-full text-xs border border-gray-200 rounded px-2 py-1 bg-white text-right font-mono" />
+          <div className="flex gap-1">
+            <input value={revenue}
+              onChange={e => setRevenue(formatComma(e.target.value))}
+              onBlur={saveCurrent}
+              disabled={busy}
+              className="flex-1 text-xs border border-gray-200 rounded px-2 py-1 bg-white text-right font-mono" />
+            <button onClick={saveCurrent} disabled={busy || !isDirty}
+              className={`text-[11px] px-2 rounded font-semibold disabled:opacity-30 ${
+                isDirty ? 'text-gray-900' : 'text-gray-400'
+              }`}
+              style={isDirty ? { backgroundColor: '#FFCE00' } : { backgroundColor: '#f3f4f6' }}>
+              {isDirty ? '저장' : '✓'}
+            </button>
+          </div>
         </div>
         <div className="text-[11px] text-gray-500 space-y-0.5 mt-2">
           <div>입금: <span className="text-green-600 font-medium">{fmtMoney(totalReceived)}원</span> / 일정 <span className="font-medium">{fmtMoney(totalScheduled)}원</span></div>
           {remainder > 0 && <div className="text-amber-600">일정 미배정 {fmtMoney(remainder)}원</div>}
+          {remainder < 0 && <div className="text-red-500">일정이 매출보다 {fmtMoney(-remainder)}원 큼</div>}
+          {totalScheduled > 0 && totalScheduled !== currentNum && (
+            <button onClick={syncWithSchedules} disabled={busy}
+              className="text-[10px] text-blue-500 hover:underline">
+              ↔ 매출액을 결제 합계({fmtMoney(totalScheduled)}원)로 동기화
+            </button>
+          )}
         </div>
       </div>
     </div>
@@ -1863,11 +1890,23 @@ function PaymentSchedulesEditor({
   )
 }
 
+type Analysis = {
+  revenue: number | null
+  client_org: string | null
+  client_dept: string | null
+  payment_schedules: { label: string; amount: number; due_date: string | null }[]
+  matched_customer_id: string | null
+  matched_customer_name: string | null
+  notes: string | null
+}
+
 function FinalQuoteMapper({ sale, projectId, onChange }: { sale: Contract; projectId: string; onChange: () => void }) {
   const [busy, setBusy] = useState(false)
   const [showPicker, setShowPicker] = useState(false)
   const [pdfs, setPdfs] = useState<{ name: string; path: string }[] | null>(null)
   const [err, setErr] = useState<string | null>(null)
+  const [analysis, setAnalysis] = useState<Analysis | null>(null)
+  const [analyzing, setAnalyzing] = useState(false)
 
   const currentName = sale.final_quote_dropbox_path?.split('/').pop() || null
 
@@ -1882,13 +1921,38 @@ function FinalQuoteMapper({ sale, projectId, onChange }: { sale: Contract; proje
   async function pick(path: string) {
     setBusy(true)
     await setSaleFinalQuote(sale.id, path, projectId)
-    setBusy(false); setShowPicker(false); onChange()
+    setBusy(false); setShowPicker(false)
+    // 매핑 직후 자동 분석 트리거
+    onChange()
+    runAnalysis(path)
   }
   async function clear() {
     if (!confirm('최종 견적 매핑 해제할까?')) return
     setBusy(true)
     await setSaleFinalQuote(sale.id, null, projectId)
     setBusy(false); onChange()
+  }
+  async function runAnalysis(_path?: string) {
+    setAnalyzing(true); setErr(null)
+    const r = await analyzeFinalQuotePdf(sale.id)
+    setAnalyzing(false)
+    if ('error' in r) { setErr(r.error); return }
+    setAnalysis(r.analysis)
+  }
+  async function applyAll() {
+    if (!analysis) return
+    setBusy(true)
+    const r = await applyQuoteAnalysis(sale.id, {
+      revenue: analysis.revenue,
+      client_org: analysis.client_org,
+      client_dept: analysis.client_dept,
+      customer_id: analysis.matched_customer_id,
+      payment_schedules: analysis.payment_schedules,
+      replace_schedules: false,
+    }, projectId)
+    setBusy(false)
+    if ('error' in r) { alert('적용 실패: ' + r.error); return }
+    setAnalysis(null); onChange()
   }
 
   return (
@@ -1898,6 +1962,9 @@ function FinalQuoteMapper({ sale, projectId, onChange }: { sale: Contract; proje
         <div className="flex items-center gap-2 text-[11px] bg-white border border-gray-100 rounded px-2 py-1.5">
           <span>📎</span>
           <span className="text-gray-700 truncate flex-1" title={sale.final_quote_dropbox_path ?? ''}>{currentName}</span>
+          <button onClick={() => runAnalysis()} disabled={busy || analyzing} className="text-purple-500 hover:underline">
+            {analyzing ? '분석중...' : '🤖 분석'}
+          </button>
           <button onClick={openPicker} disabled={busy} className="text-blue-500 hover:underline">다시 매핑</button>
           <button onClick={clear} disabled={busy} className="text-gray-400 hover:text-red-500">해제</button>
         </div>
@@ -1906,6 +1973,52 @@ function FinalQuoteMapper({ sale, projectId, onChange }: { sale: Contract; proje
           className="w-full text-[11px] py-1.5 border border-dashed border-gray-300 rounded text-gray-500 hover:border-yellow-400 hover:text-gray-700 disabled:opacity-50">
           📎 최종 견적 PDF 매핑하기
         </button>
+      )}
+      {analyzing && <p className="text-[11px] text-purple-500">📄 PDF 분석 중...</p>}
+      {analysis && (
+        <div className="border border-purple-200 bg-purple-50/50 rounded p-2 space-y-1.5 text-[11px]">
+          <div className="flex items-center justify-between">
+            <p className="font-semibold text-purple-700">🤖 PDF 분석 결과</p>
+            <button onClick={() => setAnalysis(null)} className="text-gray-400 hover:text-gray-700">닫기</button>
+          </div>
+          <table className="w-full text-[11px]">
+            <tbody>
+              <tr><td className="text-gray-500 pr-2 align-top">매출액</td><td className="font-mono text-gray-800">{analysis.revenue ? fmtMoney(analysis.revenue) + '원' : '미추출'}</td></tr>
+              <tr><td className="text-gray-500 pr-2 align-top">기관</td><td className="text-gray-800">
+                {analysis.client_org || '미추출'}
+                {analysis.matched_customer_id
+                  ? <span className="ml-2 text-green-600">✓ 시스템 매칭: {analysis.matched_customer_name}</span>
+                  : analysis.client_org && <span className="ml-2 text-amber-600">⚠️ DB에 없음 (매핑 안 됨)</span>
+                }
+              </td></tr>
+              <tr><td className="text-gray-500 pr-2 align-top">부서</td><td className="text-gray-800">{analysis.client_dept || '미추출'}</td></tr>
+              {analysis.payment_schedules.length > 0 && (
+                <tr><td className="text-gray-500 pr-2 align-top">결제 일정</td><td className="text-gray-800">
+                  {analysis.payment_schedules.map((p, i) => (
+                    <div key={i}>{p.label} {fmtMoney(p.amount)}원{p.due_date ? ` (${p.due_date})` : ''}</div>
+                  ))}
+                </td></tr>
+              )}
+              {analysis.notes && <tr><td className="text-gray-500 pr-2 align-top">메모</td><td className="text-gray-600 italic">{analysis.notes}</td></tr>}
+            </tbody>
+          </table>
+          <div className="flex gap-2 pt-1">
+            <button onClick={applyAll} disabled={busy}
+              className="flex-1 py-1 text-[11px] font-semibold rounded disabled:opacity-50"
+              style={{ backgroundColor: '#FFCE00', color: '#121212' }}>
+              ✓ 계약에 적용
+            </button>
+            <button onClick={() => setAnalysis(null)} disabled={busy}
+              className="px-3 py-1 text-[11px] border border-gray-200 rounded text-gray-500 hover:bg-white">
+              취소
+            </button>
+          </div>
+          {!analysis.matched_customer_id && analysis.client_org && (
+            <p className="text-[10px] text-amber-700">
+              ⚠️ 적용 시 client_org 텍스트만 들어가고 customer_id는 비어 있어. 빵빵이로 [{analysis.client_org}] customer 등록 후 다시 매핑 권장.
+            </p>
+          )}
+        </div>
       )}
       {showPicker && (
         <div className="border border-gray-200 rounded bg-white p-2 space-y-1.5">
