@@ -101,7 +101,6 @@ export async function createProjectMemo(
     .select('id')
     .single()
   if (error) return { error: error.message }
-  revalidatePath(`/projects/${projectId}/v2`)
   revalidatePath(`/projects/${projectId}`)
   return { id: row.id }
 }
@@ -117,7 +116,6 @@ export async function updateProjectMemoCard(
   if (data.content !== undefined) updates.content = data.content || null
   const { error } = await admin.from('project_memos').update(updates).eq('id', memoId)
   if (error) return { error: error.message }
-  revalidatePath(`/projects/${projectId}/v2`)
   revalidatePath(`/projects/${projectId}`)
   return {}
 }
@@ -126,7 +124,6 @@ export async function deleteProjectMemo(memoId: string, projectId: string): Prom
   const admin = createAdminClient()
   const { error } = await admin.from('project_memos').delete().eq('id', memoId)
   if (error) return { error: error.message }
-  revalidatePath(`/projects/${projectId}/v2`)
   revalidatePath(`/projects/${projectId}`)
   return {}
 }
@@ -139,7 +136,6 @@ export async function updateProjectOverviewSummary(projectId: string, value: str
     .update({ overview_summary: value || null, updated_at: new Date().toISOString() })
     .eq('id', projectId)
   if (error) throw new Error(error.message)
-  revalidatePath(`/projects/${projectId}/v2`)
   revalidatePath(`/projects/${projectId}`)
 }
 
@@ -150,7 +146,6 @@ export async function updateProjectWorkDescription(projectId: string, value: str
     .update({ work_description: value || null, updated_at: new Date().toISOString() })
     .eq('id', projectId)
   if (error) throw new Error(error.message)
-  revalidatePath(`/projects/${projectId}/v2`)
   revalidatePath(`/projects/${projectId}`)
 }
 
@@ -161,7 +156,6 @@ export async function updateProjectPendingDiscussion(projectId: string, value: s
     .update({ pending_discussion: value || null, updated_at: new Date().toISOString() })
     .eq('id', projectId)
   if (error) throw new Error(error.message)
-  revalidatePath(`/projects/${projectId}/v2`)
   revalidatePath(`/projects/${projectId}`)
 }
 
@@ -257,7 +251,6 @@ ${logSummary || '없음'}
   if (!summary) return { error: '개요 생성 실패' }
 
   await admin.from('projects').update({ overview_summary: summary, updated_at: new Date().toISOString() }).eq('id', projectId)
-  revalidatePath(`/projects/${projectId}/v2`)
   revalidatePath(`/projects/${projectId}`)
 
   return { summary }
@@ -367,7 +360,6 @@ JSON만 반환. 마크다운 코드블록 없이.`
     return { error: `Insert 실패 (${errors.length}건): ${errors[0]}` }
   }
 
-  revalidatePath(`/projects/${projectId}/v2`)
   revalidatePath(`/projects/${projectId}`)
 
   return { added: titles.length, titles }
@@ -455,7 +447,6 @@ ${logSummary || '없음'}
   if (!summary) return { error: '협의사항 분석 실패' }
 
   await admin.from('projects').update({ pending_discussion: summary, updated_at: new Date().toISOString() }).eq('id', projectId)
-  revalidatePath(`/projects/${projectId}/v2`)
   revalidatePath(`/projects/${projectId}`)
 
   return { summary }
@@ -626,7 +617,6 @@ export async function createProjectDropboxFolder(projectId: string): Promise<{ o
   } catch { /* brief 실패는 무시 — 폴더는 OK */ }
 
   revalidatePath(`/projects/${projectId}`)
-  revalidatePath(`/projects/${projectId}/v2`)
   return { ok: true, webUrl: folderUrl, brief: briefFilename }
 }
 
@@ -1314,7 +1304,6 @@ export async function createTaskForProject(
     const { data: sale } = await admin.from('sales').select('project_id').eq('id', contractId).single()
     if (sale?.project_id) {
       revalidatePath(`/projects/${sale.project_id}`)
-      revalidatePath(`/projects/${sale.project_id}/v2`)
     }
     revalidatePath(`/sales/${contractId}`)
   }

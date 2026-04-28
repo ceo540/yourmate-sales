@@ -812,7 +812,6 @@ ${logs && logs.length > 0 ? `\n## 최근 소통내역\n${logs.map(l => `- [${l.l
                   .eq('id', projectId)
                 result = error ? `실패: ${error.message}` : '협의사항을 업데이트했어.'
                 if (!error) {
-                  revalidatePath(`/projects/${projectId}/v2`)
                   revalidatePath(`/projects/${projectId}`)
                   revalidate()
                 }
@@ -963,7 +962,6 @@ ${logs && logs.length > 0 ? `\n## 최근 소통내역\n${logs.map(l => `- [${l.l
                 if (error) result = `실패: ${error.message}`
                 else {
                   result = `메모 카드 "${title}" 추가 완료 (id: ${row.id.slice(0, 8)})`
-                  revalidatePath(`/projects/${projectId}/v2`)
                   revalidatePath(`/projects/${projectId}`)
                   revalidate()
                 }
@@ -1012,7 +1010,6 @@ ${logs && logs.length > 0 ? `\n## 최근 소통내역\n${logs.map(l => `- [${l.l
                     }
                   }
                   if (!result.startsWith('실패') && !result.startsWith('변경')) {
-                    revalidatePath(`/projects/${projectId}/v2`)
                     revalidatePath(`/projects/${projectId}`)
                     revalidate()
                   }

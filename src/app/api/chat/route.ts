@@ -1038,7 +1038,6 @@ async function executeTool(name: string, input: Record<string, unknown>, userRol
     revalidatePath('/leads')
     if (projectId) {
       revalidatePath(`/projects/${projectId}`)
-      revalidatePath(`/projects/${projectId}/v2`)
     }
     return {
       success: true,
@@ -1057,7 +1056,6 @@ async function executeTool(name: string, input: Record<string, unknown>, userRol
       .eq('id', projectId)
     if (error) return { error: error.message }
     revalidatePath(`/projects/${projectId}`)
-    revalidatePath(`/projects/${projectId}/v2`)
     return { success: true, message: `프로젝트 상태를 "${input.status}"로 변경했어.` }
   }
 
@@ -1158,7 +1156,6 @@ async function executeTool(name: string, input: Record<string, unknown>, userRol
   function revalidateProjectPages() {
     if (!projectId) return
     revalidatePath(`/projects/${projectId}`)
-    revalidatePath(`/projects/${projectId}/v2`)
     revalidatePath('/tasks')
   }
 
