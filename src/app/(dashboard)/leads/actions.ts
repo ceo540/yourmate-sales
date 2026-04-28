@@ -50,6 +50,7 @@ export async function createLead(formData: FormData) {
   const { data: insertedLead } = await supabase.from('leads').insert({
     lead_id,
     person_id: (formData.get('person_id') as string) || null,
+    customer_id: (formData.get('customer_id') as string) || null,
     inflow_date: (formData.get('inflow_date') as string) || new Date().toISOString().slice(0, 10),
     remind_date: (formData.get('remind_date') as string) || null,
     service_type: (formData.get('service_type') as string) || null,
@@ -108,6 +109,7 @@ const BRIEF_TRIGGER_FIELDS = ['project_name', 'client_org', 'contact_name', 'ass
 
 export async function updateLead(id: string, data: Partial<{
   person_id: string | null
+  customer_id: string | null
   inflow_date: string | null
   remind_date: string | null
   service_type: string | null

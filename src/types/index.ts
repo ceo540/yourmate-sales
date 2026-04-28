@@ -211,6 +211,7 @@ export interface Lead {
   id: string
   lead_id: string
   person_id: string | null
+  customer_id: string | null
   person?: { id: string; name: string; phone: string | null; email: string | null; currentOrg: string; title: string; dept: string; relationId: string | null; customerId: string | null; customerRegion: string; customerType: string }
   inflow_date: string | null
   remind_date: string | null

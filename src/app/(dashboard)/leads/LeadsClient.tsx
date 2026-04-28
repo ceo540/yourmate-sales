@@ -66,7 +66,7 @@ function LeadForm({ form, setForm, onSubmit, onCancel, isPending, isAdmin, profi
       if ('error' in result) { alert('고객사 추가 실패: ' + result.error); return }
       const newCust: CustomerOptionForm = { id: result.id, name: customerSearch.trim(), type: '기타' }
       setLocalCustomers(prev => [...prev, newCust])
-      setForm(f => ({ ...f, client_org: customerSearch.trim() }))
+      setForm(f => ({ ...f, client_org: customerSearch.trim(), customer_id: result.id }))
       setShowCustomerDrop(false)
     } finally {
       setIsAddingCustomer(false)
@@ -80,6 +80,8 @@ function LeadForm({ form, setForm, onSubmit, onCancel, isPending, isAdmin, profi
     .slice(0, 6)
 
   function selectPerson(p: PersonOption) {
+    // person이 속한 customer가 있으면 자동 매핑 (정합성 보장)
+    const matchedCustomer = p.customerId ? null : allCustomers.find(c => c.name === p.currentOrg)
     setForm(f => ({
       ...f,
       person_id: p.id,
@@ -87,6 +89,7 @@ function LeadForm({ form, setForm, onSubmit, onCancel, isPending, isAdmin, profi
       phone: f.phone || p.phone,
       email: f.email || p.email,
       client_org: f.client_org || p.currentOrg,
+      customer_id: f.customer_id || p.customerId || matchedCustomer?.id || '',
     }))
     setPersonSearch(p.name)
     setShowPersonDrop(false)
@@ -228,7 +231,7 @@ function LeadForm({ form, setForm, onSubmit, onCancel, isPending, isAdmin, profi
             <input
               className={INPUT_CLS}
               value={customerSearch}
-              onChange={e => { setCustomerSearch(e.target.value); setShowCustomerDrop(true); setForm(f => ({ ...f, client_org: e.target.value })) }}
+              onChange={e => { setCustomerSearch(e.target.value); setShowCustomerDrop(true); setForm(f => ({ ...f, client_org: e.target.value, customer_id: '' })) }}
               onFocus={() => setShowCustomerDrop(true)}
               onBlur={() => setTimeout(() => setShowCustomerDrop(false), 150)}
               placeholder="기관 검색하거나 직접 입력..."
@@ -237,7 +240,7 @@ function LeadForm({ form, setForm, onSubmit, onCancel, isPending, isAdmin, profi
               <div className="absolute z-50 top-full left-0 right-0 bg-white border border-gray-200 rounded-lg shadow-lg mt-1 max-h-64 overflow-y-auto">
                 {matchingCustomers.map(c => (
                   <button key={c.id} type="button"
-                    onMouseDown={() => { setForm(f => ({ ...f, client_org: c.name })); setCustomerSearch(c.name); setShowCustomerDrop(false) }}
+                    onMouseDown={() => { setForm(f => ({ ...f, client_org: c.name, customer_id: c.id })); setCustomerSearch(c.name); setShowCustomerDrop(false) }}
                     className="w-full px-3 py-2 text-left hover:bg-yellow-50 border-b border-gray-50 last:border-0">
                     <p className="text-sm font-medium text-gray-800">
                       {c.name}
@@ -348,7 +351,8 @@ function LeadForm({ form, setForm, onSubmit, onCancel, isPending, isAdmin, profi
 
 // ── Types ────────────────────────────────────────────────────────
 type FormState = {
-  person_id: string; inflow_date: string; remind_date: string; service_type: string
+  person_id: string; customer_id: string
+  inflow_date: string; remind_date: string; service_type: string
   project_name: string; contact_name: string; client_org: string; phone: string
   office_phone: string; email: string; initial_content: string
   assignee_id: string; status: LeadStatus; channel: string
@@ -483,7 +487,8 @@ interface Props {
 }
 
 const EMPTY_FORM: FormState = {
-  person_id: '', inflow_date: new Date().toISOString().slice(0, 10),
+  person_id: '', customer_id: '',
+  inflow_date: new Date().toISOString().slice(0, 10),
   remind_date: '', service_type: '', project_name: '', contact_name: '', client_org: '',
   phone: '', office_phone: '', email: '', initial_content: '',
   assignee_id: '', status: '유입', channel: '', inflow_source: '', notes: '',
@@ -729,6 +734,7 @@ export default function LeadsClient({ leads, profiles, persons, customers, curre
   function openEditTab(lead: Lead) {
     setForm({
       person_id: lead.person_id || '',
+      customer_id: lead.customer_id || '',
       inflow_date: lead.inflow_date || '', remind_date: lead.remind_date || '',
       service_type: lead.service_type || '', project_name: lead.project_name || '',
       contact_name: lead.contact_name || '', client_org: lead.client_org || '',

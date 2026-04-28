@@ -5,7 +5,6 @@ import { useRouter } from 'next/navigation'
 import {
   updateProjectName,
   linkProjectCustomer,
-  createAndLinkCustomer,
   addProjectMember,
   removeProjectMember,
   deleteProject,
@@ -14,6 +13,7 @@ import {
 } from './project-actions'
 import { syncProjectName } from './sync-project-name-action'
 import { SERVICE_TO_DEPT } from '@/lib/services'
+import CustomerPicker from '@/components/CustomerPicker'
 
 type Profile = { id: string; name: string }
 type Customer = { id: string; name: string; type: string | null }
@@ -62,27 +62,14 @@ export default function ProjectSettingsModal({
     finally { setBusy(null) }
   }
 
-  // 고객사
-  const [custQuery, setCustQuery] = useState('')
-  const [custMode, setCustMode] = useState<'view' | 'change' | 'create'>('view')
-  const [newCust, setNewCust] = useState({ name: '', type: '기타', contact_name: '', phone: '', contact_email: '' })
+  // 고객사 — CustomerPicker로 통일
+  const [localCustomers, setLocalCustomers] = useState(customersAll)
   async function changeCustomer(id: string | '') {
     setBusy('customer'); setError(null)
-    try { await linkProjectCustomer(projectId, id); router.refresh(); setCustMode('view') }
+    try { await linkProjectCustomer(projectId, id); router.refresh() }
     catch (e) { setError(e instanceof Error ? e.message : '실패') }
     finally { setBusy(null) }
   }
-  async function createCustomer() {
-    if (!newCust.name.trim()) return
-    setBusy('customer'); setError(null)
-    const r = await createAndLinkCustomer(projectId, newCust)
-    if ('error' in r && r.error) setError(r.error)
-    else { setCustMode('view'); router.refresh() }
-    setBusy(null)
-  }
-  const filteredCustomers = custQuery
-    ? customersAll.filter(c => c.name.toLowerCase().includes(custQuery.toLowerCase())).slice(0, 8)
-    : customersAll.slice(0, 8)
 
   // Dropbox URL + 동기화
   const [dbxInput, setDbxInput] = useState(dropboxUrl ?? '')
@@ -191,59 +178,21 @@ export default function ProjectSettingsModal({
             </div>
           </section>
 
-          {/* 2. 고객사 */}
+          {/* 2. 고객사 — CustomerPicker 통일 */}
           <section>
             <p className="text-xs font-semibold text-gray-700 mb-1.5">고객사</p>
-            {custMode === 'view' && (
-              <div className="flex items-center justify-between bg-gray-50 px-3 py-2 rounded">
-                <span className="text-sm text-gray-800">{customer ? customer.name : <span className="text-gray-400">미연결</span>}</span>
-                <div className="flex gap-1.5">
-                  <button onClick={() => setCustMode('change')} className="text-xs text-blue-600 hover:underline">변경</button>
-                  <button onClick={() => setCustMode('create')} className="text-xs text-blue-600 hover:underline">+ 신규</button>
-                  {customerId && <button onClick={() => changeCustomer('')} className="text-xs text-gray-500 hover:underline">연결 해제</button>}
-                </div>
-              </div>
-            )}
-            {custMode === 'change' && (
-              <div className="space-y-1.5">
-                <input
-                  value={custQuery} onChange={e => setCustQuery(e.target.value)}
-                  placeholder="고객사 이름 검색"
-                  className="w-full border border-gray-200 rounded px-2.5 py-1.5 text-sm"
-                  autoFocus
-                />
-                <div className="max-h-40 overflow-y-auto border border-gray-100 rounded">
-                  {filteredCustomers.length === 0 && <p className="text-xs text-gray-400 px-3 py-2">결과 없음</p>}
-                  {filteredCustomers.map(c => (
-                    <button
-                      key={c.id} onClick={() => changeCustomer(c.id)}
-                      className="block w-full text-left px-3 py-1.5 text-sm hover:bg-gray-50"
-                    >
-                      {c.name} {c.type && <span className="text-xs text-gray-400 ml-1">{c.type}</span>}
-                    </button>
-                  ))}
-                </div>
-                <button onClick={() => setCustMode('view')} className="text-xs text-gray-500 hover:underline">취소</button>
-              </div>
-            )}
-            {custMode === 'create' && (
-              <div className="space-y-1.5">
-                <input value={newCust.name} onChange={e => setNewCust({ ...newCust, name: e.target.value })} placeholder="기관명" className="w-full border border-gray-200 rounded px-2.5 py-1.5 text-sm" autoFocus />
-                <select value={newCust.type} onChange={e => setNewCust({ ...newCust, type: e.target.value })} className="w-full border border-gray-200 rounded px-2.5 py-1.5 text-sm">
-                  <option value="학교">학교</option>
-                  <option value="공공기관">공공기관</option>
-                  <option value="기업">기업</option>
-                  <option value="개인">개인</option>
-                  <option value="기타">기타</option>
-                </select>
-                <input value={newCust.contact_name} onChange={e => setNewCust({ ...newCust, contact_name: e.target.value })} placeholder="담당자명 (선택)" className="w-full border border-gray-200 rounded px-2.5 py-1.5 text-sm" />
-                <input value={newCust.phone} onChange={e => setNewCust({ ...newCust, phone: e.target.value })} placeholder="연락처 (선택)" className="w-full border border-gray-200 rounded px-2.5 py-1.5 text-sm" />
-                <input value={newCust.contact_email} onChange={e => setNewCust({ ...newCust, contact_email: e.target.value })} placeholder="이메일 (선택)" className="w-full border border-gray-200 rounded px-2.5 py-1.5 text-sm" />
-                <div className="flex gap-2">
-                  <button onClick={createCustomer} disabled={busy === 'customer' || !newCust.name.trim()} className="px-3 py-1.5 text-xs bg-gray-900 text-white rounded disabled:bg-gray-300">생성 + 연결</button>
-                  <button onClick={() => setCustMode('view')} className="text-xs text-gray-500 hover:underline">취소</button>
-                </div>
-              </div>
+            <CustomerPicker
+              value={customerId ?? ''}
+              selectedName={customer?.name ?? ''}
+              customers={localCustomers}
+              placeholder="🏛 기관 검색 (없으면 + 새 기관 추가)"
+              onChange={(id) => changeCustomer(id)}
+              onCustomerCreated={(c) => { setLocalCustomers(prev => [...prev, { id: c.id, name: c.name, type: c.type ?? null }]); changeCustomer(c.id) }}
+            />
+            {customerId && (
+              <button onClick={() => changeCustomer('')} className="mt-1.5 text-[11px] text-gray-400 hover:text-red-400 underline">
+                연결 해제
+              </button>
             )}
           </section>
 
