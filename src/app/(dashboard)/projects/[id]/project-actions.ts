@@ -725,42 +725,230 @@ export async function createSaleForProject(projectId: string, data: {
 }
 
 // entity_id가 나중에 채워진 케이스 / 폴더 생성 실패 후 재시도용
-// 계약(sale)에 연결된 폴더(사업자별 계약 폴더 또는 프로젝트 폴더)의 PDF 목록 반환
-// 매핑 모달에서 사용자가 최종 견적 PDF 고를 때 사용.
+// 계약(sale)에 연결된 폴더의 PDF 목록 반환 (depth 2 재귀, sale + project 폴더 둘 다 시도)
+// 옛 sale.dropbox_url이 다른 사용자 절대 경로로 박힌 케이스 폴백 위해 project.dropbox_url도 시도.
 export async function listSaleFolderPdfs(saleId: string): Promise<{ pdfs: { name: string; path: string }[] } | { error: string }> {
   const admin = createAdminClient()
+  // FK 조인 회피 — 두 번 query
   const { data: sale } = await admin
     .from('sales')
-    .select('dropbox_url, project_id, projects(dropbox_url)')
+    .select('dropbox_url, project_id')
     .eq('id', saleId)
     .maybeSingle()
   if (!sale) return { error: '계약을 찾을 수 없음' }
 
-  // 우선순위: 계약 폴더(분할 시 사업자별) → 프로젝트 폴더
-  const projectDb = (sale as unknown as { projects?: { dropbox_url: string | null } }).projects
-  const folderUrl = sale.dropbox_url || projectDb?.dropbox_url
-  if (!folderUrl) return { error: '연결된 Dropbox 폴더가 없음' }
+  let projectDropboxUrl: string | null = null
+  if (sale.project_id) {
+    const { data: p } = await admin.from('projects').select('dropbox_url').eq('id', sale.project_id).maybeSingle()
+    projectDropboxUrl = p?.dropbox_url ?? null
+  }
+
+  const candidates: string[] = []
+  if (sale.dropbox_url) candidates.push(sale.dropbox_url)
+  if (projectDropboxUrl && projectDropboxUrl !== sale.dropbox_url) candidates.push(projectDropboxUrl)
+  if (candidates.length === 0) return { error: '연결된 Dropbox 폴더가 없음' }
 
   const { listDropboxFolder } = await import('@/lib/dropbox')
   const WEB_BASE = 'https://www.dropbox.com/home'
-  const folderPath = decodeURIComponent(folderUrl.replace(WEB_BASE, '')).replace(/\/$/, '')
-
-  // 재귀적으로 PDF 검색 (1 depth) — 보통 계약 폴더 직속 또는 1단계 안에 있음
-  const top = await listDropboxFolder(folderPath)
+  const seen = new Set<string>()
   const pdfs: { name: string; path: string }[] = []
-  for (const f of top) {
-    if (f.type === 'file' && f.name.toLowerCase().endsWith('.pdf')) {
-      pdfs.push({ name: f.name, path: f.path })
-    } else if (f.type === 'folder') {
-      const sub = await listDropboxFolder(`${folderPath}/${f.name}`).catch(() => [])
-      for (const s of sub) {
-        if (s.type === 'file' && s.name.toLowerCase().endsWith('.pdf')) {
-          pdfs.push({ name: `${f.name}/${s.name}`, path: s.path })
+
+  // depth 2 재귀 — 0 행정 / 0 행정/0 외주 같이 더 깊은 PDF 잡기
+  async function scan(folderPath: string, prefix: string, depth: number) {
+    if (depth > 2) return
+    const items = await listDropboxFolder(folderPath).catch(() => [])
+    for (const f of items) {
+      if (f.type === 'file' && f.name.toLowerCase().endsWith('.pdf')) {
+        if (!seen.has(f.path)) {
+          seen.add(f.path)
+          pdfs.push({ name: prefix ? `${prefix}/${f.name}` : f.name, path: f.path })
         }
+      } else if (f.type === 'folder') {
+        await scan(`${folderPath}/${f.name}`, prefix ? `${prefix}/${f.name}` : f.name, depth + 1)
       }
     }
   }
+
+  for (const url of candidates) {
+    const folderPath = decodeURIComponent(url.replace(WEB_BASE, '')).replace(/\/$/, '')
+    await scan(folderPath, '', 0)
+  }
+
   return { pdfs }
+}
+
+// 프로젝트 폴더의 PDF 목록 — [+ PDF로 계약 추가] 흐름에서 사용
+export async function listProjectFolderPdfs(projectId: string): Promise<{ pdfs: { name: string; path: string }[] } | { error: string }> {
+  const admin = createAdminClient()
+  const { data: project } = await admin.from('projects').select('dropbox_url').eq('id', projectId).maybeSingle()
+  if (!project?.dropbox_url) return { error: '프로젝트 Dropbox 폴더 없음' }
+
+  const { listDropboxFolder } = await import('@/lib/dropbox')
+  const WEB_BASE = 'https://www.dropbox.com/home'
+  const folderPath = decodeURIComponent(project.dropbox_url.replace(WEB_BASE, '')).replace(/\/$/, '')
+
+  const seen = new Set<string>()
+  const pdfs: { name: string; path: string }[] = []
+  async function scan(p: string, prefix: string, depth: number) {
+    if (depth > 2) return
+    const items = await listDropboxFolder(p).catch(() => [])
+    for (const f of items) {
+      if (f.type === 'file' && f.name.toLowerCase().endsWith('.pdf')) {
+        if (!seen.has(f.path)) {
+          seen.add(f.path)
+          pdfs.push({ name: prefix ? `${prefix}/${f.name}` : f.name, path: f.path })
+        }
+      } else if (f.type === 'folder') {
+        await scan(`${p}/${f.name}`, prefix ? `${prefix}/${f.name}` : f.name, depth + 1)
+      }
+    }
+  }
+  await scan(folderPath, '', 0)
+  return { pdfs }
+}
+
+// PDF 경로만 받아 단독 분석 — 새 계약 만들기 전 미리 분석할 때 사용
+export async function analyzePdfByPath(dropboxPath: string): Promise<{ analysis: QuoteAnalysis } | { error: string }> {
+  const { readDropboxFile } = await import('@/lib/dropbox')
+  const pdfRes = await readDropboxFile(dropboxPath)
+  if ('error' in pdfRes) return { error: `PDF 읽기 실패: ${pdfRes.error}` }
+
+  const Anthropic = (await import('@anthropic-ai/sdk')).default
+  const client = new Anthropic()
+  const today = new Date().toISOString().slice(0, 10)
+  const prompt = `다음은 계약 견적서 PDF에서 추출한 텍스트야. JSON으로만 답해.
+
+오늘 날짜: ${today}
+
+견적서 본문:
+"""
+${pdfRes.text}
+"""
+
+다음 정보를 추출해서 JSON으로:
+{
+  "revenue": <부가세 포함 총 금액 숫자, 원 단위. 명확한 총액만. 항목별 합계 아님. 부가세 별도면 110% 곱해. 못 찾으면 null>,
+  "client_org": "<발주처(고객사) 정식 명칭. 견적서 '발주자' 줄. 보통 학교명·연구소명·기관명. 못 찾으면 null>",
+  "client_dept": "<발주처 안의 부서명·담당팀명. 본부·과 등. 못 찾으면 null>",
+  "supplier_name": "<공급자 = 우리 측 사업자명. 견적서 '공급자' 줄. 못 찾으면 null>",
+  "payment_schedules": [
+    { "label": "선금|중도금|잔금|계산서|기타", "amount": <숫자>, "due_date": "<YYYY-MM-DD 또는 null>" }
+  ],
+  "notes": "<견적서 특이사항·메모 1~2줄. 없으면 null>"
+}
+
+규칙:
+- revenue: "총 견적 금액" 또는 "총계" 명시된 금액. 부가세 포함 금액.
+- client_org: 발주자 줄 (공급자=우리 회사는 절대 X). 정식 명칭 그대로.
+- client_dept: 부서명. 없을 수 있음.
+- supplier_name: 공급자 = 우리 사업자. 발주자와 절대 헷갈리지 마.
+- payment_schedules: 명시 안 됐으면 빈 배열.
+- 답변은 JSON 객체 하나만.`
+
+  try {
+    const message = await client.messages.create({
+      model: 'claude-sonnet-4-6',
+      max_tokens: 1024,
+      messages: [{ role: 'user', content: prompt }],
+    })
+    const { logApiUsage } = await import('@/lib/api-usage')
+    logApiUsage({ model: 'claude-sonnet-4-6', endpoint: 'quote-analysis-pre', userId: null, inputTokens: message.usage.input_tokens, outputTokens: message.usage.output_tokens }).catch(() => {})
+    const textBlock = message.content.find(b => b.type === 'text')
+    const text = textBlock && textBlock.type === 'text' ? textBlock.text : ''
+    const m = text.match(/\{[\s\S]*\}/)
+    if (!m) return { error: 'JSON 추출 실패' }
+    const parsed = JSON.parse(m[0]) as Omit<QuoteAnalysis, 'matched_customer_id' | 'matched_customer_name' | 'matched_entity_id' | 'matched_entity_name'>
+
+    const admin = createAdminClient()
+    let matched_customer_id: string | null = null
+    let matched_customer_name: string | null = null
+    if (parsed.client_org?.trim()) {
+      const { data: c } = await admin.from('customers').select('id, name').ilike('name', parsed.client_org.trim()).limit(1).maybeSingle()
+      if (c) { matched_customer_id = c.id; matched_customer_name = c.name }
+    }
+
+    let matched_entity_id: string | null = null
+    let matched_entity_name: string | null = null
+    if (parsed.supplier_name?.trim()) {
+      const sup = parsed.supplier_name.trim()
+      const norm = (s: string) => s.replace(/㈜|\(주\)|주식회사|유한회사|\(유\)/g, '').replace(/\s+/g, '').toLowerCase()
+      const normSup = norm(sup)
+      const { data: entities } = await admin.from('business_entities').select('id, name, short_name, status').eq('status', 'active')
+      const match = (entities ?? []).find(e =>
+        norm(e.name).includes(normSup) || normSup.includes(norm(e.name)) ||
+        (e.short_name && norm(e.short_name) === normSup) ||
+        (e.short_name && normSup.includes(norm(e.short_name)))
+      )
+      if (match) { matched_entity_id = match.id; matched_entity_name = match.short_name || match.name }
+    }
+
+    return { analysis: { ...parsed, matched_customer_id, matched_customer_name, matched_entity_id, matched_entity_name } }
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : '분석 실패' }
+  }
+}
+
+// 분석 결과 + 사용자 보강 정보로 새 계약을 생성 + 폴더 자동 생성 + final_quote 매핑까지 한 번에
+export async function createSaleFromQuote(projectId: string, data: {
+  pdf_path: string
+  name: string
+  revenue: number
+  customer_id: string
+  entity_id?: string | null
+  client_dept?: string | null
+  payment_schedules?: { label: string; amount: number; due_date: string | null }[]
+}): Promise<{ sale_id: string; folder_created?: string } | { error: string }> {
+  if (!data.customer_id) return { error: '기관(customer)이 선택되지 않았어' }
+  const admin = createAdminClient()
+  const [{ data: project }, { data: customer }] = await Promise.all([
+    admin.from('projects').select('name, service_type, department, customer_id, pm_id, project_number, dropbox_url').eq('id', projectId).single(),
+    admin.from('customers').select('id, name').eq('id', data.customer_id).single(),
+  ])
+  if (!customer) return { error: '선택한 기관을 찾을 수 없음' }
+
+  const today = new Date().toISOString().slice(0, 10)
+  const finalName = data.name.trim() || project?.name || '(이름 없음)'
+
+  const { data: sale, error } = await admin.from('sales').insert({
+    name: finalName,
+    project_id: projectId,
+    service_type: project?.service_type ?? null,
+    department: project?.department ?? null,
+    customer_id: data.customer_id,
+    assignee_id: project?.pm_id ?? null,
+    project_number: project?.project_number ?? null,
+    entity_id: data.entity_id ?? null,
+    revenue: data.revenue,
+    contract_stage: '계약',
+    client_org: customer.name,
+    client_dept: data.client_dept ?? null,
+    final_quote_dropbox_path: data.pdf_path,
+    inflow_date: today,
+  }).select('id').single()
+  if (error || !sale) return { error: error?.message ?? '계약 생성 실패' }
+
+  // payment_schedules 같이 추가
+  if (data.payment_schedules && data.payment_schedules.length > 0) {
+    const rows = data.payment_schedules.map((p, i) => ({
+      sale_id: sale.id,
+      label: p.label,
+      amount: p.amount,
+      due_date: p.due_date,
+      is_received: false,
+      sort_order: i,
+    }))
+    await admin.from('payment_schedules').insert(rows)
+  }
+
+  // entity 있으면 폴더 자동 생성
+  let folderCreated: string | undefined
+  if (data.entity_id) {
+    const r = await ensureContractFolder(sale.id)
+    if ('webUrl' in r) folderCreated = r.webUrl
+  }
+
+  revalidatePath(`/projects/${projectId}`)
+  return { sale_id: sale.id, folder_created: folderCreated }
 }
 
 export async function setSaleFinalQuote(saleId: string, dropboxPath: string | null, projectId: string): Promise<{ error?: string }> {

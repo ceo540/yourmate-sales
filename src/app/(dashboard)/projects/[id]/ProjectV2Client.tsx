@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useTransition } from 'react'
+import { useState, useTransition, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import ProjectClaudeChat from '@/components/ProjectClaudeChat'
@@ -38,9 +38,12 @@ import {
   addPaymentSchedule,
   deletePaymentSchedule,
   listSaleFolderPdfs,
+  listProjectFolderPdfs,
   setSaleFinalQuote,
   analyzeFinalQuotePdf,
+  analyzePdfByPath,
   applyQuoteAnalysis,
+  createSaleFromQuote,
   createProjectMemo,
   updateProjectMemoCard,
   deleteProjectMemo,
@@ -1500,6 +1503,7 @@ function ContractsSection({ contracts, projectId, entities, defaultCustomerId, d
   const router = useRouter()
   const [, startTransition] = useTransition()
   const [adding, setAdding] = useState(false)
+  const [addingByPdf, setAddingByPdf] = useState(false)
   const [newName, setNewName] = useState('')
   const [newRevenue, setNewRevenue] = useState('')
   const [newStage, setNewStage] = useState('계약')
@@ -1565,10 +1569,26 @@ function ContractsSection({ contracts, projectId, entities, defaultCustomerId, d
             <span className="text-xs text-gray-500">총매출 <b className="text-gray-800">{fmtMoney(totalRevenue)}원</b></span>
           )}
         </div>
-        <button onClick={() => setAdding(s => !s)} className="text-[11px] text-gray-400 hover:text-gray-700">
-          {adding ? '취소' : '+ 계약 추가'}
-        </button>
+        <div className="flex items-center gap-2">
+          <button onClick={() => setAddingByPdf(true)}
+            className="text-[11px] px-2 py-1 rounded border border-purple-200 text-purple-600 hover:bg-purple-50">
+            📎 견적 PDF로 추가
+          </button>
+          <button onClick={() => setAdding(s => !s)} className="text-[11px] text-gray-400 hover:text-gray-700">
+            {adding ? '취소' : '+ 직접 입력'}
+          </button>
+        </div>
       </div>
+      {addingByPdf && (
+        <AddContractByPdf
+          projectId={projectId}
+          entities={entities}
+          customers={localCustomers}
+          onClose={() => setAddingByPdf(false)}
+          onCustomerCreated={c => setLocalCustomers(prev => [...prev, { id: c.id, name: c.name, type: c.type ?? null }])}
+          onSuccess={() => { setAddingByPdf(false); router.refresh() }}
+        />
+      )}
       {adding && (
         <div className="px-5 py-3 bg-yellow-50 border-b border-yellow-100 space-y-2">
           <select value={newEntityId} onChange={e => setNewEntityId(e.target.value)}
@@ -1903,6 +1923,198 @@ type Analysis = {
   matched_entity_id: string | null
   matched_entity_name: string | null
   notes: string | null
+}
+
+function AddContractByPdf({
+  projectId, entities, customers, onClose, onCustomerCreated, onSuccess,
+}: {
+  projectId: string
+  entities: BusinessEntity[]
+  customers: { id: string; name: string; type: string | null }[]
+  onClose: () => void
+  onCustomerCreated: (c: { id: string; name: string; type?: string | null }) => void
+  onSuccess: () => void
+}) {
+  const [step, setStep] = useState<'pick' | 'analyzing' | 'review'>('pick')
+  const [pdfs, setPdfs] = useState<{ name: string; path: string }[] | null>(null)
+  const [err, setErr] = useState<string | null>(null)
+  const [busy, setBusy] = useState(false)
+  const [pickedPath, setPickedPath] = useState<string | null>(null)
+  const [analysis, setAnalysis] = useState<Analysis | null>(null)
+
+  // 사용자 보강 입력 (분석 결과를 기본값으로)
+  const [name, setName] = useState('')
+  const [revenue, setRevenue] = useState('')
+  const [customerId, setCustomerId] = useState('')
+  const [customerName, setCustomerName] = useState('')
+  const [entityId, setEntityId] = useState('')
+  const [clientDept, setClientDept] = useState('')
+
+  // 모달 열릴 때 PDF 리스트 자동 로드
+  useEffect(() => {
+    let cancelled = false
+    setBusy(true)
+    listProjectFolderPdfs(projectId).then(r => {
+      if (cancelled) return
+      setBusy(false)
+      if ('error' in r) setErr(r.error)
+      else setPdfs(r.pdfs)
+    })
+    return () => { cancelled = true }
+  }, [projectId])
+
+  async function pick(path: string) {
+    setPickedPath(path)
+    setStep('analyzing')
+    setErr(null)
+    const r = await analyzePdfByPath(path)
+    if ('error' in r) { setErr(r.error); setStep('pick'); return }
+    setAnalysis(r.analysis)
+    setName(path.split('/').pop()?.replace(/\.pdf$/i, '') || '')
+    setRevenue(r.analysis.revenue ? r.analysis.revenue.toLocaleString() : '')
+    setCustomerId(r.analysis.matched_customer_id ?? '')
+    setCustomerName(r.analysis.matched_customer_name ?? r.analysis.client_org ?? '')
+    setEntityId(r.analysis.matched_entity_id ?? '')
+    setClientDept(r.analysis.client_dept ?? '')
+    setStep('review')
+  }
+
+  async function submit() {
+    if (!pickedPath) return
+    if (!customerId) { alert('기관(customer)을 선택해줘.'); return }
+    if (!entityId) { alert('우리 사업자를 선택해줘.'); return }
+    const revenueNum = parseInt(revenue.replace(/,/g, '')) || 0
+    if (!revenueNum) { alert('매출액을 확인해줘.'); return }
+    setBusy(true)
+    const r = await createSaleFromQuote(projectId, {
+      pdf_path: pickedPath,
+      name: name.trim() || '(이름 없음)',
+      revenue: revenueNum,
+      customer_id: customerId,
+      entity_id: entityId,
+      client_dept: clientDept.trim() || null,
+      payment_schedules: analysis?.payment_schedules ?? [],
+    })
+    setBusy(false)
+    if ('error' in r) { alert('실패: ' + r.error); return }
+    const msg = r.folder_created ? '계약 생성 + 폴더 자동 생성됨.' : '계약 생성 완료.'
+    alert(msg)
+    onSuccess()
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={onClose}>
+      <div onClick={e => e.stopPropagation()}
+        className="bg-white rounded-2xl shadow-xl max-w-lg w-full max-h-[90vh] overflow-y-auto">
+        <div className="flex items-center justify-between px-5 py-3 border-b border-gray-100">
+          <h3 className="text-sm font-semibold">📎 견적 PDF로 계약 추가</h3>
+          <button type="button" onClick={onClose} className="text-gray-400 hover:text-gray-700 text-lg leading-none">×</button>
+        </div>
+
+        {err && <div className="mx-5 mt-3 px-3 py-2 bg-red-50 border border-red-200 text-red-700 text-xs rounded">{err}</div>}
+
+        {step === 'pick' && (
+          <div className="p-5 space-y-2">
+            {busy && <p className="text-[11px] text-gray-400">PDF 불러오는 중...</p>}
+            {pdfs && pdfs.length === 0 && <p className="text-[11px] text-gray-400 italic">PDF 없음. Dropbox 프로젝트 폴더에 견적서 업로드 후 다시.</p>}
+            {pdfs && pdfs.map(p => (
+              <button key={p.path} onClick={() => pick(p.path)}
+                className="w-full text-left text-[11px] px-2.5 py-1.5 rounded border border-gray-100 hover:border-yellow-300 hover:bg-yellow-50">
+                📄 {p.name}
+              </button>
+            ))}
+          </div>
+        )}
+
+        {step === 'analyzing' && (
+          <div className="p-8 text-center text-sm text-purple-600">
+            🤖 PDF 분석 중...
+          </div>
+        )}
+
+        {step === 'review' && analysis && (
+          <div className="p-5 space-y-3 text-[11px]">
+            <p className="text-purple-700 font-semibold">🤖 분석 결과 — 검토 후 추가</p>
+
+            <div>
+              <label className="block text-[10px] font-semibold text-gray-600 mb-1">건명</label>
+              <input value={name} onChange={e => setName(e.target.value)}
+                className="w-full text-[11px] border border-gray-200 rounded px-2 py-1 bg-white" />
+            </div>
+
+            <div className="grid grid-cols-2 gap-2">
+              <div>
+                <label className="block text-[10px] font-semibold text-gray-600 mb-1">매출액 (원)</label>
+                <input value={revenue}
+                  onChange={e => {
+                    const d = e.target.value.replace(/\D/g, '')
+                    setRevenue(d ? Number(d).toLocaleString() : '')
+                  }}
+                  className="w-full text-[11px] border border-gray-200 rounded px-2 py-1 bg-white text-right font-mono" />
+              </div>
+              <div>
+                <label className="block text-[10px] font-semibold text-gray-600 mb-1">우리 사업자</label>
+                <select value={entityId} onChange={e => setEntityId(e.target.value)}
+                  className="w-full text-[11px] border border-gray-200 rounded px-1.5 py-1 bg-white">
+                  <option value="">-- 선택 --</option>
+                  {entities.map(e => (
+                    <option key={e.id} value={e.id}>
+                      {e.short_name ? `${e.short_name} (${e.name})` : e.name}{e.is_primary ? ' · 메인' : ''}
+                    </option>
+                  ))}
+                </select>
+                {analysis.matched_entity_id && <p className="text-[9px] text-green-600 mt-0.5">✓ 자동 매칭</p>}
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-[10px] font-semibold text-gray-600 mb-1">기관 (customer)</label>
+              <CustomerPicker
+                value={customerId}
+                selectedName={customerName}
+                customers={customers.map(c => ({ id: c.id, name: c.name, type: c.type ?? null }))}
+                onChange={(id, n) => { setCustomerId(id); setCustomerName(n) }}
+                onCustomerCreated={onCustomerCreated}
+                placeholder="기관 검색·선택"
+                required
+              />
+              {analysis.matched_customer_id && <p className="text-[9px] text-green-600 mt-0.5">✓ 자동 매칭: {analysis.matched_customer_name}</p>}
+              {!analysis.matched_customer_id && analysis.client_org && <p className="text-[9px] text-amber-600 mt-0.5">⚠️ 추출된 이름 &quot;{analysis.client_org}&quot;을 검색해보거나 신규 등록.</p>}
+            </div>
+
+            <div>
+              <label className="block text-[10px] font-semibold text-gray-600 mb-1">부서 (수의계약 한도용)</label>
+              <input value={clientDept} onChange={e => setClientDept(e.target.value)}
+                className="w-full text-[11px] border border-gray-200 rounded px-2 py-1 bg-white" />
+            </div>
+
+            {analysis.payment_schedules.length > 0 && (
+              <div className="bg-gray-50 rounded px-2 py-1.5">
+                <p className="text-[10px] font-semibold text-gray-600 mb-1">결제 일정 (자동 추가)</p>
+                {analysis.payment_schedules.map((p, i) => (
+                  <div key={i} className="text-[10px] text-gray-600">{p.label} {fmtMoney(p.amount)}원{p.due_date ? ` (${p.due_date})` : ''}</div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
+        {step === 'review' && (
+          <div className="px-5 py-3 border-t border-gray-100 flex gap-2 justify-end">
+            <button type="button" onClick={() => setStep('pick')}
+              className="px-3 py-1.5 text-[11px] border border-gray-200 rounded text-gray-500 hover:bg-gray-50">
+              ← 다른 PDF
+            </button>
+            <button type="button" onClick={submit} disabled={busy || !customerId || !entityId}
+              className="px-4 py-1.5 text-[11px] font-semibold rounded disabled:opacity-50"
+              style={{ backgroundColor: '#FFCE00', color: '#121212' }}>
+              {busy ? '추가 중...' : '✓ 계약 추가'}
+            </button>
+          </div>
+        )}
+      </div>
+    </div>
+  )
 }
 
 function FinalQuoteMapper({ sale, projectId, entities, onChange }: { sale: Contract; projectId: string; entities: BusinessEntity[]; onChange: () => void }) {
