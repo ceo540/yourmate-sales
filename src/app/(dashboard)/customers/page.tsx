@@ -31,9 +31,15 @@ export default async function CustomersPage() {
         customers(id, name)
       )
     `).order('name'),
-    // 기관별 매출 집계
-    supabase.from('sales').select('id, customer_id, revenue, title, service_type, created_at').not('customer_id', 'is', null),
+    // 기관별 매출 집계 — 부서별 한도 현황 위해 client_dept + entity_id도 같이
+    supabase.from('sales').select('id, customer_id, revenue, name, service_type, created_at, inflow_date, client_dept, entity_id').not('customer_id', 'is', null),
   ])
+
+  // 사업자 정보 (한도 현황 매핑용)
+  const { data: entitiesRaw } = await supabase
+    .from('business_entities')
+    .select('id, name, short_name, entity_type, status')
+    .eq('status', 'active')
 
   const isAdmin = isAdminOrManager(profile?.role)
 
@@ -63,8 +69,9 @@ export default async function CustomersPage() {
       last_deal_date: lastSale?.created_at?.slice(0, 10) || null,
       contacts,
       sales: orgSales.map((s: any) => ({
-        id: s.id, title: s.title, amount: s.revenue || 0,
-        service_type: s.service_type, date: s.created_at?.slice(0, 10),
+        id: s.id, title: s.name ?? '', amount: s.revenue || 0,
+        service_type: s.service_type, date: s.inflow_date?.slice(0, 10) || s.created_at?.slice(0, 10),
+        client_dept: s.client_dept ?? null, entity_id: s.entity_id ?? null,
       })),
     }
   })
@@ -137,6 +144,7 @@ export default async function CustomersPage() {
       <CustomersClient
         customers={customers}
         persons={persons}
+        entities={(entitiesRaw ?? []).map((e: any) => ({ id: e.id, name: e.name, short_name: e.short_name ?? null, entity_type: e.entity_type ?? null }))}
         isAdmin={isAdmin}
       />
     </div>

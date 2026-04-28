@@ -8,6 +8,7 @@ import {
 } from './actions'
 import { getCustomerLogs, createCustomerLog, deleteCustomerLog } from './customer-log-actions'
 import { createProfileMap } from '@/lib/utils'
+import { getLimitForEntity } from '@/lib/contract-limits'
 
 /* ── 타입 ── */
 interface OrgContact {
@@ -15,7 +16,7 @@ interface OrgContact {
   person_phone: string; person_email: string
   dept: string; title: string; started_at: string; ended_at: string | null; is_current: boolean
 }
-interface OrgSale { id: string; title: string; amount: number; service_type: string; date: string }
+interface OrgSale { id: string; title: string; amount: number; service_type: string; date: string; client_dept?: string | null; entity_id?: string | null }
 interface Customer {
   id: string; name: string; type: string; region: string
   phone: string; notes: string
@@ -34,7 +35,8 @@ interface Person {
   job_history: JobHistory[]; leads: PersonLead[]
   sales: PersonSale[]; total_sales: number
 }
-interface Props { customers: Customer[]; persons: Person[]; isAdmin: boolean }
+interface BizEntity { id: string; name: string; short_name: string | null; entity_type: string | null }
+interface Props { customers: Customer[]; persons: Person[]; entities?: BizEntity[]; isAdmin: boolean }
 
 /* ── 디자인 토큰 ── */
 const TYPE_COL: Record<string,{bg:string;text:string}> = {
@@ -69,7 +71,7 @@ function downloadCSV(headers: string[], rows: (string|number)[][], filename: str
   a.href=url; a.download=filename; a.click(); URL.revokeObjectURL(url)
 }
 
-export default function CustomersClient({ customers, persons, isAdmin }: Props) {
+export default function CustomersClient({ customers, persons, entities = [], isAdmin }: Props) {
   const router = useRouter()
   const [listView,    setListView]    = useState<'org'|'person'>('org')
   const [detailType,  setDetailType]  = useState<'org'|'person'>('org')
@@ -618,6 +620,9 @@ export default function CustomersClient({ customers, persons, isAdmin }: Props) 
                       })()}
                   </div>
 
+                  {/* 부서별 수의계약 한도 현황 */}
+                  <DeptLimitSection sales={o.sales} entities={entities} />
+
                   {/* 매출 이력 */}
                   {o.sales.length>0&&(
                     <div>
@@ -1147,6 +1152,81 @@ export default function CustomersClient({ customers, persons, isAdmin }: Props) 
           </form>
         </div>
       )}
+    </div>
+  )
+}
+
+/* ── 부서별 수의계약 한도 현황 ─────────────────────────── */
+function DeptLimitSection({ sales, entities }: { sales: OrgSale[]; entities: BizEntity[] }) {
+  const currentYear = new Date().getFullYear()
+  // 회계연도(현재 연도) 기준 sales 필터
+  const yearSales = sales.filter(s => s.date && new Date(s.date).getFullYear() === currentYear)
+  if (yearSales.length === 0 || entities.length === 0) return null
+
+  // 부서×사업자별 누적
+  type Cell = { total: number }
+  const grid = new Map<string, Map<string, Cell>>()  // dept → entity_id → cell
+  const deptsSet = new Set<string>()
+  for (const s of yearSales) {
+    const dept = s.client_dept ?? '(부서 미지정)'
+    const eid = s.entity_id ?? '__unassigned__'
+    deptsSet.add(dept)
+    if (!grid.has(dept)) grid.set(dept, new Map())
+    const row = grid.get(dept)!
+    if (!row.has(eid)) row.set(eid, { total: 0 })
+    row.get(eid)!.total += s.amount ?? 0
+  }
+  const depts = Array.from(deptsSet).sort()
+  // entity 표시 — entities 등록된 것만
+  const entityMap = Object.fromEntries(entities.map(e => [e.id, e]))
+  // 표시할 entity 컬럼: 누적이 1원이라도 있는 entity만
+  const usedEntityIds = new Set<string>()
+  for (const row of grid.values()) for (const eid of row.keys()) if (eid !== '__unassigned__') usedEntityIds.add(eid)
+  const displayEntities = entities.filter(e => usedEntityIds.has(e.id))
+  if (displayEntities.length === 0) return null
+
+  return (
+    <div>
+      <p className="text-xs text-gray-400 mb-2">부서별 수의계약 한도 현황 ({currentYear}년)</p>
+      <div className="overflow-x-auto rounded-lg border border-gray-100">
+        <table className="w-full text-[11px]">
+          <thead className="bg-gray-50">
+            <tr>
+              <th className="text-left px-2 py-1.5 font-semibold text-gray-500">부서</th>
+              {displayEntities.map(e => (
+                <th key={e.id} className="text-right px-2 py-1.5 font-semibold text-gray-500">
+                  {e.short_name || e.name}
+                  <span className="block text-[9px] text-gray-400 font-normal">{e.entity_type === '여성기업' ? '여성 5500만' : '일반 2200만'}</span>
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-gray-50">
+            {depts.map(dept => {
+              const row = grid.get(dept) ?? new Map()
+              return (
+                <tr key={dept}>
+                  <td className="px-2 py-1.5 text-gray-700">{dept}</td>
+                  {displayEntities.map(e => {
+                    const cell = row.get(e.id)
+                    const used = cell?.total ?? 0
+                    const limit = getLimitForEntity(e.entity_type)
+                    const pct = limit > 0 ? Math.round((used / limit) * 100) : 0
+                    const color = pct >= 100 ? 'text-red-600 font-bold' : pct >= 80 ? 'text-orange-500 font-semibold' : pct > 0 ? 'text-gray-700' : 'text-gray-300'
+                    return (
+                      <td key={e.id} className={`text-right px-2 py-1.5 font-mono ${color}`}>
+                        {used > 0 ? `${(used/10000).toFixed(0)}/${(limit/10000).toFixed(0)}만` : '—'}
+                        {pct >= 80 && <span className="ml-1">{pct >= 100 ? '⚠️' : '!'}</span>}
+                      </td>
+                    )
+                  })}
+                </tr>
+              )
+            })}
+          </tbody>
+        </table>
+      </div>
+      <p className="text-[10px] text-gray-400 mt-1.5">한도: 일반 2,200만 / 여성기업 5,500만 (부서당, 회계연도, 부가세 포함)</p>
     </div>
   )
 }
