@@ -1960,9 +1960,10 @@ function FinalQuoteMapper({ sale, projectId, entities, onChange }: { sale: Contr
     }, projectId)
     setBusy(false)
     if ('error' in r) { alert('적용 실패: ' + r.error); return }
-    if ('folder_created' in r && r.folder_created) {
-      alert('적용 완료. 계약 폴더 자동 생성됨.')
-    }
+    const msgs: string[] = ['적용 완료.']
+    if ('folder_created' in r && r.folder_created) msgs.push('계약 폴더 자동 생성됨.')
+    if ('folder_error' in r && r.folder_error) msgs.push(`⚠️ 폴더 생성 실패: ${r.folder_error}`)
+    alert(msgs.join('\n'))
     setAnalysis(null); setManualEntityId(''); onChange()
   }
 

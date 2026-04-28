@@ -904,7 +904,7 @@ interface ApplyQuoteInput {
   replace_schedules?: boolean   // true면 기존 모두 삭제 후 새로 추가, false면 추가만
 }
 
-export async function applyQuoteAnalysis(saleId: string, data: ApplyQuoteInput, projectId: string): Promise<{ ok: true; folder_created?: string } | { error: string }> {
+export async function applyQuoteAnalysis(saleId: string, data: ApplyQuoteInput, projectId: string): Promise<{ ok: true; folder_created?: string; folder_error?: string } | { error: string }> {
   const admin = createAdminClient()
   const updates: Record<string, unknown> = { updated_at: new Date().toISOString() }
   if (data.revenue !== undefined && data.revenue !== null) updates.revenue = data.revenue
@@ -946,15 +946,17 @@ export async function applyQuoteAnalysis(saleId: string, data: ApplyQuoteInput, 
     if (error) return { error: `결제 일정 추가 실패: ${error.message}` }
   }
 
-  // entity가 정해졌고 sale.dropbox_url이 비어있으면 사업자별 계약 폴더 자동 생성
+  // entity가 정해지면 사업자별 계약 폴더 자동 생성
   let folderCreated: string | undefined
+  let folderError: string | undefined
   if (data.entity_id) {
     const r = await ensureContractFolder(saleId)
     if ('webUrl' in r) folderCreated = r.webUrl
+    else folderError = r.error
   }
 
   revalidatePath(`/projects/${projectId}`)
-  return { ok: true, folder_created: folderCreated }
+  return { ok: true, folder_created: folderCreated, folder_error: folderError }
 }
 
 export async function ensureContractFolder(saleId: string): Promise<{ ok: true; webUrl: string } | { error: string }> {
@@ -969,7 +971,6 @@ export async function ensureContractFolder(saleId: string): Promise<{ ok: true; 
     .eq('id', saleId)
     .single()
   if (!sale) return { error: '계약을 찾을 수 없음' }
-  if (sale.dropbox_url) return { ok: true, webUrl: sale.dropbox_url }
   if (!sale.entity_id) return { error: '사업자(entity_id)가 지정되지 않음. 먼저 사업자 선택 필요.' }
   if (!sale.project_id) return { error: '프로젝트에 연결되지 않음' }
 
@@ -980,6 +981,12 @@ export async function ensureContractFolder(saleId: string): Promise<{ ok: true; 
   if (!project?.dropbox_url) return { error: '프로젝트 Dropbox 폴더 없음' }
   const entityKey = entity?.short_name || entity?.name
   if (!entityKey) return { error: '사업자 이름 없음' }
+
+  // sale.dropbox_url 이미 있어도, 그게 프로젝트 폴더와 같으면 (= 별도 계약 폴더 아님)
+  // 새로 만들도록 진행. 다른 경로면 이미 별도 계약 폴더라 그대로 반환.
+  if (sale.dropbox_url && sale.dropbox_url !== project.dropbox_url) {
+    return { ok: true, webUrl: sale.dropbox_url }
+  }
 
   const { createContractFolder } = await import('@/lib/dropbox')
   const r = await createContractFolder({
