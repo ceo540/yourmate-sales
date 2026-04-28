@@ -129,6 +129,104 @@ const TOOLS = [
       },
     },
   },
+  {
+    name: 'update_lead',
+    description: '리드의 상태/리마인드/서비스/메모 등 업데이트. 같은 기관에 여러 건 있으면 lead_id로 특정.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        lead_id_or_uuid: { type: 'string', description: 'lead_id (LEAD20260421-0008) 또는 UUID' },
+        status: { type: 'string', description: '유입/회신대기/견적발송/조율중/진행중/완료/취소' },
+        service_type: { type: 'string', description: '교육프로그램/납품설치/유지보수/교구대여/제작인쇄/콘텐츠제작/행사운영/행사대여/프로젝트/SOS/002ENT' },
+        remind_date: { type: 'string', description: '리마인드 YYYY-MM-DD' },
+        notes: { type: 'string', description: '메모 덮어쓰기' },
+      },
+      required: ['lead_id_or_uuid'],
+    },
+  },
+  {
+    name: 'complete_task',
+    description: '할 일을 완료(status=완료) 처리. task_id 또는 (lead/project + title) 조합으로 식별.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        task_id: { type: 'string', description: '할 일 UUID' },
+        title: { type: 'string', description: '제목 부분 일치 (task_id 없을 때)' },
+        lead_id: { type: 'string', description: 'title 검색 범위 (리드)' },
+        project_id: { type: 'string', description: 'title 검색 범위 (프로젝트 UUID)' },
+      },
+    },
+  },
+  {
+    name: 'update_task',
+    description: '할 일 수정 (제목/상태/우선순위/마감일/담당자/설명).',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        task_id: { type: 'string', description: '할 일 UUID' },
+        new_title: { type: 'string' },
+        status: { type: 'string', description: '할 일/진행중/완료/보류' },
+        priority: { type: 'string', description: '긴급/높음/보통/낮음' },
+        due_date: { type: 'string', description: 'YYYY-MM-DD (없애려면 빈 문자열)' },
+        assignee_name: { type: 'string', description: '담당자 이름 ("나"=null로 해제 안 함, ""=미지정)' },
+        description: { type: 'string' },
+      },
+      required: ['task_id'],
+    },
+  },
+  {
+    name: 'delete_task',
+    description: '할 일 영구 삭제. 실수 방지용으로 task_id 필수.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        task_id: { type: 'string', description: '할 일 UUID' },
+      },
+      required: ['task_id'],
+    },
+  },
+  {
+    name: 'add_project_memo',
+    description: '프로젝트에 메모 카드 추가 (multi memo).',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        project_id: { type: 'string', description: '프로젝트 UUID' },
+        title: { type: 'string', description: '메모 제목' },
+        content: { type: 'string', description: '메모 본문 (markdown 가능)' },
+      },
+      required: ['project_id', 'content'],
+    },
+  },
+  {
+    name: 'search_customers',
+    description: '고객 DB(기관) 검색. 거래 이력 매핑 전 customer_id 확보용.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        query: { type: 'string', description: '기관명 검색어' },
+        type: { type: 'string', description: '학교/공공기관/기업/개인/기타' },
+        limit: { type: 'number', description: '최대 건수 (기본 15)' },
+      },
+    },
+  },
+  {
+    name: 'quick_create_customer',
+    description: '신규 기관(+선택 담당자) 등록 후 customer_id 반환. 새 리드/계약 만들기 직전에 사용.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        name: { type: 'string', description: '기관명 (필수)' },
+        type: { type: 'string', description: '학교/공공기관/기업/개인/기타 (기본 기타)' },
+        contact_name: { type: 'string', description: '담당자 이름' },
+        contact_dept: { type: 'string', description: '담당자 부서' },
+        contact_title: { type: 'string', description: '담당자 직책' },
+        phone: { type: 'string' },
+        email: { type: 'string' },
+      },
+      required: ['name'],
+    },
+  },
 ] as const
 
 // ─────────────────────────────────────────────
@@ -299,6 +397,155 @@ async function handleTool(name: string, input: ToolInput): Promise<unknown> {
       })
 
       return { count: leadActions.length + projActions.length, actions: [...leadActions, ...projActions].slice(0, limit) }
+    }
+
+    case 'update_lead': {
+      const idStr = input.lead_id_or_uuid as string
+      const isUuid = /^[0-9a-f]{8}-/.test(idStr)
+      const { data: lead } = isUuid
+        ? await sb.from('leads').select('id, lead_id, client_org').eq('id', idStr).maybeSingle()
+        : await sb.from('leads').select('id, lead_id, client_org').eq('lead_id', idStr).maybeSingle()
+      if (!lead) return { error: '리드를 찾을 수 없음' }
+
+      const updates: Record<string, unknown> = { updated_at: new Date().toISOString() }
+      if (input.status) updates.status = input.status
+      if (input.service_type) updates.service_type = input.service_type
+      if (input.remind_date !== undefined) updates.remind_date = (input.remind_date as string) || null
+      if (input.notes !== undefined) updates.notes = (input.notes as string) || null
+      if (Object.keys(updates).length === 1) return { error: '변경할 내용이 없음' }
+
+      const { error } = await sb.from('leads').update(updates).eq('id', lead.id)
+      if (error) return { error: error.message }
+      return { success: true, lead_id: lead.lead_id, client_org: lead.client_org, updates }
+    }
+
+    case 'complete_task': {
+      let taskId = input.task_id as string | undefined
+      if (!taskId) {
+        const title = input.title as string | undefined
+        if (!title) return { error: 'task_id 또는 title 필요' }
+        const leadId = input.lead_id as string | undefined
+        const projectId = input.project_id as string | undefined
+        if (!leadId && !projectId) return { error: 'title 검색 시 lead_id 또는 project_id 필요' }
+
+        let saleIds: string[] = []
+        if (projectId) {
+          const { data: sales } = await sb.from('sales').select('id').eq('project_id', projectId)
+          saleIds = (sales ?? []).map(s => s.id)
+          if (saleIds.length === 0) return { error: '이 프로젝트에 연결된 계약이 없음' }
+        }
+
+        let q = sb.from('tasks').select('id, title, status').ilike('title', `%${title}%`).limit(10)
+        q = leadId ? q.eq('lead_id', leadId) : q.in('project_id', saleIds)
+        const { data: matches } = await q
+        if (!matches || matches.length === 0) return { error: `"${title}" 매칭 없음` }
+        if (matches.length > 1) return { multiple: true, message: 'task_id로 특정 필요', tasks: matches }
+        taskId = matches[0].id
+      }
+      const { data, error } = await sb.from('tasks').update({ status: '완료', updated_at: new Date().toISOString() }).eq('id', taskId).select('id, title').single()
+      if (error) return { error: error.message }
+      return { success: true, id: data.id, title: data.title }
+    }
+
+    case 'update_task': {
+      const taskId = input.task_id as string
+      const updates: Record<string, unknown> = { updated_at: new Date().toISOString() }
+      if (typeof input.new_title === 'string' && (input.new_title as string).trim()) updates.title = (input.new_title as string).trim()
+      if (input.status) {
+        if (!['할 일', '진행중', '완료', '보류'].includes(input.status as string)) return { error: '상태는 할 일/진행중/완료/보류' }
+        updates.status = input.status
+      }
+      if (input.priority) {
+        if (!['긴급', '높음', '보통', '낮음'].includes(input.priority as string)) return { error: '우선순위는 긴급/높음/보통/낮음' }
+        updates.priority = input.priority
+      }
+      if (input.due_date !== undefined) updates.due_date = (input.due_date as string) || null
+      if (input.description !== undefined) updates.description = (input.description as string) || null
+      if (input.assignee_name !== undefined) {
+        const aname = (input.assignee_name as string).trim()
+        if (aname === '') updates.assignee_id = null
+        else {
+          const { data: p } = await sb.from('profiles').select('id').ilike('name', `%${aname}%`).limit(1).maybeSingle()
+          updates.assignee_id = p?.id ?? null
+        }
+      }
+      if (Object.keys(updates).length === 1) return { error: '변경할 내용이 없음' }
+
+      const { data, error } = await sb.from('tasks').update(updates).eq('id', taskId).select('id, title').single()
+      if (error) return { error: error.message }
+      return { success: true, id: data.id, title: data.title, updates }
+    }
+
+    case 'delete_task': {
+      const taskId = input.task_id as string
+      const { data: existed } = await sb.from('tasks').select('id, title').eq('id', taskId).maybeSingle()
+      if (!existed) return { error: '해당 할 일을 찾을 수 없음' }
+      const { error } = await sb.from('tasks').delete().eq('id', taskId)
+      if (error) return { error: error.message }
+      return { success: true, id: existed.id, title: existed.title }
+    }
+
+    case 'add_project_memo': {
+      const projectId = input.project_id as string
+      const content = ((input.content as string) || '').trim()
+      if (!projectId || !content) return { error: 'project_id와 content 필수' }
+      const { data, error } = await sb.from('project_memos').insert({
+        project_id: projectId,
+        title: (input.title as string) || null,
+        content,
+      }).select('id').single()
+      if (error) return { error: error.message }
+      return { success: true, memo_id: data.id }
+    }
+
+    case 'search_customers': {
+      const query = input.query as string | undefined
+      const typeFilter = input.type as string | undefined
+      const limit = (input.limit as number) || 15
+      let q = sb.from('customers').select('id, name, type, status, contact_name, phone').order('name').limit(limit)
+      if (query) q = q.ilike('name', `%${query}%`)
+      if (typeFilter) q = q.eq('type', typeFilter)
+      const { data, error } = await q
+      if (error) return { error: error.message }
+      return { count: data?.length ?? 0, customers: data ?? [] }
+    }
+
+    case 'quick_create_customer': {
+      const orgName = ((input.name as string) || '').trim()
+      if (!orgName) return { error: '기관명 필수' }
+      const customerInsert: Record<string, unknown> = {
+        name: orgName,
+        type: (input.type as string) || '기타',
+        status: '활성',
+      }
+      if (input.contact_name) customerInsert.contact_name = input.contact_name
+      if (input.phone) customerInsert.phone = input.phone
+      if (input.email) customerInsert.contact_email = input.email
+      const { data: customer, error: cErr } = await sb.from('customers').insert(customerInsert).select('id').single()
+      if (cErr || !customer) return { error: cErr?.message ?? '기관 생성 실패' }
+
+      let personId: string | null = null
+      const contactName = (input.contact_name as string | undefined)?.trim()
+      if (contactName) {
+        const { data: person } = await sb.from('persons').insert({
+          name: contactName,
+          phone: (input.phone as string) || null,
+          email: (input.email as string) || null,
+        }).select('id').single()
+        if (person) {
+          personId = person.id
+          await sb.from('person_org_relations').insert({
+            person_id: person.id,
+            customer_id: customer.id,
+            dept: (input.contact_dept as string) || null,
+            title: (input.contact_title as string) || null,
+            started_at: new Date().toISOString().slice(0, 10),
+            ended_at: null,
+            is_current: true,
+          })
+        }
+      }
+      return { success: true, customer_id: customer.id, person_id: personId }
     }
 
     default:
