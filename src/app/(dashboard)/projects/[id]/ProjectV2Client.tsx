@@ -30,6 +30,7 @@ import {
   getProjectBriefContent,
   deleteProjectLog,
   ensureContractFolder,
+  createProjectDropboxFolder,
   createProjectMemo,
   updateProjectMemoCard,
   deleteProjectMemo,
@@ -343,7 +344,10 @@ export default function ProjectV2Client({
           <FinanceCard finance={finance} profitRate={profitRate} receivedRate={receivedRate} />
 
           {/* 📁 드롭박스 */}
-          {project.dropbox_url && <DropboxFilesCard dropboxUrl={project.dropbox_url} projectId={project.id} />}
+          {project.dropbox_url
+            ? <DropboxFilesCard dropboxUrl={project.dropbox_url} projectId={project.id} />
+            : <DropboxEmptyCard projectId={project.id} serviceType={project.service_type} />
+          }
         </aside>
       </div>
 
@@ -2150,6 +2154,40 @@ function LogRow({ log, contractName, projectId, onChanged }: {
         </div>
       </div>
     </li>
+  )
+}
+
+function DropboxEmptyCard({ projectId, serviceType }: { projectId: string; serviceType: string | null }) {
+  const router = useRouter()
+  const [busy, setBusy] = useState(false)
+  const [err, setErr] = useState<string | null>(null)
+
+  async function handleCreate() {
+    if (busy) return
+    setBusy(true); setErr(null)
+    const r = await createProjectDropboxFolder(projectId)
+    setBusy(false)
+    if ('error' in r) { setErr(r.error); return }
+    router.refresh()
+  }
+
+  return (
+    <div className="bg-white border border-gray-100 rounded-xl p-3">
+      <p className="text-xs font-semibold text-gray-700 mb-2">📁 Dropbox</p>
+      {serviceType ? (
+        <>
+          <p className="text-[11px] text-gray-500 mb-2">아직 폴더가 없어. 누르면 자동 생성 + brief.md 함께 만들어.</p>
+          <button type="button" onClick={handleCreate} disabled={busy}
+            className="w-full text-xs font-semibold rounded-lg py-2 hover:opacity-80 disabled:opacity-50"
+            style={{ backgroundColor: '#FFCE00', color: '#121212' }}>
+            {busy ? '생성 중...' : '📁 폴더 + brief 생성'}
+          </button>
+          {err && <p className="text-[11px] text-red-500 mt-1.5">{err}</p>}
+        </>
+      ) : (
+        <p className="text-[11px] text-gray-500">서비스 종류 먼저 지정해 (설정 톱니).</p>
+      )}
+    </div>
   )
 }
 

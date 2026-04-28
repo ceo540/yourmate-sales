@@ -590,6 +590,46 @@ export async function updateProjectName(
   return { newDropboxUrl }
 }
 
+// service_type 기반으로 Dropbox 폴더 자동 생성하고 projects.dropbox_url에 연결.
+// service_type이 늦게 채워진 옛 프로젝트(예: 26-079) 단발 처리용.
+// brief.md도 같이 생성.
+export async function createProjectDropboxFolder(projectId: string): Promise<{ ok: true; webUrl: string; brief?: string } | { error: string }> {
+  const admin = createAdminClient()
+  const { data: project } = await admin
+    .from('projects')
+    .select('id, name, service_type, dropbox_url, created_at')
+    .eq('id', projectId)
+    .maybeSingle()
+  if (!project) return { error: '프로젝트를 찾을 수 없음' }
+  if (project.dropbox_url) return { error: '이미 Dropbox 폴더가 연결돼 있어' }
+  if (!project.service_type) return { error: '서비스 종류 먼저 지정해야 폴더 위치를 정함' }
+
+  const { createSaleFolder } = await import('@/lib/dropbox')
+  const folderUrl = await createSaleFolder({
+    service_type: project.service_type,
+    name: project.name,
+    inflow_date: project.created_at?.slice(0, 10) ?? null,
+  })
+  if (!folderUrl) return { error: 'Dropbox 폴더 생성 실패 (서비스 폴더 매핑 확인)' }
+
+  const { error: updErr } = await admin
+    .from('projects')
+    .update({ dropbox_url: folderUrl, updated_at: new Date().toISOString() })
+    .eq('id', projectId)
+  if (updErr) return { error: `폴더는 만들었는데 DB 저장 실패: ${updErr.message}` }
+
+  let briefFilename: string | undefined
+  try {
+    const { createOrUpdateProjectBrief } = await import('@/lib/brief-generator')
+    const r = await createOrUpdateProjectBrief(projectId)
+    if ('ok' in r) briefFilename = r.filename
+  } catch { /* brief 실패는 무시 — 폴더는 OK */ }
+
+  revalidatePath(`/projects/${projectId}`)
+  revalidatePath(`/projects/${projectId}/v2`)
+  return { ok: true, webUrl: folderUrl, brief: briefFilename }
+}
+
 export async function updateProjectDropbox(projectId: string, dropboxUrl: string): Promise<{ error?: string }> {
   if (dropboxUrl.trim()) {
     const { validateDropboxUrl } = await import('@/lib/dropbox')
