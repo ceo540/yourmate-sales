@@ -7,6 +7,7 @@ import { createLead, updateLead, deleteLead, convertLeadToSale, addSaleToLead, c
 import { createLeadLog, getLeadLogs, deleteLeadLog } from './lead-log-actions'
 import ProjectClaudeChat from '@/components/ProjectClaudeChat'
 import MarkdownNoteBlock from '@/components/MarkdownNoteBlock'
+import CustomerPicker from '@/components/CustomerPicker'
 import dynamic from 'next/dynamic'
 
 const BlockNoteEditor = dynamic(() => import('@/components/BlockNoteEditor'), { ssr: false })
@@ -46,32 +47,9 @@ function LeadForm({ form, setForm, onSubmit, onCancel, isPending, isAdmin, profi
   const [newTitle, setNewTitle] = useState('')
   const [isAddingPerson, setIsAddingPerson] = useState(false)
 
-  // 기관(고객사) 검색·추가 패턴 — 메모리 정책: 항상 "선택 + 직접 추가"
-  const [customerSearch, setCustomerSearch] = useState(form.client_org)
-  const [showCustomerDrop, setShowCustomerDrop] = useState(false)
+  // 기관(고객사) — CustomerPicker로 통일. 자유 텍스트 입력 차단.
   const [localCustomers, setLocalCustomers] = useState<CustomerOptionForm[]>([])
-  const [isAddingCustomer, setIsAddingCustomer] = useState(false)
   const allCustomers = [...customers, ...localCustomers]
-  const matchingCustomers = allCustomers
-    .filter(c => !customerSearch || c.name.toLowerCase().includes(customerSearch.toLowerCase()))
-    .slice(0, 6)
-  const exactCustomerMatch = allCustomers.some(c => c.name === customerSearch.trim())
-
-  async function handleAddCustomer() {
-    if (!customerSearch.trim()) return
-    setIsAddingCustomer(true)
-    try {
-      const { quickCreateCustomer } = await import('../customers/actions')
-      const result = await quickCreateCustomer(customerSearch.trim())
-      if ('error' in result) { alert('고객사 추가 실패: ' + result.error); return }
-      const newCust: CustomerOptionForm = { id: result.id, name: customerSearch.trim(), type: '기타' }
-      setLocalCustomers(prev => [...prev, newCust])
-      setForm(f => ({ ...f, client_org: customerSearch.trim(), customer_id: result.id }))
-      setShowCustomerDrop(false)
-    } finally {
-      setIsAddingCustomer(false)
-    }
-  }
 
   const allPersons = [...persons, ...localPersons]
   const selectedPerson = form.person_id ? allPersons.find(p => p.id === form.person_id) : null
@@ -226,37 +204,16 @@ function LeadForm({ form, setForm, onSubmit, onCancel, isPending, isAdmin, profi
       </div>
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <div>
-          <label className={LABEL_CLS}>기관명</label>
-          <div className="relative">
-            <input
-              className={INPUT_CLS}
-              value={customerSearch}
-              onChange={e => { setCustomerSearch(e.target.value); setShowCustomerDrop(true); setForm(f => ({ ...f, client_org: e.target.value, customer_id: '' })) }}
-              onFocus={() => setShowCustomerDrop(true)}
-              onBlur={() => setTimeout(() => setShowCustomerDrop(false), 150)}
-              placeholder="기관 검색하거나 직접 입력..."
-            />
-            {showCustomerDrop && (matchingCustomers.length > 0 || (customerSearch.trim() && !exactCustomerMatch)) && (
-              <div className="absolute z-50 top-full left-0 right-0 bg-white border border-gray-200 rounded-lg shadow-lg mt-1 max-h-64 overflow-y-auto">
-                {matchingCustomers.map(c => (
-                  <button key={c.id} type="button"
-                    onMouseDown={() => { setForm(f => ({ ...f, client_org: c.name, customer_id: c.id })); setCustomerSearch(c.name); setShowCustomerDrop(false) }}
-                    className="w-full px-3 py-2 text-left hover:bg-yellow-50 border-b border-gray-50 last:border-0">
-                    <p className="text-sm font-medium text-gray-800">
-                      {c.name}
-                      {c.type ? <span className="text-gray-400 font-normal"> · {c.type}</span> : ''}
-                    </p>
-                  </button>
-                ))}
-                {customerSearch.trim() && !exactCustomerMatch && (
-                  <button type="button" onMouseDown={handleAddCustomer} disabled={isAddingCustomer}
-                    className="w-full px-3 py-2.5 text-left text-sm text-blue-600 hover:bg-blue-50 font-medium border-t border-gray-100 disabled:opacity-50">
-                    {isAddingCustomer ? '추가 중...' : `+ "${customerSearch.trim()}" 새 기관으로 추가`}
-                  </button>
-                )}
-              </div>
-            )}
-          </div>
+          <label className={LABEL_CLS}>기관명 *</label>
+          <CustomerPicker
+            value={form.customer_id}
+            selectedName={form.client_org}
+            customers={allCustomers}
+            onChange={(id, name) => setForm(f => ({ ...f, customer_id: id, client_org: name }))}
+            onCustomerCreated={(c) => setLocalCustomers(prev => [...prev, { id: c.id, name: c.name, type: c.type ?? null }])}
+            placeholder="기관 검색..."
+            required
+          />
         </div>
         <div>
           <label className={LABEL_CLS}>담당자명</label>
