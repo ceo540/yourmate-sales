@@ -122,12 +122,13 @@ export default function CustomersClient({ customers, persons, entities = [], isA
   const currentOrg    = detailType==='org'    ? orgMap[detailId!]    : null
   const currentPerson = detailType==='person' ? personMap[detailId!] : null
 
-  /* 기관 CRUD */
+  /* 기관 CRUD — 모달 create는 즉시 close (snappy), 인라인 edit은 await 후 close (stale data 노출 방지). */
   function handleSaveOrg(e: React.FormEvent) {
     e.preventDefault()
-    startTransition(async () => {
-      if (editingInfo && !showNewOrg) {
-        // 인라인 수정 모드
+    const isInlineEdit = editingInfo && !showNewOrg
+    if (isInlineEdit) {
+      // 인라인: 기존 동작 유지 (편집 폼이 새 값 계속 보여줌 → 저장 후 close)
+      startTransition(async () => {
         const res = await updateCustomer(currentOrg!.id, {
           name: orgForm.name||currentOrg!.name, type: orgForm.type||currentOrg!.type,
           region: orgForm.region||null, phone: orgForm.phone||null,
@@ -135,13 +136,21 @@ export default function CustomersClient({ customers, persons, entities = [], isA
         })
         if (res?.error) { alert('저장 실패: ' + res.error); return }
         setEditingInfo(false)
-      } else {
-        // 새 기관 등록 모달
-        const fd = new FormData()
-        Object.entries(orgForm).forEach(([k,v])=>{ if(v) fd.set(k,v) })
-        const res = await createCustomer(fd)
-        if (res?.error) { alert('등록 실패: ' + res.error); return }
-        setShowNewOrg(false)
+        router.refresh()
+      })
+      return
+    }
+    // 모달 create: 즉시 close, 실패 시 rollback
+    const formSnapshot = orgForm
+    setShowNewOrg(false); setOrgForm({})
+    startTransition(async () => {
+      const fd = new FormData()
+      Object.entries(formSnapshot).forEach(([k,v])=>{ if(v) fd.set(k,v) })
+      const res = await createCustomer(fd)
+      if (res?.error) {
+        alert('등록 실패: ' + res.error)
+        setOrgForm(formSnapshot); setShowNewOrg(true)
+        return
       }
       router.refresh()
     })
@@ -150,30 +159,36 @@ export default function CustomersClient({ customers, persons, entities = [], isA
   /* 담당자 CRUD */
   function handleSavePerson(e: React.FormEvent) {
     e.preventDefault()
-    // 신규 등록 시 이름 중복 체크
-    if (!editingInfo || showNewPerson) {
-      const nameToCheck = perForm.name?.trim()
-      if (nameToCheck) {
-        const dup = persons.find(p => p.name === nameToCheck)
-        if (dup && !confirm(`'${nameToCheck}' 이름의 고객이 이미 있어요.\n그래도 등록할까요?`)) return
-      }
-    }
-    startTransition(async () => {
-      if (editingInfo && !showNewPerson) {
-        // 인라인 수정 모드
+    const isInlineEdit = editingInfo && !showNewPerson
+    if (isInlineEdit) {
+      startTransition(async () => {
         const res = await updatePerson(currentPerson!.id, {
           name: perForm.name||currentPerson!.name, phone: perForm.phone||null,
           email: perForm.email||null, notes: perForm.notes||null,
         })
         if (res?.error) { alert('저장 실패: ' + res.error); return }
         setEditingInfo(false)
-      } else {
-        // 새 담당자 등록 모달
-        const fd = new FormData()
-        Object.entries(perForm).forEach(([k,v])=>{ if(v) fd.set(k,v) })
-        const res = await createPerson(fd)
-        if (res?.error) { alert('등록 실패: ' + res.error); return }
-        setShowNewPerson(false); setPerOrgSearch('')
+        router.refresh()
+      })
+      return
+    }
+    // 모달 create
+    const nameToCheck = perForm.name?.trim()
+    if (nameToCheck) {
+      const dup = persons.find(p => p.name === nameToCheck)
+      if (dup && !confirm(`'${nameToCheck}' 이름의 고객이 이미 있어요.\n그래도 등록할까요?`)) return
+    }
+    const formSnapshot = perForm
+    const orgSearchSnapshot = perOrgSearch
+    setShowNewPerson(false); setPerOrgSearch('')
+    startTransition(async () => {
+      const fd = new FormData()
+      Object.entries(formSnapshot).forEach(([k,v])=>{ if(v) fd.set(k,v) })
+      const res = await createPerson(fd)
+      if (res?.error) {
+        alert('등록 실패: ' + res.error)
+        setPerForm(formSnapshot); setShowNewPerson(true); setPerOrgSearch(orgSearchSnapshot)
+        return
       }
       router.refresh()
     })
@@ -184,21 +199,28 @@ export default function CustomersClient({ customers, persons, entities = [], isA
     e.preventDefault()
     if (!relForm.customer_id) { alert('기관을 선택해 주세요.'); return }
     if (!relForm.person_id)   { alert('고객을 선택해 주세요.'); return }
+    const formSnapshot = relForm
+    const orgSearchSnapshot = relOrgSearch
+    setShowAddRel(false); setRelForm({}); setRelOrgSearch('')
     startTransition(async () => {
       const res = await addRelation({
-        person_id:   relForm.person_id,
-        customer_id: relForm.customer_id,
-        dept:        relForm.dept || undefined,
-        title:       relForm.title || undefined,
-        started_at:  relForm.started_at || undefined,
+        person_id:   formSnapshot.person_id,
+        customer_id: formSnapshot.customer_id,
+        dept:        formSnapshot.dept || undefined,
+        title:       formSnapshot.title || undefined,
+        started_at:  formSnapshot.started_at || undefined,
       })
-      if (res?.error) { alert('연결 실패: ' + res.error); return }
-      setShowAddRel(false); setRelForm({}); setRelOrgSearch('')
+      if (res?.error) {
+        alert('연결 실패: ' + res.error)
+        setRelForm(formSnapshot); setRelOrgSearch(orgSearchSnapshot); setShowAddRel(true)
+        return
+      }
       router.refresh()
     })
   }
 
   function handleSaveRelEdit(relId: string) {
+    // 인라인 편집은 await 후 close (stale 노출 방지)
     startTransition(async () => {
       const res = await updateRelation(relId, {
         dept:       relEditForm.dept || null,
@@ -242,15 +264,22 @@ export default function CustomersClient({ customers, persons, entities = [], isA
 
   function handleAddLog() {
     if (!newLogContent.trim() || !detailId) return
+    const contentSnapshot = newLogContent.trim()
+    const dateSnapshot = newLogDate
+    const typeSnapshot = newLogType
+    setNewLogContent(''); setNewLogDate(nowDatetime())
     startTransition(async () => {
       const res = await createCustomerLog({
-        log_type: newLogType,
-        content: newLogContent.trim(),
-        contacted_at: newLogDate ? new Date(newLogDate).toISOString() : new Date().toISOString(),
+        log_type: typeSnapshot,
+        content: contentSnapshot,
+        contacted_at: dateSnapshot ? new Date(dateSnapshot).toISOString() : new Date().toISOString(),
         ...(detailType==='org' ? {customer_id:detailId, person_id:null} : {person_id:detailId, customer_id:null}),
       })
-      if (res?.error) { alert('저장 실패: '+res.error); return }
-      setNewLogContent(''); setNewLogDate(nowDatetime())
+      if (res?.error) {
+        alert('저장 실패: '+res.error)
+        setNewLogContent(contentSnapshot); setNewLogDate(dateSnapshot)
+        return
+      }
       refreshLogs(detailType==='org'?'customer':'person', detailId)
     })
   }
