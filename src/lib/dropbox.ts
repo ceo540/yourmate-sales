@@ -140,6 +140,7 @@ export async function createSaleFolder(params: {
   // 하위 폴더는 실패해도 무시 (메인 폴더가 있으면 충분)
   await createFolder(`${apiPath}/0 행정`, token)
   await createFolder(`${apiPath}/0 행정/원가`, token)
+  await createFolder(`${apiPath}/1 기획`, token)
   if (service_type === '제작인쇄') {
     await createFolder(`${apiPath}/9 목업`, token)
   } else {
@@ -150,36 +151,34 @@ export async function createSaleFolder(params: {
   return `https://www.dropbox.com/home${DB_BASE}${folderPath}`
 }
 
-// 계약 폴더 생성: <프로젝트폴더>/0 행정/{사업자약칭}/계약 {건명}/
-// 사업자별로 묶음. 이미 존재하면 멱등 (createFolder는 conflict 시 성공 처리).
-// 사용자 비전: 분할 = 사업자 ≥ 2건. 각 계약별 폴더로 서류 정리.
+// 계약 폴더 생성: <프로젝트폴더>/0 행정/{N}. {사업자정식명}_{금액}만원/
+// 평면 1폴더 구조. 단일 계약도 N=1로 만들어 일관성 유지.
+// 매출 미입력이면 _금액 부분 생략. 폴더명은 처음 만들 때만 박고 이후 변경 시 갱신 안 함.
 export async function createContractFolder(params: {
   projectFolderWebUrl: string  // 프로젝트의 dropbox_url (https://www.dropbox.com/home/...)
-  entityShortName: string      // 사업자 약칭 (예: "공공이코")
-  contractName: string         // 계약 건명
+  entityFullName: string       // 사업자 정식명 (호출자가 ㈜·(주)·주식회사 prefix 정리해서 전달)
+  revenue: number | null       // 매출액 (null 또는 0이면 _금액 생략)
+  saleSequence: number         // 같은 프로젝트 내 계약 순서 (1, 2, ...)
 }): Promise<{ webUrl: string } | { error: string }> {
   const token = await getDropboxToken()
   if (!token) return { error: '드롭박스 토큰 없음' }
 
-  const { projectFolderWebUrl, entityShortName, contractName } = params
+  const { projectFolderWebUrl, entityFullName, revenue, saleSequence } = params
   if (!projectFolderWebUrl.startsWith(WEB_BASE)) {
     return { error: '프로젝트 폴더 URL이 /home/ 형식이 아닙니다' }
   }
 
   const projectRelative = decodeURIComponent(projectFolderWebUrl.replace(WEB_BASE, '')).replace(/\/$/, '')
-  const safeEntity = entityShortName.replace(/[\/\\:*?"<>|]/g, '_').trim()
-  const safeContract = contractName.replace(/[\/\\:*?"<>|]/g, '_').trim()
-  if (!safeEntity || !safeContract) return { error: '사업자/계약 이름이 비어있음' }
+  const safeEntity = entityFullName.replace(/[\/\\:*?"<>|]/g, '_').trim()
+  if (!safeEntity) return { error: '사업자 이름이 비어있음' }
 
-  // projectRelative가 이미 DB_BASE 포함한 절대 경로라 API 경로 그대로 사용
+  const revenueText = revenue && revenue > 0 ? `_${Math.round(revenue / 10000)}만원` : ''
+  const folderName = `${saleSequence}. ${safeEntity}${revenueText}`
+
   const adminPath = `${projectRelative}/0 행정`
-  const entityPath = `${adminPath}/${safeEntity}`
-  const contractPath = `${entityPath}/계약 ${safeContract}`
+  const contractPath = `${adminPath}/${folderName}`
 
-  // 0 행정은 이미 있을 가능성 높음 — conflict 무시
   await createFolder(adminPath, token)
-  const entityErr = await createFolder(entityPath, token)
-  if (entityErr && !entityErr.includes('conflict')) return { error: `사업자 폴더 생성 실패: ${entityErr}` }
   const contractErr = await createFolder(contractPath, token)
   if (contractErr && !contractErr.includes('conflict')) return { error: `계약 폴더 생성 실패: ${contractErr}` }
 

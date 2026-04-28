@@ -682,13 +682,17 @@ export async function createSaleForProject(projectId: string, data: {
       .select('short_name, name')
       .eq('id', data.entity_id)
       .single()
-    const entityKey = entity?.short_name || entity?.name
-    if (entityKey) {
+    if (entity?.name) {
+      const cleanName = entity.name.replace(/㈜|\(주\)|주식회사|유한회사|\(유\)/g, '').trim() || (entity.short_name ?? '')
+      // 같은 프로젝트 내 계약 순서 — 새 계약은 (현재 개수 + 1)
+      const { count } = await admin.from('sales').select('id', { count: 'exact', head: true }).eq('project_id', projectId)
+      const sequence = (count ?? 0) + 1
       const { createContractFolder } = await import('@/lib/dropbox')
       const r = await createContractFolder({
         projectFolderWebUrl: project.dropbox_url,
-        entityShortName: entityKey,
-        contractName: finalName,
+        entityFullName: cleanName,
+        revenue: data.revenue ?? null,
+        saleSequence: sequence,
       })
       if ('webUrl' in r) saleDropboxUrl = r.webUrl
       // 폴더 생성 실패해도 계약 row는 만들어짐 (사용자가 [📁 생성] 버튼으로 재시도 가능)
@@ -967,23 +971,29 @@ export async function ensureContractFolder(saleId: string): Promise<{ ok: true; 
   const admin = createAdminClient()
   const { data: sale } = await admin
     .from('sales')
-    .select('id, name, entity_id, project_id, dropbox_url')
+    .select('id, name, entity_id, project_id, dropbox_url, revenue, created_at')
     .eq('id', saleId)
     .single()
   if (!sale) return { error: '계약을 찾을 수 없음' }
   if (!sale.entity_id) return { error: '사업자(entity_id)가 지정되지 않음. 먼저 사업자 선택 필요.' }
   if (!sale.project_id) return { error: '프로젝트에 연결되지 않음' }
 
-  const [{ data: entity }, { data: project }] = await Promise.all([
+  const [{ data: entity }, { data: project }, { data: siblings }] = await Promise.all([
     admin.from('business_entities').select('short_name, name').eq('id', sale.entity_id).single(),
     admin.from('projects').select('dropbox_url').eq('id', sale.project_id).single(),
+    admin.from('sales').select('id, created_at').eq('project_id', sale.project_id).order('created_at'),
   ])
   if (!project?.dropbox_url) return { error: '프로젝트 Dropbox 폴더 없음' }
-  const entityKey = entity?.short_name || entity?.name
+
+  const cleanName = (entity?.name ?? '').replace(/㈜|\(주\)|주식회사|유한회사|\(유\)/g, '').trim()
+  const entityKey = cleanName || entity?.short_name || ''
   if (!entityKey) return { error: '사업자 이름 없음' }
 
-  // sale.dropbox_url 이미 있어도, 그게 프로젝트 폴더와 같으면 (= 별도 계약 폴더 아님)
-  // 새로 만들도록 진행. 다른 경로면 이미 별도 계약 폴더라 그대로 반환.
+  // 같은 프로젝트 내 계약 순서 (created_at 기준)
+  const idx = (siblings ?? []).findIndex(s => s.id === sale.id)
+  const sequence = idx >= 0 ? idx + 1 : 1
+
+  // sale.dropbox_url 이미 있고 프로젝트 폴더와 다르면 (= 별도 계약 폴더) 그대로
   if (sale.dropbox_url && sale.dropbox_url !== project.dropbox_url) {
     return { ok: true, webUrl: sale.dropbox_url }
   }
@@ -991,8 +1001,9 @@ export async function ensureContractFolder(saleId: string): Promise<{ ok: true; 
   const { createContractFolder } = await import('@/lib/dropbox')
   const r = await createContractFolder({
     projectFolderWebUrl: project.dropbox_url,
-    entityShortName: entityKey,
-    contractName: sale.name,
+    entityFullName: entityKey,
+    revenue: sale.revenue ?? null,
+    saleSequence: sequence,
   })
   if ('error' in r) return r
 
