@@ -11,6 +11,7 @@ interface CostItem {
   category: string
   vendor_id?: string | null
   is_paid?: boolean
+  due_date?: string | null
 }
 
 interface Vendor {
@@ -38,7 +39,7 @@ const OUTER_TEMPLATES = ['프리랜서', '외주용역(업체)', '재료비(제�
 const VENDOR_TYPES = ['프리랜서', '업체', '기타']
 
 type Category = '내부원가' | '외부원가'
-const EMPTY_FORM = { item: '', amount: '', memo: '', vendorId: '' }
+const EMPTY_FORM = { item: '', amount: '', memo: '', vendorId: '', dueDate: '' }
 
 export default function CostModal({ saleId, saleName, revenue, initialItems, vendors: initialVendors, onClose }: Props) {
   const [items, setItems] = useState<CostItem[]>(
@@ -139,6 +140,7 @@ export default function CostModal({ saleId, saleName, revenue, initialItems, ven
       sale_id: saleId, item: form.item, amount: Number(form.amount),
       memo: form.memo || null, category,
       vendor_id: form.vendorId || null,
+      due_date: category === '외부원가' && form.dueDate ? form.dueDate : null,
     }).select().single()
     if (!error && data) {
       setItems(prev => [...prev, { ...data, category }])
@@ -176,6 +178,13 @@ export default function CostModal({ saleId, saleName, revenue, initialItems, ven
       is_paid: !isPaid, paid_at: !isPaid ? new Date().toISOString() : null,
     }).eq('id', id)
     setItems(prev => prev.map(i => i.id === id ? { ...i, is_paid: !isPaid } : i))
+  }
+
+  const handleDueDateChange = async (id: string, value: string) => {
+    const supabase = createClient()
+    const dueDate = value || null
+    await supabase.from('sale_costs').update({ due_date: dueDate }).eq('id', id)
+    setItems(prev => prev.map(i => i.id === id ? { ...i, due_date: dueDate } : i))
   }
 
   const handleClose = () => { router.refresh(); onClose() }
@@ -261,7 +270,7 @@ export default function CostModal({ saleId, saleName, revenue, initialItems, ven
           <div className="flex gap-1.5 mb-2 flex-wrap">
             {templates.map(t => (
               <button key={t}
-                onClick={() => { setAddingIn(category); setRatePickerFor(null); setForm({ item: t, amount: '', memo: '', vendorId: '' }) }}
+                onClick={() => { setAddingIn(category); setRatePickerFor(null); setForm({ item: t, amount: '', memo: '', vendorId: '', dueDate: '' }) }}
                 className="text-xs px-2.5 py-1 rounded-full border border-dashed border-gray-300 text-gray-400 hover:border-yellow-400 hover:text-yellow-700 transition-colors"
               >
                 + {t}
@@ -275,7 +284,7 @@ export default function CostModal({ saleId, saleName, revenue, initialItems, ven
           <div className="flex gap-1.5 mb-2 flex-wrap">
             {vendors.map(v => (
               <button key={v.id}
-                onClick={() => { setAddingIn(category); setRatePickerFor(null); setForm({ item: v.name, amount: '', memo: '', vendorId: v.id }) }}
+                onClick={() => { setAddingIn(category); setRatePickerFor(null); setForm({ item: v.name, amount: '', memo: '', vendorId: v.id, dueDate: '' }) }}
                 className="text-xs px-2.5 py-1 rounded-full border border-gray-200 text-gray-500 hover:border-yellow-400 hover:text-yellow-700 transition-colors bg-white"
               >
                 {v.name}
@@ -323,14 +332,23 @@ export default function CostModal({ saleId, saleName, revenue, initialItems, ven
                 </button>
               )}
               {category === '외부원가' && editingItemId !== item.id && (
-                <button
-                  onClick={() => togglePaid(item.id, item.is_paid ?? false)}
-                  className={`text-xs px-2 py-0.5 rounded-full flex-shrink-0 transition-colors ${
-                    item.is_paid ? 'bg-green-100 text-green-600' : 'bg-orange-50 text-orange-500 hover:bg-orange-100'
-                  }`}
-                >
-                  {item.is_paid ? '지급완료' : '미지급'}
-                </button>
+                <>
+                  <input
+                    type="date"
+                    value={item.due_date ?? ''}
+                    onChange={e => handleDueDateChange(item.id, e.target.value)}
+                    title="지급 예정일"
+                    className="text-xs px-1.5 py-0.5 rounded border border-gray-200 text-gray-500 bg-white flex-shrink-0 focus:outline-none focus:border-yellow-400 w-32"
+                  />
+                  <button
+                    onClick={() => togglePaid(item.id, item.is_paid ?? false)}
+                    className={`text-xs px-2 py-0.5 rounded-full flex-shrink-0 transition-colors ${
+                      item.is_paid ? 'bg-green-100 text-green-600' : 'bg-orange-50 text-orange-500 hover:bg-orange-100'
+                    }`}
+                  >
+                    {item.is_paid ? '지급완료' : '미지급'}
+                  </button>
+                </>
               )}
               <button
                 onClick={() => handleDelete(item.id)}
@@ -422,6 +440,12 @@ export default function CostModal({ saleId, saleName, revenue, initialItems, ven
                 onChange={e => setForm(f => ({ ...f, memo: e.target.value }))}
                 className="flex-1 px-3 py-1.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-yellow-400 bg-white"
               />
+              {category === '외부원가' && (
+                <input type="date" value={form.dueDate} title="지급 예정일"
+                  onChange={e => setForm(f => ({ ...f, dueDate: e.target.value }))}
+                  className="w-36 px-2 py-1.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-yellow-400 bg-white"
+                />
+              )}
               <button onClick={() => handleAdd(category)} disabled={loading || !form.item || !form.amount}
                 className="px-4 py-1.5 rounded-lg text-xs font-semibold disabled:opacity-40 hover:opacity-80 transition-all"
                 style={{ backgroundColor: '#FFCE00', color: '#121212' }}

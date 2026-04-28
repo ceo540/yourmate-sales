@@ -12,6 +12,8 @@ import SalarySettingsSection from './components/SalarySettingsSection'
 import OneOnOneSection from './components/OneOnOneSection'
 import DocsSection from './components/DocsSection'
 import OrgTreeView from './components/OrgTreeView'
+import NotificationsTab from './components/NotificationsTab'
+import type { NotificationSetting } from '@/lib/notification-settings'
 
 interface UserProfile {
   id: string
@@ -30,6 +32,7 @@ interface UserProfile {
   bank_name?: string | null
   account_number?: string | null
   birth_date?: string | null
+  channeltalk_user_id?: string | null
 }
 
 interface SalaryRecord {
@@ -112,15 +115,16 @@ interface Props {
   notionTemplateUrl: string
   orgDepts: DeptRow[]
   employeeCards: EmployeeCard[]
+  notificationSettings: NotificationSetting[]
 }
 
-export default function AdminClient({ users: initialUsers, entities: initialEntities, permissionsByRole: initialPerms, usedDaysMap, initialDaysMap, oneOnOnes: initialOneOnOnes, docRequests: initialDocRequests, salaryRecords: initialSalaryRecords, onboardingItems: initialOnboardingItems, notionTemplateUrl: initialNotionUrl, orgDepts: initialOrgDepts, employeeCards: initialEmployeeCards }: Props) {
+export default function AdminClient({ users: initialUsers, entities: initialEntities, permissionsByRole: initialPerms, usedDaysMap, initialDaysMap, oneOnOnes: initialOneOnOnes, docRequests: initialDocRequests, salaryRecords: initialSalaryRecords, onboardingItems: initialOnboardingItems, notionTemplateUrl: initialNotionUrl, orgDepts: initialOrgDepts, employeeCards: initialEmployeeCards, notificationSettings }: Props) {
   const router = useRouter()
   const [, startTransition] = useTransition()
   const [users, setUsers] = useState(initialUsers)
 
   // 사업자 관리 상태
-  const [activeTab, setActiveTab] = useState<'team' | 'entities' | 'permissions' | 'hr' | 'api-usage'>('team')
+  const [activeTab, setActiveTab] = useState<'team' | 'entities' | 'permissions' | 'hr' | 'api-usage' | 'notifications'>('team')
   const [editingJoinId, setEditingJoinId] = useState<string | null>(null)
   const [joinDateVal, setJoinDateVal] = useState('')
   const [editingInitialId, setEditingInitialId] = useState<string | null>(null)
@@ -170,7 +174,7 @@ export default function AdminClient({ users: initialUsers, entities: initialEnti
     <div className="space-y-6">
       {/* 탭 */}
       <div className="flex flex-wrap gap-1 bg-gray-100 p-1 rounded-xl w-fit">
-        {([['team', '팀원 관리'], ['hr', '직원 관리'], ['entities', '사업자 관리'], ['permissions', '권한 안내'], ['api-usage', 'API 사용료']] as const).map(([key, label]) => (
+        {([['team', '팀원 관리'], ['hr', '직원 관리'], ['entities', '사업자 관리'], ['permissions', '권한 안내'], ['notifications', '알림 설정'], ['api-usage', 'API 사용료']] as const).map(([key, label]) => (
           <button
             key={key}
             onClick={() => setActiveTab(key)}
@@ -686,6 +690,17 @@ export default function AdminClient({ users: initialUsers, entities: initialEnti
       {activeTab === 'entities' && <EntitiesTab entities={entities} setEntities={setEntities} />}
 
       {activeTab === 'api-usage' && <ApiUsageTab />}
+
+      {activeTab === 'notifications' && (
+        <NotificationsTab
+          settings={notificationSettings}
+          profiles={users.map(u => ({
+            id: u.id,
+            name: u.name,
+            channeltalk_user_id: u.channeltalk_user_id ?? null,
+          }))}
+        />
+      )}
 
     </div>
   )

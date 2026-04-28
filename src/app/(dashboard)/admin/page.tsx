@@ -2,6 +2,7 @@ import { createClient } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
 import AdminClient from './AdminClient'
 import { parseDepartments } from '@/lib/utils'
+import { listSettings } from '@/lib/notification-settings'
 
 export default async function AdminPage() {
   const supabase = await createClient()
@@ -18,7 +19,7 @@ export default async function AdminPage() {
   if (profile?.role !== 'admin') redirect('/dashboard')
 
   const [{ data: profilesRaw }, { data: entities }] = await Promise.all([
-    supabase.from('profiles').select('id, name, departments, role, created_at, join_date, entity_id, phone, emergency_name, emergency_phone, bank_name, account_number, birth_date').order('created_at', { ascending: false }),
+    supabase.from('profiles').select('id, name, departments, role, created_at, join_date, entity_id, phone, emergency_name, emergency_phone, bank_name, account_number, birth_date, channeltalk_user_id').order('created_at', { ascending: false }),
     supabase.from('business_entities').select('id, name, short_name, is_primary, usage_note, status, business_number, representative_name, business_type, business_item, address, email, phone, corporate_number, bank_name, account_number, account_holder').order('is_primary', { ascending: false }).order('name'),
   ])
 
@@ -78,6 +79,8 @@ export default async function AdminPage() {
     usedDaysMap[memberId] = (usedDaysMap[memberId] ?? 0) + initDays
   }
 
+  const notificationSettings = await listSettings().catch(() => [])
+
   return (
     <div className="max-w-3xl mx-auto">
       <div className="mb-6">
@@ -97,6 +100,7 @@ export default async function AdminPage() {
         notionTemplateUrl={notionTemplateUrl?.value ?? ''}
         orgDepts={orgDepts ?? []}
         employeeCards={employeeCards ?? []}
+        notificationSettings={notificationSettings}
       />
     </div>
   )
