@@ -460,6 +460,40 @@ export const TOOLS: Anthropic.Tool[] = [
     },
   },
   {
+    name: 'update_overview',
+    description: '현재 프로젝트의 자동 개요(overview_summary)를 직접 markdown으로 덮어씁니다. 사용자가 직접 작성한 개요를 저장하거나 기존 + 추가분을 합쳐서 보낼 때 사용. 자동 분석 원하면 regenerate_overview.',
+    input_schema: {
+      type: 'object' as const,
+      properties: {
+        content: { type: 'string', description: '새로 저장할 markdown 전문. 빈 문자열이면 삭제.' },
+      },
+      required: ['content'],
+    },
+  },
+  {
+    name: 'update_lead_summary',
+    description: '리드 요약(summary_cache)을 직접 markdown/plain text로 덮어씁니다. 사용자가 직접 작성한 정리 내용을 저장할 때 사용. 자동 분석 원하면 regenerate_lead_summary.',
+    input_schema: {
+      type: 'object' as const,
+      properties: {
+        lead_id: { type: 'string', description: '리드 UUID 또는 lead_id (예: LEAD20260413-0001)' },
+        content: { type: 'string', description: '저장할 markdown 또는 plain text' },
+      },
+      required: ['lead_id', 'content'],
+    },
+  },
+  {
+    name: 'regenerate_lead_summary',
+    description: '리드의 요약(summary_cache)을 최초 문의 + 소통 내역 기반으로 재생성합니다. 사용자가 "리드 요약 다시 뽑아줘", "정리 갱신" 등이라고 하면 호출.',
+    input_schema: {
+      type: 'object' as const,
+      properties: {
+        lead_id: { type: 'string', description: '리드 UUID 또는 lead_id (예: LEAD20260413-0001)' },
+      },
+      required: ['lead_id'],
+    },
+  },
+  {
     name: 'create_calendar_event',
     description: '구글 캘린더에 일정을 등록합니다. 행사, 배송, 미팅, 마감일 등.',
     input_schema: {

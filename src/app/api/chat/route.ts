@@ -11,7 +11,8 @@ const MUTATING_TOOLS = new Set([
   'update_brief_note', 'set_dropbox_url',
   'create_calendar_event',
   'create_project_task', 'complete_task', 'update_task', 'delete_task',
-  'regenerate_overview', 'update_pending_discussion', 'regenerate_pending_discussion',
+  'regenerate_overview', 'update_overview', 'update_pending_discussion', 'regenerate_pending_discussion',
+  'update_lead_summary', 'regenerate_lead_summary',
   'quick_create_customer', 'merge_customers', 'match_sale_to_customer', 'match_lead_to_customer',
 ])
 import { createClient } from '@/lib/supabase/server'
@@ -1300,6 +1301,72 @@ async function executeTool(name: string, input: Record<string, unknown>, userRol
     return { success: true, summary: result.summary, message: '협의사항을 재분석했어.' }
   }
 
+  if (name === 'update_overview') {
+    if (!projectId) return { error: '프로젝트 페이지에서만 사용 가능해.' }
+    const adminDb = createAdminClient()
+    const content = (input.content as string) ?? ''
+    const { error } = await adminDb.from('projects')
+      .update({ overview_summary: content || null, updated_at: new Date().toISOString() })
+      .eq('id', projectId)
+    if (error) return { error: error.message }
+    revalidatePath(`/projects/${projectId}`)
+    return { success: true, message: '개요를 업데이트했어.' }
+  }
+
+  if (name === 'update_lead_summary') {
+    const adminDb = createAdminClient()
+    const leadInput = (input.lead_id as string)?.trim()
+    if (!leadInput) return { error: 'lead_id 필수.' }
+    const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(leadInput)
+    const { data: lead } = isUuid
+      ? await adminDb.from('leads').select('id').eq('id', leadInput).maybeSingle()
+      : await adminDb.from('leads').select('id').eq('lead_id', leadInput).maybeSingle()
+    if (!lead) return { error: `lead_id ${leadInput} 존재하지 않음. search_leads로 다시 찾아줘.` }
+    const content = (input.content as string) ?? ''
+    const { error } = await adminDb.from('leads')
+      .update({ summary_cache: content || null, summary_updated_at: new Date().toISOString() })
+      .eq('id', lead.id)
+    if (error) return { error: error.message }
+    revalidatePath('/leads')
+    return { success: true, message: '리드 요약을 업데이트했어.' }
+  }
+
+  if (name === 'regenerate_lead_summary') {
+    const adminDb = createAdminClient()
+    const leadInput = (input.lead_id as string)?.trim()
+    if (!leadInput) return { error: 'lead_id 필수.' }
+    const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(leadInput)
+    const { data: lead } = isUuid
+      ? await adminDb.from('leads').select('id, initial_content').eq('id', leadInput).maybeSingle()
+      : await adminDb.from('leads').select('id, initial_content').eq('lead_id', leadInput).maybeSingle()
+    if (!lead) return { error: `lead_id ${leadInput} 존재하지 않음.` }
+    const { data: logs } = await adminDb
+      .from('project_logs')
+      .select('content, log_type, contacted_at')
+      .eq('lead_id', lead.id)
+      .order('contacted_at', { ascending: false })
+      .limit(30)
+    const baseUrl = process.env.NEXT_PUBLIC_SITE_URL || 'https://yourmate-sales.vercel.app'
+    try {
+      const r = await fetch(`${baseUrl}/api/lead-summary`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          lead_id: lead.id,
+          initial_content: lead.initial_content ?? null,
+          logs: logs ?? [],
+          force: true,
+        }),
+      })
+      const d = await r.json()
+      if (d.error) return { error: d.error }
+      revalidatePath('/leads')
+      return { success: true, message: '리드 요약을 재생성했어.' }
+    } catch (e: unknown) {
+      return { error: e instanceof Error ? e.message : '리드 요약 재생성 실패' }
+    }
+  }
+
   if (name === 'create_calendar_event') {
     const calKey = (input.calendar_key as string) || 'main'
     const title = input.title as string
@@ -1459,7 +1526,8 @@ export async function POST(req: NextRequest) {
 1. 오늘 날짜는 ${today} (ISO: ${todayIso}). "내일/다음주" 등 상대 날짜는 반드시 이 날짜 기준 계산. 절대 다른 연도(2025 등)로 추정 금지.
 2. 사용자가 할일 추가/수정/완료/삭제, 개요 정리, 협의사항 갱신을 요청하면 **반드시 도구를 호출**해라. 다음은 모두 실제 호출 가능한 도구다:
    - create_project_task / update_task / complete_task / delete_task
-   - regenerate_overview / update_pending_discussion / regenerate_pending_discussion
+   - regenerate_overview / update_overview / update_pending_discussion / regenerate_pending_discussion
+   - update_lead_summary / regenerate_lead_summary (리드 요약 박스)
    - update_project_status / add_project_log
 3. **절대 금지**: "지원되지 않습니다", "기능이 없어요", "직접 처리해주세요", "시스템상 제한되고 있습니다", "화면에만 보여드린 것" 같은 거짓 거부 답변. 항상 도구를 먼저 호출해.
 4. 도구 호출이 실제로 에러를 반환하면 그 에러 메시지를 그대로 사용자에게 전달. 추측·각색 금지.
