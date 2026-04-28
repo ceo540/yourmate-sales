@@ -45,25 +45,36 @@ export default async function SalesPage() {
 
   const childSaleIds = new Set((childRentalRows ?? []).map((r: any) => r.sale_id as string))
 
-  // 로드된 매출 건에 해당하는 원가만 조회 (전체 X)
+  // 로드된 매출 건에 해당하는 원가·결제 일정·고객 추가 조회 (FK 조인 금지 정책상 별도 쿼리 + JS 조인)
   const saleIds = (salesRaw ?? []).filter((s: any) => !childSaleIds.has(s.id)).map((s: any) => s.id)
-  const { data: allCosts } = saleIds.length > 0
-    ? await supabase.from('sale_costs').select('*').in('sale_id', saleIds)
-    : { data: [] }
+  const customerIds = Array.from(new Set((salesRaw ?? []).map((s: any) => s.customer_id).filter(Boolean)))
+  const [{ data: allCosts }, { data: allSchedules }, { data: customersList }] = await Promise.all([
+    saleIds.length > 0 ? supabase.from('sale_costs').select('*').in('sale_id', saleIds) : Promise.resolve({ data: [] }),
+    saleIds.length > 0 ? supabase.from('payment_schedules').select('id, sale_id, label, amount, due_date, is_received, received_date, sort_order').in('sale_id', saleIds).order('sort_order') : Promise.resolve({ data: [] }),
+    customerIds.length > 0 ? supabase.from('customers').select('id, name').in('id', customerIds) : Promise.resolve({ data: [] }),
+  ])
 
   const profileMap = createProfileMap(profiles)
-  const entityMap = Object.fromEntries((entities ?? []).map(e => [e.id, { id: e.id, name: e.name }]))
+  const entityMap = Object.fromEntries((entities ?? []).map(e => [e.id, { id: e.id, name: e.name, entity_type: e.entity_type ?? null }]))
+  const customerMap = Object.fromEntries(((customersList ?? []) as any[]).map(c => [c.id, { id: c.id, name: c.name }]))
   const costsMap: Record<string, any[]> = {}
   for (const cost of (allCosts ?? [])) {
     if (!costsMap[cost.sale_id]) costsMap[cost.sale_id] = []
     costsMap[cost.sale_id].push(cost)
+  }
+  const schedulesMap: Record<string, any[]> = {}
+  for (const s of (allSchedules ?? [])) {
+    if (!schedulesMap[s.sale_id]) schedulesMap[s.sale_id] = []
+    schedulesMap[s.sale_id].push(s)
   }
 
   const sales = (salesRaw ?? []).filter((s: any) => !childSaleIds.has(s.id)).map((s: any) => ({
     ...s,
     assignee: s.assignee_id ? (profileMap[s.assignee_id] ?? null) : null,
     entity: s.entity_id ? (entityMap[s.entity_id] ?? null) : null,
+    customer: s.customer_id ? (customerMap[s.customer_id] ?? null) : null,
     sale_costs: costsMap[s.id] ?? [],
+    payment_schedules: schedulesMap[s.id] ?? [],
   }))
 
   return (

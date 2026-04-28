@@ -1,8 +1,10 @@
 'use client'
 import { useState, useMemo } from 'react'
+import Link from 'next/link'
 import { DEPT_SERVICE_GROUPS } from '@/types'
-import { updateEntityType } from './actions'
-import { SERVICE_COLOR_BADGE as SERVICE_COLORS } from '@/lib/constants'
+import { updateEntityType, updateSaleInline, bulkUpdateSalesStage } from './actions'
+import { SERVICE_COLOR_BADGE as SERVICE_COLORS, CONTRACT_STAGE_BADGE } from '@/lib/constants'
+import { computePaymentStatus, PAYMENT_STATUS_BADGE, getLimitForEntity, type PaymentStatus } from '@/lib/contract-limits'
 
 interface CostItem {
   id: string
@@ -10,6 +12,16 @@ interface CostItem {
   amount: number
   memo?: string | null
   category: string
+}
+
+interface PaymentSchedule {
+  id: string
+  label: string
+  amount: number
+  due_date: string | null
+  is_received: boolean
+  received_date?: string | null
+  sort_order?: number
 }
 
 interface Sale {
@@ -27,8 +39,10 @@ interface Sale {
   client_dept?: string | null
   created_at: string
   assignee: { id: string; name: string } | null
-  entity: { id: string; name: string } | null
+  entity: { id: string; name: string; entity_type?: string | null } | null
+  customer?: { id: string; name: string } | null
   sale_costs: CostItem[]
+  payment_schedules: PaymentSchedule[]
 }
 
 interface BusinessEntity {
@@ -37,6 +51,16 @@ interface BusinessEntity {
   entity_type?: string | null
   business_number?: string | null
 }
+
+const STAGE_OPTIONS = ['계약', '착수', '선금', '중도금', '완수', '계산서발행', '잔금'] as const
+const PAYMENT_FILTERS: { value: PaymentStatus | 'all'; label: string }[] = [
+  { value: 'all', label: '전체' },
+  { value: 'overdue', label: '🔴 지연' },
+  { value: 'upcoming', label: '🔵 이번 주 예정' },
+  { value: 'partial', label: '🟡 부분 입금' },
+  { value: 'paid', label: '🟢 완납' },
+  { value: 'none', label: '⚪ 일정 없음' },
+]
 
 interface Props {
   sales: Sale[]
@@ -135,11 +159,16 @@ export default function SalesClient({ sales, entities, isAdmin }: Props) {
   const [filterPeriod, setFilterPeriod] = useState('all')
   const [filterService, setFilterService] = useState<string>('all')
   const [filterEntity, setFilterEntity] = useState<string>('all')
+  const [searchQuery, setSearchQuery] = useState('')
+  const [paymentFilter, setPaymentFilter] = useState<PaymentStatus | 'all'>('all')
   const [entityTypes, setEntityTypes] = useState<Record<string, string>>(() => {
     const map: Record<string, string> = {}
     for (const e of entities) map[e.id] = e.entity_type ?? '일반기업'
     return map
   })
+  const today = new Date().toISOString().slice(0, 10)
+  const weekStr = (() => { const d = new Date(today); d.setDate(d.getDate() + 7); return d.toISOString().slice(0, 10) })()
+  const thisMonth = today.slice(0, 7)
 
   const filtered = sales
     .filter(s => filterYear ? matchesFilter(s, filterYear, filterPeriod) : true)
@@ -151,6 +180,16 @@ export default function SalesClient({ sales, entities, isAdmin }: Props) {
       return s.service_type === filterService
     })
     .filter(s => filterEntity === 'all' ? true : (s.entity?.id ?? '') === filterEntity)
+    .filter(s => {
+      if (!searchQuery.trim()) return true
+      const q = searchQuery.trim().toLowerCase()
+      return (s.name ?? '').toLowerCase().includes(q)
+        || (s.client_org ?? '').toLowerCase().includes(q)
+        || (s.customer?.name ?? '').toLowerCase().includes(q)
+        || (s.entity?.name ?? '').toLowerCase().includes(q)
+        || (s.client_dept ?? '').toLowerCase().includes(q)
+    })
+    .filter(s => paymentFilter === 'all' ? true : computePaymentStatus(s.payment_schedules ?? [], today) === paymentFilter)
 
   // 전사 통계
   const totalRevenue = filtered.reduce((s, p) => s + (p.revenue ?? 0), 0)
@@ -255,8 +294,31 @@ export default function SalesClient({ sales, entities, isAdmin }: Props) {
           </select>
         )}
       </div>
-      {isAdmin && <ExportButton />}
+      <div className="flex items-center gap-2">
+        <button onClick={() => downloadSalesCsv(filtered)}
+          className="text-xs px-2.5 py-1.5 border border-gray-200 rounded-lg text-gray-600 hover:bg-gray-50">
+          📥 CSV
+        </button>
+        {isAdmin && <ExportButton />}
       </div>
+      </div>
+
+      {/* ── 통합 검색 + 결제 상태 필터 ── */}
+      <div className="flex items-center gap-2 mb-4 flex-wrap">
+        <input value={searchQuery} onChange={e => setSearchQuery(e.target.value)}
+          placeholder="🔍 건명·발주처·고객사·사업자·부서 통합 검색"
+          className="flex-1 min-w-[260px] px-3 py-2 rounded-lg border border-gray-200 text-sm bg-white focus:outline-none focus:border-yellow-400" />
+        <select value={paymentFilter} onChange={e => setPaymentFilter(e.target.value as PaymentStatus | 'all')}
+          className="px-3 py-2 rounded-lg border border-gray-200 text-sm bg-white focus:outline-none focus:border-yellow-400 text-gray-700">
+          {PAYMENT_FILTERS.map(p => <option key={p.value} value={p.value}>{p.label}</option>)}
+        </select>
+      </div>
+
+      {/* ── 결제·외주 요약 카드 5개 ── */}
+      <PaymentSummaryCards sales={filtered} today={today} weekStr={weekStr} thisMonth={thisMonth} onCardClick={setPaymentFilter} />
+
+      {/* ── 계약 목록 표 (행별 인라인 편집) ── */}
+      <ContractListTable sales={filtered} today={today} />
 
       {/* ── 매출 통계 ── */}
       <div>
@@ -416,4 +478,159 @@ export default function SalesClient({ sales, entities, isAdmin }: Props) {
 
     </>
   )
+}
+
+/* ── 결제·외주 요약 카드 5개 ────────────────────────── */
+function PaymentSummaryCards({ sales, today, weekStr, thisMonth, onCardClick }: {
+  sales: Sale[]; today: string; weekStr: string; thisMonth: string
+  onCardClick: (status: PaymentStatus | 'all') => void
+}) {
+  const overdue = { count: 0, amount: 0 }
+  const upcoming = { count: 0, amount: 0 }
+  let monthRevenue = 0
+  let unpaid = 0
+  let totalCost = 0
+  for (const s of sales) {
+    if (s.inflow_date?.startsWith(thisMonth)) monthRevenue += s.revenue ?? 0
+    for (const sch of s.payment_schedules ?? []) {
+      if (sch.is_received) continue
+      if (sch.due_date && sch.due_date < today) { overdue.count++; overdue.amount += sch.amount }
+      else if (sch.due_date && sch.due_date >= today && sch.due_date <= weekStr) { upcoming.count++; upcoming.amount += sch.amount }
+      unpaid += sch.amount
+    }
+    totalCost += (s.sale_costs ?? []).reduce((a, c) => a + c.amount, 0)
+  }
+  const cards = [
+    { label: '🔴 지연 입금', sub: `${overdue.count}건`, value: overdue.amount, action: () => onCardClick('overdue'), border: 'border-red-200', accent: 'text-red-600' },
+    { label: '🔵 이번 주 입금 예정', sub: `${upcoming.count}건`, value: upcoming.amount, action: () => onCardClick('upcoming'), border: 'border-blue-200', accent: 'text-blue-600' },
+    { label: '💰 이번 달 매출', sub: `${thisMonth}`, value: monthRevenue, border: 'border-yellow-200', accent: 'text-yellow-700' },
+    { label: '⚠️ 미수금 합계', sub: '결제 일정 미입금', value: unpaid, border: 'border-amber-200', accent: 'text-amber-600' },
+    { label: '💸 외주비 합계', sub: '필터 결과', value: totalCost, border: 'border-purple-200', accent: 'text-purple-600' },
+  ]
+  return (
+    <div className="grid grid-cols-2 md:grid-cols-5 gap-2 mb-4">
+      {cards.map(c => (
+        <button key={c.label} onClick={c.action} disabled={!c.action}
+          className={`text-left bg-white rounded-xl border ${c.border} p-3 ${c.action ? 'hover:bg-gray-50 cursor-pointer' : 'cursor-default'} transition-colors`}>
+          <p className="text-[11px] text-gray-500">{c.label}</p>
+          <p className={`text-lg font-bold mt-1 ${c.accent}`}>{c.value.toLocaleString()}원</p>
+          <p className="text-[10px] text-gray-400 mt-0.5">{c.sub}</p>
+        </button>
+      ))}
+    </div>
+  )
+}
+
+/* ── 계약 목록 표 (행별 인라인 편집) ────────────────────────── */
+function ContractListTable({ sales, today }: { sales: Sale[]; today: string }) {
+  const [busy, setBusy] = useState<string | null>(null)
+  const [stages, setStages] = useState<Record<string, string>>(() =>
+    Object.fromEntries(sales.map(s => [s.id, s.contract_stage ?? '계약']))
+  )
+  // 신규 sales 들어왔을 때 stages 동기화 — 단순 로직: filtered 변하면 새로
+  // (useState 초기값은 첫 렌더만이라 sales 변하면 추가 필요. 일단 prop sales 적용)
+  async function changeStage(saleId: string, stage: string) {
+    setBusy(saleId)
+    setStages(prev => ({ ...prev, [saleId]: stage }))
+    await bulkUpdateSalesStage([saleId], stage)
+    setBusy(null)
+  }
+
+  return (
+    <div className="bg-white rounded-xl border border-gray-200 mb-6">
+      <div className="px-5 py-3 border-b border-gray-100 flex items-center justify-between">
+        <h2 className="text-sm font-semibold text-gray-900">📜 계약 목록 ({sales.length}건)</h2>
+      </div>
+      <div className="overflow-x-auto">
+        <table className="w-full min-w-[1100px]">
+          <thead className="bg-gray-50/60 border-b border-gray-100">
+            <tr>
+              <th className="text-left text-[11px] font-semibold text-gray-500 px-3 py-2">건명</th>
+              <th className="text-left text-[11px] font-semibold text-gray-500 px-3 py-2">발주처/부서</th>
+              <th className="text-left text-[11px] font-semibold text-gray-500 px-3 py-2">우리 사업자</th>
+              <th className="text-left text-[11px] font-semibold text-gray-500 px-3 py-2 w-32">단계</th>
+              <th className="text-left text-[11px] font-semibold text-gray-500 px-3 py-2 w-28">결제</th>
+              <th className="text-right text-[11px] font-semibold text-gray-500 px-3 py-2">매출</th>
+              <th className="text-right text-[11px] font-semibold text-gray-500 px-3 py-2">외주</th>
+              <th className="text-right text-[11px] font-semibold text-gray-500 px-3 py-2">마진</th>
+              <th className="text-left text-[11px] font-semibold text-gray-500 px-3 py-2 w-20">유입</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-gray-50">
+            {sales.length === 0 && (
+              <tr><td colSpan={9} className="py-10 text-center text-sm text-gray-400">결과 없음</td></tr>
+            )}
+            {sales.map(s => {
+              const stage = stages[s.id] ?? s.contract_stage ?? '계약'
+              const status = computePaymentStatus(s.payment_schedules ?? [], today)
+              const badge = PAYMENT_STATUS_BADGE[status]
+              const cost = (s.sale_costs ?? []).reduce((a, c) => a + c.amount, 0)
+              const margin = (s.revenue ?? 0) - cost
+              return (
+                <tr key={s.id} className="hover:bg-yellow-50/30">
+                  <td className="px-3 py-2 text-xs">
+                    <Link href={`/sales/${s.id}`} className="text-gray-800 hover:text-yellow-700 hover:underline">{s.name}</Link>
+                  </td>
+                  <td className="px-3 py-2 text-xs">
+                    {s.customer
+                      ? <Link href={`/customers?org=${s.customer.id}`} className="text-gray-700 hover:underline">🏛 {s.customer.name}</Link>
+                      : <span className="text-gray-400">{s.client_org || '—'}</span>}
+                    {s.client_dept && <span className="text-gray-400 ml-1">· {s.client_dept}</span>}
+                  </td>
+                  <td className="px-3 py-2 text-xs text-gray-700">{s.entity?.name || <span className="text-gray-300">—</span>}</td>
+                  <td className="px-3 py-2">
+                    <select value={stage} onChange={e => changeStage(s.id, e.target.value)} disabled={busy === s.id}
+                      className={`text-[10px] px-2 py-0.5 rounded-full border-0 outline-none ${CONTRACT_STAGE_BADGE[stage] ?? 'bg-gray-100 text-gray-500'} disabled:opacity-50`}>
+                      {STAGE_OPTIONS.map(o => <option key={o} value={o}>{o}</option>)}
+                    </select>
+                  </td>
+                  <td className="px-3 py-2">
+                    <span className={`text-[10px] px-2 py-0.5 rounded-full ${badge.className}`}>{badge.label}</span>
+                  </td>
+                  <td className="px-3 py-2 text-right text-xs font-mono text-gray-800">{(s.revenue ?? 0).toLocaleString()}</td>
+                  <td className="px-3 py-2 text-right text-xs font-mono text-gray-500">{cost > 0 ? cost.toLocaleString() : '—'}</td>
+                  <td className={`px-3 py-2 text-right text-xs font-mono ${margin >= 0 ? 'text-green-600' : 'text-red-500'}`}>{margin.toLocaleString()}</td>
+                  <td className="px-3 py-2 text-[10px] text-gray-500">{s.inflow_date ?? '—'}</td>
+                </tr>
+              )
+            })}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  )
+}
+
+/* ── CSV 다운로드 ────────────────────────── */
+function downloadSalesCsv(sales: Sale[]) {
+  const headers = ['건명', '발주처', '부서', '우리 사업자', '단계', '결제 상태', '매출', '외주비', '마진', '유입일']
+  const today = new Date().toISOString().slice(0, 10)
+  const rows = sales.map(s => {
+    const status = computePaymentStatus(s.payment_schedules ?? [], today)
+    const cost = (s.sale_costs ?? []).reduce((a, c) => a + c.amount, 0)
+    const margin = (s.revenue ?? 0) - cost
+    return [
+      s.name ?? '',
+      s.customer?.name ?? s.client_org ?? '',
+      s.client_dept ?? '',
+      s.entity?.name ?? '',
+      s.contract_stage ?? '',
+      PAYMENT_STATUS_BADGE[status].label.replace(/[🟢🟡🔵🔴⚪️ ]/g, '').trim(),
+      String(s.revenue ?? 0),
+      String(cost),
+      String(margin),
+      s.inflow_date ?? '',
+    ]
+  })
+  const csv = [headers, ...rows].map(r =>
+    r.map(c => `"${String(c).replace(/"/g, '""')}"`).join(',')
+  ).join('\n')
+  const bom = '﻿'  // UTF-8 BOM (한글 Excel 인식)
+  const blob = new Blob([bom + csv], { type: 'text/csv;charset=utf-8' })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = `계약목록_${today}.csv`
+  a.click()
+  URL.revokeObjectURL(url)
 }
