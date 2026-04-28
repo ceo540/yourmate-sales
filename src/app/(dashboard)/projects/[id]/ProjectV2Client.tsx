@@ -1894,9 +1894,12 @@ type Analysis = {
   revenue: number | null
   client_org: string | null
   client_dept: string | null
+  supplier_name: string | null
   payment_schedules: { label: string; amount: number; due_date: string | null }[]
   matched_customer_id: string | null
   matched_customer_name: string | null
+  matched_entity_id: string | null
+  matched_entity_name: string | null
   notes: string | null
 }
 
@@ -1947,11 +1950,15 @@ function FinalQuoteMapper({ sale, projectId, onChange }: { sale: Contract; proje
       client_org: analysis.client_org,
       client_dept: analysis.client_dept,
       customer_id: analysis.matched_customer_id,
+      entity_id: analysis.matched_entity_id,
       payment_schedules: analysis.payment_schedules,
       replace_schedules: false,
     }, projectId)
     setBusy(false)
     if ('error' in r) { alert('적용 실패: ' + r.error); return }
+    if ('folder_created' in r && r.folder_created) {
+      alert('적용 완료. 계약 폴더 자동 생성됨.')
+    }
     setAnalysis(null); onChange()
   }
 
@@ -1984,6 +1991,13 @@ function FinalQuoteMapper({ sale, projectId, onChange }: { sale: Contract; proje
           <table className="w-full text-[11px]">
             <tbody>
               <tr><td className="text-gray-500 pr-2 align-top">매출액</td><td className="font-mono text-gray-800">{analysis.revenue ? fmtMoney(analysis.revenue) + '원' : '미추출'}</td></tr>
+              <tr><td className="text-gray-500 pr-2 align-top">우리 사업자</td><td className="text-gray-800">
+                {analysis.supplier_name || '미추출'}
+                {analysis.matched_entity_id
+                  ? <span className="ml-2 text-green-600">✓ 시스템 매칭: {analysis.matched_entity_name}</span>
+                  : analysis.supplier_name && <span className="ml-2 text-amber-600">⚠️ business_entities에 없음</span>
+                }
+              </td></tr>
               <tr><td className="text-gray-500 pr-2 align-top">기관</td><td className="text-gray-800">
                 {analysis.client_org || '미추출'}
                 {analysis.matched_customer_id
@@ -1991,7 +2005,7 @@ function FinalQuoteMapper({ sale, projectId, onChange }: { sale: Contract; proje
                   : analysis.client_org && <span className="ml-2 text-amber-600">⚠️ DB에 없음 (매핑 안 됨)</span>
                 }
               </td></tr>
-              <tr><td className="text-gray-500 pr-2 align-top">부서</td><td className="text-gray-800">{analysis.client_dept || '미추출'}</td></tr>
+              <tr><td className="text-gray-500 pr-2 align-top">부서</td><td className="text-gray-800">{analysis.client_dept || '미추출'} <span className="text-[10px] text-gray-400">(수의계약 한도용)</span></td></tr>
               {analysis.payment_schedules.length > 0 && (
                 <tr><td className="text-gray-500 pr-2 align-top">결제 일정</td><td className="text-gray-800">
                   {analysis.payment_schedules.map((p, i) => (

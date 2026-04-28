@@ -776,9 +776,12 @@ export interface QuoteAnalysis {
   revenue: number | null
   client_org: string | null
   client_dept: string | null
+  supplier_name: string | null
   payment_schedules: { label: string; amount: number; due_date: string | null }[]
   matched_customer_id: string | null
   matched_customer_name: string | null
+  matched_entity_id: string | null
+  matched_entity_name: string | null
   notes: string | null
 }
 
@@ -813,6 +816,7 @@ ${pdfRes.text}
   "revenue": <부가세 포함 총 금액 숫자, 원 단위. 명확한 총액만. 항목별 합계 아님. 부가세 별도면 110% 곱해. 못 찾으면 null>,
   "client_org": "<발주처(고객사) 정식 명칭. 견적서 '발주자' 줄. 보통 학교명·연구소명·기관명. 못 찾으면 null>",
   "client_dept": "<발주처 안의 부서명·담당팀명. 본부·과 등. 못 찾으면 null>",
+  "supplier_name": "<공급자 = 우리 측 사업자명 (유어메이트/공공이코퍼레이션/공공이크리에이티브 등). 견적서 '공급자' 줄. 못 찾으면 null>",
   "payment_schedules": [
     { "label": "선금|중도금|잔금|계산서|기타", "amount": <숫자>, "due_date": "<YYYY-MM-DD 또는 null>" }
   ],
@@ -821,8 +825,9 @@ ${pdfRes.text}
 
 규칙:
 - revenue: "총 견적 금액" 또는 "총계" 명시된 금액. 부가세 포함 금액. 보통 PDF 상단에 큰 글씨.
-- client_org: 발주자 줄 (공급자=유어메이트는 절대 X). 정식 명칭 그대로.
+- client_org: 발주자 줄 (공급자=우리 회사는 절대 X). 정식 명칭 그대로.
 - client_dept: "교육과", "학생지원과", "OO팀" 같은 부서명. 없을 수 있음.
+- supplier_name: 공급자 = 매출 발생시키는 우리 사업자. "유어메이트" 또는 법인명 (㈜공공이코퍼레이션 등). 발주자(client_org)와 절대 헷갈리지 마.
 - payment_schedules: 견적서에 결제 일정 명시 안 됐으면 빈 배열. 추측 금지.
 - 답변은 JSON 객체 하나만. 다른 설명 절대 금지.`
 
@@ -839,7 +844,7 @@ ${pdfRes.text}
     const text = textBlock && textBlock.type === 'text' ? textBlock.text : ''
     const m = text.match(/\{[\s\S]*\}/)
     if (!m) return { error: 'JSON 추출 실패' }
-    const parsed = JSON.parse(m[0]) as Omit<QuoteAnalysis, 'matched_customer_id' | 'matched_customer_name'>
+    const parsed = JSON.parse(m[0]) as Omit<QuoteAnalysis, 'matched_customer_id' | 'matched_customer_name' | 'matched_entity_id' | 'matched_entity_name'>
 
     // client_org → customers 정확 매칭
     let matched_customer_id: string | null = null
@@ -854,11 +859,34 @@ ${pdfRes.text}
       if (c) { matched_customer_id = c.id; matched_customer_name = c.name }
     }
 
+    // supplier_name → business_entities 매칭 (정식명·약칭 모두 시도)
+    let matched_entity_id: string | null = null
+    let matched_entity_name: string | null = null
+    if (parsed.supplier_name?.trim()) {
+      const sup = parsed.supplier_name.trim()
+      // ㈜·(주)·주식회사 등 제거 후 비교
+      const norm = (s: string) => s.replace(/㈜|\(주\)|주식회사|유한회사|\(유\)/g, '').replace(/\s+/g, '').toLowerCase()
+      const normSup = norm(sup)
+      const { data: entities } = await admin
+        .from('business_entities')
+        .select('id, name, short_name, status')
+        .eq('status', 'active')
+      const match = (entities ?? []).find(e =>
+        norm(e.name).includes(normSup) ||
+        normSup.includes(norm(e.name)) ||
+        (e.short_name && norm(e.short_name) === normSup) ||
+        (e.short_name && normSup.includes(norm(e.short_name)))
+      )
+      if (match) { matched_entity_id = match.id; matched_entity_name = match.short_name || match.name }
+    }
+
     return {
       analysis: {
         ...parsed,
         matched_customer_id,
         matched_customer_name,
+        matched_entity_id,
+        matched_entity_name,
       }
     }
   } catch (e) {
@@ -871,17 +899,19 @@ interface ApplyQuoteInput {
   client_org?: string | null
   client_dept?: string | null
   customer_id?: string | null   // null이면 변경 안 함
+  entity_id?: string | null     // 우리 측 사업자 (business_entities.id)
   payment_schedules?: { label: string; amount: number; due_date: string | null }[]   // 빈 배열 = 변경 안 함
   replace_schedules?: boolean   // true면 기존 모두 삭제 후 새로 추가, false면 추가만
 }
 
-export async function applyQuoteAnalysis(saleId: string, data: ApplyQuoteInput, projectId: string): Promise<{ ok: true } | { error: string }> {
+export async function applyQuoteAnalysis(saleId: string, data: ApplyQuoteInput, projectId: string): Promise<{ ok: true; folder_created?: string } | { error: string }> {
   const admin = createAdminClient()
   const updates: Record<string, unknown> = { updated_at: new Date().toISOString() }
   if (data.revenue !== undefined && data.revenue !== null) updates.revenue = data.revenue
   if (data.client_org !== undefined) updates.client_org = data.client_org
   if (data.client_dept !== undefined) updates.client_dept = data.client_dept
   if (data.customer_id) updates.customer_id = data.customer_id
+  if (data.entity_id) updates.entity_id = data.entity_id
 
   if (Object.keys(updates).length > 1) {
     const { error } = await admin.from('sales').update(updates).eq('id', saleId)
@@ -890,7 +920,6 @@ export async function applyQuoteAnalysis(saleId: string, data: ApplyQuoteInput, 
     if (data.customer_id) {
       const { data: sale } = await admin.from('sales').select('project_id').eq('id', saleId).maybeSingle()
       if (sale?.project_id) {
-        // project의 customer가 비어있을 때만 갱신 (덮어쓰기 방지)
         const { data: proj } = await admin.from('projects').select('customer_id').eq('id', sale.project_id).maybeSingle()
         if (proj && !proj.customer_id) {
           await admin.from('projects').update({ customer_id: data.customer_id }).eq('id', sale.project_id)
@@ -917,8 +946,15 @@ export async function applyQuoteAnalysis(saleId: string, data: ApplyQuoteInput, 
     if (error) return { error: `결제 일정 추가 실패: ${error.message}` }
   }
 
+  // entity가 정해졌고 sale.dropbox_url이 비어있으면 사업자별 계약 폴더 자동 생성
+  let folderCreated: string | undefined
+  if (data.entity_id) {
+    const r = await ensureContractFolder(saleId)
+    if ('webUrl' in r) folderCreated = r.webUrl
+  }
+
   revalidatePath(`/projects/${projectId}`)
-  return { ok: true }
+  return { ok: true, folder_created: folderCreated }
 }
 
 export async function ensureContractFolder(saleId: string): Promise<{ ok: true; webUrl: string } | { error: string }> {
