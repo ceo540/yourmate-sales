@@ -19,7 +19,7 @@ export default async function AdminPage() {
 
   const [{ data: profilesRaw }, { data: entities }] = await Promise.all([
     supabase.from('profiles').select('id, name, departments, role, created_at, join_date, entity_id, phone, emergency_name, emergency_phone, bank_name, account_number, birth_date').order('created_at', { ascending: false }),
-    supabase.from('business_entities').select('id, name, business_number, representative_name, business_type, business_item, address, email, phone, corporate_number, bank_name, account_number, account_holder').order('name'),
+    supabase.from('business_entities').select('id, name, short_name, is_primary, usage_note, status, business_number, representative_name, business_type, business_item, address, email, phone, corporate_number, bank_name, account_number, account_holder').order('is_primary', { ascending: false }).order('name'),
   ])
 
   const { createAdminClient } = await import('@/lib/supabase/admin')

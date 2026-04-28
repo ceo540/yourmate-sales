@@ -28,6 +28,7 @@ import {
   regenerateProjectBrief,
   getProjectBriefContent,
   deleteProjectLog,
+  ensureContractFolder,
   createProjectMemo,
   updateProjectMemoCard,
   deleteProjectMemo,
@@ -69,6 +70,13 @@ interface Contract {
   id: string; name: string; revenue: number | null
   contract_stage: string | null; progress_status: string | null
   client_org: string | null
+  entity_id: string | null
+  dropbox_url: string | null
+  contract_split_reason: string | null
+}
+interface BusinessEntity {
+  id: string; name: string; short_name: string | null
+  is_primary: boolean; usage_note: string | null
 }
 interface Task {
   id: string; title: string; status: string; priority: string | null
@@ -120,6 +128,7 @@ interface Props {
   members: { profile_id: string; role: string; name: string }[]
   customersAll: { id: string; name: string; type: string | null }[]
   memos: Memo[]
+  entities: BusinessEntity[]
 }
 
 const STATUS_CLR: Record<string, string> = {
@@ -171,7 +180,7 @@ function KpiPill({ icon, label, value, tone }: { icon: string; label: string; va
 export default function ProjectV2Client({
   project, pmName, customer, contactPerson, finance,
   contracts, tasks, logs, rentals, leadIds, profiles, currentUserId,
-  members, customersAll, memos,
+  members, customersAll, memos, entities,
 }: Props) {
   const [showSettings, setShowSettings] = useState(false)
   const profitRate = finance.revenue > 0
@@ -315,7 +324,7 @@ export default function ProjectV2Client({
           />
 
           {/* 8. 계약 관리 (분리) */}
-          <ContractsSection contracts={contracts} projectId={project.id} />
+          <ContractsSection contracts={contracts} projectId={project.id} entities={entities} />
         </div>
 
         {/* 우: 사이드 */}
@@ -1455,8 +1464,10 @@ function ScheduleSection({ tasks, projectId, linkedEvents }: {
   )
 }
 
-/* ── 8. 계약 관리 (별도) ─────────────────────────────────── */
-function ContractsSection({ contracts, projectId }: { contracts: Contract[]; projectId: string }) {
+/* ── 8. 계약 관리 (사업자별 그룹화 + 자동 폴더) ─────────── */
+function ContractsSection({ contracts, projectId, entities }: {
+  contracts: Contract[]; projectId: string; entities: BusinessEntity[]
+}) {
   const router = useRouter()
   const [, startTransition] = useTransition()
   const [adding, setAdding] = useState(false)
@@ -1464,83 +1475,172 @@ function ContractsSection({ contracts, projectId }: { contracts: Contract[]; pro
   const [newRevenue, setNewRevenue] = useState('')
   const [newStage, setNewStage] = useState('계약')
   const [splitReason, setSplitReason] = useState('')
+  const primaryEntity = entities.find(e => e.is_primary)
+  const [newEntityId, setNewEntityId] = useState<string>(primaryEntity?.id ?? entities[0]?.id ?? '')
 
   async function add() {
     if (!newName.trim()) return
+    if (!newEntityId) { alert('사업자를 선택해줘'); return }
     startTransition(async () => {
       const r = await createSaleForProject(projectId, {
         name: newName.trim(),
         revenue: Number(newRevenue.replace(/[^0-9]/g, '')) || 0,
         contract_stage: newStage,
         contract_split_reason: splitReason.trim() || null,
+        entity_id: newEntityId,
       })
       if ('error' in r) { alert('실패: ' + r.error); return }
-      setNewName(''); setNewRevenue(''); setSplitReason(''); setNewStage('계약'); setAdding(false)
+      setNewName(''); setNewRevenue(''); setSplitReason(''); setNewStage('계약')
+      setNewEntityId(primaryEntity?.id ?? entities[0]?.id ?? '')
+      setAdding(false)
       router.refresh()
     })
+  }
+
+  // 사업자별 그룹화
+  const entityMap = Object.fromEntries(entities.map(e => [e.id, e]))
+  const groups = new Map<string, Contract[]>()
+  for (const c of contracts) {
+    const key = c.entity_id ?? '__unassigned__'
+    if (!groups.has(key)) groups.set(key, [])
+    groups.get(key)!.push(c)
+  }
+  const isSplit = groups.size >= 2 && !groups.has('__unassigned__')
+                  || groups.size > (groups.has('__unassigned__') ? 1 : 0) && groups.size >= 2
+  const totalRevenue = contracts.reduce((s, c) => s + (c.revenue ?? 0), 0)
+
+  function fmtComma(v: string) {
+    const num = v.replace(/[^0-9]/g, '')
+    return num ? Number(num).toLocaleString() : ''
   }
 
   return (
     <div className="bg-white border border-gray-100 rounded-xl overflow-hidden">
       <div className="px-5 py-3 border-b border-gray-100 flex items-center justify-between">
-        <p className="text-sm font-semibold text-gray-800">📜 계약 관리 ({contracts.length}건)</p>
+        <div className="flex items-center gap-2 flex-wrap">
+          <p className="text-sm font-semibold text-gray-800">📜 계약 관리 ({contracts.length}건)</p>
+          {isSplit && (
+            <span className="text-[10px] px-1.5 py-0.5 rounded font-semibold" style={{ backgroundColor: '#FFCE00', color: '#121212' }}>
+              📐 분할 계약
+            </span>
+          )}
+          {totalRevenue > 0 && (
+            <span className="text-xs text-gray-500">총매출 <b className="text-gray-800">{fmtMoney(totalRevenue)}원</b></span>
+          )}
+        </div>
         <button onClick={() => setAdding(s => !s)} className="text-[11px] text-gray-400 hover:text-gray-700">
           {adding ? '취소' : '+ 계약 추가'}
         </button>
       </div>
       {adding && (
         <div className="px-5 py-3 bg-yellow-50 border-b border-yellow-100 space-y-2">
+          <select value={newEntityId} onChange={e => setNewEntityId(e.target.value)}
+            className="w-full text-sm border border-gray-200 rounded px-2.5 py-1.5 bg-white focus:outline-none focus:ring-1 focus:ring-yellow-400">
+            <option value="">-- 사업자 선택 (필수) --</option>
+            {entities.map(e => (
+              <option key={e.id} value={e.id}>
+                {e.short_name ? `${e.short_name} (${e.name})` : e.name}{e.is_primary ? ' · 메인' : ''}
+                {e.usage_note ? ` — ${e.usage_note}` : ''}
+              </option>
+            ))}
+          </select>
           <input value={newName} onChange={e => setNewName(e.target.value)}
             placeholder="건명 (비우면 프로젝트명 사용)"
             className="w-full text-sm border border-gray-200 rounded px-2.5 py-1.5 bg-white focus:outline-none focus:ring-1 focus:ring-yellow-400" />
           <div className="flex gap-2">
-            <input value={newRevenue} onChange={e => setNewRevenue(e.target.value)}
-              placeholder="매출액 (숫자)"
-              className="flex-1 text-xs border border-gray-200 rounded px-2 py-1.5 bg-white" />
+            <input value={newRevenue} onChange={e => setNewRevenue(fmtComma(e.target.value))}
+              placeholder="매출액 (예: 12,510,000)"
+              className="flex-1 text-xs border border-gray-200 rounded px-2 py-1.5 bg-white text-right font-mono" />
             <select value={newStage} onChange={e => setNewStage(e.target.value)}
               className="text-xs border border-gray-200 rounded px-2 py-1.5 bg-white">
               {['계약', '착수', '선금', '중도금', '완수', '계산서발행', '잔금'].map(s => <option key={s}>{s}</option>)}
             </select>
           </div>
           <input value={splitReason} onChange={e => setSplitReason(e.target.value)}
-            placeholder="계약 분리 사유 (선택, 한 프로젝트에 여러 계약 시)"
+            placeholder="계약 분리 사유 (선택, 분할 시 권장)"
             className="w-full text-xs border border-gray-200 rounded px-2 py-1.5 bg-white" />
-          <button onClick={add} disabled={!newName.trim()}
+          <button onClick={add} disabled={!newName.trim() || !newEntityId}
             className="w-full py-1.5 text-xs font-semibold rounded disabled:opacity-40"
             style={{ backgroundColor: '#FFCE00', color: '#121212' }}>
-            계약 추가
+            계약 추가 (자동으로 Dropbox 폴더 생성)
           </button>
         </div>
       )}
       {contracts.length === 0 ? (
         <p className="text-center py-6 text-xs text-gray-400">등록된 계약 없음</p>
       ) : (
-        <ul className="divide-y divide-gray-50">
-          {contracts.map(c => (
-            <Link key={c.id} href={`/sales/${c.id}`}
-              className="block px-5 py-2.5 hover:bg-gray-50 transition-colors">
-              <div className="flex items-center justify-between gap-2">
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm text-gray-800 truncate">{c.name}</p>
-                  {c.client_org && <p className="text-[11px] text-gray-400 truncate">{c.client_org}</p>}
+        <div className="divide-y divide-gray-50">
+          {[...groups.entries()].map(([entityId, groupContracts]) => {
+            const entity = entityId === '__unassigned__' ? null : entityMap[entityId]
+            const groupTotal = groupContracts.reduce((s, c) => s + (c.revenue ?? 0), 0)
+            const label = entity ? (entity.short_name || entity.name) : '(사업자 미지정)'
+            return (
+              <div key={entityId}>
+                <div className="px-5 py-2 bg-gray-50/60 flex items-center justify-between">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="text-xs font-semibold text-gray-700">🏢 {label}</span>
+                    {entity?.is_primary && <span className="text-[10px] px-1 rounded font-semibold" style={{ backgroundColor: '#FFCE00', color: '#121212' }}>메인</span>}
+                    <span className="text-[11px] text-gray-400">{groupContracts.length}건</span>
+                  </div>
+                  {groupTotal > 0 && <span className="text-xs font-medium text-gray-600">{fmtMoney(groupTotal)}원</span>}
                 </div>
-                <div className="flex items-center gap-1.5 flex-shrink-0">
-                  {c.contract_stage && (
-                    <span className={`text-[10px] px-2 py-0.5 rounded-full ${CONTRACT_STAGE_BADGE[c.contract_stage] ?? 'bg-gray-100 text-gray-500'}`}>
-                      {c.contract_stage}
-                    </span>
-                  )}
-                  {c.revenue !== null && c.revenue > 0 && (
-                    <span className="text-xs font-medium text-gray-600">{fmtMoney(c.revenue)}원</span>
-                  )}
-                  <span className="text-gray-300 text-xs">→</span>
-                </div>
+                <ul>
+                  {groupContracts.map(c => (
+                    <li key={c.id} className="flex items-center px-5 py-2.5 hover:bg-gray-50 transition-colors group">
+                      <Link href={`/sales/${c.id}`} className="flex-1 min-w-0 flex items-center gap-2">
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm text-gray-800 truncate">{c.name}</p>
+                          {c.contract_split_reason && <p className="text-[11px] text-gray-400 truncate">💡 {c.contract_split_reason}</p>}
+                        </div>
+                        {c.contract_stage && (
+                          <span className={`text-[10px] px-2 py-0.5 rounded-full ${CONTRACT_STAGE_BADGE[c.contract_stage] ?? 'bg-gray-100 text-gray-500'}`}>
+                            {c.contract_stage}
+                          </span>
+                        )}
+                        {c.revenue !== null && c.revenue > 0 && (
+                          <span className="text-xs font-medium text-gray-600">{fmtMoney(c.revenue)}원</span>
+                        )}
+                      </Link>
+                      <ContractFolderButton contract={c} projectId={projectId} />
+                      <Link href={`/sales/${c.id}`} className="text-gray-300 text-xs ml-1.5">→</Link>
+                    </li>
+                  ))}
+                </ul>
               </div>
-            </Link>
-          ))}
-        </ul>
+            )
+          })}
+        </div>
       )}
     </div>
+  )
+}
+
+function ContractFolderButton({ contract, projectId }: { contract: Contract; projectId: string }) {
+  const router = useRouter()
+  const [busy, setBusy] = useState(false)
+  if (contract.dropbox_url) {
+    return (
+      <a href={contract.dropbox_url} target="_blank" rel="noopener noreferrer"
+        onClick={e => e.stopPropagation()}
+        className="ml-2 text-[11px] text-blue-500 hover:underline flex-shrink-0">📁</a>
+    )
+  }
+  if (!contract.entity_id) {
+    return <span className="ml-2 text-[10px] text-gray-300 flex-shrink-0" title="사업자 지정 후 폴더 생성 가능">📁</span>
+  }
+  return (
+    <button onClick={async (e) => {
+      e.preventDefault(); e.stopPropagation()
+      setBusy(true)
+      const r = await ensureContractFolder(contract.id)
+      setBusy(false)
+      if ('error' in r) alert('폴더 생성 실패: ' + r.error)
+      else router.refresh()
+    }} disabled={busy}
+      className="ml-2 text-[11px] text-yellow-600 hover:underline flex-shrink-0 disabled:opacity-50"
+      title="Dropbox 폴더 생성">
+      {busy ? '...' : '📁 생성'}
+    </button>
   )
 }
 

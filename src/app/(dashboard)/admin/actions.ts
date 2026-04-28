@@ -14,6 +14,10 @@ export async function createEntity(formData: FormData) {
   const supabase = await createClient()
   await supabase.from('business_entities').insert({
     name: formData.get('name') as string,
+    short_name: (formData.get('short_name') as string) || null,
+    is_primary: formData.get('is_primary') === 'on',
+    usage_note: (formData.get('usage_note') as string) || null,
+    status: (formData.get('status') as string) || 'active',
     business_number: (formData.get('business_number') as string) || null,
     representative_name: (formData.get('representative_name') as string) || null,
     business_type: (formData.get('business_type') as string) || null,
@@ -34,6 +38,10 @@ export async function updateEntity(formData: FormData) {
   const id = formData.get('id') as string
   await supabase.from('business_entities').update({
     name: formData.get('name') as string,
+    short_name: (formData.get('short_name') as string) || null,
+    is_primary: formData.get('is_primary') === 'on',
+    usage_note: (formData.get('usage_note') as string) || null,
+    status: (formData.get('status') as string) || 'active',
     business_number: (formData.get('business_number') as string) || null,
     representative_name: (formData.get('representative_name') as string) || null,
     business_type: (formData.get('business_type') as string) || null,

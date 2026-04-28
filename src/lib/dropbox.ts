@@ -3,6 +3,7 @@ import { SERVICE_PATHS } from './services'
 // ROOT_NAMESPACE는 계정 루트 네임스페이스
 // → API 경로는 절대경로 (/방 준영/1. 가업/★ DB/...), 웹 URL에서 /home 제거 후 그대로 사용
 const DB_BASE = '/방 준영/1. 가업/★ DB'
+const WEB_BASE = 'https://www.dropbox.com/home'
 const ROOT_NAMESPACE = process.env.DROPBOX_ROOT_NAMESPACE ?? '3265523555'
 
 // 리프레시 토큰으로 액세스 토큰 발급
@@ -147,6 +148,42 @@ export async function createSaleFolder(params: {
 
   // Dropbox 웹 링크
   return `https://www.dropbox.com/home${DB_BASE}${folderPath}`
+}
+
+// 계약 폴더 생성: <프로젝트폴더>/0 행정/{사업자약칭}/계약 {건명}/
+// 사업자별로 묶음. 이미 존재하면 멱등 (createFolder는 conflict 시 성공 처리).
+// 사용자 비전: 분할 = 사업자 ≥ 2건. 각 계약별 폴더로 서류 정리.
+export async function createContractFolder(params: {
+  projectFolderWebUrl: string  // 프로젝트의 dropbox_url (https://www.dropbox.com/home/...)
+  entityShortName: string      // 사업자 약칭 (예: "공공이코")
+  contractName: string         // 계약 건명
+}): Promise<{ webUrl: string } | { error: string }> {
+  const token = await getDropboxToken()
+  if (!token) return { error: '드롭박스 토큰 없음' }
+
+  const { projectFolderWebUrl, entityShortName, contractName } = params
+  if (!projectFolderWebUrl.startsWith(WEB_BASE)) {
+    return { error: '프로젝트 폴더 URL이 /home/ 형식이 아닙니다' }
+  }
+
+  const projectRelative = decodeURIComponent(projectFolderWebUrl.replace(WEB_BASE, '')).replace(/\/$/, '')
+  const safeEntity = entityShortName.replace(/[\/\\:*?"<>|]/g, '_').trim()
+  const safeContract = contractName.replace(/[\/\\:*?"<>|]/g, '_').trim()
+  if (!safeEntity || !safeContract) return { error: '사업자/계약 이름이 비어있음' }
+
+  // projectRelative가 이미 DB_BASE 포함한 절대 경로라 API 경로 그대로 사용
+  const adminPath = `${projectRelative}/0 행정`
+  const entityPath = `${adminPath}/${safeEntity}`
+  const contractPath = `${entityPath}/계약 ${safeContract}`
+
+  // 0 행정은 이미 있을 가능성 높음 — conflict 무시
+  await createFolder(adminPath, token)
+  const entityErr = await createFolder(entityPath, token)
+  if (entityErr && !entityErr.includes('conflict')) return { error: `사업자 폴더 생성 실패: ${entityErr}` }
+  const contractErr = await createFolder(contractPath, token)
+  if (contractErr && !contractErr.includes('conflict')) return { error: `계약 폴더 생성 실패: ${contractErr}` }
+
+  return { webUrl: `${WEB_BASE}${contractPath}` }
 }
 
 // 텍스트 파일을 드롭박스 폴더에 업로드 (Dropbox-API-Arg 헤더 한글 문제로 URL 파라미터 방식 사용)

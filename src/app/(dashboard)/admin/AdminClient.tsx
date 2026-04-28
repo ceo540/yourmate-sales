@@ -73,6 +73,10 @@ interface DeptRow {
 interface BusinessEntity {
   id: string
   name: string
+  short_name: string | null
+  is_primary: boolean
+  usage_note: string | null
+  status: string
   business_number: string | null
   representative_name: string | null
   business_type: string | null

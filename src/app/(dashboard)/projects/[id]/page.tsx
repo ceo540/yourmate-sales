@@ -46,6 +46,13 @@ export default async function ProjectPage({ params }: { params: Promise<{ id: st
     admin.from('project_memos').select('id, title, content, created_at, updated_at, author_id').eq('project_id', id).order('created_at', { ascending: false }),
   ])
 
+  const { data: entitiesRaw } = await admin
+    .from('business_entities')
+    .select('id, name, short_name, is_primary, usage_note, status')
+    .eq('status', 'active')
+    .order('is_primary', { ascending: false })
+    .order('name')
+
   const profileNameMap = createProfileNameMap(profilesRaw)
 
   const contractIds = (contractsRaw ?? []).map(c => c.id)
@@ -128,6 +135,13 @@ export default async function ProjectPage({ params }: { params: Promise<{ id: st
         id: c.id, name: c.name, revenue: c.revenue ?? null,
         contract_stage: c.contract_stage ?? null, progress_status: c.progress_status ?? null,
         client_org: c.client_org ?? null,
+        entity_id: c.entity_id ?? null,
+        dropbox_url: c.dropbox_url ?? null,
+        contract_split_reason: c.contract_split_reason ?? null,
+      }))}
+      entities={(entitiesRaw ?? []).map((e: any) => ({
+        id: e.id, name: e.name, short_name: e.short_name ?? null,
+        is_primary: !!e.is_primary, usage_note: e.usage_note ?? null,
       }))}
       tasks={(tasksRaw ?? []).map((t: any) => ({
         id: t.id, title: t.title, status: t.status, priority: t.priority ?? null,
