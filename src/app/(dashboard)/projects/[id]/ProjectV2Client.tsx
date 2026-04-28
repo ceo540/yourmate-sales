@@ -1635,7 +1635,7 @@ function ContractsSection({ contracts, projectId, entities, defaultCustomerId, d
                 </div>
                 <ul>
                   {groupContracts.map(c => (
-                    <ContractRow key={c.id} contract={c} projectId={projectId} />
+                    <ContractRow key={c.id} contract={c} projectId={projectId} entities={entities} />
                   ))}
                 </ul>
               </div>
@@ -1649,7 +1649,7 @@ function ContractsSection({ contracts, projectId, entities, defaultCustomerId, d
 
 const STAGE_OPTIONS = ['계약', '착수', '선금', '중도금', '완수', '계산서발행', '잔금'] as const
 
-function ContractRow({ contract: c, projectId }: { contract: Contract; projectId: string }) {
+function ContractRow({ contract: c, projectId, entities }: { contract: Contract; projectId: string; entities: BusinessEntity[] }) {
   const router = useRouter()
   const [open, setOpen] = useState(false)
   const totalReceived = c.payment_schedules.filter(p => p.is_received).reduce((s, p) => s + p.amount, 0)
@@ -1659,11 +1659,12 @@ function ContractRow({ contract: c, projectId }: { contract: Contract; projectId
 
   return (
     <li className="border-b border-gray-50 last:border-0">
-      <div className="flex items-center px-5 py-2.5 hover:bg-gray-50 transition-colors group">
-        <button onClick={() => setOpen(o => !o)} className="text-gray-300 hover:text-gray-600 flex-shrink-0 mr-2 text-xs w-4">
+      <div onClick={() => setOpen(o => !o)} role="button"
+        className="flex items-center px-5 py-2.5 hover:bg-gray-50 transition-colors group cursor-pointer">
+        <span className="text-gray-300 group-hover:text-gray-600 flex-shrink-0 mr-2 text-xs w-4">
           {open ? '▼' : '▶'}
-        </button>
-        <Link href={`/sales/${c.id}`} className="flex-1 min-w-0 flex items-center gap-2">
+        </span>
+        <div className="flex-1 min-w-0 flex items-center gap-2">
           <div className="flex-1 min-w-0">
             <p className="text-sm text-gray-800 truncate">{c.name}</p>
             {(c.client_org || c.client_dept) && (
@@ -1682,15 +1683,16 @@ function ContractRow({ contract: c, projectId }: { contract: Contract; projectId
           {c.revenue !== null && c.revenue > 0 && (
             <span className="text-xs font-medium text-gray-600">{fmtMoney(c.revenue)}원</span>
           )}
-        </Link>
+        </div>
         <ContractFolderButton contract={c} projectId={projectId} />
-        <Link href={`/sales/${c.id}`} className="text-gray-300 text-xs ml-1.5">→</Link>
+        <Link href={`/sales/${c.id}`} onClick={e => e.stopPropagation()} title="상세 페이지 이동"
+          className="text-gray-300 hover:text-gray-700 text-xs ml-1.5 px-1.5 py-0.5">→</Link>
       </div>
 
       {open && (
         <div className="px-5 pb-3 pt-1 bg-gray-50/50 space-y-3">
           <ContractStageEditor sale={c} projectId={projectId} onChange={() => router.refresh()} />
-          <FinalQuoteMapper sale={c} projectId={projectId} onChange={() => router.refresh()} />
+          <FinalQuoteMapper sale={c} projectId={projectId} entities={entities} onChange={() => router.refresh()} />
           <ContractMoneyEditor sale={c} projectId={projectId} totalScheduled={totalScheduled} totalReceived={totalReceived} remainder={remainder} onChange={() => router.refresh()} />
           <PaymentSchedulesEditor sale={c} projectId={projectId} onChange={() => router.refresh()} />
         </div>
@@ -1903,13 +1905,14 @@ type Analysis = {
   notes: string | null
 }
 
-function FinalQuoteMapper({ sale, projectId, onChange }: { sale: Contract; projectId: string; onChange: () => void }) {
+function FinalQuoteMapper({ sale, projectId, entities, onChange }: { sale: Contract; projectId: string; entities: BusinessEntity[]; onChange: () => void }) {
   const [busy, setBusy] = useState(false)
   const [showPicker, setShowPicker] = useState(false)
   const [pdfs, setPdfs] = useState<{ name: string; path: string }[] | null>(null)
   const [err, setErr] = useState<string | null>(null)
   const [analysis, setAnalysis] = useState<Analysis | null>(null)
   const [analyzing, setAnalyzing] = useState(false)
+  const [manualEntityId, setManualEntityId] = useState<string>('')
 
   const currentName = sale.final_quote_dropbox_path?.split('/').pop() || null
 
@@ -1945,12 +1948,13 @@ function FinalQuoteMapper({ sale, projectId, onChange }: { sale: Contract; proje
   async function applyAll() {
     if (!analysis) return
     setBusy(true)
+    const finalEntityId = analysis.matched_entity_id || manualEntityId || null
     const r = await applyQuoteAnalysis(sale.id, {
       revenue: analysis.revenue,
       client_org: analysis.client_org,
       client_dept: analysis.client_dept,
       customer_id: analysis.matched_customer_id,
-      entity_id: analysis.matched_entity_id,
+      entity_id: finalEntityId,
       payment_schedules: analysis.payment_schedules,
       replace_schedules: false,
     }, projectId)
@@ -1959,7 +1963,7 @@ function FinalQuoteMapper({ sale, projectId, onChange }: { sale: Contract; proje
     if ('folder_created' in r && r.folder_created) {
       alert('적용 완료. 계약 폴더 자동 생성됨.')
     }
-    setAnalysis(null); onChange()
+    setAnalysis(null); setManualEntityId(''); onChange()
   }
 
   return (
@@ -1992,11 +1996,23 @@ function FinalQuoteMapper({ sale, projectId, onChange }: { sale: Contract; proje
             <tbody>
               <tr><td className="text-gray-500 pr-2 align-top">매출액</td><td className="font-mono text-gray-800">{analysis.revenue ? fmtMoney(analysis.revenue) + '원' : '미추출'}</td></tr>
               <tr><td className="text-gray-500 pr-2 align-top">우리 사업자</td><td className="text-gray-800">
-                {analysis.supplier_name || '미추출'}
-                {analysis.matched_entity_id
-                  ? <span className="ml-2 text-green-600">✓ 시스템 매칭: {analysis.matched_entity_name}</span>
-                  : analysis.supplier_name && <span className="ml-2 text-amber-600">⚠️ business_entities에 없음</span>
-                }
+                <div>{analysis.supplier_name || '미추출'}
+                  {analysis.matched_entity_id
+                    ? <span className="ml-2 text-green-600">✓ 시스템 매칭: {analysis.matched_entity_name}</span>
+                    : analysis.supplier_name && <span className="ml-2 text-amber-600">⚠️ 자동 매칭 안 됨 — 직접 선택</span>
+                  }
+                </div>
+                {!analysis.matched_entity_id && (
+                  <select value={manualEntityId} onChange={e => setManualEntityId(e.target.value)}
+                    className="mt-1 text-[11px] border border-gray-200 rounded px-1.5 py-0.5 bg-white">
+                    <option value="">-- 사업자 직접 선택 --</option>
+                    {entities.map(e => (
+                      <option key={e.id} value={e.id}>
+                        {e.short_name ? `${e.short_name} (${e.name})` : e.name}{e.is_primary ? ' · 메인' : ''}
+                      </option>
+                    ))}
+                  </select>
+                )}
               </td></tr>
               <tr><td className="text-gray-500 pr-2 align-top">기관</td><td className="text-gray-800">
                 {analysis.client_org || '미추출'}
