@@ -569,7 +569,10 @@ function ContractListTable({ sales, today }: { sales: Sale[]; today: string }) {
               return (
                 <tr key={s.id} className="hover:bg-yellow-50/30">
                   <td className="px-3 py-2 text-xs">
-                    <Link href={`/sales/${s.id}`} className="text-gray-800 hover:text-yellow-700 hover:underline">{s.name}</Link>
+                    <div className="flex items-center gap-1.5">
+                      <Link href={`/sales/${s.id}`} className="text-gray-800 hover:text-yellow-700 hover:underline">{s.name}</Link>
+                      <Link href={`/sales/${s.id}?direct=1`} title="원가·결제 상세" className="text-[10px] text-gray-400 hover:text-yellow-700">💸</Link>
+                    </div>
                   </td>
                   <td className="px-3 py-2 text-xs">
                     {s.customer
