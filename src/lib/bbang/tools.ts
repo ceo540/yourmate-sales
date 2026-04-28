@@ -48,12 +48,13 @@ export const TOOLS: Anthropic.Tool[] = [
   },
   {
     name: 'create_sale',
-    description: '새 계약건을 시스템에 등록하고 노션 프로젝트를 생성합니다. PDF 분석 결과나 사용자 제공 정보로 등록.',
+    description: '새 계약건을 시스템에 등록하고 노션 프로젝트를 생성합니다. customer_id를 가능한 한 함께 넘겨 — 없으면 client_org 정확 매칭 시도, 매칭 실패면 search_customers/quick_create_customer를 먼저 거쳐서 customer_id를 확보한 뒤 재호출해.',
     input_schema: {
       type: 'object' as const,
       properties: {
         name: { type: 'string', description: '건명 (필수)' },
-        client_org: { type: 'string', description: '발주처' },
+        customer_id: { type: 'string', description: '발주처 customer UUID (search_customers 결과의 id). 없으면 client_org 정확 매칭. 둘 다 매칭 실패 시 quick_create_customer 먼저.' },
+        client_org: { type: 'string', description: '발주처 이름 (customer_id 없을 때 폴백 매칭에만 사용)' },
         service_type: { type: 'string', description: '서비스 타입: 교육프로그램/납품설치/유지보수/교구대여/제작인쇄/콘텐츠제작/행사운영/행사대여/프로젝트/SOS/002ENT 중 하나' },
         revenue: { type: 'number', description: '매출액 (원 단위)' },
         memo: { type: 'string', description: '메모' },
@@ -169,10 +170,11 @@ export const TOOLS: Anthropic.Tool[] = [
   },
   {
     name: 'create_lead',
-    description: '새 리드(잠재 고객 문의)를 등록합니다. 같은 기관 활성 리드가 있으면 중복 경고를 반환하고 confirm=true 재호출 시에만 등록합니다.',
+    description: '새 리드(잠재 고객 문의)를 등록합니다. customer_id를 가능한 한 함께 넘겨 — 없으면 client_org 정확 매칭 시도, 매칭 실패면 search_customers/quick_create_customer를 먼저 거쳐서 customer_id를 확보. 같은 기관 활성 리드가 있으면 중복 경고를 반환하고 confirm=true 재호출 시에만 등록.',
     input_schema: {
       type: 'object' as const,
       properties: {
+        customer_id: { type: 'string', description: '기관 customer UUID (search_customers 결과의 id). 없으면 client_org 정확 매칭.' },
         client_org: { type: 'string', description: '기관명 (필수)' },
         project_name: { type: 'string', description: '프로젝트명/건명 (예: 260610 서울중학교 렌탈). 없으면 생략.' },
         contact_name: { type: 'string', description: '담당자 이름/직급' },
@@ -226,6 +228,68 @@ export const TOOLS: Anthropic.Tool[] = [
         query: { type: 'string', description: '기관명 또는 담당자명 검색어' },
         type: { type: 'string', description: '기관 유형 필터: 학교 | 공공기관 | 기업 | 개인 | 기타' },
       },
+    },
+  },
+  {
+    name: 'quick_create_customer',
+    description: '신규 기관(customers) + 선택적 담당자(persons)를 즉석 등록하고 customer_id를 반환합니다. create_sale/create_lead 직전에 사용. 사용자에게 한 번 확인받은 뒤 호출.',
+    input_schema: {
+      type: 'object' as const,
+      properties: {
+        name: { type: 'string', description: '기관명 (필수)' },
+        type: { type: 'string', description: '기관 유형: 학교 | 공공기관 | 기업 | 개인 | 기타 (기본 기타)' },
+        contact_name: { type: 'string', description: '담당자 이름 (선택)' },
+        contact_dept: { type: 'string', description: '담당자 소속 부서 (선택)' },
+        contact_title: { type: 'string', description: '담당자 직책 (선택)' },
+        phone: { type: 'string', description: '담당자 연락처 (선택)' },
+        email: { type: 'string', description: '담당자 이메일 (선택)' },
+      },
+      required: ['name'],
+    },
+  },
+  {
+    name: 'find_duplicate_customers',
+    description: '중복 의심 customer 후보를 추출합니다. 이름 정규화(공백·괄호·법인격 제거) + 앞 4글자 매칭으로 그룹핑. merge_customers 호출 전에 사용.',
+    input_schema: {
+      type: 'object' as const,
+      properties: {
+        keyword: { type: 'string', description: '특정 키워드만 점검 (예: 이화여대). 없으면 전체.' },
+      },
+    },
+  },
+  {
+    name: 'merge_customers',
+    description: '여러 customer를 하나로 통합합니다. merge_ids에 있는 customer의 sales/leads/projects/person_org_relations를 모두 keep_id로 옮기고 merge_ids는 삭제. 사용자에게 반드시 한 번 확인받은 뒤 호출.',
+    input_schema: {
+      type: 'object' as const,
+      properties: {
+        keep_id: { type: 'string', description: '남길 기관 UUID' },
+        merge_ids: { type: 'array', items: { type: 'string' }, description: '통합할(삭제할) 기관 UUID들' },
+      },
+      required: ['keep_id', 'merge_ids'],
+    },
+  },
+  {
+    name: 'find_orphan_sales',
+    description: 'customer_id가 비어 있는 sales 행을 찾습니다. client_org 텍스트 그대로 노출. match_sale_to_customer 호출 전 단서로 사용.',
+    input_schema: {
+      type: 'object' as const,
+      properties: {
+        keyword: { type: 'string', description: '특정 client_org 키워드 필터 (선택)' },
+        limit: { type: 'number', description: '최대 조회 건수 (기본 50)' },
+      },
+    },
+  },
+  {
+    name: 'match_sale_to_customer',
+    description: '단일 sale 행을 특정 customer에 연결합니다. sales.customer_id + (있으면) projects.customer_id 같이 갱신.',
+    input_schema: {
+      type: 'object' as const,
+      properties: {
+        sale_id: { type: 'string', description: 'sales.id (UUID)' },
+        customer_id: { type: 'string', description: 'customers.id (UUID)' },
+      },
+      required: ['sale_id', 'customer_id'],
     },
   },
   {

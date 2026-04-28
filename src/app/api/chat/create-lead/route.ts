@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
+import { createAdminClient } from '@/lib/supabase/admin'
 import { syncLeadToCustomerDB } from '@/lib/customer-sync'
+import { resolveCustomerId } from '@/lib/customer-resolve'
 import { createOrUpdateLeadBrief } from '@/lib/brief-generator'
 
 async function generateLeadId(supabase: Awaited<ReturnType<typeof createClient>>): Promise<string> {
@@ -25,7 +27,7 @@ export async function POST(req: NextRequest) {
     if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
     const body = await req.json()
-    const { client_org, contact_name, phone, email, service_type, initial_content, channel, inflow_source, remind_date } = body
+    const { client_org, customer_id: customerIdInput, contact_name, phone, email, service_type, initial_content, channel, inflow_source, remind_date } = body
 
     if (!client_org) return NextResponse.json({ error: '기관명은 필수야.' }, { status: 400 })
 
@@ -40,9 +42,16 @@ export async function POST(req: NextRequest) {
     const lead_id = await generateLeadId(supabase)
     const today = new Date().toISOString().slice(0, 10)
 
+    const adminDb = createAdminClient()
+    const customerId = await resolveCustomerId(adminDb, {
+      customer_id: customerIdInput,
+      client_org,
+    })
+
     const { data, error } = await supabase.from('leads').insert({
       lead_id,
       client_org: client_org.trim(),
+      customer_id: customerId,
       contact_name: contact_name || null,
       phone: phone || null,
       email: email || null,

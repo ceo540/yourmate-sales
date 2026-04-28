@@ -12,6 +12,7 @@ const MUTATING_TOOLS = new Set([
   'create_calendar_event',
   'create_project_task', 'complete_task', 'update_task', 'delete_task',
   'regenerate_overview', 'update_pending_discussion', 'regenerate_pending_discussion',
+  'quick_create_customer', 'merge_customers', 'match_sale_to_customer',
 ])
 import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
@@ -22,6 +23,7 @@ import { createEvent as createGCalEvent } from '@/lib/google-calendar'
 import { SYSTEM_PROMPT } from '@/lib/bbang/loadSchema'
 import { TOOLS } from '@/lib/bbang/tools'
 import { ensureProjectForSale, generateProjectNumber } from '@/lib/projects'
+import { resolveCustomerId, quickCreateCustomer } from '@/lib/customer-resolve'
 import {
   generateAndSaveProjectOverview,
   generateAndSavePendingDiscussion,
@@ -128,6 +130,12 @@ async function executeTool(name: string, input: Record<string, unknown>, userRol
     const dropboxUrl = (input.dropbox_url as string | null) || null
     const inflowDate = (input.inflow_date as string) || new Date().toISOString().split('T')[0]
 
+    const adminDb = createAdminClient()
+    const customerId = await resolveCustomerId(adminDb, {
+      customer_id: input.customer_id as string | null | undefined,
+      client_org: clientOrg,
+    })
+
     const DEPT_MAP: Record<string, string> = {
       'SOS': 'sound_of_school', '002ENT': '002_entertainment', '교육프로그램': 'artkiwoom',
       '납품설치': 'school_store', '유지보수': 'school_store', '교구대여': 'school_store', '제작인쇄': 'school_store',
@@ -137,7 +145,7 @@ async function executeTool(name: string, input: Record<string, unknown>, userRol
     const projectNumber = await generateProjectNumber()
 
     const { data: saleRow, error: insertErr } = await supabase.from('sales').insert({
-      name: saleName, client_org: clientOrg, service_type: serviceType, department,
+      name: saleName, client_org: clientOrg, customer_id: customerId, service_type: serviceType, department,
       revenue, contract_stage: '계약', memo, inflow_date: inflowDate, dropbox_url: dropboxUrl,
       project_number: projectNumber,
     }).select('id').single()
@@ -149,7 +157,7 @@ async function executeTool(name: string, input: Record<string, unknown>, userRol
       name: saleName,
       service_type: serviceType,
       department,
-      customer_id: null,
+      customer_id: customerId,
       pm_id: userId,
       project_number: projectNumber,
       dropbox_url: dropboxUrl,
@@ -579,9 +587,16 @@ async function executeTool(name: string, input: Record<string, unknown>, userRol
       assignee_id = assignee?.[0]?.id || null
     }
 
+    const adminDb = createAdminClient()
+    const customerId = await resolveCustomerId(adminDb, {
+      customer_id: input.customer_id as string | null | undefined,
+      client_org: clientOrg,
+    })
+
     const { data: lead, error } = await supabase.from('leads').insert({
       lead_id,
       client_org: clientOrg,
+      customer_id: customerId,
       project_name: (input.project_name as string) || null,
       contact_name: (input.contact_name as string) || null,
       phone: (input.phone as string) || null,
@@ -683,10 +698,15 @@ async function executeTool(name: string, input: Record<string, unknown>, userRol
     const department = (serviceType && DEPT_MAP[serviceType]) || null
     const convProjectNumber = await generateProjectNumber()
     const convName = `${convProjectNumber} ${finalLead.client_org || '(리드전환)'}`
+    const adminDb = createAdminClient()
+    const leadCustomerId = (finalLead.customer_id as string | null) ?? null
+    const customerId = leadCustomerId
+      ?? await resolveCustomerId(adminDb, { client_org: finalLead.client_org as string | null })
 
     const { data: sale, error: saleErr } = await supabase.from('sales').insert({
       name: convName,
       client_org: finalLead.client_org,
+      customer_id: customerId,
       service_type: serviceType,
       department,
       assignee_id: finalLead.assignee_id,
@@ -706,7 +726,7 @@ async function executeTool(name: string, input: Record<string, unknown>, userRol
       name: convName,
       service_type: serviceType,
       department,
-      customer_id: null,
+      customer_id: customerId,
       pm_id: (finalLead.assignee_id as string | null) ?? null,
       project_number: convProjectNumber,
       dropbox_url: null,
@@ -753,6 +773,131 @@ async function executeTool(name: string, input: Record<string, unknown>, userRol
       total_orgs: orgs?.length ?? 0,
       total_persons: persons?.length ?? 0,
     }
+  }
+
+  if (name === 'quick_create_customer') {
+    if (isMember) return { error: '팀원 권한으로는 고객 생성 불가.' }
+    const orgName = ((input.name as string) || '').trim()
+    if (!orgName) return { error: '기관명은 필수야.' }
+    const adminDb = createAdminClient()
+    const result = await quickCreateCustomer(adminDb, {
+      name: orgName,
+      type: input.type as string | null | undefined,
+      contact_name: input.contact_name as string | null | undefined,
+      contact_dept: input.contact_dept as string | null | undefined,
+      contact_title: input.contact_title as string | null | undefined,
+      phone: input.phone as string | null | undefined,
+      email: input.email as string | null | undefined,
+    })
+    if ('error' in result) return result
+    revalidatePath('/customers')
+    return { success: true, customer_id: result.customer_id, person_id: result.person_id ?? null, message: `"${orgName}" 등록 완료. 이 customer_id로 create_sale/create_lead 호출해.` }
+  }
+
+  if (name === 'find_duplicate_customers') {
+    if (isMember) return { error: '팀원 권한으로는 고객DB 정리 불가.' }
+    const adminDb = createAdminClient()
+    const keyword = (input.keyword as string | undefined)?.trim()
+    let q = adminDb.from('customers').select('id, name, type, status').order('name')
+    if (keyword) q = q.ilike('name', `%${keyword}%`)
+    const { data: rows, error } = await q
+    if (error) return { error: error.message }
+    if (!rows || rows.length === 0) return { groups: [], message: '대상 없음.' }
+
+    // 정규화: 공백·괄호·법인격(주식회사·㈜·(주)) 제거
+    const normalize = (s: string) => s
+      .replace(/\(주\)|㈜|주식회사|유한회사|\(유\)|㈠|\bcorp\b|\binc\b/gi, '')
+      .replace(/[\s·\-,.]/g, '')
+      .toLowerCase()
+    const groups = new Map<string, typeof rows>()
+    for (const r of rows) {
+      const key = normalize(r.name).slice(0, 6) || normalize(r.name)
+      if (!key) continue
+      if (!groups.has(key)) groups.set(key, [])
+      groups.get(key)!.push(r)
+    }
+    const dupes = Array.from(groups.values()).filter(g => g.length > 1)
+    return {
+      total_groups: dupes.length,
+      groups: dupes.map(g => ({
+        normalized: normalize(g[0].name).slice(0, 6),
+        candidates: g.map(c => ({ id: c.id, name: c.name, type: c.type, status: c.status })),
+      })),
+      message: dupes.length === 0 ? '중복 의심 후보 없음.' : `중복 후보 ${dupes.length}그룹. merge_customers로 통합.`,
+    }
+  }
+
+  if (name === 'merge_customers') {
+    if (isMember) return { error: '팀원 권한으로는 고객DB 정리 불가.' }
+    const keepId = (input.keep_id as string | undefined)?.trim()
+    const mergeIds = (input.merge_ids as string[] | undefined) ?? []
+    if (!keepId || mergeIds.length === 0) return { error: 'keep_id와 merge_ids 모두 필요.' }
+    if (mergeIds.includes(keepId)) return { error: 'keep_id가 merge_ids에 포함돼 있어.' }
+
+    const adminDb = createAdminClient()
+    const { data: keep } = await adminDb.from('customers').select('id, name').eq('id', keepId).maybeSingle()
+    if (!keep) return { error: 'keep_id에 해당하는 customer를 찾을 수 없어.' }
+
+    let salesUpdated = 0, leadsUpdated = 0, projectsUpdated = 0, relationsUpdated = 0
+    for (const mergeId of mergeIds) {
+      const { data: s } = await adminDb.from('sales').update({ customer_id: keepId }).eq('customer_id', mergeId).select('id')
+      salesUpdated += s?.length ?? 0
+      const { data: l } = await adminDb.from('leads').update({ customer_id: keepId }).eq('customer_id', mergeId).select('id')
+      leadsUpdated += l?.length ?? 0
+      const { data: p } = await adminDb.from('projects').update({ customer_id: keepId }).eq('customer_id', mergeId).select('id')
+      projectsUpdated += p?.length ?? 0
+      const { data: r } = await adminDb.from('person_org_relations').update({ customer_id: keepId }).eq('customer_id', mergeId).select('id')
+      relationsUpdated += r?.length ?? 0
+    }
+    const { error: delErr } = await adminDb.from('customers').delete().in('id', mergeIds)
+    if (delErr) return { error: `통합은 됐는데 삭제 실패: ${delErr.message}` }
+
+    revalidatePath('/customers')
+    return {
+      success: true,
+      kept: { id: keep.id, name: keep.name },
+      merged_count: mergeIds.length,
+      sales_moved: salesUpdated,
+      leads_moved: leadsUpdated,
+      projects_moved: projectsUpdated,
+      relations_moved: relationsUpdated,
+    }
+  }
+
+  if (name === 'find_orphan_sales') {
+    if (isMember) return { error: '팀원 권한으로는 전체 sales 조회 불가.' }
+    const adminDb = createAdminClient()
+    const limit = (input.limit as number) || 50
+    const keyword = (input.keyword as string | undefined)?.trim()
+    let q = adminDb
+      .from('sales')
+      .select('id, name, client_org, service_type, inflow_date, contract_stage')
+      .is('customer_id', null)
+      .order('inflow_date', { ascending: false })
+      .limit(limit)
+    if (keyword) q = q.ilike('client_org', `%${keyword}%`)
+    const { data, error } = await q
+    if (error) return { error: error.message }
+    return { count: data?.length ?? 0, sales: data ?? [] }
+  }
+
+  if (name === 'match_sale_to_customer') {
+    if (isMember) return { error: '팀원 권한으로는 sales 매핑 불가.' }
+    const saleId = (input.sale_id as string | undefined)?.trim()
+    const customerId = (input.customer_id as string | undefined)?.trim()
+    if (!saleId || !customerId) return { error: 'sale_id와 customer_id 모두 필요.' }
+    const adminDb = createAdminClient()
+    const { data: customer } = await adminDb.from('customers').select('id, name').eq('id', customerId).maybeSingle()
+    if (!customer) return { error: 'customer_id에 해당하는 customer를 찾을 수 없어.' }
+    const { data: sale } = await adminDb.from('sales').select('id, name, project_id').eq('id', saleId).maybeSingle()
+    if (!sale) return { error: 'sale_id에 해당하는 sale을 찾을 수 없어.' }
+
+    const { error: sErr } = await adminDb.from('sales').update({ customer_id: customerId }).eq('id', saleId)
+    if (sErr) return { error: sErr.message }
+    if (sale.project_id) {
+      await adminDb.from('projects').update({ customer_id: customerId }).eq('id', sale.project_id)
+    }
+    return { success: true, sale: { id: sale.id, name: sale.name }, customer: { id: customer.id, name: customer.name } }
   }
 
   if (name === 'list_dropbox_files') {

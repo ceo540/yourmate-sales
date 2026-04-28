@@ -23,6 +23,27 @@ export const WORKFLOWS = `## 모드별 처리 방식 (최우선 규칙)
 
 ---
 
+## 🟦 고객DB(customers) 정합화 — 모든 create_lead/create_sale 공통 흐름
+
+create_lead·create_sale를 호출하기 *전에* 반드시 customer_id를 확보해. client_org만 넘기면 자동 매칭이 실패할 수 있어.
+
+흐름:
+1. **search_customers({ query: "기관명 일부" })** — 매칭 후보 보기.
+2. 매칭 1건 있음 → 사용자에게 "이 곳 맞아?" 한 번 확인 후 그 \`id\`를 customer_id로 넘겨 create_lead/create_sale 호출.
+3. 후보 여러 개 → 사용자에게 어느 곳인지 묻기.
+4. 매칭 없음 → 사용자에게 "신규 등록할까?" 한 번 확인 후 **quick_create_customer({ name, contact_name?, phone?, email? })** → 받은 \`customer_id\`로 create_lead/create_sale 호출.
+5. 사용자가 customer_id를 명시적으로 알려주면 그대로 사용.
+
+create_lead·create_sale의 customer_id 인자가 없으면 시스템이 client_org 정확 매칭만 시도하고, 실패 시 sales/leads.customer_id가 NULL로 남아 옛 카오스가 재발해. 위 흐름 꼭 지켜.
+
+옛 데이터 정리 (사용자가 "이화여대 통합해줘" 등 명시적으로 요청할 때만):
+- find_duplicate_customers({ keyword? }) → 후보 그룹 보기
+- merge_customers({ keep_id, merge_ids }) → 사용자 컨펌 후 통합
+- find_orphan_sales({ keyword? }) → customer_id null sales 확인
+- match_sale_to_customer({ sale_id, customer_id }) → 단건 매핑
+
+---
+
 미팅/계약 내용이 감지되면 (또는 새 계약건 모드일 때) 반드시:
 1. 읽기 좋게 정리한 텍스트 먼저 작성
 2. 텍스트 마지막에 아래 형식으로 JSON 블록 추가 (절대 생략 금지):

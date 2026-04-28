@@ -7,6 +7,7 @@ import { logApiUsage } from '@/lib/api-usage'
 import { searchDropbox, listDropboxFolder, readDropboxFile } from '@/lib/dropbox'
 import { sendGroupMessage, notifyLeadConverted } from '@/lib/channeltalk'
 import { ensureProjectForSale, generateProjectNumber } from '@/lib/projects'
+import { resolveOrCreateCustomerId, resolveCustomerId } from '@/lib/customer-resolve'
 
 const MODEL = 'claude-haiku-4-5-20251001'
 const anthropic = new Anthropic()
@@ -308,6 +309,7 @@ async function executeTool(name: string, input: Record<string, unknown>): Promis
     const saleName = ((input.name as string) || '').trim()
     if (!saleName) return { error: '건명은 필수야.' }
     const serviceType = (input.service_type as string | null) || null
+    const clientOrg = (input.client_org as string | null) || null
     const DEPT_MAP: Record<string, string> = {
       'SOS': 'sound_of_school', '002ENT': '002_entertainment', '교육프로그램': 'artkiwoom',
       '납품설치': 'school_store', '유지보수': 'school_store', '교구대여': 'school_store', '제작인쇄': 'school_store',
@@ -315,9 +317,11 @@ async function executeTool(name: string, input: Record<string, unknown>): Promis
     }
     const department = (serviceType && DEPT_MAP[serviceType]) || null
     const ctProjectNumber = await generateProjectNumber()
+    const customerId = await resolveOrCreateCustomerId(supabase, { client_org: clientOrg })
     const { data: saleRow, error } = await supabase.from('sales').insert({
       name: saleName,
-      client_org: (input.client_org as string | null) || null,
+      client_org: clientOrg,
+      customer_id: customerId,
       service_type: serviceType,
       department,
       revenue: (input.revenue as number) || 0,
@@ -334,7 +338,7 @@ async function executeTool(name: string, input: Record<string, unknown>): Promis
       name: saleName,
       service_type: serviceType,
       department,
-      customer_id: null,
+      customer_id: customerId,
       pm_id: null,
       project_number: ctProjectNumber,
       dropbox_url: null,
@@ -442,8 +446,14 @@ async function executeTool(name: string, input: Record<string, unknown>): Promis
       const { data: assignee } = await supabase.from('profiles').select('id').ilike('name', `%${input.assignee_name}%`).limit(1)
       assignee_id = assignee?.[0]?.id || null
     }
+    const customerId = await resolveOrCreateCustomerId(supabase, {
+      client_org: clientOrg,
+      contact_name: (input.contact_name as string) || null,
+      phone: (input.phone as string) || null,
+    })
     const { data: lead, error } = await supabase.from('leads').insert({
       lead_id, client_org: clientOrg,
+      customer_id: customerId,
       contact_name: (input.contact_name as string) || null,
       phone: (input.phone as string) || null,
       service_type: (input.service_type as string) || null,
@@ -540,9 +550,11 @@ async function executeTool(name: string, input: Record<string, unknown>): Promis
     const department = (serviceType && DEPT_MAP[serviceType]) || null
     const convProjectNumber = await generateProjectNumber()
     const convName = `${convProjectNumber} ${finalLead.client_org || '(리드전환)'}`
+    const customerId = (finalLead.customer_id as string | null)
+      ?? await resolveCustomerId(supabase, { client_org: finalLead.client_org as string | null })
     const { data: sale, error: saleErr } = await supabase.from('sales').insert({
       name: convName,
-      client_org: finalLead.client_org, service_type: serviceType,
+      client_org: finalLead.client_org, customer_id: customerId, service_type: serviceType,
       department,
       assignee_id: finalLead.assignee_id, revenue: 0, contract_stage: '계약',
       memo: finalLead.initial_content, inflow_date: finalLead.inflow_date || new Date().toISOString().slice(0, 10),
@@ -557,7 +569,7 @@ async function executeTool(name: string, input: Record<string, unknown>): Promis
       name: convName,
       service_type: serviceType,
       department,
-      customer_id: null,
+      customer_id: customerId,
       pm_id: (finalLead.assignee_id as string | null) ?? null,
       project_number: convProjectNumber,
       dropbox_url: null,

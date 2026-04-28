@@ -5,6 +5,8 @@ import { SERVICE_TO_DEPT } from '@/types'
 import { createSaleFolder } from '@/lib/dropbox'
 import { logApiUsage } from '@/lib/api-usage'
 import { ensureProjectForSale, generateProjectNumber } from '@/lib/projects'
+import { createAdminClient } from '@/lib/supabase/admin'
+import { resolveCustomerId } from '@/lib/customer-resolve'
 
 const NOTION_DB_ID = '6401e402-25e9-4941-a89e-6e3107df5f74'
 
@@ -167,12 +169,18 @@ export async function POST(req: NextRequest) {
     if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
     const body = await req.json()
-    const { name, client_org, service_type, revenue, memo } = body
+    const { name, client_org, customer_id: customerIdInput, service_type, revenue, memo } = body
 
     const department = (service_type && SERVICE_TO_DEPT[service_type]) || null
     const inflowDate = new Date().toISOString().split('T')[0]
     const projectNumber = await generateProjectNumber()
     const saleName = name?.trim() || '(제목 없음)'
+
+    const adminDb = createAdminClient()
+    const customerId = await resolveCustomerId(adminDb, {
+      customer_id: customerIdInput,
+      client_org: client_org || null,
+    })
 
     // 1. Dropbox 폴더 생성
     const dropboxUrl = await createSaleFolder({
@@ -185,6 +193,7 @@ export async function POST(req: NextRequest) {
     const { data, error } = await supabase.from('sales').insert({
       name: saleName,
       client_org: client_org || null,
+      customer_id: customerId,
       service_type: service_type || null,
       department,
       revenue: revenue || 0,
@@ -204,7 +213,7 @@ export async function POST(req: NextRequest) {
       name: saleName,
       service_type: service_type || null,
       department,
-      customer_id: null,
+      customer_id: customerId,
       pm_id: user.id,
       project_number: projectNumber,
       dropbox_url: dropboxUrl || null,
