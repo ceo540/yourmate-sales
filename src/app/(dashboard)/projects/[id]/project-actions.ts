@@ -721,6 +721,55 @@ export async function createSaleForProject(projectId: string, data: {
 }
 
 // entity_id가 나중에 채워진 케이스 / 폴더 생성 실패 후 재시도용
+// 계약(sale)에 연결된 폴더(사업자별 계약 폴더 또는 프로젝트 폴더)의 PDF 목록 반환
+// 매핑 모달에서 사용자가 최종 견적 PDF 고를 때 사용.
+export async function listSaleFolderPdfs(saleId: string): Promise<{ pdfs: { name: string; path: string }[] } | { error: string }> {
+  const admin = createAdminClient()
+  const { data: sale } = await admin
+    .from('sales')
+    .select('dropbox_url, project_id, projects(dropbox_url)')
+    .eq('id', saleId)
+    .maybeSingle()
+  if (!sale) return { error: '계약을 찾을 수 없음' }
+
+  // 우선순위: 계약 폴더(분할 시 사업자별) → 프로젝트 폴더
+  const projectDb = (sale as unknown as { projects?: { dropbox_url: string | null } }).projects
+  const folderUrl = sale.dropbox_url || projectDb?.dropbox_url
+  if (!folderUrl) return { error: '연결된 Dropbox 폴더가 없음' }
+
+  const { listDropboxFolder } = await import('@/lib/dropbox')
+  const WEB_BASE = 'https://www.dropbox.com/home'
+  const folderPath = decodeURIComponent(folderUrl.replace(WEB_BASE, '')).replace(/\/$/, '')
+
+  // 재귀적으로 PDF 검색 (1 depth) — 보통 계약 폴더 직속 또는 1단계 안에 있음
+  const top = await listDropboxFolder(folderPath)
+  const pdfs: { name: string; path: string }[] = []
+  for (const f of top) {
+    if (f.type === 'file' && f.name.toLowerCase().endsWith('.pdf')) {
+      pdfs.push({ name: f.name, path: f.path })
+    } else if (f.type === 'folder') {
+      const sub = await listDropboxFolder(`${folderPath}/${f.name}`).catch(() => [])
+      for (const s of sub) {
+        if (s.type === 'file' && s.name.toLowerCase().endsWith('.pdf')) {
+          pdfs.push({ name: `${f.name}/${s.name}`, path: s.path })
+        }
+      }
+    }
+  }
+  return { pdfs }
+}
+
+export async function setSaleFinalQuote(saleId: string, dropboxPath: string | null, projectId: string): Promise<{ error?: string }> {
+  const admin = createAdminClient()
+  const { error } = await admin
+    .from('sales')
+    .update({ final_quote_dropbox_path: dropboxPath, updated_at: new Date().toISOString() })
+    .eq('id', saleId)
+  if (error) return { error: error.message }
+  revalidatePath(`/projects/${projectId}`)
+  return {}
+}
+
 export async function ensureContractFolder(saleId: string): Promise<{ ok: true; webUrl: string } | { error: string }> {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()

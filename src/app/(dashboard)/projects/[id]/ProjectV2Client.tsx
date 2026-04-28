@@ -37,6 +37,8 @@ import {
   togglePaymentReceived,
   addPaymentSchedule,
   deletePaymentSchedule,
+  listSaleFolderPdfs,
+  setSaleFinalQuote,
   createProjectMemo,
   updateProjectMemoCard,
   deleteProjectMemo,
@@ -89,6 +91,7 @@ interface Contract {
   contract_split_reason: string | null
   inflow_date: string | null
   payment_date: string | null
+  final_quote_dropbox_path: string | null
   payment_schedules: PaymentSchedule[]
 }
 interface BusinessEntity {
@@ -1685,6 +1688,7 @@ function ContractRow({ contract: c, projectId }: { contract: Contract; projectId
       {open && (
         <div className="px-5 pb-3 pt-1 bg-gray-50/50 space-y-3">
           <ContractStageEditor sale={c} projectId={projectId} onChange={() => router.refresh()} />
+          <FinalQuoteMapper sale={c} projectId={projectId} onChange={() => router.refresh()} />
           <ContractMoneyEditor sale={c} projectId={projectId} totalScheduled={totalScheduled} totalReceived={totalReceived} remainder={remainder} onChange={() => router.refresh()} />
           <PaymentSchedulesEditor sale={c} projectId={projectId} onChange={() => router.refresh()} />
         </div>
@@ -1809,6 +1813,7 @@ function PaymentSchedulesEditor({
       )}
       {sale.payment_schedules.map(p => {
         const overdue = !p.is_received && p.due_date && p.due_date < new Date().toISOString().slice(0, 10)
+        const folderUrl = sale.dropbox_url
         return (
           <div key={p.id} className="flex items-center gap-2 text-[11px] bg-white border border-gray-100 rounded px-2 py-1.5">
             <input type="checkbox" checked={p.is_received} onChange={e => toggle(p.id, e.target.checked)} disabled={busy === p.id}
@@ -1821,6 +1826,12 @@ function PaymentSchedulesEditor({
               </span>
             )}
             {p.is_received && p.received_date && <span className="text-green-500">✓ 입금 {p.received_date}</span>}
+            {folderUrl && (
+              <a href={folderUrl} target="_blank" rel="noopener noreferrer"
+                onClick={e => e.stopPropagation()}
+                title="이 계약의 Dropbox 폴더 열기"
+                className="text-gray-300 hover:text-blue-500 text-[10px]">📁</a>
+            )}
             <button onClick={() => remove(p.id)} disabled={busy === p.id}
               className="ml-auto text-gray-300 hover:text-red-500 text-[10px]">✕</button>
           </div>
@@ -1846,6 +1857,73 @@ function PaymentSchedulesEditor({
             style={{ backgroundColor: '#FFCE00', color: '#121212' }}>
             추가
           </button>
+        </div>
+      )}
+    </div>
+  )
+}
+
+function FinalQuoteMapper({ sale, projectId, onChange }: { sale: Contract; projectId: string; onChange: () => void }) {
+  const [busy, setBusy] = useState(false)
+  const [showPicker, setShowPicker] = useState(false)
+  const [pdfs, setPdfs] = useState<{ name: string; path: string }[] | null>(null)
+  const [err, setErr] = useState<string | null>(null)
+
+  const currentName = sale.final_quote_dropbox_path?.split('/').pop() || null
+
+  async function openPicker() {
+    setShowPicker(true); setErr(null); setPdfs(null)
+    setBusy(true)
+    const r = await listSaleFolderPdfs(sale.id)
+    setBusy(false)
+    if ('error' in r) { setErr(r.error); return }
+    setPdfs(r.pdfs)
+  }
+  async function pick(path: string) {
+    setBusy(true)
+    await setSaleFinalQuote(sale.id, path, projectId)
+    setBusy(false); setShowPicker(false); onChange()
+  }
+  async function clear() {
+    if (!confirm('최종 견적 매핑 해제할까?')) return
+    setBusy(true)
+    await setSaleFinalQuote(sale.id, null, projectId)
+    setBusy(false); onChange()
+  }
+
+  return (
+    <div className="space-y-1.5">
+      <p className="text-[11px] font-semibold text-gray-600">최종 견적 PDF</p>
+      {currentName ? (
+        <div className="flex items-center gap-2 text-[11px] bg-white border border-gray-100 rounded px-2 py-1.5">
+          <span>📎</span>
+          <span className="text-gray-700 truncate flex-1" title={sale.final_quote_dropbox_path ?? ''}>{currentName}</span>
+          <button onClick={openPicker} disabled={busy} className="text-blue-500 hover:underline">다시 매핑</button>
+          <button onClick={clear} disabled={busy} className="text-gray-400 hover:text-red-500">해제</button>
+        </div>
+      ) : (
+        <button onClick={openPicker} disabled={busy}
+          className="w-full text-[11px] py-1.5 border border-dashed border-gray-300 rounded text-gray-500 hover:border-yellow-400 hover:text-gray-700 disabled:opacity-50">
+          📎 최종 견적 PDF 매핑하기
+        </button>
+      )}
+      {showPicker && (
+        <div className="border border-gray-200 rounded bg-white p-2 space-y-1.5">
+          <div className="flex items-center justify-between">
+            <p className="text-[11px] font-semibold text-gray-600">PDF 선택</p>
+            <button onClick={() => setShowPicker(false)} className="text-gray-300 hover:text-gray-600 text-[11px]">취소</button>
+          </div>
+          {busy && !pdfs && <p className="text-[11px] text-gray-400">불러오는 중...</p>}
+          {err && <p className="text-[11px] text-red-500">{err}</p>}
+          {pdfs && pdfs.length === 0 && <p className="text-[11px] text-gray-400 italic">PDF 없음. Dropbox에 업로드 후 다시.</p>}
+          {pdfs && pdfs.map(p => (
+            <button key={p.path} onClick={() => pick(p.path)} disabled={busy}
+              className={`w-full text-left text-[11px] px-2 py-1 rounded hover:bg-yellow-50 ${
+                p.path === sale.final_quote_dropbox_path ? 'bg-yellow-100' : ''
+              }`}>
+              📄 {p.name}
+            </button>
+          ))}
         </div>
       )}
     </div>
