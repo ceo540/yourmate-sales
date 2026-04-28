@@ -45,12 +45,16 @@ async function generateLeadId(): Promise<string> {
 export async function createLead(formData: FormData) {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
+  const customer_id = (formData.get('customer_id') as string) || null
+  if (!customer_id) {
+    return { error: '기관(customer_id)이 비어있어. 폼에서 검색·선택하거나 + 새 기관 추가로 등록해줘.' }
+  }
   const lead_id = await generateLeadId()
 
   const { data: insertedLead } = await supabase.from('leads').insert({
     lead_id,
     person_id: (formData.get('person_id') as string) || null,
-    customer_id: (formData.get('customer_id') as string) || null,
+    customer_id,
     inflow_date: (formData.get('inflow_date') as string) || new Date().toISOString().slice(0, 10),
     remind_date: (formData.get('remind_date') as string) || null,
     service_type: (formData.get('service_type') as string) || null,

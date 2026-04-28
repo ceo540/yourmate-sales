@@ -705,6 +705,10 @@ export default function LeadsClient({ leads, profiles, persons, customers, curre
 
   function handleCreate(e: React.FormEvent) {
     e.preventDefault()
+    if (!form.customer_id) {
+      alert('기관(고객)을 검색·선택하거나 "+ 새 기관 추가"로 등록해줘.')
+      return
+    }
     const fd = new FormData()
     Object.entries(form).forEach(([k, v]) => { if (v) fd.set(k, v as string) })
     startTransition(async () => { await createLead(fd); setShowCreateModal(false); setForm({ ...EMPTY_FORM }) })
@@ -713,9 +717,14 @@ export default function LeadsClient({ leads, profiles, persons, customers, curre
   function handleUpdate(e: React.FormEvent) {
     e.preventDefault()
     if (!selectedLead) return
+    if (!form.customer_id) {
+      alert('기관(고객)을 검색·선택하거나 "+ 새 기관 추가"로 등록해줘.')
+      return
+    }
     startTransition(async () => {
       await updateLead(selectedLead.id, {
         person_id: form.person_id || null,
+        customer_id: form.customer_id || null,
         inflow_date: form.inflow_date || null, remind_date: form.remind_date || null,
         service_type: form.service_type || null, project_name: form.project_name || null,
         contact_name: form.contact_name || null, client_org: form.client_org || null,

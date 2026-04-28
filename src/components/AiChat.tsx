@@ -1,6 +1,7 @@
 'use client'
 import { useState, useRef, useEffect } from 'react'
 import { useRouter, usePathname } from 'next/navigation'
+import MarkdownText from './MarkdownText'
 
 type ChatMode = 'new-sale' | 'new-lead' | 'update' | 'chat' | null
 
@@ -461,14 +462,16 @@ export default function AiChat() {
                   />
                 )}
                 <div
-                  className={`max-w-[85%] px-3 py-2 rounded-2xl text-sm whitespace-pre-wrap leading-relaxed ${
+                  className={`max-w-[85%] px-3 py-2 rounded-2xl text-sm leading-relaxed ${
                     msg.role === 'user'
-                      ? 'rounded-br-sm text-gray-900'
+                      ? 'rounded-br-sm text-gray-900 whitespace-pre-wrap'
                       : 'bg-gray-100 text-gray-800 rounded-bl-sm'
                   }`}
                   style={msg.role === 'user' ? { backgroundColor: '#FFCE00' } : {}}
                 >
-                  {msg.content}
+                  {msg.role === 'assistant'
+                    ? <MarkdownText>{msg.content}</MarkdownText>
+                    : msg.content}
                 </div>
 
                 {/* Brief 저장 버튼 (프로젝트 페이지 + 어시스턴트 메시지) */}
