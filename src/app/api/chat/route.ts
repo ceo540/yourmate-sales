@@ -12,7 +12,7 @@ const MUTATING_TOOLS = new Set([
   'create_calendar_event',
   'create_project_task', 'complete_task', 'update_task', 'delete_task',
   'regenerate_overview', 'update_pending_discussion', 'regenerate_pending_discussion',
-  'quick_create_customer', 'merge_customers', 'match_sale_to_customer',
+  'quick_create_customer', 'merge_customers', 'match_sale_to_customer', 'match_lead_to_customer',
 ])
 import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
@@ -879,6 +879,47 @@ async function executeTool(name: string, input: Record<string, unknown>, userRol
     const { data, error } = await q
     if (error) return { error: error.message }
     return { count: data?.length ?? 0, sales: data ?? [] }
+  }
+
+  if (name === 'find_orphan_leads') {
+    if (isMember) return { error: '팀원 권한으로는 전체 leads 조회 불가.' }
+    const adminDb = createAdminClient()
+    const limit = (input.limit as number) || 50
+    const keyword = (input.keyword as string | undefined)?.trim()
+    let q = adminDb
+      .from('leads')
+      .select('id, lead_id, client_org, contact_name, service_type, status, inflow_date')
+      .is('customer_id', null)
+      .order('inflow_date', { ascending: false })
+      .limit(limit)
+    if (keyword) q = q.ilike('client_org', `%${keyword}%`)
+    const { data, error } = await q
+    if (error) return { error: error.message }
+    return { count: data?.length ?? 0, leads: data ?? [] }
+  }
+
+  if (name === 'match_lead_to_customer') {
+    if (isMember) return { error: '팀원 권한으로는 leads 매핑 불가.' }
+    const idStr = (input.lead_id as string | undefined)?.trim()
+    const customerId = (input.customer_id as string | undefined)?.trim()
+    if (!idStr || !customerId) return { error: 'lead_id와 customer_id 모두 필요.' }
+    const adminDb = createAdminClient()
+    const { data: customer } = await adminDb.from('customers').select('id, name').eq('id', customerId).maybeSingle()
+    if (!customer) return { error: 'customer_id에 해당하는 customer를 찾을 수 없음.' }
+
+    const isUuid = /^[0-9a-f]{8}-/.test(idStr)
+    const { data: lead } = isUuid
+      ? await adminDb.from('leads').select('id, lead_id, client_org').eq('id', idStr).maybeSingle()
+      : await adminDb.from('leads').select('id, lead_id, client_org').eq('lead_id', idStr).maybeSingle()
+    if (!lead) return { error: 'lead를 찾을 수 없음.' }
+
+    const { error: uErr } = await adminDb
+      .from('leads')
+      .update({ customer_id: customerId, updated_at: new Date().toISOString() })
+      .eq('id', lead.id)
+    if (uErr) return { error: uErr.message }
+    revalidatePath('/leads')
+    return { success: true, lead: { id: lead.id, lead_id: lead.lead_id, client_org: lead.client_org }, customer: { id: customer.id, name: customer.name } }
   }
 
   if (name === 'match_sale_to_customer') {

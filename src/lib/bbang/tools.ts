@@ -293,6 +293,29 @@ export const TOOLS: Anthropic.Tool[] = [
     },
   },
   {
+    name: 'match_lead_to_customer',
+    description: '단일 lead 행을 특정 customer에 연결합니다. leads.customer_id 갱신.',
+    input_schema: {
+      type: 'object' as const,
+      properties: {
+        lead_id: { type: 'string', description: 'leads.id (UUID) 또는 lead_id (예: LEAD20260413-0001)' },
+        customer_id: { type: 'string', description: 'customers.id (UUID)' },
+      },
+      required: ['lead_id', 'customer_id'],
+    },
+  },
+  {
+    name: 'find_orphan_leads',
+    description: 'customer_id가 비어 있는 leads를 찾습니다. client_org 텍스트 그대로 노출. 정리 시 단서로 사용.',
+    input_schema: {
+      type: 'object' as const,
+      properties: {
+        keyword: { type: 'string', description: '특정 client_org 키워드 필터 (선택)' },
+        limit: { type: 'number', description: '최대 조회 건수 (기본 50)' },
+      },
+    },
+  },
+  {
     name: 'list_dropbox_files',
     description: '프로젝트의 Dropbox 폴더 파일 목록을 조회합니다.',
     input_schema: {
