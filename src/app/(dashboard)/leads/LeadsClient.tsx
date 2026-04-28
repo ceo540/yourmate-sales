@@ -709,9 +709,20 @@ export default function LeadsClient({ leads, profiles, persons, customers, curre
       alert('기관(고객)을 검색·선택하거나 "+ 새 기관 추가"로 등록해줘.')
       return
     }
+    // 모달 즉시 close (snappy). 실패 시 폼·모달 롤백.
+    const formSnapshot = { ...form }
+    setShowCreateModal(false); setForm({ ...EMPTY_FORM })
     const fd = new FormData()
-    Object.entries(form).forEach(([k, v]) => { if (v) fd.set(k, v as string) })
-    startTransition(async () => { await createLead(fd); setShowCreateModal(false); setForm({ ...EMPTY_FORM }) })
+    Object.entries(formSnapshot).forEach(([k, v]) => { if (v) fd.set(k, v as string) })
+    startTransition(async () => {
+      const res = await createLead(fd) as { error?: string } | undefined
+      if (res?.error) {
+        alert('등록 실패: ' + res.error)
+        setForm(formSnapshot); setShowCreateModal(true)
+        return
+      }
+      router.refresh()
+    })
   }
 
   function handleUpdate(e: React.FormEvent) {
@@ -721,8 +732,9 @@ export default function LeadsClient({ leads, profiles, persons, customers, curre
       alert('기관(고객)을 검색·선택하거나 "+ 새 기관 추가"로 등록해줘.')
       return
     }
+    // 편집 탭은 await 후 close (즉시 닫으면 stale 보임)
     startTransition(async () => {
-      await updateLead(selectedLead.id, {
+      const res = await updateLead(selectedLead.id, {
         person_id: form.person_id || null,
         customer_id: form.customer_id || null,
         inflow_date: form.inflow_date || null, remind_date: form.remind_date || null,
@@ -733,8 +745,10 @@ export default function LeadsClient({ leads, profiles, persons, customers, curre
         assignee_id: form.assignee_id || null, status: form.status,
         channel: form.channel || null, inflow_source: form.inflow_source || null,
         notes: form.notes || null,
-      })
+      }) as { error?: string } | undefined
+      if (res?.error) { alert('저장 실패: ' + res.error); return }
       setTab('main')
+      router.refresh()
     })
   }
 
