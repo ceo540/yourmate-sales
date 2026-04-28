@@ -12,6 +12,7 @@ import dynamic from 'next/dynamic'
 const BlockNoteEditor = dynamic(() => import('@/components/BlockNoteEditor'), { ssr: false })
 import ProjectSettingsModal from './ProjectSettingsModal'
 import CostModal from '../../sales/CostModal'
+import CostPdfImportModal from '../../sales/[id]/CostPdfImportModal'
 import { createClient as createSupabaseClient } from '@/lib/supabase/client'
 import {
   updateProjectMemo,
@@ -1935,6 +1936,7 @@ function CostEditButton({ sale }: { sale: Contract }) {
   const [loading, setLoading] = useState(false)
   const [items, setItems] = useState<any[] | null>(null)
   const [vendors, setVendors] = useState<any[]>([])
+  const [pdfOpen, setPdfOpen] = useState(false)
 
   async function handleOpen() {
     setLoading(true)
@@ -1953,10 +1955,16 @@ function CostEditButton({ sale }: { sale: Contract }) {
     <>
       <div className="flex items-center justify-between pt-1">
         <p className="text-[11px] font-semibold text-gray-600">원가 / 외주비</p>
-        <button onClick={handleOpen} disabled={loading}
-          className="text-[11px] text-gray-500 hover:text-yellow-700 underline decoration-dashed underline-offset-2 disabled:opacity-50">
-          {loading ? '불러오는 중...' : '📊 세부 원가 편집'}
-        </button>
+        <div className="flex items-center gap-3">
+          <button onClick={() => setPdfOpen(true)}
+            className="text-[11px] text-gray-500 hover:text-yellow-700 underline decoration-dashed underline-offset-2">
+            📎 원가 폴더 분석
+          </button>
+          <button onClick={handleOpen} disabled={loading}
+            className="text-[11px] text-gray-500 hover:text-yellow-700 underline decoration-dashed underline-offset-2 disabled:opacity-50">
+            {loading ? '불러오는 중...' : '📊 세부 원가 편집'}
+          </button>
+        </div>
       </div>
       {open && items !== null && (
         <CostModal
@@ -1967,6 +1975,9 @@ function CostEditButton({ sale }: { sale: Contract }) {
           vendors={vendors}
           onClose={() => setOpen(false)}
         />
+      )}
+      {pdfOpen && (
+        <CostPdfImportModal saleId={sale.id} onClose={() => setPdfOpen(false)} />
       )}
     </>
   )
