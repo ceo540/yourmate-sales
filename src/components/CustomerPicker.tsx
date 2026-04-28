@@ -3,8 +3,8 @@
 // 모든 폼(리드/프로젝트/계약 등)에서 동일한 UX로 사용.
 //
 // - 자유 텍스트 입력 X. 항상 검색 → 선택 OR [+ 새 기관 추가]
-// - 신규 추가는 풀 필드 (이름 필수 + 유형/지역/담당자/직책/전화/이메일 선택)
-// - 담당자(persons)는 dept/title 분리 저장 (이름에 직책 같이 들어가지 않게)
+// - 신규 추가는 풀 필드 (이름 필수 + 유형/지역/고객/직책/전화/이메일 선택)
+// - 고객(persons)은 dept/title 분리 저장 (이름에 직책 같이 들어가지 않게)
 
 import { useState, useRef, useEffect } from 'react'
 import { quickCreateCustomerWithContact } from '@/app/(dashboard)/customers/actions'
@@ -136,7 +136,7 @@ function CreateCustomerModal({
   const [type, setType] = useState<string>('학교')
   const [region, setRegion] = useState('')
   const [address, setAddress] = useState('')
-  // 담당자 (persons + person_org_relations)
+  // 고객 (persons + person_org_relations)
   const [contactName, setContactName] = useState('')
   const [contactDept, setContactDept] = useState('')
   const [contactTitle, setContactTitle] = useState('')
@@ -205,7 +205,7 @@ function CreateCustomerModal({
           </div>
 
           <div className="border-t border-gray-100 pt-3">
-            <p className="text-[11px] font-semibold text-gray-700 mb-2">고객 (담당자) — 선택. 이름만 있으면 OK</p>
+            <p className="text-[11px] font-semibold text-gray-700 mb-2">고객 (이 기관의 담당자 분) — 선택. 이름만 있으면 OK</p>
             <div className="grid grid-cols-2 gap-2">
               <input value={contactName} onChange={e => setContactName(e.target.value)} placeholder="고객 이름"
                 className="text-sm border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:border-yellow-400" />

@@ -153,7 +153,7 @@ export default function CustomersClient({ customers, persons, isAdmin }: Props) 
       const nameToCheck = perForm.name?.trim()
       if (nameToCheck) {
         const dup = persons.find(p => p.name === nameToCheck)
-        if (dup && !confirm(`'${nameToCheck}' 이름의 담당자가 이미 있어요.\n그래도 등록할까요?`)) return
+        if (dup && !confirm(`'${nameToCheck}' 이름의 고객이 이미 있어요.\n그래도 등록할까요?`)) return
       }
     }
     startTransition(async () => {
@@ -181,7 +181,7 @@ export default function CustomersClient({ customers, persons, isAdmin }: Props) 
   function handleAddRelation(e: React.FormEvent) {
     e.preventDefault()
     if (!relForm.customer_id) { alert('기관을 선택해 주세요.'); return }
-    if (!relForm.person_id)   { alert('담당자를 선택해 주세요.'); return }
+    if (!relForm.person_id)   { alert('고객을 선택해 주세요.'); return }
     startTransition(async () => {
       const res = await addRelation({
         person_id:   relForm.person_id,
@@ -294,7 +294,7 @@ export default function CustomersClient({ customers, persons, isAdmin }: Props) 
 
   /* CSV 내보내기 */
   function handleExportOrgs() {
-    const headers = ['기관명','유형','지역','전화','총매출(원)','계약건수','최근거래일','담당자수','메모']
+    const headers = ['기관명','유형','지역','전화','총매출(원)','계약건수','최근거래일','고객수','메모']
     const rows = customers.map(c=>[c.name,c.type,c.region,c.phone,c.total_sales,c.sales_count,c.last_deal_date||'',c.contacts.length,c.notes])
     downloadCSV(headers, rows, `기관목록_${new Date().toISOString().slice(0,10)}.csv`)
   }
@@ -304,7 +304,7 @@ export default function CustomersClient({ customers, persons, isAdmin }: Props) 
       const cur=p.job_history.find(j=>j.is_current)
       return [p.name,p.phone,p.email,cur?.customer_name||'',cur?.title||'',cur?.dept||'',p.job_history.length>1?p.job_history.length-1:0,p.notes]
     })
-    downloadCSV(headers, rows, `담당자목록_${new Date().toISOString().slice(0,10)}.csv`)
+    downloadCSV(headers, rows, `고객목록_${new Date().toISOString().slice(0,10)}.csv`)
   }
 
   /* 티어 그룹 */
@@ -329,7 +329,7 @@ export default function CustomersClient({ customers, persons, isAdmin }: Props) 
           {label:'전체 기관',  value:`${customers.length}개`, color:'text-gray-800', bg:'bg-white'},
           {label:'누적 매출',  value:fmt(totalRevenue),        color:'text-green-600',bg:'bg-green-50'},
           {label:'VIP (1000만+)', value:`${vipCnt}개`,        color:'text-yellow-600',bg:'bg-yellow-50'},
-          {label:'담당자 수',  value:`${persons.length}명`,   color:'text-blue-600', bg:'bg-blue-50'},
+          {label:'고객 수',  value:`${persons.length}명`,   color:'text-blue-600', bg:'bg-blue-50'},
         ].map(s=>(
           <div key={s.label} className={`${s.bg} border border-gray-200 rounded-xl px-4 py-3`}>
             <p className="text-xs text-gray-400 mb-1">{s.label}</p>
@@ -388,7 +388,7 @@ export default function CustomersClient({ customers, persons, isAdmin }: Props) 
             <button onClick={() => setListView('person')}
               className="px-3 py-1.5 text-xs font-medium rounded-full border"
               style={{background:'#fff',color:'#6B7280',borderColor:'#E5E7EB'}}>
-              👤 담당자 ({persons.length})
+              👤 고객 ({persons.length})
             </button>
           </div>
           {/* 카드 그리드 */}
@@ -409,7 +409,7 @@ export default function CustomersClient({ customers, persons, isAdmin }: Props) 
                       </div>
                     </div>
                     <div className="border-t border-gray-100 pt-3 mb-3">
-                      <p className="text-xs text-gray-400 mb-1.5">담당자</p>
+                      <p className="text-xs text-gray-400 mb-1.5">고객</p>
                       {currentContacts.length === 0 ? (
                         <p className="text-xs text-gray-300">미등록</p>
                       ) : currentContacts.slice(0, 2).map(ct => (
@@ -444,15 +444,15 @@ export default function CustomersClient({ customers, persons, isAdmin }: Props) 
             <button onClick={() => setListView('person')}
               className="px-3 py-1.5 text-xs font-medium rounded-full border"
               style={{background:'#121212',color:'#FFCE00',borderColor:'#121212'}}>
-              👤 담당자 ({persons.length})
+              👤 고객 ({persons.length})
             </button>
-            <input type="text" placeholder="담당자명 검색..." value={pSearch} onChange={e=>setPSearch(e.target.value)}
+            <input type="text" placeholder="고객 이름 검색..." value={pSearch} onChange={e=>setPSearch(e.target.value)}
               className="border border-gray-200 rounded-lg px-3 py-2 text-sm w-52 focus:outline-none focus:ring-2 focus:ring-yellow-300 ml-4" />
             {isAdmin && (
               <button onClick={() => { setPerForm({}); setPerOrgSearch(''); setShowNewPerson(true) }}
                 className="ml-auto px-4 py-2 text-sm font-semibold rounded-lg"
                 style={{ backgroundColor: '#FFCE00', color: '#121212' }}>
-                + 담당자 등록
+                + 고객 등록
               </button>
             )}
           </div>
@@ -562,11 +562,11 @@ export default function CustomersClient({ customers, persons, isAdmin }: Props) 
                   {/* 담당자 이력 */}
                   <div>
                     <div className="flex items-center justify-between mb-2">
-                      <p className="text-xs text-gray-400">담당자 이력 ({o.contacts.length}명)</p>
-                      {isAdmin&&<button onClick={()=>{setRelForm({customer_id:o.id});setShowAddRel(true)}} className="text-xs text-gray-400 hover:text-gray-700 border border-gray-200 rounded px-2 py-0.5">+ 담당자 연결</button>}
+                      <p className="text-xs text-gray-400">고객 이력 ({o.contacts.length}명)</p>
+                      {isAdmin&&<button onClick={()=>{setRelForm({customer_id:o.id});setShowAddRel(true)}} className="text-xs text-gray-400 hover:text-gray-700 border border-gray-200 rounded px-2 py-0.5">+ 고객 연결</button>}
                     </div>
                     {o.contacts.length===0
-                      ?<p className="text-xs text-gray-300 italic">연결된 담당자가 없어요.</p>
+                      ?<p className="text-xs text-gray-300 italic">연결된 고객이 없어요.</p>
                       :(()=>{
                         // 부서별 그룹핑 (dept 없으면 '기타' 그룹)
                         const deptGroups: Record<string, OrgContact[]> = {}
@@ -708,7 +708,7 @@ export default function CustomersClient({ customers, persons, isAdmin }: Props) 
                   </div>
                   {hasMoved&&(
                     <div className="mt-3 bg-orange-50 border border-orange-100 rounded-lg px-3 py-2">
-                      <p className="text-xs text-orange-700 font-semibold mb-1">💡 이 담당자를 따라 새 거래처가 열렸어요</p>
+                      <p className="text-xs text-orange-700 font-semibold mb-1">💡 이 고객을 따라 새 거래처가 열렸어요</p>
                       <div className="flex items-center gap-1.5 flex-wrap text-xs">
                         {p.job_history.map((j,i)=>(
                           <span key={i} className="flex items-center gap-1">
@@ -961,8 +961,8 @@ export default function CustomersClient({ customers, persons, isAdmin }: Props) 
                 </div>
 
                 <div className="px-5 py-3 border-t border-gray-100 flex gap-2 shrink-0">
-                  {isAdmin&&<button onClick={()=>{if(confirm('이 담당자를 삭제할까요?\n소속 관계가 모두 삭제됩니다.'))startTransition(async()=>{const r=await deletePerson(p.id);if(r?.error){alert('삭제 실패: '+r.error);return}setDetailId(null);router.refresh()})}} className="px-3 py-2 text-xs text-red-400 border border-red-100 rounded-lg hover:bg-red-50">삭제</button>}
-                  <button onClick={()=>router.push('/leads')} className="flex-1 px-3 py-2 text-sm font-semibold rounded-lg text-center" style={{backgroundColor:'#FFCE00',color:'#121212'}}>이 담당자 리드 보기</button>
+                  {isAdmin&&<button onClick={()=>{if(confirm('이 고객을 삭제할까요?\n소속 관계가 모두 삭제됩니다.'))startTransition(async()=>{const r=await deletePerson(p.id);if(r?.error){alert('삭제 실패: '+r.error);return}setDetailId(null);router.refresh()})}} className="px-3 py-2 text-xs text-red-400 border border-red-100 rounded-lg hover:bg-red-50">삭제</button>}
+                  <button onClick={()=>router.push('/leads')} className="flex-1 px-3 py-2 text-sm font-semibold rounded-lg text-center" style={{backgroundColor:'#FFCE00',color:'#121212'}}>이 고객 리드 보기</button>
                 </div>
               </>
             )
@@ -993,12 +993,12 @@ export default function CustomersClient({ customers, persons, isAdmin }: Props) 
         </div>
       )}
 
-      {/* ── 모달: 새 담당자 ── */}
+      {/* ── 모달: 새 고객 ── */}
       {showNewPerson&&(
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
           <div className="absolute inset-0 bg-black/40" onClick={()=>setShowNewPerson(false)}/>
           <form onSubmit={handleSavePerson} className="relative bg-white rounded-2xl shadow-2xl w-full max-w-md p-6 space-y-3">
-            <h2 className="text-lg font-bold text-gray-900 mb-2">새 담당자 등록</h2>
+            <h2 className="text-lg font-bold text-gray-900 mb-2">새 고객 등록</h2>
             <div className="grid grid-cols-2 gap-3">
               <div><label className={lbl}>이름 *</label><input className={inp} required value={perForm.name||''} onChange={e=>setPerForm(f=>({...f,name:e.target.value}))}/></div>
               <div>
@@ -1073,7 +1073,7 @@ export default function CustomersClient({ customers, persons, isAdmin }: Props) 
           <form onSubmit={handleAddRelation} className="relative bg-white rounded-2xl shadow-2xl w-full max-w-md p-6 space-y-3">
             <h2 className="text-lg font-bold text-gray-900 mb-2">소속 연결 / 이직 추가</h2>
             {!relForm.person_id&&(
-              <div><label className={lbl}>담당자 *</label>
+              <div><label className={lbl}>고객 *</label>
                 <select className={inp} required value={relForm.person_id||''} onChange={e=>setRelForm(f=>({...f,person_id:e.target.value}))}>
                   <option value="">선택</option>
                   {persons.map(p=><option key={p.id} value={p.id}>{p.name}</option>)}
@@ -1125,7 +1125,7 @@ export default function CustomersClient({ customers, persons, isAdmin }: Props) 
             )}
             {relForm.person_id&&(
               <div className="bg-gray-50 border border-gray-100 rounded-lg px-3 py-2">
-                <span className="text-xs text-gray-400">담당자</span>
+                <span className="text-xs text-gray-400">고객</span>
                 <p className="text-sm font-semibold text-gray-800">{personMap[relForm.person_id]?.name}</p>
               </div>
             )}

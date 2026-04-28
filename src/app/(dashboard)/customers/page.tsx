@@ -131,7 +131,7 @@ export default async function CustomersPage() {
       <div className="flex items-center justify-between mb-6">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">고객 DB</h1>
-          <p className="text-gray-500 text-sm mt-1">기관·담당자 통합 관리 — 이직 이력 추적</p>
+          <p className="text-gray-500 text-sm mt-1">기관·고객 통합 관리 — 이직 이력 추적</p>
         </div>
       </div>
       <CustomersClient
