@@ -31,6 +31,12 @@ import {
   deleteProjectLog,
   ensureContractFolder,
   createProjectDropboxFolder,
+  updateContractStage,
+  updateContractInfo,
+  updateContractProgressStatus,
+  togglePaymentReceived,
+  addPaymentSchedule,
+  deletePaymentSchedule,
   createProjectMemo,
   updateProjectMemoCard,
   deleteProjectMemo,
@@ -68,6 +74,11 @@ interface ContactPerson {
 interface Finance {
   revenue: number; cost: number; received: number; contractCount: number
 }
+interface PaymentSchedule {
+  id: string; label: string; amount: number
+  due_date: string | null; is_received: boolean
+  received_date: string | null; sort_order: number
+}
 interface Contract {
   id: string; name: string; revenue: number | null
   contract_stage: string | null; progress_status: string | null
@@ -76,6 +87,9 @@ interface Contract {
   entity_id: string | null
   dropbox_url: string | null
   contract_split_reason: string | null
+  inflow_date: string | null
+  payment_date: string | null
+  payment_schedules: PaymentSchedule[]
 }
 interface BusinessEntity {
   id: string; name: string; short_name: string | null
@@ -1616,34 +1630,214 @@ function ContractsSection({ contracts, projectId, entities, defaultCustomerId, d
                 </div>
                 <ul>
                   {groupContracts.map(c => (
-                    <li key={c.id} className="flex items-center px-5 py-2.5 hover:bg-gray-50 transition-colors group">
-                      <Link href={`/sales/${c.id}`} className="flex-1 min-w-0 flex items-center gap-2">
-                        <div className="flex-1 min-w-0">
-                          <p className="text-sm text-gray-800 truncate">{c.name}</p>
-                          {(c.client_org || c.client_dept) && (
-                            <p className="text-[11px] text-gray-500 truncate">
-                              🏛 {c.client_org || '(기관 미입력)'}{c.client_dept ? ` · ${c.client_dept}` : ''}
-                            </p>
-                          )}
-                          {c.contract_split_reason && <p className="text-[11px] text-gray-400 truncate">💡 {c.contract_split_reason}</p>}
-                        </div>
-                        {c.contract_stage && (
-                          <span className={`text-[10px] px-2 py-0.5 rounded-full ${CONTRACT_STAGE_BADGE[c.contract_stage] ?? 'bg-gray-100 text-gray-500'}`}>
-                            {c.contract_stage}
-                          </span>
-                        )}
-                        {c.revenue !== null && c.revenue > 0 && (
-                          <span className="text-xs font-medium text-gray-600">{fmtMoney(c.revenue)}원</span>
-                        )}
-                      </Link>
-                      <ContractFolderButton contract={c} projectId={projectId} />
-                      <Link href={`/sales/${c.id}`} className="text-gray-300 text-xs ml-1.5">→</Link>
-                    </li>
+                    <ContractRow key={c.id} contract={c} projectId={projectId} />
                   ))}
                 </ul>
               </div>
             )
           })}
+        </div>
+      )}
+    </div>
+  )
+}
+
+const STAGE_OPTIONS = ['계약', '착수', '선금', '중도금', '완수', '계산서발행', '잔금'] as const
+
+function ContractRow({ contract: c, projectId }: { contract: Contract; projectId: string }) {
+  const router = useRouter()
+  const [open, setOpen] = useState(false)
+  const totalReceived = c.payment_schedules.filter(p => p.is_received).reduce((s, p) => s + p.amount, 0)
+  const totalScheduled = c.payment_schedules.reduce((s, p) => s + p.amount, 0)
+  const remainder = (c.revenue ?? 0) - totalScheduled
+  const overdue = c.payment_schedules.find(p => !p.is_received && p.due_date && p.due_date < new Date().toISOString().slice(0, 10))
+
+  return (
+    <li className="border-b border-gray-50 last:border-0">
+      <div className="flex items-center px-5 py-2.5 hover:bg-gray-50 transition-colors group">
+        <button onClick={() => setOpen(o => !o)} className="text-gray-300 hover:text-gray-600 flex-shrink-0 mr-2 text-xs w-4">
+          {open ? '▼' : '▶'}
+        </button>
+        <Link href={`/sales/${c.id}`} className="flex-1 min-w-0 flex items-center gap-2">
+          <div className="flex-1 min-w-0">
+            <p className="text-sm text-gray-800 truncate">{c.name}</p>
+            {(c.client_org || c.client_dept) && (
+              <p className="text-[11px] text-gray-500 truncate">
+                🏛 {c.client_org || '(기관 미입력)'}{c.client_dept ? ` · ${c.client_dept}` : ''}
+              </p>
+            )}
+            {c.contract_split_reason && <p className="text-[11px] text-gray-400 truncate">💡 {c.contract_split_reason}</p>}
+          </div>
+          {overdue && <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-red-100 text-red-600 font-semibold flex-shrink-0">미입금</span>}
+          {c.contract_stage && (
+            <span className={`text-[10px] px-2 py-0.5 rounded-full ${CONTRACT_STAGE_BADGE[c.contract_stage] ?? 'bg-gray-100 text-gray-500'}`}>
+              {c.contract_stage}
+            </span>
+          )}
+          {c.revenue !== null && c.revenue > 0 && (
+            <span className="text-xs font-medium text-gray-600">{fmtMoney(c.revenue)}원</span>
+          )}
+        </Link>
+        <ContractFolderButton contract={c} projectId={projectId} />
+        <Link href={`/sales/${c.id}`} className="text-gray-300 text-xs ml-1.5">→</Link>
+      </div>
+
+      {open && (
+        <div className="px-5 pb-3 pt-1 bg-gray-50/50 space-y-3">
+          <ContractStageEditor sale={c} projectId={projectId} onChange={() => router.refresh()} />
+          <ContractMoneyEditor sale={c} projectId={projectId} totalScheduled={totalScheduled} totalReceived={totalReceived} remainder={remainder} onChange={() => router.refresh()} />
+          <PaymentSchedulesEditor sale={c} projectId={projectId} onChange={() => router.refresh()} />
+        </div>
+      )}
+    </li>
+  )
+}
+
+function ContractStageEditor({ sale, projectId, onChange }: { sale: Contract; projectId: string; onChange: () => void }) {
+  const [busy, setBusy] = useState(false)
+  const [progress, setProgress] = useState(sale.progress_status || '')
+  async function pickStage(stage: string) {
+    if (busy || stage === sale.contract_stage) return
+    setBusy(true)
+    await updateContractStage(sale.id, stage, projectId)
+    setBusy(false); onChange()
+  }
+  async function saveProgress() {
+    if (busy || progress === (sale.progress_status || '')) return
+    setBusy(true)
+    await updateContractProgressStatus(sale.id, progress, projectId)
+    setBusy(false); onChange()
+  }
+  return (
+    <div className="space-y-1.5">
+      <p className="text-[11px] font-semibold text-gray-600">단계</p>
+      <div className="flex flex-wrap gap-1">
+        {STAGE_OPTIONS.map(s => (
+          <button key={s} onClick={() => pickStage(s)} disabled={busy}
+            className={`text-[11px] px-2 py-1 rounded-full ${sale.contract_stage === s
+              ? 'bg-yellow-300 text-gray-900 font-semibold'
+              : 'bg-white border border-gray-200 text-gray-500 hover:border-yellow-300'
+            } disabled:opacity-50`}>
+            {s}
+          </button>
+        ))}
+      </div>
+      <input value={progress} onChange={e => setProgress(e.target.value)} onBlur={saveProgress}
+        placeholder="진행 상태 메모 (예: 운영 진행중)"
+        className="w-full text-[11px] border border-gray-200 rounded px-2 py-1 bg-white" />
+    </div>
+  )
+}
+
+function ContractMoneyEditor({
+  sale, projectId, totalScheduled, totalReceived, remainder, onChange,
+}: { sale: Contract; projectId: string; totalScheduled: number; totalReceived: number; remainder: number; onChange: () => void }) {
+  const [busy, setBusy] = useState(false)
+  const [revenue, setRevenue] = useState((sale.revenue ?? 0).toLocaleString())
+  async function saveRevenue() {
+    const num = parseInt(revenue.replace(/,/g, '')) || 0
+    if (busy || num === (sale.revenue ?? 0)) return
+    setBusy(true)
+    await updateContractInfo(sale.id, { revenue: num }, projectId)
+    setBusy(false); onChange()
+  }
+  return (
+    <div className="space-y-1.5">
+      <p className="text-[11px] font-semibold text-gray-600">매출</p>
+      <div className="grid grid-cols-2 gap-2">
+        <div>
+          <label className="text-[10px] text-gray-400">매출액</label>
+          <input value={revenue}
+            onChange={e => setRevenue(e.target.value.replace(/[^0-9,]/g, '').replace(/\B(?=(\d{3})+(?!\d))/g, ','))}
+            onBlur={saveRevenue}
+            disabled={busy}
+            className="w-full text-xs border border-gray-200 rounded px-2 py-1 bg-white text-right font-mono" />
+        </div>
+        <div className="text-[11px] text-gray-500 space-y-0.5 mt-2">
+          <div>입금: <span className="text-green-600 font-medium">{fmtMoney(totalReceived)}원</span> / 일정 <span className="font-medium">{fmtMoney(totalScheduled)}원</span></div>
+          {remainder > 0 && <div className="text-amber-600">일정 미배정 {fmtMoney(remainder)}원</div>}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function PaymentSchedulesEditor({
+  sale, projectId, onChange,
+}: { sale: Contract; projectId: string; onChange: () => void }) {
+  const [busy, setBusy] = useState<string | null>(null)
+  const [adding, setAdding] = useState(false)
+  const [newLabel, setNewLabel] = useState('잔금')
+  const [newAmount, setNewAmount] = useState('')
+  const [newDue, setNewDue] = useState('')
+
+  async function toggle(scheduleId: string, isReceived: boolean) {
+    setBusy(scheduleId)
+    await togglePaymentReceived(scheduleId, isReceived, projectId)
+    setBusy(null); onChange()
+  }
+  async function remove(scheduleId: string) {
+    if (!confirm('이 결제 일정을 삭제할까?')) return
+    setBusy(scheduleId)
+    await deletePaymentSchedule(scheduleId, projectId)
+    setBusy(null); onChange()
+  }
+  async function addNew() {
+    const amount = parseInt(newAmount.replace(/,/g, '')) || 0
+    if (!newLabel || !amount) return
+    setBusy('__adding__')
+    await addPaymentSchedule(sale.id, newLabel, amount, newDue || null, projectId)
+    setNewLabel('잔금'); setNewAmount(''); setNewDue('')
+    setAdding(false); setBusy(null); onChange()
+  }
+
+  return (
+    <div className="space-y-1.5">
+      <div className="flex items-center justify-between">
+        <p className="text-[11px] font-semibold text-gray-600">결제 일정</p>
+        <button onClick={() => setAdding(a => !a)} className="text-[10px] text-gray-400 hover:text-gray-700">
+          {adding ? '취소' : '+ 추가'}
+        </button>
+      </div>
+      {sale.payment_schedules.length === 0 && !adding && (
+        <p className="text-[11px] text-gray-400 italic">결제 일정 없음. + 추가로 등록.</p>
+      )}
+      {sale.payment_schedules.map(p => {
+        const overdue = !p.is_received && p.due_date && p.due_date < new Date().toISOString().slice(0, 10)
+        return (
+          <div key={p.id} className="flex items-center gap-2 text-[11px] bg-white border border-gray-100 rounded px-2 py-1.5">
+            <input type="checkbox" checked={p.is_received} onChange={e => toggle(p.id, e.target.checked)} disabled={busy === p.id}
+              className="accent-green-500" />
+            <span className="font-medium text-gray-700 min-w-[3rem]">{p.label}</span>
+            <span className="font-mono text-gray-700">{fmtMoney(p.amount)}원</span>
+            {p.due_date && (
+              <span className={overdue ? 'text-red-500 font-semibold' : 'text-gray-400'}>
+                {overdue ? '⚠️ ' : ''}예정 {p.due_date}
+              </span>
+            )}
+            {p.is_received && p.received_date && <span className="text-green-500">✓ 입금 {p.received_date}</span>}
+            <button onClick={() => remove(p.id)} disabled={busy === p.id}
+              className="ml-auto text-gray-300 hover:text-red-500 text-[10px]">✕</button>
+          </div>
+        )
+      })}
+      {adding && (
+        <div className="flex flex-wrap items-center gap-2 bg-yellow-50 border border-yellow-200 rounded px-2 py-2">
+          <select value={newLabel} onChange={e => setNewLabel(e.target.value)}
+            className="text-[11px] border border-gray-200 rounded px-1.5 py-1 bg-white">
+            {['선금', '중도금', '잔금', '계산서', '기타'].map(o => <option key={o}>{o}</option>)}
+          </select>
+          <input value={newAmount}
+            onChange={e => setNewAmount(e.target.value.replace(/[^0-9,]/g, '').replace(/\B(?=(\d{3})+(?!\d))/g, ','))}
+            placeholder="금액"
+            className="text-[11px] border border-gray-200 rounded px-2 py-1 bg-white text-right font-mono w-24" />
+          <input type="date" value={newDue} onChange={e => setNewDue(e.target.value)}
+            className="text-[11px] border border-gray-200 rounded px-1.5 py-1 bg-white" />
+          <button onClick={addNew} disabled={busy === '__adding__' || !newAmount}
+            className="text-[11px] px-2 py-1 rounded font-semibold disabled:opacity-50"
+            style={{ backgroundColor: '#FFCE00', color: '#121212' }}>
+            추가
+          </button>
         </div>
       )}
     </div>

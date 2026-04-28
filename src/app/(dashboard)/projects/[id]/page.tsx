@@ -139,6 +139,16 @@ export default async function ProjectPage({ params }: { params: Promise<{ id: st
         entity_id: c.entity_id ?? null,
         dropbox_url: c.dropbox_url ?? null,
         contract_split_reason: c.contract_split_reason ?? null,
+        inflow_date: c.inflow_date ?? null,
+        payment_date: c.payment_date ?? null,
+        payment_schedules: ((c.payment_schedules ?? []) as any[])
+          .map(p => ({
+            id: p.id, label: p.label, amount: p.amount ?? 0,
+            due_date: p.due_date ?? null, is_received: !!p.is_received,
+            received_date: p.received_date ?? null,
+            sort_order: p.sort_order ?? 0,
+          }))
+          .sort((a, b) => a.sort_order - b.sort_order),
       }))}
       entities={(entitiesRaw ?? []).map((e: any) => ({
         id: e.id, name: e.name, short_name: e.short_name ?? null,
