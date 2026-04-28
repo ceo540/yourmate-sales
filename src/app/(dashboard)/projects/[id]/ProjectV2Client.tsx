@@ -70,6 +70,7 @@ interface Contract {
   id: string; name: string; revenue: number | null
   contract_stage: string | null; progress_status: string | null
   client_org: string | null
+  client_dept: string | null
   entity_id: string | null
   dropbox_url: string | null
   contract_split_reason: string | null
@@ -324,7 +325,7 @@ export default function ProjectV2Client({
           />
 
           {/* 8. 계약 관리 (분리) */}
-          <ContractsSection contracts={contracts} projectId={project.id} entities={entities} />
+          <ContractsSection contracts={contracts} projectId={project.id} entities={entities} defaultClientOrg={customer?.name ?? null} />
         </div>
 
         {/* 우: 사이드 */}
@@ -1465,8 +1466,8 @@ function ScheduleSection({ tasks, projectId, linkedEvents }: {
 }
 
 /* ── 8. 계약 관리 (사업자별 그룹화 + 자동 폴더) ─────────── */
-function ContractsSection({ contracts, projectId, entities }: {
-  contracts: Contract[]; projectId: string; entities: BusinessEntity[]
+function ContractsSection({ contracts, projectId, entities, defaultClientOrg }: {
+  contracts: Contract[]; projectId: string; entities: BusinessEntity[]; defaultClientOrg?: string | null
 }) {
   const router = useRouter()
   const [, startTransition] = useTransition()
@@ -1475,11 +1476,12 @@ function ContractsSection({ contracts, projectId, entities }: {
   const [newRevenue, setNewRevenue] = useState('')
   const [newStage, setNewStage] = useState('계약')
   const [splitReason, setSplitReason] = useState('')
+  const [newClientOrg, setNewClientOrg] = useState(defaultClientOrg ?? '')
+  const [newClientDept, setNewClientDept] = useState('')
   const primaryEntity = entities.find(e => e.is_primary)
   const [newEntityId, setNewEntityId] = useState<string>(primaryEntity?.id ?? entities[0]?.id ?? '')
 
   async function add() {
-    if (!newName.trim()) return
     if (!newEntityId) { alert('사업자를 선택해줘'); return }
     startTransition(async () => {
       const r = await createSaleForProject(projectId, {
@@ -1488,9 +1490,12 @@ function ContractsSection({ contracts, projectId, entities }: {
         contract_stage: newStage,
         contract_split_reason: splitReason.trim() || null,
         entity_id: newEntityId,
+        client_org: newClientOrg.trim() || null,
+        client_dept: newClientDept.trim() || null,
       })
       if ('error' in r) { alert('실패: ' + r.error); return }
       setNewName(''); setNewRevenue(''); setSplitReason(''); setNewStage('계약')
+      setNewClientOrg(defaultClientOrg ?? ''); setNewClientDept('')
       setNewEntityId(primaryEntity?.id ?? entities[0]?.id ?? '')
       setAdding(false)
       router.refresh()
@@ -1547,6 +1552,14 @@ function ContractsSection({ contracts, projectId, entities }: {
           <input value={newName} onChange={e => setNewName(e.target.value)}
             placeholder="건명 (비우면 프로젝트명 사용)"
             className="w-full text-sm border border-gray-200 rounded px-2.5 py-1.5 bg-white focus:outline-none focus:ring-1 focus:ring-yellow-400" />
+          <div className="grid grid-cols-2 gap-2">
+            <input value={newClientOrg} onChange={e => setNewClientOrg(e.target.value)}
+              placeholder="계약 기관 (수의계약 한도 추적용)"
+              className="text-xs border border-gray-200 rounded px-2 py-1.5 bg-white" />
+            <input value={newClientDept} onChange={e => setNewClientDept(e.target.value)}
+              placeholder="부서 (예: 학생지원과)"
+              className="text-xs border border-gray-200 rounded px-2 py-1.5 bg-white" />
+          </div>
           <div className="flex gap-2">
             <input value={newRevenue} onChange={e => setNewRevenue(fmtComma(e.target.value))}
               placeholder="매출액 (예: 12,510,000)"
@@ -1559,7 +1572,7 @@ function ContractsSection({ contracts, projectId, entities }: {
           <input value={splitReason} onChange={e => setSplitReason(e.target.value)}
             placeholder="계약 분리 사유 (선택, 분할 시 권장)"
             className="w-full text-xs border border-gray-200 rounded px-2 py-1.5 bg-white" />
-          <button onClick={add} disabled={!newName.trim() || !newEntityId}
+          <button onClick={add} disabled={!newEntityId}
             className="w-full py-1.5 text-xs font-semibold rounded disabled:opacity-40"
             style={{ backgroundColor: '#FFCE00', color: '#121212' }}>
             계약 추가 (자동으로 Dropbox 폴더 생성)
@@ -1590,6 +1603,11 @@ function ContractsSection({ contracts, projectId, entities }: {
                       <Link href={`/sales/${c.id}`} className="flex-1 min-w-0 flex items-center gap-2">
                         <div className="flex-1 min-w-0">
                           <p className="text-sm text-gray-800 truncate">{c.name}</p>
+                          {(c.client_org || c.client_dept) && (
+                            <p className="text-[11px] text-gray-500 truncate">
+                              🏛 {c.client_org || '(기관 미입력)'}{c.client_dept ? ` · ${c.client_dept}` : ''}
+                            </p>
+                          )}
                           {c.contract_split_reason && <p className="text-[11px] text-gray-400 truncate">💡 {c.contract_split_reason}</p>}
                         </div>
                         {c.contract_stage && (

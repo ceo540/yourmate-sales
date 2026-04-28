@@ -31,7 +31,7 @@ export default async function ProjectPage({ params }: { params: Promise<{ id: st
     { data: memosRaw },
   ] = await Promise.all([
     admin.from('project_members').select('profile_id, role').eq('project_id', id),
-    admin.from('sales').select('id, name, revenue, contract_stage, progress_status, inflow_date, payment_date, client_org, contract_split_reason, dropbox_url, assignee_id, entity_id, payment_schedules(*)').eq('project_id', id).order('created_at'),
+    admin.from('sales').select('id, name, revenue, contract_stage, progress_status, inflow_date, payment_date, client_org, client_dept, contract_split_reason, dropbox_url, assignee_id, entity_id, payment_schedules(*)').eq('project_id', id).order('created_at'),
     admin.from('profiles').select('id, name'),
     project.customer_id
       ? admin.from('customers').select('id, name, type, contact_name, phone, contact_email').eq('id', project.customer_id).maybeSingle()
@@ -135,6 +135,7 @@ export default async function ProjectPage({ params }: { params: Promise<{ id: st
         id: c.id, name: c.name, revenue: c.revenue ?? null,
         contract_stage: c.contract_stage ?? null, progress_status: c.progress_status ?? null,
         client_org: c.client_org ?? null,
+        client_dept: c.client_dept ?? null,
         entity_id: c.entity_id ?? null,
         dropbox_url: c.dropbox_url ?? null,
         contract_split_reason: c.contract_split_reason ?? null,

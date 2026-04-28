@@ -618,6 +618,8 @@ export async function createSaleForProject(projectId: string, data: {
   contract_stage?: string
   contract_type?: string | null
   contract_split_reason?: string | null
+  client_org?: string | null
+  client_dept?: string | null
 }) {
   const admin = createAdminClient()
   const { data: project } = await admin
@@ -663,6 +665,8 @@ export async function createSaleForProject(projectId: string, data: {
     contract_stage: data.contract_stage ?? '계약',
     contract_type: data.contract_type ?? null,
     contract_split_reason: data.contract_split_reason ?? null,
+    client_org: data.client_org ?? null,
+    client_dept: data.client_dept ?? null,
     dropbox_url: saleDropboxUrl,
     inflow_date: today,
   }).select('*, payment_schedules(*)').single()
