@@ -11,6 +11,8 @@ import dynamic from 'next/dynamic'
 
 const BlockNoteEditor = dynamic(() => import('@/components/BlockNoteEditor'), { ssr: false })
 import ProjectSettingsModal from './ProjectSettingsModal'
+import CostModal from '../../sales/CostModal'
+import { createClient as createSupabaseClient } from '@/lib/supabase/client'
 import {
   updateProjectMemo,
   updateProjectNotes,
@@ -1716,6 +1718,7 @@ function ContractRow({ contract: c, projectId, entities }: { contract: Contract;
           <FinalQuoteMapper sale={c} projectId={projectId} entities={entities} onChange={() => router.refresh()} />
           <ContractMoneyEditor sale={c} projectId={projectId} totalScheduled={totalScheduled} totalReceived={totalReceived} remainder={remainder} onChange={() => router.refresh()} />
           <PaymentSchedulesEditor sale={c} projectId={projectId} onChange={() => router.refresh()} />
+          <CostEditButton sale={c} />
           <ContractDeleteButton sale={c} projectId={projectId} onChange={() => router.refresh()} />
         </div>
       )}
@@ -1925,6 +1928,48 @@ type Analysis = {
   matched_entity_id: string | null
   matched_entity_name: string | null
   notes: string | null
+}
+
+function CostEditButton({ sale }: { sale: Contract }) {
+  const [open, setOpen] = useState(false)
+  const [loading, setLoading] = useState(false)
+  const [items, setItems] = useState<any[] | null>(null)
+  const [vendors, setVendors] = useState<any[]>([])
+
+  async function handleOpen() {
+    setLoading(true)
+    const supabase = createSupabaseClient()
+    const [{ data: costs }, { data: vs }] = await Promise.all([
+      supabase.from('sale_costs').select('*').eq('sale_id', sale.id).order('created_at'),
+      supabase.from('vendors').select('id, name, type').order('name'),
+    ])
+    setItems(costs ?? [])
+    setVendors(vs ?? [])
+    setLoading(false)
+    setOpen(true)
+  }
+
+  return (
+    <>
+      <div className="flex items-center justify-between pt-1">
+        <p className="text-[11px] font-semibold text-gray-600">원가 / 외주비</p>
+        <button onClick={handleOpen} disabled={loading}
+          className="text-[11px] text-gray-500 hover:text-yellow-700 underline decoration-dashed underline-offset-2 disabled:opacity-50">
+          {loading ? '불러오는 중...' : '📊 세부 원가 편집'}
+        </button>
+      </div>
+      {open && items !== null && (
+        <CostModal
+          saleId={sale.id}
+          saleName={sale.name}
+          revenue={sale.revenue ?? 0}
+          initialItems={items}
+          vendors={vendors}
+          onClose={() => setOpen(false)}
+        />
+      )}
+    </>
+  )
 }
 
 function ContractDeleteButton({ sale, projectId, onChange }: { sale: Contract; projectId: string; onChange: () => void }) {
