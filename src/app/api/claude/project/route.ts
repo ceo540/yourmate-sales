@@ -5,6 +5,7 @@ import { createClient } from '@/lib/supabase/server'
 import { YOURMATE_CONTEXT, getServiceContext } from '@/lib/service-contexts'
 import { loadCompanyManual, loadCommonManuals, loadServiceManual } from '@/lib/manual-loader'
 import { listDropboxFolder, readDropboxFile } from '@/lib/dropbox'
+import { quickCreateCustomer } from '@/lib/customer-resolve'
 import { revalidatePath } from 'next/cache'
 
 const client = new Anthropic()
@@ -435,6 +436,34 @@ ${logs && logs.length > 0 ? `\n## 최근 소통내역\n${logs.map(l => `- [${l.l
           memo_id: { type: 'string' },
           title: { type: 'string', description: '제목 검색어' },
         },
+      },
+    },
+    {
+      name: 'search_customers',
+      description: '고객 DB(customers + persons)를 검색합니다. 기관(학교/기업 등)과 담당자(개인)를 한 번에 조회. 사용자가 "이 기관 우리 거래 있나?", "OO 학교 등록돼 있어?" 등 물으면 호출.',
+      input_schema: {
+        type: 'object' as const,
+        properties: {
+          query: { type: 'string', description: '기관명 또는 담당자명 검색어' },
+          type: { type: 'string', description: '기관 유형 필터: 학교 | 공공기관 | 기업 | 개인 | 기타' },
+        },
+      },
+    },
+    {
+      name: 'quick_create_customer',
+      description: '신규 기관(customers) + 선택적 담당자(persons)를 즉석 등록하고 customer_id를 반환합니다. 사용자에게 한 번 확인받은 뒤 호출. 팀원 권한은 사용 불가.',
+      input_schema: {
+        type: 'object' as const,
+        properties: {
+          name: { type: 'string', description: '기관명 (필수)' },
+          type: { type: 'string', description: '기관 유형: 학교 | 공공기관 | 기업 | 개인 | 기타 (기본 기타)' },
+          contact_name: { type: 'string', description: '담당자 이름 (선택)' },
+          contact_dept: { type: 'string', description: '담당자 소속 부서 (선택)' },
+          contact_title: { type: 'string', description: '담당자 직책 (선택)' },
+          phone: { type: 'string', description: '담당자 연락처 (선택)' },
+          email: { type: 'string', description: '담당자 이메일 (선택)' },
+        },
+        required: ['name'],
       },
     },
   ]
@@ -986,6 +1015,61 @@ ${logs && logs.length > 0 ? `\n## 최근 소통내역\n${logs.map(l => `- [${l.l
                     revalidatePath(`/projects/${projectId}/v2`)
                     revalidatePath(`/projects/${projectId}`)
                     revalidate()
+                  }
+                }
+              }
+
+            } else if (block.name === 'search_customers') {
+              send('\n*(고객 DB 검색 중...)*\n')
+              const query = (input as unknown as { query?: string }).query
+              const typeFilter = (input as unknown as { type?: string }).type
+
+              let orgQuery = admin.from('customers').select('*').order('name').limit(15)
+              if (query) orgQuery = orgQuery.ilike('name', `%${query}%`)
+              if (typeFilter) orgQuery = orgQuery.eq('type', typeFilter)
+
+              let personQuery = admin.from('persons').select('*').order('name').limit(15)
+              if (query) personQuery = personQuery.ilike('name', `%${query}%`)
+
+              const [{ data: orgs, error: orgErr }, { data: persons, error: personErr }] = await Promise.all([orgQuery, personQuery])
+
+              if (orgErr) result = `검색 실패: ${orgErr.message}`
+              else if (personErr) result = `검색 실패: ${personErr.message}`
+              else {
+                result = JSON.stringify({
+                  organizations: orgs ?? [],
+                  persons: persons ?? [],
+                  total_orgs: orgs?.length ?? 0,
+                  total_persons: persons?.length ?? 0,
+                })
+              }
+
+            } else if (block.name === 'quick_create_customer') {
+              const role = currentProfile?.role
+              const isMember = role !== 'admin' && role !== 'manager'
+              if (isMember) {
+                result = '팀원 권한으로는 고객 생성 불가.'
+              } else {
+                send('\n*(고객 등록 중...)*\n')
+                const orgName = (input.name || '').trim()
+                if (!orgName) {
+                  result = '기관명은 필수야.'
+                } else {
+                  const r = await quickCreateCustomer(admin, {
+                    name: orgName,
+                    type: (input as unknown as { type?: string | null }).type,
+                    contact_name: (input as unknown as { contact_name?: string | null }).contact_name,
+                    contact_dept: (input as unknown as { contact_dept?: string | null }).contact_dept,
+                    contact_title: (input as unknown as { contact_title?: string | null }).contact_title,
+                    phone: (input as unknown as { phone?: string | null }).phone,
+                    email: (input as unknown as { email?: string | null }).email,
+                  })
+                  if ('error' in r) {
+                    result = `등록 실패: ${r.error}`
+                  } else {
+                    revalidatePath('/customers')
+                    revalidate()
+                    result = `✅ "${orgName}" 등록 완료. customer_id=${r.customer_id}${r.person_id ? `, person_id=${r.person_id}` : ''}`
                   }
                 }
               }
