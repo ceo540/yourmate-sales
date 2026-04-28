@@ -614,19 +614,22 @@ export async function linkSaleToProject(projectId: string, saleId: string) {
 export async function createSaleForProject(projectId: string, data: {
   name: string
   revenue: number
+  customer_id: string                  // 필수 — 정합성 강제
   entity_id?: string | null
   contract_stage?: string
   contract_type?: string | null
   contract_split_reason?: string | null
-  client_org?: string | null
   client_dept?: string | null
-}) {
+}): Promise<{ sale: any } | { error: string }> {
+  if (!data.customer_id) return { error: '기관(customer)이 선택되지 않았어' }
   const admin = createAdminClient()
-  const { data: project } = await admin
-    .from('projects')
-    .select('name, service_type, department, customer_id, pm_id, project_number, dropbox_url')
-    .eq('id', projectId)
-    .single()
+  const [{ data: project }, { data: customer }] = await Promise.all([
+    admin.from('projects')
+      .select('name, service_type, department, customer_id, pm_id, project_number, dropbox_url')
+      .eq('id', projectId).single(),
+    admin.from('customers').select('id, name').eq('id', data.customer_id).single(),
+  ])
+  if (!customer) return { error: '선택한 기관을 찾을 수 없음' }
 
   const finalName = data.name.trim() || project?.name || '(이름 없음)'
   const today = new Date().toISOString().slice(0, 10)
@@ -657,7 +660,7 @@ export async function createSaleForProject(projectId: string, data: {
     project_id: projectId,
     service_type: project?.service_type ?? null,
     department: project?.department ?? null,
-    customer_id: project?.customer_id ?? null,
+    customer_id: data.customer_id,        // 검색 select에서 받은 customer (정합성 보장)
     assignee_id: project?.pm_id ?? null,
     project_number: project?.project_number ?? null,
     entity_id: data.entity_id ?? null,
@@ -665,7 +668,7 @@ export async function createSaleForProject(projectId: string, data: {
     contract_stage: data.contract_stage ?? '계약',
     contract_type: data.contract_type ?? null,
     contract_split_reason: data.contract_split_reason ?? null,
-    client_org: data.client_org ?? null,
+    client_org: customer.name,            // customer 이름 미러링 (legacy 호환 + 빠른 표시용)
     client_dept: data.client_dept ?? null,
     dropbox_url: saleDropboxUrl,
     inflow_date: today,
