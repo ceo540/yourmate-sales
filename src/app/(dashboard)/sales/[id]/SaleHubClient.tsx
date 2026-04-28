@@ -11,6 +11,7 @@ import NotesTab from './components/NotesTab'
 import ContractTab from './components/ContractTab'
 import OverviewTab from './components/OverviewTab'
 import CostSheetEditor from '../CostSheetEditor'
+import CostPdfImportModal from './CostPdfImportModal'
 import ProjectClaudeChat from '@/components/ProjectClaudeChat'
 
 interface Profile { id: string; name: string }
@@ -88,6 +89,7 @@ export default function SaleHubClient({ sale, tasks: initialTasks, logs, profile
   useEffect(() => { setTasks(initialTasks) }, [initialTasks])
 
   const [localCosts, setLocalCosts] = useState<CostItem[]>(initialCosts)
+  const [showCostPdfImport, setShowCostPdfImport] = useState(false)
 
   // 업무 추가
   const [showTaskForm, setShowTaskForm] = useState(false)
@@ -375,14 +377,28 @@ export default function SaleHubClient({ sale, tasks: initialTasks, logs, profile
       </div>
 
       {tab === '원가' && (
-        <CostSheetEditor
-          saleId={sale.id}
-          revenue={sale.revenue ?? 0}
-          initialItems={localCosts}
-          vendors={vendors}
-          showInternalCosts={showInternalCosts}
-          onItemsChange={items => setLocalCosts(items as CostItem[])}
-        />
+        <>
+          <div className="flex justify-end mb-2">
+            <button
+              onClick={() => setShowCostPdfImport(true)}
+              className="text-xs px-3 py-1.5 bg-gray-50 text-gray-600 rounded-lg hover:bg-yellow-50 hover:text-gray-800 border border-gray-200"
+            >
+              📎 원가 폴더 분석
+            </button>
+          </div>
+          <CostSheetEditor
+            saleId={sale.id}
+            revenue={sale.revenue ?? 0}
+            initialItems={localCosts}
+            vendors={vendors}
+            showInternalCosts={showInternalCosts}
+            onItemsChange={items => setLocalCosts(items as CostItem[])}
+          />
+        </>
+      )}
+
+      {showCostPdfImport && (
+        <CostPdfImportModal saleId={sale.id} onClose={() => setShowCostPdfImport(false)} />
       )}
 
       {/* ── 태스크 상세 패널 ── */}
