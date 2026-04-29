@@ -18,11 +18,27 @@ export interface PdfTextInput {
 
 const MODEL = 'gpt-4o'
 
+export interface ExtractStats {
+  totalTextLength: number
+  perPdfTextLength: { filename: string; length: number }[]
+  rawResponseSnippet: string | null
+  imagePdfCount: number   // textLength === 0인 PDF 개수
+}
+
 export async function extractCostsFromPdfTexts(
   pdfs: PdfTextInput[],
   opts: { userId?: string | null } = {},
-): Promise<{ rows: ExtractedCostRow[] } | { error: string }> {
-  if (pdfs.length === 0) return { rows: [] }
+): Promise<{ rows: ExtractedCostRow[]; stats: ExtractStats } | { error: string; stats?: ExtractStats }> {
+  const stats: ExtractStats = {
+    totalTextLength: pdfs.reduce((s, p) => s + p.text.length, 0),
+    perPdfTextLength: pdfs.map(p => ({ filename: p.filename, length: p.text.length })),
+    rawResponseSnippet: null,
+    imagePdfCount: pdfs.filter(p => p.text.length === 0).length,
+  }
+  if (pdfs.length === 0) return { rows: [], stats }
+  if (stats.totalTextLength === 0) {
+    return { error: '모든 PDF 텍스트 추출 실패. 이미지 스캔본일 가능성 높음. 직접 입력 필요.', stats }
+  }
 
   const today = new Date().toISOString().slice(0, 10)
 
@@ -45,7 +61,9 @@ export async function extractCostsFromPdfTexts(
 - 부가세는 PDF에 적힌 총액(공급가액+부가세 합계) 그대로 사용. 별도 분리 X.
 - 한 PDF에 여러 항목이 있으면 각각 별 행. (한 줄짜리 단일 거래 PDF면 한 행.)
 - 계약서에 분할 지급(예: 계약금/중도금/잔금)이 있으면 각 회차를 별 행으로 분리, item에 "OOO 계약금" 식으로 명시.
-- 신뢰도 낮은 행(금액·항목 불명확)은 제외.
+- **한 건이라도 추출하려고 노력해.** 명확한 항목·금액이 있으면 무조건 출력.
+- 항목명이 불명확해도 "OOO PDF 비용" 식으로라도 추정해 출력 (item 앞에 "(추정) " prefix 붙임).
+- 금액이 본문에 명시 안 됐거나 0원이면 그 행은 제외 (다른 행은 살림).
 
 출력: JSON 객체 한 개. 형식:
 {
@@ -96,15 +114,17 @@ ${corpus}
     outputTokens,
   }).catch(() => {})
 
+  stats.rawResponseSnippet = raw.slice(0, 500)
+
   let parsed: { rows?: unknown }
   try {
     parsed = JSON.parse(raw)
   } catch {
-    return { error: 'JSON 파싱 실패: ' + raw.slice(0, 200) }
+    return { error: 'JSON 파싱 실패: ' + raw.slice(0, 200), stats }
   }
 
   if (!parsed || !Array.isArray(parsed.rows)) {
-    return { error: 'rows 배열 누락' }
+    return { error: 'rows 배열 누락. LLM 응답: ' + raw.slice(0, 200), stats }
   }
 
   const rows: ExtractedCostRow[] = []
@@ -127,5 +147,5 @@ ${corpus}
     })
   }
 
-  return { rows }
+  return { rows, stats }
 }

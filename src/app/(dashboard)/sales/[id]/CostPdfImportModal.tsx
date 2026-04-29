@@ -22,6 +22,7 @@ export default function CostPdfImportModal({ saleId, onClose }: Props) {
   const router = useRouter()
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [diagnostic, setDiagnostic] = useState<string | null>(null)
   const [rows, setRows] = useState<RowState[]>([])
   const [pdfsScanned, setPdfsScanned] = useState(0)
   const [saving, startSaving] = useTransition()
@@ -33,8 +34,13 @@ export default function CostPdfImportModal({ saleId, onClose }: Props) {
     analyzeCostFolder(saleId).then(r => {
       if (cancelled) return
       setLoading(false)
-      if ('error' in r) { setError(r.error); return }
+      if ('error' in r) {
+        setError(r.error)
+        if (r.diagnostic) setDiagnostic(r.diagnostic)
+        return
+      }
       setPdfsScanned(r.pdfsScanned)
+      if (r.diagnostic) setDiagnostic(r.diagnostic)
       setRows(r.rows.map(row => ({
         ...row,
         selected: !row.duplicate,
@@ -112,7 +118,15 @@ export default function CostPdfImportModal({ saleId, onClose }: Props) {
             </div>
           )}
           {!loading && !error && rows.length === 0 && (
-            <div className="text-center text-sm text-gray-400 py-12">추출된 원가 항목이 없어.</div>
+            <div className="text-center py-12">
+              <div className="text-sm text-gray-400 mb-3">추출된 원가 항목이 없어.</div>
+              {diagnostic && (
+                <pre className="text-[10px] text-gray-500 bg-gray-50 border border-gray-100 rounded-lg px-4 py-3 text-left whitespace-pre-wrap max-w-xl mx-auto">{diagnostic}</pre>
+              )}
+            </div>
+          )}
+          {error && diagnostic && (
+            <pre className="mt-3 text-[10px] text-gray-500 bg-gray-50 border border-gray-100 rounded-lg px-4 py-3 text-left whitespace-pre-wrap">{diagnostic}</pre>
           )}
           {!loading && !error && rows.length > 0 && (
             <table className="w-full text-sm">

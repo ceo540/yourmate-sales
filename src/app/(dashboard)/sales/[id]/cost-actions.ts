@@ -16,10 +16,10 @@ export interface AnalyzedCostRow extends ExtractedCostRow {
 
 const WEB_BASE = 'https://www.dropbox.com/home'
 
-// sale → project.dropbox_url → /0 행정/원가/ 폴더 PDF 스캔 (depth 2 재귀) → 통합 LLM 분석.
+// sale → project.dropbox_url → /0 행정/원가/ 폴더 PDF 스캔 (depth 5 재귀) → 통합 LLM 분석.
 export async function analyzeCostFolder(
   saleId: string,
-): Promise<{ rows: AnalyzedCostRow[]; pdfsScanned: number } | { error: string }> {
+): Promise<{ rows: AnalyzedCostRow[]; pdfsScanned: number; diagnostic?: string } | { error: string; diagnostic?: string }> {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return { error: '로그인 필요' }
@@ -81,7 +81,27 @@ export async function analyzeCostFolder(
 
   // LLM 통합 분석
   const result = await extractCostsFromPdfTexts(texts, { userId: user.id })
-  if ('error' in result) return { error: 'LLM 분석 실패: ' + result.error }
+
+  // 진단 메시지 생성 — 0건일 때 원인 안내용
+  const buildDiagnostic = (stats?: { totalTextLength: number; perPdfTextLength: { filename: string; length: number }[]; rawResponseSnippet: string | null; imagePdfCount: number }) => {
+    if (!stats) return undefined
+    const lines: string[] = []
+    lines.push(`📊 PDF ${pdfPaths.length}개 / 텍스트 총 ${stats.totalTextLength.toLocaleString()}자`)
+    if (stats.imagePdfCount > 0) {
+      lines.push(`⚠️ ${stats.imagePdfCount}개 PDF는 텍스트 0자 (이미지 스캔본 추정 — OCR 필요).`)
+      const imgs = stats.perPdfTextLength.filter(p => p.length === 0).map(p => '· ' + p.filename).join('\n')
+      lines.push(imgs)
+    }
+    if (stats.rawResponseSnippet) {
+      lines.push(`\n🤖 LLM 응답 일부:\n${stats.rawResponseSnippet.slice(0, 250)}`)
+    }
+    return lines.join('\n')
+  }
+
+  if ('error' in result) {
+    return { error: 'LLM 분석 실패: ' + result.error, diagnostic: buildDiagnostic(result.stats) }
+  }
+  const diagnostic = buildDiagnostic(result.stats)
 
   // vendor 매칭 + 기존 sale_costs 중복 확인
   const [{ data: vendors }, { data: existingCosts }] = await Promise.all([
@@ -110,7 +130,7 @@ export async function analyzeCostFolder(
     return { ...r, matched_vendor_id, matched_vendor_name, duplicate }
   })
 
-  return { rows: analyzed, pdfsScanned: pdfPaths.length }
+  return { rows: analyzed, pdfsScanned: pdfPaths.length, diagnostic }
 }
 
 export interface BulkInsertItem {
