@@ -5,7 +5,7 @@ import { createAdminClient } from '@/lib/supabase/admin'
 import { revalidatePath } from 'next/cache'
 import { renderQuoteHtml, type QuoteData, type QuoteItemInput } from '@/lib/quote-templates'
 import { insertQuoteWithNumber } from '@/lib/quote-number'
-import { uploadTextFile } from '@/lib/dropbox'
+import { uploadTextFile, ensureSubFolderPath } from '@/lib/dropbox'
 
 export interface CreateQuoteItem {
   name: string
@@ -162,21 +162,34 @@ export async function createQuote(input: CreateQuoteInput): Promise<CreateQuoteR
   }
 
   // 7. Dropbox 업로드 (있을 때만)
+  // 저장 위치: <dropbox_url>/0 행정/견적/{quote_number}_{client_org}.html
+  // 서브폴더 없으면 자동 생성. 실패 시 dropbox_url root에 fallback.
   let htmlPath: string | null = null
   let warning: string | undefined
   if (dropboxUrl) {
     const safeOrg = (clientOrg || '미지정').replace(/[\\/:*?"<>|\n\r\t]/g, '_').slice(0, 60)
     const filename = `${quote.quote_number}_${safeOrg}.html`
+
+    let targetWebUrl = dropboxUrl
+    let folderHint = ''
+    const subResult = await ensureSubFolderPath(dropboxUrl, '0 행정/견적')
+    if (subResult.ok) {
+      targetWebUrl = subResult.webUrl
+    } else {
+      folderHint = ` (서브폴더 자동 생성 실패 — root에 저장: ${subResult.error})`
+    }
+
     const uploadResult = await uploadTextFile({
-      folderWebUrl: dropboxUrl,
+      folderWebUrl: targetWebUrl,
       filename,
       content: html,
     })
     if (uploadResult.ok) {
       htmlPath = uploadResult.savedPath ?? null
       await admin.from('quotes').update({ html_path: htmlPath }).eq('id', quote.id)
+      if (folderHint) warning = folderHint.trim()
     } else {
-      warning = `Dropbox 저장 실패 — DB만 저장됨: ${uploadResult.error}`
+      warning = `Dropbox 저장 실패 — DB만 저장됨: ${uploadResult.error}${folderHint}`
     }
   } else {
     warning = 'Dropbox 저장 스킵 — sale/project dropbox_url 없음. DB만 저장됨.'

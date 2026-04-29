@@ -28,6 +28,30 @@ export async function getDropboxToken(): Promise<string | null> {
   return data.access_token ?? null
 }
 
+// 부모 webUrl 안에 서브폴더 자동 생성 (다단계 가능). 이미 있으면 conflict OK 처리.
+// 사용 예: ensureSubFolderPath(saleDropboxUrl, '0 행정/견적')
+//   → /0 행정 폴더 생성(또는 이미 있음) → /0 행정/견적 폴더 생성 → 그 webUrl 반환
+export async function ensureSubFolderPath(
+  parentWebUrl: string,
+  subPath: string,
+): Promise<{ ok: true; webUrl: string } | { ok: false; error: string }> {
+  const token = await getDropboxToken()
+  if (!token) return { ok: false, error: 'Dropbox token 없음' }
+  if (!parentWebUrl.startsWith(WEB_BASE)) return { ok: false, error: `URL 형식 오류: ${parentWebUrl}` }
+
+  let currentPath = decodeURIComponent(parentWebUrl.replace(WEB_BASE, ''))
+  let currentWebUrl = parentWebUrl
+
+  const segments = subPath.split('/').map(s => s.trim()).filter(Boolean)
+  for (const seg of segments) {
+    currentPath = `${currentPath}/${seg}`
+    const err = await createFolder(currentPath, token)
+    if (err) return { ok: false, error: `폴더 '${seg}' 생성 실패: ${err}` }
+    currentWebUrl = `${currentWebUrl}/${encodeURIComponent(seg)}`
+  }
+  return { ok: true, webUrl: currentWebUrl }
+}
+
 // 성공/이미존재: null 반환 / 실패: 에러 문자열 반환 (too_many_write_operations 시 최대 3회 재시도)
 async function createFolder(path: string, token: string, retries = 3): Promise<string | null> {
   for (let attempt = 0; attempt <= retries; attempt++) {
