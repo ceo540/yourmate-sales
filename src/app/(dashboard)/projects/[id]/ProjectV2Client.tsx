@@ -472,6 +472,27 @@ function ProjectMemberChips({ projectId, members, profiles, pmName }: {
   const [selectedProfile, setSelectedProfile] = useState('')
   const [selectedRole, setSelectedRole] = useState('팀원')
 
+  const pmMember = members.find(m => m.role === 'PM')
+  const pmId = pmMember?.profile_id ?? null
+  const [editingPm, setEditingPm] = useState(false)
+  const [draftPm, setDraftPm] = useState<string>('')
+
+  const handleChangePm = () => {
+    if (draftPm === (pmId ?? '')) {
+      setEditingPm(false)
+      return
+    }
+    startTransition(async () => {
+      try {
+        if (pmId) await removeProjectMember(projectId, pmId)
+        if (draftPm) await addProjectMember(projectId, draftPm, 'PM')
+        setEditingPm(false)
+      } catch (e) {
+        alert(`PM 변경 실패: ${e instanceof Error ? e.message : ''}`)
+      }
+    })
+  }
+
   const memberIds = new Set(members.map(m => m.profile_id))
   const candidates = profiles.filter(p => !memberIds.has(p.id))
 
@@ -503,8 +524,44 @@ function ProjectMemberChips({ projectId, members, profiles, pmName }: {
 
   return (
     <div className="flex items-center gap-1.5">
-      {pmName && (
-        <span className="text-xs text-gray-400 mr-1">PM {pmName}</span>
+      {editingPm ? (
+        <div className="flex items-center gap-1 bg-gray-50 rounded px-1.5 py-0.5 mr-1">
+          <span className="text-[10px] text-gray-400">PM</span>
+          <select
+            autoFocus
+            value={draftPm}
+            onChange={e => setDraftPm(e.target.value)}
+            disabled={pending}
+            className="text-xs border border-gray-200 rounded px-1 py-0.5"
+          >
+            <option value="">미지정</option>
+            {profiles.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+          </select>
+          <button
+            type="button"
+            onClick={handleChangePm}
+            disabled={pending}
+            className="text-[10px] px-1.5 py-0.5 bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50"
+          >
+            {pending ? '...' : '저장'}
+          </button>
+          <button
+            type="button"
+            onClick={() => setEditingPm(false)}
+            className="text-[10px] text-gray-500 hover:text-gray-700"
+          >
+            ✕
+          </button>
+        </div>
+      ) : (
+        <button
+          type="button"
+          onClick={() => { setDraftPm(pmId ?? ''); setEditingPm(true) }}
+          title="클릭해서 PM 변경"
+          className="text-xs text-gray-400 hover:text-gray-700 hover:bg-gray-50 rounded px-1.5 py-0.5 mr-1"
+        >
+          PM {pmName ?? '미지정'}
+        </button>
       )}
       <div className="flex -space-x-1">
         {members.slice(0, 5).map(m => (
@@ -593,10 +650,23 @@ function BasicInfoCard({ customer, contactPerson, pmName, project, customersAll 
 }) {
   const [editingCustomer, setEditingCustomer] = useState(false)
   const [pendingCustomer, startCustomerTransition] = useTransition()
+  const [draftCustomerId, setDraftCustomerId] = useState<string>('')
+  const [draftCustomerName, setDraftCustomerName] = useState<string>('')
 
-  const handleChangeCustomer = (id: string) => {
+  useEffect(() => {
+    if (editingCustomer) {
+      setDraftCustomerId(customer?.id ?? '')
+      setDraftCustomerName(customer?.name ?? '')
+    }
+  }, [editingCustomer, customer])
+
+  const handleSaveCustomer = () => {
+    if (!draftCustomerId || draftCustomerId === customer?.id) {
+      setEditingCustomer(false)
+      return
+    }
     startCustomerTransition(async () => {
-      await linkProjectCustomer(project.id, id)
+      await linkProjectCustomer(project.id, draftCustomerId)
       setEditingCustomer(false)
     })
   }
@@ -618,21 +688,30 @@ function BasicInfoCard({ customer, contactPerson, pmName, project, customersAll 
           )}
         </div>
         {editingCustomer ? (
-          <div className="space-y-1">
+          <div className="space-y-1.5">
             <CustomerPicker
-              value={customer?.id ?? ''}
-              selectedName={customer?.name ?? ''}
+              value={draftCustomerId}
+              selectedName={draftCustomerName}
               customers={customersAll}
-              onChange={(id) => { if (id && id !== customer?.id) handleChangeCustomer(id) }}
+              onChange={(id, name) => { setDraftCustomerId(id); setDraftCustomerName(name) }}
               placeholder="고객사 검색"
             />
-            <button
-              onClick={() => setEditingCustomer(false)}
-              disabled={pendingCustomer}
-              className="text-[10px] text-gray-500 hover:text-gray-700"
-            >
-              {pendingCustomer ? '저장 중…' : '취소'}
-            </button>
+            <div className="flex gap-1">
+              <button
+                onClick={handleSaveCustomer}
+                disabled={pendingCustomer || !draftCustomerId || draftCustomerId === customer?.id}
+                className="text-[10px] px-2 py-0.5 bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50"
+              >
+                {pendingCustomer ? '저장 중…' : '저장'}
+              </button>
+              <button
+                onClick={() => setEditingCustomer(false)}
+                disabled={pendingCustomer}
+                className="text-[10px] px-2 py-0.5 text-gray-500 hover:text-gray-700"
+              >
+                취소
+              </button>
+            </div>
           </div>
         ) : customer ? (
           <>
@@ -646,7 +725,7 @@ function BasicInfoCard({ customer, contactPerson, pmName, project, customersAll 
 
       {(contactPerson || customer?.contact_name) && (
         <div>
-          <p className="text-[10px] text-gray-400 mb-0.5">담당자</p>
+          <p className="text-[10px] text-gray-400 mb-0.5">고객</p>
           <p className="text-sm font-medium text-gray-800">
             {contactPerson?.name ?? customer?.contact_name}
             {contactPerson?.title && <span className="text-gray-400 font-normal ml-1">· {contactPerson.title}</span>}
