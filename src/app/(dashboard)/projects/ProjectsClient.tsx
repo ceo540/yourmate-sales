@@ -32,6 +32,27 @@ function fmtMoney(n: number | null) {
   return n.toLocaleString()
 }
 
+function SortableTh({ label, keyName, sortKey, sortDir, onClick, align }: {
+  label: string
+  keyName: SortKey
+  sortKey: SortKey
+  sortDir: SortDir
+  onClick: (key: SortKey) => void
+  align?: 'left' | 'right'
+}) {
+  const active = sortKey === keyName
+  const arrow = !active ? '' : sortDir === 'asc' ? ' ↑' : ' ↓'
+  return (
+    <th
+      onClick={() => onClick(keyName)}
+      className={`px-3 py-2.5 text-${align ?? 'left'} text-xs font-semibold cursor-pointer select-none hover:bg-gray-100 ${active ? 'text-gray-900' : 'text-gray-500'}`}
+      title={`${label} 기준 정렬`}
+    >
+      {label}<span className="text-yellow-600">{arrow}</span>
+    </th>
+  )
+}
+
 interface Project {
   id: string
   name: string
@@ -47,6 +68,9 @@ interface Project {
 
 interface SimpleOption { id: string; name: string }
 
+type SortKey = 'project_number' | 'name' | 'customer_name' | 'service_type' | 'status' | 'contract_stage' | 'pm_name' | 'revenue' | 'inflow_date'
+type SortDir = 'asc' | 'desc'
+
 export default function ProjectsClient({ projects, isAdmin, profiles, customers }: {
   projects: Project[]
   isAdmin: boolean
@@ -57,6 +81,32 @@ export default function ProjectsClient({ projects, isAdmin, profiles, customers 
   const [search, setSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState('전체')
   const [svcFilter, setSvcFilter] = useState('전체')
+  const [pmFilter, setPmFilter] = useState('전체')   // 담당자 필터
+  const [sortKey, setSortKey] = useState<SortKey>('project_number')
+  const [sortDir, setSortDir] = useState<SortDir>('desc')
+
+  function toggleSort(key: SortKey) {
+    if (sortKey === key) {
+      setSortDir(d => d === 'asc' ? 'desc' : 'asc')
+    } else {
+      setSortKey(key)
+      // 텍스트는 asc(가나다·번호 작은→큰), 숫자/날짜는 desc(최신·큰값 우선)가 자연스러움
+      setSortDir(['revenue', 'inflow_date'].includes(key) ? 'desc' : 'asc')
+    }
+  }
+
+  function compare(a: Project, b: Project): number {
+    const av = (a as any)[sortKey]
+    const bv = (b as any)[sortKey]
+    // null은 항상 마지막
+    if (av == null && bv == null) return 0
+    if (av == null) return 1
+    if (bv == null) return -1
+    let cmp: number
+    if (typeof av === 'number' && typeof bv === 'number') cmp = av - bv
+    else cmp = String(av).localeCompare(String(bv), 'ko')
+    return sortDir === 'asc' ? cmp : -cmp
+  }
   const [assignPending, startAssign] = useTransition()
   const [createPending, startCreate] = useTransition()
   const [assignMsg, setAssignMsg] = useState('')
@@ -92,17 +142,25 @@ export default function ProjectsClient({ projects, isAdmin, profiles, customers 
   const filtered = projects.filter(p => {
     if (statusFilter !== '전체' && p.status !== statusFilter) return false
     if (svcFilter !== '전체' && p.service_type !== svcFilter) return false
+    if (pmFilter !== '전체') {
+      if (pmFilter === '미지정') { if (p.pm_name) return false }
+      else if (p.pm_name !== pmFilter) return false
+    }
     if (search) {
       const q = search.toLowerCase()
       return (
         p.name.toLowerCase().includes(q) ||
         (p.project_number ?? '').toLowerCase().includes(q) ||
         (p.customer_name ?? '').toLowerCase().includes(q) ||
-        (p.service_type ?? '').toLowerCase().includes(q)
+        (p.service_type ?? '').toLowerCase().includes(q) ||
+        (p.pm_name ?? '').toLowerCase().includes(q)
       )
     }
     return true
-  })
+  }).slice().sort(compare)
+
+  // 담당자 필터 옵션 (실제 데이터 기준 + 미지정)
+  const pmOptions = ['전체', '미지정', ...Array.from(new Set(projects.map(p => p.pm_name).filter(Boolean) as string[]))]
 
   return (
     <div>
@@ -321,7 +379,8 @@ export default function ProjectsClient({ projects, isAdmin, profiles, customers 
         {!isAdmin && <span className="ml-auto text-xs text-gray-400">{filtered.length}건</span>}
       </div>
       {/* 서비스 필터 */}
-      <div className="flex gap-1.5 mb-4 flex-wrap">
+      <div className="flex gap-1.5 mb-2 flex-wrap items-center">
+        <span className="text-[10px] text-gray-400 mr-1">서비스</span>
         {svcTypes.map(s => {
           const active = svcFilter === s
           return (
@@ -337,78 +396,94 @@ export default function ProjectsClient({ projects, isAdmin, profiles, customers 
         })}
       </div>
 
+      {/* 담당자 필터 */}
+      <div className="flex gap-1.5 mb-4 flex-wrap items-center">
+        <span className="text-[10px] text-gray-400 mr-1">담당자</span>
+        {pmOptions.map(p => {
+          const active = pmFilter === p
+          return (
+            <button key={p} onClick={() => setPmFilter(p)}
+              className="px-2.5 py-1 rounded-full text-xs border transition-all"
+              style={active
+                ? { backgroundColor: '#374151', color: '#fff', borderColor: '#374151' }
+                : { backgroundColor: '#fff', color: '#9CA3AF', borderColor: '#E5E7EB' }
+              }>
+              {p}
+            </button>
+          )
+        })}
+      </div>
+
       {/* 테이블 */}
-      <div className="bg-white rounded-xl overflow-hidden" style={{ boxShadow: '0 1px 4px rgba(0,0,0,0.06)' }}>
-        <table className="w-full border-collapse">
+      <div className="bg-white rounded-xl overflow-x-auto" style={{ boxShadow: '0 1px 4px rgba(0,0,0,0.06)' }}>
+        <table className="w-full border-collapse" style={{ tableLayout: 'auto' }}>
           <thead>
             <tr className="border-b border-gray-100 bg-gray-50">
-              {['번호', '프로젝트명', '고객', '서비스', '상태', '단계', '담당자', '매출'].map(h => (
-                <th key={h} className="px-4 py-3 text-left text-xs font-semibold text-gray-500">{h}</th>
-              ))}
+              <SortableTh label="번호"      keyName="project_number" sortKey={sortKey} sortDir={sortDir} onClick={toggleSort} />
+              <SortableTh label="프로젝트명" keyName="name"           sortKey={sortKey} sortDir={sortDir} onClick={toggleSort} />
+              <SortableTh label="고객"      keyName="customer_name"  sortKey={sortKey} sortDir={sortDir} onClick={toggleSort} />
+              <SortableTh label="서비스"    keyName="service_type"   sortKey={sortKey} sortDir={sortDir} onClick={toggleSort} />
+              <SortableTh label="상태"      keyName="status"         sortKey={sortKey} sortDir={sortDir} onClick={toggleSort} />
+              <SortableTh label="단계"      keyName="contract_stage" sortKey={sortKey} sortDir={sortDir} onClick={toggleSort} />
+              <SortableTh label="담당자"    keyName="pm_name"        sortKey={sortKey} sortDir={sortDir} onClick={toggleSort} />
+              <SortableTh label="유입"      keyName="inflow_date"    sortKey={sortKey} sortDir={sortDir} onClick={toggleSort} />
+              <SortableTh label="매출"      keyName="revenue"        sortKey={sortKey} sortDir={sortDir} onClick={toggleSort} align="right" />
             </tr>
           </thead>
           <tbody>
             {filtered.length === 0 ? (
-              <tr><td colSpan={8} className="px-4 py-12 text-center text-sm text-gray-400">
-                {search ? '검색 결과가 없습니다.' : '프로젝트가 없습니다.'}
+              <tr><td colSpan={9} className="px-4 py-12 text-center text-sm text-gray-400">
+                {search ? '검색 결과가 없어.' : '프로젝트가 없어.'}
               </td></tr>
             ) : filtered.map(p => {
               const svcColor = SVC_COLOR[p.service_type ?? ''] ?? '#9CA3AF'
               return (
                 <tr key={p.id}
-                  className="border-b border-gray-50 hover:bg-gray-50 transition-colors cursor-pointer">
-                  <td className="px-4 py-3">
-                    <Link href={`/projects/${p.id}`} className="block">
-                      <span className="text-xs font-bold text-gray-400 font-mono">
-                        {p.project_number ?? '—'}
-                      </span>
-                    </Link>
+                  className="border-b border-gray-50 hover:bg-gray-50 transition-colors cursor-pointer align-top"
+                  onClick={() => router.push(`/projects/${p.id}`)}>
+                  <td className="px-3 py-2.5 whitespace-nowrap">
+                    <span className="text-xs font-bold text-gray-400 font-mono">
+                      {p.project_number ?? '—'}
+                    </span>
                   </td>
-                  <td className="px-4 py-3 max-w-[220px]">
-                    <Link href={`/projects/${p.id}`} className="flex items-center gap-2">
+                  <td className="px-3 py-2.5">
+                    <div className="flex items-center gap-2">
                       <div className="w-0.5 h-6 rounded flex-shrink-0" style={{ background: svcColor }} />
-                      <span className="text-sm font-semibold text-gray-900 truncate">{p.name}</span>
-                    </Link>
+                      <span className="text-sm font-semibold text-gray-900 break-words">{p.name}</span>
+                    </div>
                   </td>
-                  <td className="px-4 py-3">
-                    <Link href={`/projects/${p.id}`} className="block text-sm text-gray-500 truncate max-w-[120px]">
-                      {p.customer_name ?? '—'}
-                    </Link>
+                  <td className="px-3 py-2.5 text-sm text-gray-500 break-words">
+                    {p.customer_name ?? '—'}
                   </td>
-                  <td className="px-4 py-3">
-                    <Link href={`/projects/${p.id}`} className="block">
-                      {p.service_type ? (
-                        <span className="text-xs px-1.5 py-0.5 rounded border font-medium"
-                          style={{ color: svcColor, borderColor: svcColor + '40', background: svcColor + '12' }}>
-                          {p.service_type}
-                        </span>
-                      ) : <span className="text-gray-300">—</span>}
-                    </Link>
-                  </td>
-                  <td className="px-4 py-3">
-                    <Link href={`/projects/${p.id}`} className="block">
-                      <span className={`text-xs px-1.5 py-0.5 rounded-full font-medium ${STATUS_CLR[p.status] ?? 'bg-gray-100 text-gray-500'}`}>
-                        {p.status}
+                  <td className="px-3 py-2.5 whitespace-nowrap">
+                    {p.service_type ? (
+                      <span className="text-xs px-1.5 py-0.5 rounded border font-medium"
+                        style={{ color: svcColor, borderColor: svcColor + '40', background: svcColor + '12' }}>
+                        {p.service_type}
                       </span>
-                    </Link>
+                    ) : <span className="text-gray-300">—</span>}
                   </td>
-                  <td className="px-4 py-3">
-                    <Link href={`/projects/${p.id}`} className="block">
-                      {p.contract_stage ? (
-                        <span className={`text-xs px-1.5 py-0.5 rounded font-medium ${STAGE_CLR[p.contract_stage] ?? 'bg-gray-100 text-gray-500'}`}>
-                          {p.contract_stage}
-                        </span>
-                      ) : <span className="text-gray-300 text-xs">—</span>}
-                    </Link>
+                  <td className="px-3 py-2.5 whitespace-nowrap">
+                    <span className={`text-xs px-1.5 py-0.5 rounded-full font-medium ${STATUS_CLR[p.status] ?? 'bg-gray-100 text-gray-500'}`}>
+                      {p.status}
+                    </span>
                   </td>
-                  <td className="px-4 py-3 text-sm text-gray-600">
-                    <Link href={`/projects/${p.id}`} className="block">{p.pm_name ?? '—'}</Link>
+                  <td className="px-3 py-2.5 whitespace-nowrap">
+                    {p.contract_stage ? (
+                      <span className={`text-xs px-1.5 py-0.5 rounded font-medium ${STAGE_CLR[p.contract_stage] ?? 'bg-gray-100 text-gray-500'}`}>
+                        {p.contract_stage}
+                      </span>
+                    ) : <span className="text-gray-300 text-xs">—</span>}
                   </td>
-                  <td className="px-4 py-3">
-                    <Link href={`/projects/${p.id}`} className="block text-sm font-semibold"
-                      style={{ color: p.revenue ? '#374151' : '#D1D5DB' }}>
-                      {fmtMoney(p.revenue)}
-                    </Link>
+                  <td className="px-3 py-2.5 text-sm text-gray-600 whitespace-nowrap">
+                    {p.pm_name ?? <span className="text-gray-300">—</span>}
+                  </td>
+                  <td className="px-3 py-2.5 text-xs text-gray-400 whitespace-nowrap">
+                    {p.inflow_date ?? '—'}
+                  </td>
+                  <td className="px-3 py-2.5 text-sm font-semibold whitespace-nowrap text-right"
+                    style={{ color: p.revenue ? '#374151' : '#D1D5DB' }}>
+                    {fmtMoney(p.revenue)}
                   </td>
                 </tr>
               )

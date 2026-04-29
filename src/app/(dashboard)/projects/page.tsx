@@ -46,7 +46,7 @@ export default async function ProjectsPage() {
   })
 
   return (
-    <div className="max-w-6xl">
+    <div className="max-w-[1400px]">
       <div className="mb-6">
         <h1 className="text-2xl font-bold text-gray-900">프로젝트</h1>
         <p className="text-gray-500 text-sm mt-1">
