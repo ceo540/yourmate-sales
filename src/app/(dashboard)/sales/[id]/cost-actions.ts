@@ -3,8 +3,8 @@
 import { revalidatePath } from 'next/cache'
 import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
-import { listDropboxFolder, readDropboxFile } from '@/lib/dropbox'
-import { extractCostsFromPdfTexts, type ExtractedCostRow } from '@/lib/cost-pdf-extract'
+import { listDropboxFolder, readDropboxFileBinary } from '@/lib/dropbox'
+import { extractCostsFromPdfBinaries, type ExtractedCostRow } from '@/lib/cost-pdf-extract'
 
 export interface AnalyzedCostRow extends ExtractedCostRow {
   // vendor 매칭 결과
@@ -70,30 +70,31 @@ export async function analyzeCostFolder(
     return { error: `원가 폴더에 PDF가 없어. (${costFolderPath})` }
   }
 
-  // 각 PDF 텍스트 추출 (병렬)
-  const texts = await Promise.all(
+  // 각 PDF 바이너리(base64) 추출 (병렬) — Claude PDF document 입력용
+  const binaries = await Promise.all(
     pdfPaths.map(async p => {
-      const r = await readDropboxFile(p.path)
-      if ('error' in r) return { filename: p.name, text: `[읽기 실패: ${r.error}]` }
-      return { filename: p.name, text: r.text }
+      const r = await readDropboxFileBinary(p.path)
+      if ('error' in r) return null
+      return { filename: p.name, base64: r.base64 }
     }),
   )
+  const validBinaries = binaries.filter((b): b is { filename: string; base64: string } => !!b)
+  if (validBinaries.length === 0) {
+    return { error: '모든 PDF 다운로드 실패' }
+  }
 
-  // LLM 통합 분석
-  const result = await extractCostsFromPdfTexts(texts, { userId: user.id })
+  // Claude PDF로 통합 분석 (이미지 스캔본도 OCR 자동 처리)
+  const result = await extractCostsFromPdfBinaries(validBinaries, { userId: user.id })
 
-  // 진단 메시지 생성 — 0건일 때 원인 안내용
+  // 진단 메시지 생성 — 0건일 때 원인 안내용 (Claude PDF binary 모드)
   const buildDiagnostic = (stats?: { totalTextLength: number; perPdfTextLength: { filename: string; length: number }[]; rawResponseSnippet: string | null; imagePdfCount: number }) => {
     if (!stats) return undefined
     const lines: string[] = []
-    lines.push(`📊 PDF ${pdfPaths.length}개 / 텍스트 총 ${stats.totalTextLength.toLocaleString()}자`)
-    if (stats.imagePdfCount > 0) {
-      lines.push(`⚠️ ${stats.imagePdfCount}개 PDF는 텍스트 0자 (이미지 스캔본 추정 — OCR 필요).`)
-      const imgs = stats.perPdfTextLength.filter(p => p.length === 0).map(p => '· ' + p.filename).join('\n')
-      lines.push(imgs)
-    }
+    const totalBytes = stats.perPdfTextLength.reduce((s, p) => s + p.length, 0)
+    lines.push(`🆕[v2-claude] 📊 PDF ${pdfPaths.length}개 / 총 ${(totalBytes / 1024).toFixed(0)} KB (Claude PDF document — OCR 자동)`)
+    lines.push(`· 처리된 PDF: ${stats.perPdfTextLength.map(p => p.filename).join(', ')}`)
     if (stats.rawResponseSnippet) {
-      lines.push(`\n🤖 LLM 응답 일부:\n${stats.rawResponseSnippet.slice(0, 250)}`)
+      lines.push(`\n🤖 Claude 응답 일부:\n${stats.rawResponseSnippet.slice(0, 350)}`)
     }
     return lines.join('\n')
   }
@@ -112,7 +113,7 @@ export async function analyzeCostFolder(
   const vendorList = vendors ?? []
   const existing = existingCosts ?? []
 
-  const analyzed: AnalyzedCostRow[] = result.rows.map(r => {
+  const analyzed: AnalyzedCostRow[] = result.rows.map((r: ExtractedCostRow) => {
     let matched_vendor_id: string | null = null
     let matched_vendor_name: string | null = null
     if (r.vendor_name) {

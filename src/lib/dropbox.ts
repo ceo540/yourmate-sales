@@ -572,6 +572,25 @@ export async function moveDropboxToCancel(
 }
 
 // 드롭박스 파일 다운로드 후 텍스트 추출 (PDF → 텍스트, 기타 → 미지원)
+// PDF 등 바이너리 파일을 base64로 받음 — Claude/OpenAI document 입력용 (OCR 자동)
+export async function readDropboxFileBinary(relativePath: string): Promise<{ base64: string; bytes: number } | { error: string }> {
+  const token = await getDropboxToken()
+  if (!token) return { error: '드롭박스 토큰 없음' }
+
+  const arg = encodeURIComponent(JSON.stringify({ path: relativePath }))
+  const pathRoot = encodeURIComponent(JSON.stringify({ '.tag': 'root', root: ROOT_NAMESPACE }))
+  const res = await fetch(
+    `https://content.dropboxapi.com/2/files/download?arg=${arg}&path_root=${pathRoot}`,
+    { method: 'POST', headers: { 'Authorization': `Bearer ${token}` } },
+  )
+  if (!res.ok) {
+    const err = await res.text()
+    return { error: `다운로드 실패: ${err.slice(0, 100)}` }
+  }
+  const buf = Buffer.from(await res.arrayBuffer())
+  return { base64: buf.toString('base64'), bytes: buf.length }
+}
+
 export async function readDropboxFile(relativePath: string): Promise<{ text: string; truncated: boolean } | { error: string }> {
   const token = await getDropboxToken()
   if (!token) return { error: '드롭박스 토큰 없음' }
