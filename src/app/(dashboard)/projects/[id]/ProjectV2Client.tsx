@@ -496,8 +496,6 @@ function ProjectMemberChips({ projectId, members, profiles, pmName }: {
   const memberIds = new Set(members.map(m => m.profile_id))
   const candidates = profiles.filter(p => !memberIds.has(p.id))
 
-  const initial = (name: string) => name.slice(0, 1)
-
   const handleAdd = () => {
     if (!selectedProfile) return
     startTransition(async () => {
@@ -563,27 +561,20 @@ function ProjectMemberChips({ projectId, members, profiles, pmName }: {
           PM {pmName ?? '미지정'}
         </button>
       )}
-      <div className="flex -space-x-1">
-        {members.slice(0, 5).map(m => (
+      <div className="flex flex-wrap items-center gap-1">
+        {members.filter(m => m.role !== 'PM').map(m => (
           <button
             key={m.profile_id}
             type="button"
             onClick={() => handleRemove(m.profile_id, m.name)}
-            title={`${m.name} (${m.role}) — 클릭해서 제거`}
+            title={`${m.role} — 클릭해서 제거`}
             disabled={pending}
-            className="w-6 h-6 rounded-full bg-blue-100 text-blue-700 text-[10px] font-medium flex items-center justify-center border-2 border-white hover:bg-red-100 hover:text-red-700 transition-colors disabled:opacity-50"
+            className="text-xs px-2 py-0.5 rounded-full bg-blue-50 text-blue-700 border border-blue-200 hover:bg-red-50 hover:text-red-700 hover:border-red-200 transition-colors disabled:opacity-50"
           >
-            {initial(m.name)}
+            {m.name}
+            {m.role !== '팀원' && <span className="text-[10px] text-gray-400 ml-0.5">·{m.role}</span>}
           </button>
         ))}
-        {members.length > 5 && (
-          <span
-            title={members.slice(5).map(m => m.name).join(', ')}
-            className="w-6 h-6 rounded-full bg-gray-100 text-gray-500 text-[10px] font-medium flex items-center justify-center border-2 border-white"
-          >
-            +{members.length - 5}
-          </span>
-        )}
       </div>
       <div className="relative">
         <button
