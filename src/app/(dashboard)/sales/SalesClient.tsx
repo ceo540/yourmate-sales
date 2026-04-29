@@ -522,11 +522,66 @@ function PaymentSummaryCards({ sales, today, weekStr, thisMonth, onCardClick }: 
 }
 
 /* ── 계약 목록 표 (행별 인라인 편집) ────────────────────────── */
+type SaleSortKey = 'name' | 'client_org' | 'entity' | 'contract_stage' | 'payment' | 'revenue' | 'cost' | 'margin' | 'inflow_date'
+
+const STAGE_ORDER: Record<string, number> = {
+  '계약': 0, '착수': 1, '선금': 2, '중도금': 3, '완수': 4, '계산서발행': 5, '잔금': 6,
+}
+
 function ContractListTable({ sales, today }: { sales: Sale[]; today: string }) {
   const [busy, setBusy] = useState<string | null>(null)
+  const [sortKey, setSortKey] = useState<SaleSortKey>('inflow_date')
+  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc')
   const [stages, setStages] = useState<Record<string, string>>(() =>
     Object.fromEntries(sales.map(s => [s.id, s.contract_stage ?? '계약']))
   )
+
+  function toggleSort(key: SaleSortKey) {
+    if (sortKey === key) setSortDir(d => d === 'asc' ? 'desc' : 'asc')
+    else {
+      setSortKey(key)
+      setSortDir(['revenue', 'cost', 'margin', 'inflow_date'].includes(key) ? 'desc' : 'asc')
+    }
+  }
+
+  const sortedSales = sales.slice().sort((a, b) => {
+    let av: number | string | null = null
+    let bv: number | string | null = null
+    if (sortKey === 'name') { av = a.name ?? ''; bv = b.name ?? '' }
+    else if (sortKey === 'client_org') { av = a.customer?.name ?? a.client_org ?? ''; bv = b.customer?.name ?? b.client_org ?? '' }
+    else if (sortKey === 'entity') { av = a.entity?.name ?? ''; bv = b.entity?.name ?? '' }
+    else if (sortKey === 'contract_stage') { av = STAGE_ORDER[stages[a.id] ?? a.contract_stage ?? '계약'] ?? 99; bv = STAGE_ORDER[stages[b.id] ?? b.contract_stage ?? '계약'] ?? 99 }
+    else if (sortKey === 'payment') { av = computePaymentStatus(a.payment_schedules ?? [], today); bv = computePaymentStatus(b.payment_schedules ?? [], today) }
+    else if (sortKey === 'revenue') { av = a.revenue ?? 0; bv = b.revenue ?? 0 }
+    else if (sortKey === 'cost') {
+      av = (a.sale_costs ?? []).reduce((s, c) => s + c.amount, 0)
+      bv = (b.sale_costs ?? []).reduce((s, c) => s + c.amount, 0)
+    }
+    else if (sortKey === 'margin') {
+      av = (a.revenue ?? 0) - (a.sale_costs ?? []).reduce((s, c) => s + c.amount, 0)
+      bv = (b.revenue ?? 0) - (b.sale_costs ?? []).reduce((s, c) => s + c.amount, 0)
+    }
+    else if (sortKey === 'inflow_date') { av = a.inflow_date ?? ''; bv = b.inflow_date ?? '' }
+    if (av == null && bv == null) return 0
+    if (av == null) return 1
+    if (bv == null) return -1
+    const cmp = typeof av === 'number' && typeof bv === 'number' ? av - bv : String(av).localeCompare(String(bv), 'ko')
+    return sortDir === 'asc' ? cmp : -cmp
+  })
+
+  function ThSort({ k, label, align }: { k: SaleSortKey; label: string; align?: 'right' | 'left' }) {
+    const active = sortKey === k
+    return (
+      <th
+        onClick={() => toggleSort(k)}
+        className={`text-${align ?? 'left'} text-[11px] font-semibold cursor-pointer select-none hover:bg-gray-100 px-3 py-2 ${active ? 'text-gray-900' : 'text-gray-500'}`}
+        title={`${label} 기준 정렬`}
+      >
+        {label}
+        {active && <span className="text-yellow-600 ml-0.5">{sortDir === 'asc' ? '↑' : '↓'}</span>}
+      </th>
+    )
+  }
   // 신규 sales 들어왔을 때 stages 동기화 — 단순 로직: filtered 변하면 새로
   // (useState 초기값은 첫 렌더만이라 sales 변하면 추가 필요. 일단 prop sales 적용)
   async function changeStage(saleId: string, stage: string) {
@@ -545,22 +600,22 @@ function ContractListTable({ sales, today }: { sales: Sale[]; today: string }) {
         <table className="w-full min-w-[1100px]">
           <thead className="bg-gray-50/60 border-b border-gray-100">
             <tr>
-              <th className="text-left text-[11px] font-semibold text-gray-500 px-3 py-2">건명</th>
-              <th className="text-left text-[11px] font-semibold text-gray-500 px-3 py-2">발주처/부서</th>
-              <th className="text-left text-[11px] font-semibold text-gray-500 px-3 py-2">우리 사업자</th>
-              <th className="text-left text-[11px] font-semibold text-gray-500 px-3 py-2 w-32">단계</th>
-              <th className="text-left text-[11px] font-semibold text-gray-500 px-3 py-2 w-28">결제</th>
-              <th className="text-right text-[11px] font-semibold text-gray-500 px-3 py-2">매출</th>
-              <th className="text-right text-[11px] font-semibold text-gray-500 px-3 py-2">외주</th>
-              <th className="text-right text-[11px] font-semibold text-gray-500 px-3 py-2">마진</th>
-              <th className="text-left text-[11px] font-semibold text-gray-500 px-3 py-2 w-20">유입</th>
+              <ThSort k="name" label="건명" />
+              <ThSort k="client_org" label="발주처/부서" />
+              <ThSort k="entity" label="우리 사업자" />
+              <ThSort k="contract_stage" label="단계" />
+              <ThSort k="payment" label="결제" />
+              <ThSort k="revenue" label="매출" align="right" />
+              <ThSort k="cost" label="외주" align="right" />
+              <ThSort k="margin" label="마진" align="right" />
+              <ThSort k="inflow_date" label="유입" />
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-50">
-            {sales.length === 0 && (
+            {sortedSales.length === 0 && (
               <tr><td colSpan={9} className="py-10 text-center text-sm text-gray-400">결과 없음</td></tr>
             )}
-            {sales.map(s => {
+            {sortedSales.map(s => {
               const stage = stages[s.id] ?? s.contract_stage ?? '계약'
               const status = computePaymentStatus(s.payment_schedules ?? [], today)
               const badge = PAYMENT_STATUS_BADGE[status]
