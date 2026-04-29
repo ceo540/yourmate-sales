@@ -131,6 +131,7 @@ interface Task {
   assignee_name?: string | null
   description?: string | null
   bbang_suggested?: boolean
+  created_at?: string | null
 }
 interface Log {
   id: string; content: string; log_type: string; log_category: string | null
@@ -382,7 +383,7 @@ export default function ProjectV2Client({
       </div>
 
       {/* ── 2-column 본문 ── */}
-      <div className="grid grid-cols-1 lg:grid-cols-[1fr_320px] gap-5">
+      <div className="grid grid-cols-1 lg:grid-cols-[1fr_400px] gap-5">
         {/* 좌: 메인 */}
         <div className="space-y-4">
           {/* 1. 자동 개요 + 협의해야할 내용 (빵빵이) — 항상 최상단 */}
@@ -1575,12 +1576,16 @@ function ProjectGlanceSection({ project, customer, pmName, contracts, tasks, fin
 }
 
 /* ── 4. 할일 (별도 섹션) ─────────────────────────────────── */
+type TaskSortKey = 'due_date' | 'priority' | 'status' | 'created'
+
+const TASK_PRIORITY_ORDER: Record<string, number> = { 긴급: 0, 높음: 1, 보통: 2, 낮음: 3 }
+const TASK_STATUS_ORDER: Record<string, number> = { 진행중: 0, 검토중: 1, '할 일': 2, 보류: 3, 완료: 4 }
+
 function TasksSection({ tasks, contracts, projectId, profiles, serviceType }: {
   tasks: Task[]; contracts: Contract[]; projectId: string; profiles: ProfileOpt[]; serviceType: string | null
 }) {
   const router = useRouter()
   const [, startTransition] = useTransition()
-  const pendingTasks = tasks.filter(t => t.status !== '완료' && t.status !== '보류')
   const [newTitle, setNewTitle] = useState('')
   const [newAssigneeId, setNewAssigneeId] = useState('')
   const [newDue, setNewDue] = useState('')
@@ -1589,6 +1594,46 @@ function TasksSection({ tasks, contracts, projectId, profiles, serviceType }: {
   const [suggesting, setSuggesting] = useState(false)
   const [suggestMsg, setSuggestMsg] = useState<string | null>(null)
   const canAdd = contracts.length > 0
+
+  // 정렬·필터
+  const [statusFilter, setStatusFilter] = useState<'진행중' | '완료' | '전체'>('진행중')
+  const [assigneeFilter, setAssigneeFilter] = useState<string>('전체')   // '전체' | '미지정' | profile_id
+  const [sortKey, setSortKey] = useState<TaskSortKey>('due_date')
+  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc')
+
+  const pendingTasks = tasks.filter(t => t.status !== '완료' && t.status !== '보류')
+
+  // 담당자 옵션 — 실제 task에 등장한 담당자만
+  const assigneeIdsInTasks = Array.from(new Set(tasks.map(t => t.assignee_id).filter(Boolean) as string[]))
+  const profileById = new Map(profiles.map(p => [p.id, p.name]))
+  const assigneeOptions: { value: string; label: string }[] = [
+    { value: '전체', label: '전체' },
+    { value: '미지정', label: '미지정' },
+    ...assigneeIdsInTasks.map(id => ({ value: id, label: profileById.get(id) ?? id.slice(0, 8) })),
+  ]
+
+  const visibleTasks = tasks.filter(t => {
+    if (statusFilter === '진행중') {
+      if (t.status === '완료' || t.status === '보류') return false
+    } else if (statusFilter === '완료') {
+      if (t.status !== '완료') return false
+    }
+    if (assigneeFilter === '미지정' && t.assignee_id) return false
+    if (assigneeFilter !== '전체' && assigneeFilter !== '미지정' && t.assignee_id !== assigneeFilter) return false
+    return true
+  }).slice().sort((a, b) => {
+    let av: number | string | null = null
+    let bv: number | string | null = null
+    if (sortKey === 'due_date') { av = a.due_date; bv = b.due_date }
+    else if (sortKey === 'priority') { av = TASK_PRIORITY_ORDER[a.priority ?? ''] ?? 99; bv = TASK_PRIORITY_ORDER[b.priority ?? ''] ?? 99 }
+    else if (sortKey === 'status') { av = TASK_STATUS_ORDER[a.status] ?? 99; bv = TASK_STATUS_ORDER[b.status] ?? 99 }
+    else { av = a.created_at ?? null; bv = b.created_at ?? null }
+    if (av == null && bv == null) return 0
+    if (av == null) return 1
+    if (bv == null) return -1
+    const cmp = typeof av === 'number' && typeof bv === 'number' ? av - bv : String(av).localeCompare(String(bv))
+    return sortDir === 'asc' ? cmp : -cmp
+  })
   function add() {
     if (!newTitle.trim() || !canAdd) return
     const title = newTitle.trim()
@@ -1672,18 +1717,69 @@ function TasksSection({ tasks, contracts, projectId, profiles, serviceType }: {
           )}
         </div>
       )}
+      {/* 정렬·필터 바 */}
+      {tasks.length > 0 && (
+        <div className="px-5 py-2 border-b border-gray-50 bg-gray-50/50 flex items-center gap-2 flex-wrap text-xs">
+          <span className="text-[10px] text-gray-400">상태</span>
+          {(['진행중', '완료', '전체'] as const).map(s => (
+            <button
+              key={s}
+              onClick={() => setStatusFilter(s)}
+              className={`px-2 py-0.5 rounded-full border ${statusFilter === s ? 'bg-gray-900 text-white border-gray-900' : 'bg-white text-gray-500 border-gray-200'}`}
+            >
+              {s}
+            </button>
+          ))}
+          {assigneeOptions.length > 1 && (
+            <>
+              <span className="text-[10px] text-gray-400 ml-2">담당자</span>
+              <select
+                value={assigneeFilter}
+                onChange={e => setAssigneeFilter(e.target.value)}
+                className="border border-gray-200 rounded px-1.5 py-0.5 bg-white"
+              >
+                {assigneeOptions.map(opt => (
+                  <option key={opt.value} value={opt.value}>{opt.label}</option>
+                ))}
+              </select>
+            </>
+          )}
+          <span className="text-[10px] text-gray-400 ml-2">정렬</span>
+          <select
+            value={sortKey}
+            onChange={e => setSortKey(e.target.value as TaskSortKey)}
+            className="border border-gray-200 rounded px-1.5 py-0.5 bg-white"
+          >
+            <option value="due_date">데드라인</option>
+            <option value="priority">우선순위</option>
+            <option value="status">상태</option>
+            <option value="created">생성순</option>
+          </select>
+          <button
+            onClick={() => setSortDir(d => d === 'asc' ? 'desc' : 'asc')}
+            title={sortDir === 'asc' ? '오름차순 (가까움→멈) — 클릭으로 토글' : '내림차순 — 클릭으로 토글'}
+            className="border border-gray-200 rounded px-1.5 py-0.5 bg-white text-yellow-600"
+          >
+            {sortDir === 'asc' ? '↑' : '↓'}
+          </button>
+          <span className="ml-auto text-[10px] text-gray-400">{visibleTasks.length}건 표시</span>
+        </div>
+      )}
+
       {tasks.length === 0 ? (
         <p className="text-center py-6 text-xs text-gray-400">등록된 할일 없음</p>
+      ) : visibleTasks.length === 0 ? (
+        <p className="text-center py-6 text-xs text-gray-400">필터에 맞는 할일 없음</p>
       ) : (
         <ul className="divide-y divide-gray-50">
-          {tasks.slice(0, 20).map(t => (
+          {visibleTasks.slice(0, 30).map(t => (
             <TaskRow key={t.id} task={t} profiles={profiles} projectId={projectId} serviceType={serviceType} />
           ))}
         </ul>
       )}
-      {tasks.length > 20 && (
+      {visibleTasks.length > 30 && (
         <div className="px-5 py-2 border-t border-gray-50 text-center text-xs text-gray-400">
-          +{tasks.length - 20}건 더
+          +{visibleTasks.length - 30}건 더 (필터 좁히기 권장)
         </div>
       )}
     </div>
@@ -1905,17 +2001,14 @@ function TaskRow({ task, profiles, projectId, serviceType }: {
 }
 
 /* ── 5. 일정 (due_date 임박 순 + 연결된 캘린더 일정) ─────── */
-function ScheduleSection({ tasks, projectId, linkedEvents }: {
-  tasks: Task[]; projectId: string; linkedEvents: LinkedCalEvent[]
+function ScheduleSection({ projectId, linkedEvents }: {
+  tasks?: Task[]; projectId: string; linkedEvents: LinkedCalEvent[]
 }) {
+  // 사용자 명시 (2026-04-29): 일정은 캘린더(linked_calendar_events)에 적힌 것만 표시.
+  // 할일 due_date는 [✅ 할일] 섹션에 정렬·필터로 통합 → 여기엔 X.
   const router = useRouter()
   const today = new Date()
   today.setHours(0, 0, 0, 0)
-  const upcoming = tasks
-    .filter(t => t.due_date && t.status !== '완료' && t.status !== '보류')
-    .map(t => ({ task: t, due: new Date(t.due_date!) }))
-    .sort((a, b) => a.due.getTime() - b.due.getTime())
-    .slice(0, 8)
 
   const [showSearch, setShowSearch] = useState(false)
   const [query, setQuery] = useState('')
@@ -1955,7 +2048,7 @@ function ScheduleSection({ tasks, projectId, linkedEvents }: {
   }
 
   const sortedLinked = [...localLinked].sort((a, b) => a.date.localeCompare(b.date))
-  const isEmpty = upcoming.length === 0 && sortedLinked.length === 0
+  const isEmpty = sortedLinked.length === 0
 
   return (
     <div className="bg-white border border-gray-100 rounded-xl px-5 py-3">
@@ -2023,22 +2116,6 @@ function ScheduleSection({ tasks, projectId, linkedEvents }: {
                 <span className="text-gray-400 flex-shrink-0">{ev.date.slice(5)}</span>
                 <button onClick={() => setDeleteTarget(ev)}
                   className="text-gray-300 hover:text-red-400 md:opacity-0 md:group-hover:opacity-100 transition-opacity flex-shrink-0">✕</button>
-              </li>
-            )
-          })}
-          {upcoming.map(({ task, due }) => {
-            const diffDays = Math.ceil((due.getTime() - today.getTime()) / (1000 * 60 * 60 * 24))
-            const overdue = diffDays < 0
-            const today0 = diffDays === 0
-            const soon = diffDays > 0 && diffDays <= 3
-            return (
-              <li key={task.id} className="flex items-center gap-2 text-xs">
-                <span className={`px-2 py-0.5 rounded-full font-semibold flex-shrink-0 ${overdue ? 'bg-red-100 text-red-700' : today0 ? 'bg-red-100 text-red-700' : soon ? 'bg-orange-100 text-orange-700' : 'bg-gray-100 text-gray-500'}`}>
-                  {overdue ? `D+${-diffDays}` : today0 ? 'D-day' : `D-${diffDays}`}
-                </span>
-                <span className="text-[10px] text-gray-400 flex-shrink-0">할일</span>
-                <span className="text-gray-700 flex-1 truncate">{task.title}</span>
-                <span className="text-gray-400">{due.toISOString().slice(5, 10)}</span>
               </li>
             )
           })}

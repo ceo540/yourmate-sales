@@ -249,7 +249,7 @@ export default function ProjectClaudeChat({ leadId, saleId, projectId, projectNa
       </button>
 
       {open && (
-        <div className="flex flex-col" style={{ height: '420px' }}>
+        <div className="flex flex-col" style={{ height: '640px' }}>
           <div className="flex-1 overflow-y-auto p-4 space-y-3 bg-white">
             {messages.length === 0 && (
               <p className="text-xs text-gray-400 text-center pt-8">

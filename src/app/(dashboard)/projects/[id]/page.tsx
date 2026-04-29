@@ -58,7 +58,7 @@ export default async function ProjectPage({ params }: { params: Promise<{ id: st
   const contractIds = (contractsRaw ?? []).map(c => c.id)
   const [{ data: tasksRaw }, { data: costsRaw }, { data: rentalsRaw }] = await Promise.all([
     contractIds.length > 0
-      ? admin.from('tasks').select('id, title, status, priority, due_date, project_id, assignee_id, description, bbang_suggested').in('project_id', contractIds).order('created_at')
+      ? admin.from('tasks').select('id, title, status, priority, due_date, project_id, assignee_id, description, bbang_suggested, created_at').in('project_id', contractIds).order('created_at')
       : Promise.resolve({ data: [] }),
     contractIds.length > 0
       ? admin.from('sale_costs').select('*').in('sale_id', contractIds).order('created_at')
