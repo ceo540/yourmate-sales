@@ -887,7 +887,7 @@ export async function createSaleFromQuote(projectId: string, data: {
   entity_id?: string | null
   client_dept?: string | null
   payment_schedules?: { label: string; amount: number; due_date: string | null }[]
-}): Promise<{ sale_id: string; folder_created?: string } | { error: string }> {
+}): Promise<{ sale_id: string; folder_created?: string; pdf_move_error?: string } | { error: string }> {
   if (!data.customer_id) return { error: '기관(customer)이 선택되지 않았어' }
   const admin = createAdminClient()
   const [{ data: project }, { data: customer }] = await Promise.all([
@@ -932,6 +932,7 @@ export async function createSaleFromQuote(projectId: string, data: {
 
   // entity 있으면 폴더 자동 생성 + 견적 PDF를 해당 폴더로 이동
   let folderCreated: string | undefined
+  let pdfMoveError: string | undefined
   if (data.entity_id) {
     const r = await ensureContractFolder(sale.id)
     if ('webUrl' in r) {
@@ -939,15 +940,19 @@ export async function createSaleFromQuote(projectId: string, data: {
       const WEB_BASE = 'https://www.dropbox.com/home'
       const folderPath = decodeURIComponent(r.webUrl.replace(WEB_BASE, ''))
       const pdfName = data.pdf_path.split('/').pop() ?? 'estimate.pdf'
-      const moved = await moveDropboxFileByPath(data.pdf_path, `${folderPath}/${pdfName}`).catch(() => null)
+      console.log('[createSaleFromQuote] moving pdf from:', data.pdf_path, '→ to:', `${folderPath}/${pdfName}`)
+      const moved = await moveDropboxFileByPath(data.pdf_path, `${folderPath}/${pdfName}`).catch(e => ({ error: String(e) }))
       if (moved && 'ok' in moved) {
         await admin.from('sales').update({ final_quote_dropbox_path: moved.finalPath }).eq('id', sale.id)
+      } else if (moved && 'error' in moved) {
+        pdfMoveError = moved.error
+        console.error('[createSaleFromQuote] pdf move failed:', moved.error)
       }
     }
   }
 
   revalidatePath(`/projects/${projectId}`)
-  return { sale_id: sale.id, folder_created: folderCreated }
+  return { sale_id: sale.id, folder_created: folderCreated, pdf_move_error: pdfMoveError }
 }
 
 export async function setSaleFinalQuote(saleId: string, dropboxPath: string | null, projectId: string): Promise<{ error?: string }> {

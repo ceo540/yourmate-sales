@@ -99,7 +99,10 @@ export async function listDropboxFolder(relativePath: string): Promise<{ name: s
     body: JSON.stringify({ path: relativePath, limit: 300 }),
   })
   const data = await res.json()
-  if (!data.entries) return []
+  if (!data.entries) {
+    console.error('[listDropboxFolder] no entries, path:', relativePath, 'response:', JSON.stringify(data).slice(0, 300))
+    return []
+  }
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   return data.entries.map((e: any) => ({

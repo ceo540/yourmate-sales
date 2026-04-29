@@ -28,6 +28,7 @@ import {
   createAndLinkCalendarEvent,
   linkCalendarEvent,
   unlinkCalendarEvent,
+  unlinkAndDeleteCalendarEvent,
   listProjectDropboxFiles,
   regenerateProjectBrief,
   getProjectBriefContent,
@@ -1382,6 +1383,8 @@ function ScheduleSection({ tasks, projectId, linkedEvents }: {
   const [searchLoading, setSearchLoading] = useState(false)
   const [results, setResults] = useState<{ id: string; calendarKey: string; title: string; date: string; color: string; isAllDay: boolean }[] | null>(null)
   const [localLinked, setLocalLinked] = useState<LinkedCalEvent[]>(linkedEvents)
+  const [deleteTarget, setDeleteTarget] = useState<LinkedCalEvent | null>(null)
+  const [deleteLoading, setDeleteLoading] = useState(false)
 
   async function runSearch() {
     if (!query.trim()) return
@@ -1398,9 +1401,17 @@ function ScheduleSection({ tasks, projectId, linkedEvents }: {
     router.refresh()
   }
 
-  async function detach(eventId: string) {
-    setLocalLinked(prev => prev.filter(e => e.id !== eventId))
-    await unlinkCalendarEvent(projectId, eventId)
+  async function detach(withGcal: boolean) {
+    if (!deleteTarget) return
+    setDeleteLoading(true)
+    setLocalLinked(prev => prev.filter(e => e.id !== deleteTarget.id))
+    if (withGcal) {
+      await unlinkAndDeleteCalendarEvent(projectId, deleteTarget.id, deleteTarget.calendarKey)
+    } else {
+      await unlinkCalendarEvent(projectId, deleteTarget.id)
+    }
+    setDeleteTarget(null)
+    setDeleteLoading(false)
     router.refresh()
   }
 
@@ -1471,7 +1482,7 @@ function ScheduleSection({ tasks, projectId, linkedEvents }: {
                 <span className="w-1.5 h-1.5 rounded-full flex-shrink-0" style={{ background: ev.color }} />
                 <span className="text-gray-700 flex-1 truncate">{ev.title}</span>
                 <span className="text-gray-400 flex-shrink-0">{ev.date.slice(5)}</span>
-                <button onClick={() => detach(ev.id)}
+                <button onClick={() => setDeleteTarget(ev)}
                   className="text-gray-300 hover:text-red-400 md:opacity-0 md:group-hover:opacity-100 transition-opacity flex-shrink-0">✕</button>
               </li>
             )
@@ -1493,6 +1504,42 @@ function ScheduleSection({ tasks, projectId, linkedEvents }: {
             )
           })}
         </ul>
+      )}
+
+      {/* 삭제 confirm 다이얼로그 */}
+      {deleteTarget && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+          <div className="bg-white rounded-xl shadow-xl px-6 py-5 w-80 space-y-3">
+            <p className="text-sm font-semibold text-gray-800">일정 삭제</p>
+            <p className="text-xs text-gray-600 leading-relaxed">
+              <span className="font-medium">{deleteTarget.title}</span><br />
+              Google Calendar에서도 삭제하시겠습니까?
+            </p>
+            <div className="flex gap-2 pt-1">
+              <button
+                disabled={deleteLoading}
+                onClick={() => detach(true)}
+                className="flex-1 text-xs py-1.5 rounded-lg bg-red-500 text-white font-medium hover:bg-red-600 disabled:opacity-50"
+              >
+                Google에서도 삭제
+              </button>
+              <button
+                disabled={deleteLoading}
+                onClick={() => detach(false)}
+                className="flex-1 text-xs py-1.5 rounded-lg bg-gray-100 text-gray-700 font-medium hover:bg-gray-200 disabled:opacity-50"
+              >
+                연결만 해제
+              </button>
+              <button
+                disabled={deleteLoading}
+                onClick={() => setDeleteTarget(null)}
+                className="text-xs px-3 py-1.5 rounded-lg border border-gray-200 text-gray-500 hover:bg-gray-50 disabled:opacity-50"
+              >
+                취소
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   )
@@ -2076,7 +2123,8 @@ function AddContractByPdf({
     setBusy(false)
     if ('error' in r) { alert('실패: ' + r.error); return }
     const msg = r.folder_created ? '계약 생성 + 폴더 자동 생성됨.' : '계약 생성 완료.'
-    alert(msg)
+    const pdfMsg = r.pdf_move_error ? `\n\n⚠️ PDF 이동 실패: ${r.pdf_move_error}` : ''
+    alert(msg + pdfMsg)
     onSuccess()
   }
 
