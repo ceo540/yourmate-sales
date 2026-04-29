@@ -96,7 +96,7 @@ export async function listDropboxFolder(relativePath: string): Promise<{ name: s
       'Content-Type': 'application/json',
       'Dropbox-API-Path-Root': JSON.stringify({ '.tag': 'root', 'root': ROOT_NAMESPACE }),
     },
-    body: JSON.stringify({ path: relativePath, limit: 50 }),
+    body: JSON.stringify({ path: relativePath, limit: 300 }),
   })
   const data = await res.json()
   if (!data.entries) return []
@@ -339,6 +339,32 @@ export async function renameDropboxFile(
     return { error: `파일 이름 변경 실패: ${JSON.stringify(err).slice(0, 200)}` }
   }
   return { ok: true }
+}
+
+// 파일을 다른 경로로 이동 (절대경로 기준, 이동 실패 시 autorename으로 충돌 방지)
+export async function moveDropboxFileByPath(
+  fromPath: string,
+  toPath: string,
+): Promise<{ ok: true; finalPath: string } | { error: string }> {
+  const token = await getDropboxToken()
+  if (!token) return { error: '드롭박스 토큰 없음' }
+  if (fromPath === toPath) return { ok: true, finalPath: toPath }
+  const res = await fetch('https://api.dropboxapi.com/2/files/move_v2', {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${token}`,
+      'Content-Type': 'application/json',
+      'Dropbox-API-Path-Root': JSON.stringify({ '.tag': 'root', 'root': ROOT_NAMESPACE }),
+    },
+    body: JSON.stringify({ from_path: fromPath, to_path: toPath, allow_shared_folder: true, autorename: true }),
+  })
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}))
+    return { error: `파일 이동 실패: ${JSON.stringify(err).slice(0, 200)}` }
+  }
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const data = await res.json().catch(() => ({} as any))
+  return { ok: true, finalPath: data?.metadata?.path_display ?? toPath }
 }
 
 // 드롭박스 폴더명 변경 (현재 sale.name 기준으로 rename)

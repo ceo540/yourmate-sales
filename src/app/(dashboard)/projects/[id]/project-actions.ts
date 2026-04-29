@@ -3,7 +3,7 @@
 import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { revalidatePath } from 'next/cache'
-import { renameDropboxFolder, listDropboxFolder, moveDropboxToCancel } from '@/lib/dropbox'
+import { renameDropboxFolder, listDropboxFolder, moveDropboxToCancel, moveDropboxFileByPath } from '@/lib/dropbox'
 import { createEvent, deleteEvent as deleteGCalEvent, CALENDAR_COLORS } from '@/lib/google-calendar'
 import { createProfileNameMap } from '@/lib/utils'
 import { isAdminOrManager } from '@/lib/permissions'
@@ -930,11 +930,20 @@ export async function createSaleFromQuote(projectId: string, data: {
     await admin.from('payment_schedules').insert(rows)
   }
 
-  // entity 있으면 폴더 자동 생성
+  // entity 있으면 폴더 자동 생성 + 견적 PDF를 해당 폴더로 이동
   let folderCreated: string | undefined
   if (data.entity_id) {
     const r = await ensureContractFolder(sale.id)
-    if ('webUrl' in r) folderCreated = r.webUrl
+    if ('webUrl' in r) {
+      folderCreated = r.webUrl
+      const WEB_BASE = 'https://www.dropbox.com/home'
+      const folderPath = decodeURIComponent(r.webUrl.replace(WEB_BASE, ''))
+      const pdfName = data.pdf_path.split('/').pop() ?? 'estimate.pdf'
+      const moved = await moveDropboxFileByPath(data.pdf_path, `${folderPath}/${pdfName}`).catch(() => null)
+      if (moved && 'ok' in moved) {
+        await admin.from('sales').update({ final_quote_dropbox_path: moved.finalPath }).eq('id', sale.id)
+      }
+    }
   }
 
   revalidatePath(`/projects/${projectId}`)

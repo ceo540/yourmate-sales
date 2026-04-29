@@ -47,11 +47,11 @@ export async function analyzeCostFolder(
   const projectFolderPath = decodeURIComponent(project.dropbox_url.replace(WEB_BASE, '')).replace(/\/$/, '')
   const costFolderPath = `${projectFolderPath}/0 행정/원가`
 
-  // depth 2 재귀로 .pdf 수집
+  // depth 5 재귀로 .pdf 수집 (f.path 직접 사용 — 공백/특수문자 경로 안전)
   const pdfPaths: { name: string; path: string }[] = []
   const seen = new Set<string>()
   async function scan(folderPath: string, prefix: string, depth: number) {
-    if (depth > 2) return
+    if (depth > 5) return
     const items = await listDropboxFolder(folderPath).catch(() => [])
     for (const f of items) {
       if (f.type === 'file' && f.name.toLowerCase().endsWith('.pdf')) {
@@ -60,7 +60,7 @@ export async function analyzeCostFolder(
           pdfPaths.push({ name: prefix ? `${prefix}/${f.name}` : f.name, path: f.path })
         }
       } else if (f.type === 'folder') {
-        await scan(`${folderPath}/${f.name}`, prefix ? `${prefix}/${f.name}` : f.name, depth + 1)
+        await scan(f.path, prefix ? `${prefix}/${f.name}` : f.name, depth + 1)
       }
     }
   }
