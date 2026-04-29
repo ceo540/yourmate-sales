@@ -13,6 +13,7 @@ const MUTATING_TOOLS = new Set([
   'create_project_task', 'complete_task', 'update_task', 'delete_task',
   'regenerate_overview', 'update_overview', 'update_pending_discussion', 'regenerate_pending_discussion',
   'update_short_summary', 'regenerate_short_summary',
+  'create_quote',
   'update_lead_summary', 'regenerate_lead_summary',
   'quick_create_customer', 'merge_customers', 'match_sale_to_customer', 'match_lead_to_customer',
 ])
@@ -1298,6 +1299,40 @@ async function executeTool(name: string, input: Record<string, unknown>, userRol
       return { success: true, message: `${target} 협의사항을 업데이트했어.` }
     } catch (e) {
       return { error: e instanceof Error ? e.message : '협의사항 업데이트 실패' }
+    }
+  }
+
+  if (name === 'create_quote') {
+    const admin = createAdminClient()
+    const shortName = input.entity_short_name as string
+    const { data: entity } = await admin
+      .from('business_entities')
+      .select('id, short_name')
+      .eq('short_name', shortName)
+      .maybeSingle()
+    if (!entity) {
+      return { error: `사업자 short_name="${shortName}" 없음. 사용 가능: 공공이코 / 지지 / 드림` }
+    }
+    const { createQuote } = await import('@/app/(dashboard)/quotes/actions')
+    const result = await createQuote({
+      sale_id: input.sale_id as string | undefined,
+      project_id: (input.project_id as string | undefined) ?? projectId ?? undefined,
+      lead_id: input.lead_id as string | undefined,
+      entity_id: entity.id,
+      project_name: input.project_name as string,
+      client_org: input.client_org as string | undefined,
+      client_dept: input.client_dept as string | undefined,
+      client_manager: input.client_manager as string | undefined,
+      items: input.items as Array<{ name: string; description?: string; qty: number; unit_price: number; category?: string }>,
+      notes: input.notes as string | undefined,
+      vat_included: input.vat_included as boolean | undefined,
+    })
+    if (!result.ok) return { error: result.error }
+    return {
+      success: true,
+      quote_number: result.quote_number,
+      html_path: result.html_path,
+      message: `견적 ${result.quote_number} 생성됨${result.warning ? ` (${result.warning})` : ''}`,
     }
   }
 

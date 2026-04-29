@@ -441,6 +441,41 @@ export const TOOLS: Anthropic.Tool[] = [
     },
   },
   {
+    name: 'create_quote',
+    description: `현재 프로젝트·계약·리드 컨텍스트에서 견적서를 자동 생성합니다. 사용자가 자연어로 견적 작성 요청 시(예: "견적 뽑아줘", "이 내용으로 견적서 만들어줘") 호출. 빵빵이가 매뉴얼(7 Claude협업/01_SOS·00_공통)·소통내역·기존 데이터를 종합 분석하여 항목·금액·사업자 결정 후 호출. 호출 전 *항목 list와 사업자(공공이코/지지/드림 중 어느 거)*를 사용자에게 짧게 확인받는 게 안전. 호출 시 quote_number와 Dropbox 저장 경로 반환됨. *최종 견적서 HTML 자동 생성·Dropbox /0 행정/견적/ 자동 저장*.`,
+    input_schema: {
+      type: 'object' as const,
+      properties: {
+        sale_id: { type: 'string', description: '계약 UUID — 컨텍스트가 sale이면 사용' },
+        project_id: { type: 'string', description: '프로젝트 UUID — 컨텍스트가 project이면 사용' },
+        lead_id: { type: 'string', description: '리드 UUID — 컨텍스트가 lead이면 사용' },
+        entity_short_name: { type: 'string', enum: ['공공이코', '지지', '드림'], description: '발행 사업자. 메인은 "공공이코"(공공이코퍼레이션). 분할·여성기업한도용은 "지지"(지지스튜디오). 별도법인은 "드림"(드림비앤비). 상황에 맞게 결정.' },
+        project_name: { type: 'string', description: '견적서 본문 건명 (예: "26-04 OO 행사 기획·운영")' },
+        client_org: { type: 'string', description: '거래처명 — 비우면 sale/project에서 자동 채움' },
+        client_dept: { type: 'string', description: '발주 부서 (수의계약 한도용)' },
+        client_manager: { type: 'string', description: '담당자 이름' },
+        items: {
+          type: 'array',
+          description: '견적 항목 list. 매뉴얼·소통내역에서 추출. 최소 1개 이상.',
+          items: {
+            type: 'object',
+            properties: {
+              name: { type: 'string', description: '품명' },
+              description: { type: 'string', description: '세부 내용' },
+              qty: { type: 'number', description: '수량' },
+              unit_price: { type: 'number', description: '단가 (부가세 포함 디폴트. vat_included=false면 공급가)' },
+              category: { type: 'string', description: '항목 그룹/시나리오 (예: "기본", "1일 2회", "축제연계")' },
+            },
+            required: ['name', 'qty', 'unit_price'],
+          },
+        },
+        notes: { type: 'string', description: '안내사항 (예: "유효기간 14일", "VAT 포함")' },
+        vat_included: { type: 'boolean', description: '입력 단가가 부가세 포함인지. 디폴트 true.' },
+      },
+      required: ['entity_short_name', 'project_name', 'items'],
+    },
+  },
+  {
     name: 'update_short_summary',
     description: '현재 프로젝트의 짧은 요약(short_summary, 한눈에 박스)을 직접 작성한 평문으로 덮어쓰기. 자동 생성은 regenerate_short_summary.',
     input_schema: {

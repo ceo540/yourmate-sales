@@ -355,6 +355,40 @@ ${logs && logs.length > 0 ? `\n## 최근 소통내역\n${logs.map(l => `- [${l.l
       },
     },
     {
+      name: 'create_quote',
+      description: '현재 프로젝트·계약·리드 컨텍스트에서 견적서 자동 생성. 자연어 요청 ("견적 뽑아줘") 시 매뉴얼·소통내역·기존 데이터 종합 분석 후 호출. 항목·사업자·금액 결정. 견적번호+Dropbox 경로 반환. /0 행정/견적/ 자동 저장.',
+      input_schema: {
+        type: 'object' as const,
+        properties: {
+          sale_id: { type: 'string', description: '계약 UUID' },
+          project_id: { type: 'string', description: '프로젝트 UUID' },
+          lead_id: { type: 'string', description: '리드 UUID' },
+          entity_short_name: { type: 'string', enum: ['공공이코', '지지', '드림'], description: '공공이코(메인) / 지지(분할·여성기업한도) / 드림(별도법인)' },
+          project_name: { type: 'string' },
+          client_org: { type: 'string', description: '비우면 자동 채움' },
+          client_dept: { type: 'string' },
+          client_manager: { type: 'string' },
+          items: {
+            type: 'array',
+            items: {
+              type: 'object',
+              properties: {
+                name: { type: 'string' },
+                description: { type: 'string' },
+                qty: { type: 'number' },
+                unit_price: { type: 'number' },
+                category: { type: 'string' },
+              },
+              required: ['name', 'qty', 'unit_price'],
+            },
+          },
+          notes: { type: 'string' },
+          vat_included: { type: 'boolean', description: '디폴트 true' },
+        },
+        required: ['entity_short_name', 'project_name', 'items'],
+      },
+    },
+    {
       name: 'update_short_summary',
       description: '한눈에 박스(short_summary)를 평문 2-4줄로 덮어쓰기.',
       input_schema: {
@@ -820,6 +854,40 @@ ${logs && logs.length > 0 ? `\n## 최근 소통내역\n${logs.map(l => `- [${l.l
                 if (!error) {
                   revalidatePath(`/projects/${projectId}`)
                   revalidate()
+                }
+              }
+
+            } else if (block.name === 'create_quote') {
+              const shortName = input.entity_short_name as string
+              const { data: entity } = await admin
+                .from('business_entities')
+                .select('id')
+                .eq('short_name', shortName)
+                .maybeSingle()
+              if (!entity) {
+                result = `사업자 short_name="${shortName}" 없음. 사용 가능: 공공이코 / 지지 / 드림`
+              } else {
+                send('\n*(견적 생성 중...)*\n')
+                const { createQuote } = await import('@/app/(dashboard)/quotes/actions')
+                const r = await createQuote({
+                  sale_id: input.sale_id as string | undefined,
+                  project_id: (input.project_id as string | undefined) ?? projectId ?? undefined,
+                  lead_id: input.lead_id as string | undefined,
+                  entity_id: entity.id,
+                  project_name: input.project_name as string,
+                  client_org: input.client_org as string | undefined,
+                  client_dept: input.client_dept as string | undefined,
+                  client_manager: input.client_manager as string | undefined,
+                  items: input.items as unknown as Array<{ name: string; description?: string; qty: number; unit_price: number; category?: string }>,
+                  notes: input.notes as string | undefined,
+                  vat_included: input.vat_included as unknown as boolean | undefined,
+                })
+                if (r.ok) {
+                  result = `견적 ${r.quote_number} 생성됨${r.html_path ? ` (Dropbox: ${r.html_path})` : ''}${r.warning ? ` · ${r.warning}` : ''}`
+                  if (projectId) revalidatePath(`/projects/${projectId}`)
+                  revalidate()
+                } else {
+                  result = `견적 생성 실패: ${r.error}`
                 }
               }
 
