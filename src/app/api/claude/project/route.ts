@@ -356,19 +356,26 @@ ${logs && logs.length > 0 ? `\n## 최근 소통내역\n${logs.map(l => `- [${l.l
     },
     {
       name: 'update_pending_discussion',
-      description: '프로젝트 협의/미결 사항 박스 전체를 새 markdown으로 덮어쓰기. 추가하려면 기존 + 새 내용 합쳐서 보내. "협의사항에 X 추가해줘" 요청 시 호출.',
+      description: '프로젝트 협의 박스를 분류별(client/internal/vendor)로 덮어쓰기. target 필수. client=클라이언트와 협의, internal=내부 결정, vendor=외주사 협의. "협의사항에 X 추가해줘" 요청 시 분류 판단 후 호출.',
       input_schema: {
         type: 'object' as const,
         properties: {
+          target: { type: 'string', enum: ['client', 'internal', 'vendor'], description: '분류 — client / internal / vendor' },
           content: { type: 'string', description: '저장할 markdown 전문' },
         },
-        required: ['content'],
+        required: ['target', 'content'],
       },
     },
     {
       name: 'regenerate_pending_discussion',
-      description: '협의사항 박스를 자동 재분석. "지금 협의할 거 다시 뽑아줘" 요청 시 호출.',
-      input_schema: { type: 'object' as const, properties: {} },
+      description: '협의 박스를 분류별(client/internal/vendor)로 자동 재분석. target 한 개씩 호출. 사용자가 "전부 갱신"이라 하면 3번 연속 호출.',
+      input_schema: {
+        type: 'object' as const,
+        properties: {
+          target: { type: 'string', enum: ['client', 'internal', 'vendor'], description: '분류' },
+        },
+        required: ['target'],
+      },
     },
     {
       name: 'regenerate_lead_summary',
@@ -806,14 +813,25 @@ ${logs && logs.length > 0 ? `\n## 최근 소통내역\n${logs.map(l => `- [${l.l
               if (!projectId) {
                 result = '프로젝트 페이지에서만 사용 가능.'
               } else {
-                send('\n*(협의사항 저장...)*\n')
-                const { error } = await admin.from('projects')
-                  .update({ pending_discussion: input.content || null, updated_at: new Date().toISOString() })
-                  .eq('id', projectId)
-                result = error ? `실패: ${error.message}` : '협의사항을 업데이트했어.'
-                if (!error) {
-                  revalidatePath(`/projects/${projectId}`)
-                  revalidate()
+                const target = input.target as string
+                const colMap: Record<string, string> = {
+                  client: 'pending_discussion_client',
+                  internal: 'pending_discussion_internal',
+                  vendor: 'pending_discussion_vendor',
+                }
+                const col = colMap[target]
+                if (!col) {
+                  result = `target 필수 (client | internal | vendor) — 받은 값: ${target}`
+                } else {
+                  send(`\n*(${target} 협의 저장...)*\n`)
+                  const { error } = await admin.from('projects')
+                    .update({ [col]: input.content || null, updated_at: new Date().toISOString() })
+                    .eq('id', projectId)
+                  result = error ? `실패: ${error.message}` : `${target} 협의를 업데이트했어.`
+                  if (!error) {
+                    revalidatePath(`/projects/${projectId}`)
+                    revalidate()
+                  }
                 }
               }
 
@@ -821,11 +839,16 @@ ${logs && logs.length > 0 ? `\n## 최근 소통내역\n${logs.map(l => `- [${l.l
               if (!projectId) {
                 result = '프로젝트 페이지에서만 사용 가능.'
               } else {
-                send('\n*(협의사항 재분석 중...)*\n')
-                const { generateAndSavePendingDiscussion } = await import('@/app/(dashboard)/projects/[id]/project-actions')
-                const r = await generateAndSavePendingDiscussion(projectId)
-                result = 'error' in r ? `실패: ${r.error}` : '협의사항을 재분석했어.'
-                if ('summary' in r) revalidate()
+                const target = input.target as 'client' | 'internal' | 'vendor' | undefined
+                if (!target || !['client', 'internal', 'vendor'].includes(target)) {
+                  result = `target 필수 (client | internal | vendor) — 받은 값: ${target}`
+                } else {
+                  send(`\n*(${target} 협의 재분석 중...)*\n`)
+                  const { generateAndSavePendingDiscussion } = await import('@/app/(dashboard)/projects/[id]/project-actions')
+                  const r = await generateAndSavePendingDiscussion(projectId, target)
+                  result = 'error' in r ? `실패: ${r.error}` : `${target} 협의를 재분석했어.`
+                  if ('summary' in r) revalidate()
+                }
               }
 
             } else if (block.name === 'regenerate_lead_summary') {

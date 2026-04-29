@@ -1286,9 +1286,13 @@ async function executeTool(name: string, input: Record<string, unknown>, userRol
 
   if (name === 'update_pending_discussion') {
     if (!projectId) return { error: '프로젝트 페이지에서만 사용 가능해.' }
+    const target = input.target as 'client' | 'internal' | 'vendor' | undefined
+    if (!target || !['client', 'internal', 'vendor'].includes(target)) {
+      return { error: 'target 필수 (client | internal | vendor)' }
+    }
     try {
-      await updateProjectPendingDiscussion(projectId, (input.content as string) ?? '')
-      return { success: true, message: '협의사항을 업데이트했어.' }
+      await updateProjectPendingDiscussion(projectId, target, (input.content as string) ?? '')
+      return { success: true, message: `${target} 협의사항을 업데이트했어.` }
     } catch (e) {
       return { error: e instanceof Error ? e.message : '협의사항 업데이트 실패' }
     }
@@ -1296,7 +1300,11 @@ async function executeTool(name: string, input: Record<string, unknown>, userRol
 
   if (name === 'regenerate_pending_discussion') {
     if (!projectId) return { error: '프로젝트 페이지에서만 사용 가능해.' }
-    const result = await generateAndSavePendingDiscussion(projectId)
+    const target = input.target as 'client' | 'internal' | 'vendor' | undefined
+    if (!target || !['client', 'internal', 'vendor'].includes(target)) {
+      return { error: 'target 필수 (client | internal | vendor)' }
+    }
+    const result = await generateAndSavePendingDiscussion(projectId, target)
     if ('error' in result) return result
     return { success: true, summary: result.summary, message: '협의사항을 재분석했어.' }
   }

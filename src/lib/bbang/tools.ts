@@ -442,21 +442,25 @@ export const TOOLS: Anthropic.Tool[] = [
   },
   {
     name: 'update_pending_discussion',
-    description: '현재 프로젝트의 협의/미결 사항(pending_discussion) 박스 전체를 덮어씁니다. 추가하고 싶으면 기존 내용을 포함해서 합친 markdown을 content로 보내. 사용자가 자연어로 "협의사항 정리해/갱신해"라고 하면 자동 분석 도구(regenerate_pending_discussion)를 우선 사용.',
+    description: '현재 프로젝트의 협의/미결 사항을 분류별(클라이언트/내부/외주사)로 덮어씁니다. 추가하고 싶으면 기존 내용을 포함해서 합친 markdown을 content로. target은 어느 분류 박스인지: client(클라이언트와 협의), internal(내부 결정), vendor(외주사·협력사 협의). 자동 분석은 regenerate_pending_discussion.',
     input_schema: {
       type: 'object' as const,
       properties: {
-        content: { type: 'string', description: '새로 저장할 markdown 전문. 기존 내용 + 추가분을 직접 합쳐서 보내. 빈 문자열이면 삭제.' },
+        target: { type: 'string', enum: ['client', 'internal', 'vendor'], description: '분류 — client(클라이언트 협의) / internal(내부 협의) / vendor(외주사 협의)' },
+        content: { type: 'string', description: '새로 저장할 markdown 전문. 빈 문자열이면 삭제.' },
       },
-      required: ['content'],
+      required: ['target', 'content'],
     },
   },
   {
     name: 'regenerate_pending_discussion',
-    description: '현재 프로젝트의 협의/미결 사항을 최근 데이터로 재분석해 자동 갱신합니다.',
+    description: '현재 프로젝트의 협의 사항을 최근 데이터로 분류별 재분석 후 자동 갱신. target 분류 한 개씩 호출.',
     input_schema: {
       type: 'object' as const,
-      properties: {},
+      properties: {
+        target: { type: 'string', enum: ['client', 'internal', 'vendor'], description: '분류 — client / internal / vendor' },
+      },
+      required: ['target'],
     },
   },
   {
