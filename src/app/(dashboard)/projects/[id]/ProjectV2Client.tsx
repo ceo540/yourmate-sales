@@ -25,6 +25,8 @@ import {
   generateAndSaveProjectOverview,
   generateAndSavePendingDiscussion,
   generateAndSuggestTasks,
+  updateProjectShortSummary,
+  generateAndSaveProjectShortSummary,
   createAndLinkCalendarEvent,
   linkCalendarEvent,
   unlinkCalendarEvent,
@@ -75,6 +77,7 @@ interface Project {
   memo: string | null
   notes: string | null
   overview_summary: string | null
+  short_summary: string | null
   work_description: string | null
   pending_discussion: string | null
   pending_discussion_client: string | null
@@ -409,6 +412,9 @@ export default function ProjectV2Client({
           <ContractsSection contracts={contracts} projectId={project.id} entities={entities}
             defaultCustomerId={customer?.id ?? null} defaultCustomerName={customer?.name ?? null}
             customersAll={customersAll} />
+
+          {/* 9. 자세한 개요 (PM 정독용 — 접힘 default) */}
+          <OverviewSummaryBox project={project} />
         </div>
 
         {/* 우: 사이드 */}
@@ -1121,10 +1127,80 @@ function MemoCard({ memo, projectId }: { memo: Memo; projectId: string }) {
 }
 
 /* ── 2. 2박스: 개요(빵빵이) / 협의해야할 내용 (빵빵이) ─── */
+/* 한눈에 박스 — 짧은 요약 (항상 펼침. 상단 자리) */
+function ShortSummaryBox({ project }: { project: Project }) {
+  const router = useRouter()
+  const [, startTransition] = useTransition()
+  const [editing, setEditing] = useState(false)
+  const [input, setInput] = useState(project.short_summary ?? '')
+  const [generating, setGenerating] = useState(false)
+  const [genError, setGenError] = useState<string | null>(null)
+
+  function save() {
+    startTransition(async () => {
+      await updateProjectShortSummary(project.id, input)
+      setEditing(false)
+      router.refresh()
+    })
+  }
+
+  async function generate() {
+    setGenerating(true); setGenError(null)
+    try {
+      const res = await generateAndSaveProjectShortSummary(project.id)
+      if ('error' in res) setGenError(res.error)
+      else { setInput(res.summary); router.refresh() }
+    } catch (e: any) {
+      setGenError(e?.message ?? '실패')
+    } finally {
+      setGenerating(false)
+    }
+  }
+
+  return (
+    <div className="bg-yellow-50 border border-yellow-200 rounded-xl px-4 py-3">
+      <div className="flex items-center justify-between mb-1.5">
+        <p className="text-xs font-semibold text-yellow-800">⚡ 한눈에</p>
+        <div className="flex gap-2">
+          <button onClick={generate} disabled={generating} className="text-[10px] text-yellow-700 hover:text-yellow-900 disabled:opacity-40">
+            {generating ? '🤖 생성 중...' : '🤖 자동 생성'}
+          </button>
+          {!editing && (
+            <button onClick={() => { setInput(project.short_summary ?? ''); setEditing(true) }} className="text-[10px] text-gray-500 hover:text-gray-700">
+              직접 수정
+            </button>
+          )}
+        </div>
+      </div>
+      {editing ? (
+        <div className="space-y-1.5">
+          <textarea
+            value={input}
+            onChange={e => setInput(e.target.value)}
+            rows={3}
+            placeholder="2-4줄 핵심 요약. 표·헤더 없이 평문."
+            className="w-full text-sm border border-yellow-300 rounded px-2 py-1.5 bg-white focus:outline-none focus:border-yellow-500"
+            autoFocus
+          />
+          <div className="flex gap-1">
+            <button onClick={save} className="px-2.5 py-0.5 text-xs font-semibold rounded hover:opacity-80" style={{ backgroundColor: '#FFCE00', color: '#121212' }}>저장</button>
+            <button onClick={() => { setEditing(false); setInput(project.short_summary ?? '') }} className="px-2 py-0.5 text-xs text-gray-500">취소</button>
+          </div>
+        </div>
+      ) : project.short_summary ? (
+        <p className="text-sm text-gray-800 leading-relaxed whitespace-pre-wrap">{project.short_summary}</p>
+      ) : (
+        <p className="text-sm text-gray-400 italic">아직 한눈에 요약이 없어. 위 [🤖 자동 생성] 또는 [직접 수정] 클릭.</p>
+      )}
+      {genError && <p className="text-[11px] text-red-500 mt-1">⚠ {genError}</p>}
+    </div>
+  )
+}
+
 function TwoBoxesBlock({ project }: { project: Project }) {
   return (
     <div className="space-y-3">
-      <OverviewSummaryBox project={project} />
+      <ShortSummaryBox project={project} />
       <PendingDiscussionBox project={project} />
     </div>
   )
@@ -1322,8 +1398,8 @@ function OverviewSummaryBox({ project }: { project: Project }) {
       <button onClick={() => setOpen(o => !o)}
         className="w-full px-4 py-2.5 flex items-center justify-between hover:bg-gray-50 transition-colors text-left">
         <div>
-          <p className="text-xs font-semibold text-gray-700">📌 프로젝트 개요</p>
-          <p className="text-[10px] text-gray-400">빵빵이가 정리</p>
+          <p className="text-xs font-semibold text-gray-700">📑 자세한 개요 (PM 정독용)</p>
+          <p className="text-[10px] text-gray-400">전체 데이터 기반 자동 생성. 짧은 요약은 위 [⚡ 한눈에] 박스 사용.</p>
         </div>
         <span className="text-gray-300 text-xs">{open ? '▲' : '▼'}</span>
       </button>

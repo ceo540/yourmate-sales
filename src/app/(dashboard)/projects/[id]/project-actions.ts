@@ -141,6 +141,74 @@ export async function updateProjectOverviewSummary(projectId: string, value: str
   revalidatePath(`/projects/${projectId}`)
 }
 
+// 짧은 요약 (한눈에 박스. 항상 보임) — 별도 컬럼 short_summary
+export async function updateProjectShortSummary(projectId: string, value: string) {
+  const admin = createAdminClient()
+  const { error } = await admin
+    .from('projects')
+    .update({ short_summary: value || null, updated_at: new Date().toISOString() })
+    .eq('id', projectId)
+  if (error) throw new Error(error.message)
+  revalidatePath(`/projects/${projectId}`)
+}
+
+// 짧은 요약 자동 생성 — 기존 overview_summary 있으면 압축, 없으면 데이터 직접 사용
+export async function generateAndSaveProjectShortSummary(
+  projectId: string,
+): Promise<{ summary: string } | { error: string }> {
+  const admin = createAdminClient()
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return { error: 'Unauthorized' }
+
+  const { data: project } = await admin
+    .from('projects')
+    .select('id, name, status, overview_summary, memo, notes, customer_id')
+    .eq('id', projectId)
+    .single()
+  if (!project) return { error: '프로젝트를 찾을 수 없어' }
+
+  // 추가 컨텍스트 (요약본 없을 때 용)
+  let extraContext = ''
+  if (!project.overview_summary) {
+    const { data: contracts } = await admin
+      .from('sales')
+      .select('name, revenue, contract_stage, progress_status')
+      .eq('project_id', projectId)
+    const { data: customer } = project.customer_id
+      ? await admin.from('customers').select('name').eq('id', project.customer_id).maybeSingle()
+      : { data: null }
+    extraContext = `[고객] ${customer?.name ?? '미연결'}\n[계약] ${(contracts ?? []).map((c: any) => `${c.name} (${c.contract_stage ?? '계약'})`).join(', ') || '없음'}`
+  }
+
+  const source = project.overview_summary
+    ? `[기존 자세한 개요]\n${project.overview_summary}`
+    : `[프로젝트] ${project.name} · 상태: ${project.status}\n${extraContext}\n${project.memo ?? ''}\n${project.notes ?? ''}`
+
+  const prompt = `너는 프로젝트 매니저야. 아래 정보를 보고 *2-4줄짜리* 핵심 요약을 작성해.
+누가 1초 안에 봐도 "지금 뭐 하는 프로젝트인지·어디까지 됐는지·다음 뭐 할 건지" 파악할 수 있게.
+표·bullet·헤더 사용 X. 평문 자연스러운 단락. 마크다운 코드블록 없이. 200자 이내.
+
+${source}
+
+출력 (평문, 2-4줄):`
+
+  const client = new Anthropic()
+  const message = await client.messages.create({
+    model: 'claude-sonnet-4-6',
+    max_tokens: 400,
+    messages: [{ role: 'user', content: prompt }],
+  })
+  logApiUsage({ model: 'claude-sonnet-4-6', endpoint: 'project-short-summary', userId: user.id, inputTokens: message.usage.input_tokens, outputTokens: message.usage.output_tokens }).catch(() => {})
+
+  const summary = ((message.content[0] as any)?.text ?? '').trim()
+  if (!summary) return { error: '요약 생성 실패' }
+
+  await admin.from('projects').update({ short_summary: summary, updated_at: new Date().toISOString() }).eq('id', projectId)
+  revalidatePath(`/projects/${projectId}`)
+  return { summary }
+}
+
 export async function updateProjectWorkDescription(projectId: string, value: string) {
   const admin = createAdminClient()
   const { error } = await admin

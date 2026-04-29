@@ -164,6 +164,7 @@ export default async function ProjectPage({ params }: { params: Promise<{ id: st
         memo: project.memo ?? null,
         notes: project.notes ?? null,
         overview_summary: project.overview_summary ?? null,
+        short_summary: project.short_summary ?? null,
         work_description: project.work_description ?? null,
         pending_discussion: project.pending_discussion ?? null,
         pending_discussion_client: project.pending_discussion_client ?? null,

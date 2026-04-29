@@ -12,6 +12,7 @@ const MUTATING_TOOLS = new Set([
   'create_calendar_event',
   'create_project_task', 'complete_task', 'update_task', 'delete_task',
   'regenerate_overview', 'update_overview', 'update_pending_discussion', 'regenerate_pending_discussion',
+  'update_short_summary', 'regenerate_short_summary',
   'update_lead_summary', 'regenerate_lead_summary',
   'quick_create_customer', 'merge_customers', 'match_sale_to_customer', 'match_lead_to_customer',
 ])
@@ -29,6 +30,8 @@ import {
   generateAndSaveProjectOverview,
   generateAndSavePendingDiscussion,
   updateProjectPendingDiscussion,
+  updateProjectShortSummary,
+  generateAndSaveProjectShortSummary,
 } from '@/app/(dashboard)/projects/[id]/project-actions'
 
 export const maxDuration = 60
@@ -1296,6 +1299,23 @@ async function executeTool(name: string, input: Record<string, unknown>, userRol
     } catch (e) {
       return { error: e instanceof Error ? e.message : '협의사항 업데이트 실패' }
     }
+  }
+
+  if (name === 'update_short_summary') {
+    if (!projectId) return { error: '프로젝트 페이지에서만 사용 가능해.' }
+    try {
+      await updateProjectShortSummary(projectId, (input.content as string) ?? '')
+      return { success: true, message: '한눈에 요약을 업데이트했어.' }
+    } catch (e) {
+      return { error: e instanceof Error ? e.message : '한눈에 요약 업데이트 실패' }
+    }
+  }
+
+  if (name === 'regenerate_short_summary') {
+    if (!projectId) return { error: '프로젝트 페이지에서만 사용 가능해.' }
+    const result = await generateAndSaveProjectShortSummary(projectId)
+    if ('error' in result) return result
+    return { success: true, summary: result.summary, message: '한눈에 요약을 재생성했어.' }
   }
 
   if (name === 'regenerate_pending_discussion') {

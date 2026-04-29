@@ -355,6 +355,20 @@ ${logs && logs.length > 0 ? `\n## 최근 소통내역\n${logs.map(l => `- [${l.l
       },
     },
     {
+      name: 'update_short_summary',
+      description: '한눈에 박스(short_summary)를 평문 2-4줄로 덮어쓰기.',
+      input_schema: {
+        type: 'object' as const,
+        properties: { content: { type: 'string', description: '저장할 평문' } },
+        required: ['content'],
+      },
+    },
+    {
+      name: 'regenerate_short_summary',
+      description: '한눈에 박스를 자동 재생성 (overview_summary·계약·고객 정보를 보고 2-4줄 평문 압축). "한눈에 정리해" 등 요청 시 호출.',
+      input_schema: { type: 'object' as const, properties: {} },
+    },
+    {
       name: 'update_pending_discussion',
       description: '프로젝트 협의 박스를 분류별(client/internal/vendor)로 덮어쓰기. target 필수. client=클라이언트와 협의, internal=내부 결정, vendor=외주사 협의. "협의사항에 X 추가해줘" 요청 시 분류 판단 후 호출.',
       input_schema: {
@@ -807,6 +821,29 @@ ${logs && logs.length > 0 ? `\n## 최근 소통내역\n${logs.map(l => `- [${l.l
                   revalidatePath(`/projects/${projectId}`)
                   revalidate()
                 }
+              }
+
+            } else if (block.name === 'update_short_summary') {
+              if (!projectId) {
+                result = '프로젝트 페이지에서만 사용 가능.'
+              } else {
+                send('\n*(한눈에 요약 저장...)*\n')
+                const { error } = await admin.from('projects')
+                  .update({ short_summary: input.content || null, updated_at: new Date().toISOString() })
+                  .eq('id', projectId)
+                result = error ? `실패: ${error.message}` : '한눈에 요약을 업데이트했어.'
+                if (!error) { revalidatePath(`/projects/${projectId}`); revalidate() }
+              }
+
+            } else if (block.name === 'regenerate_short_summary') {
+              if (!projectId) {
+                result = '프로젝트 페이지에서만 사용 가능.'
+              } else {
+                send('\n*(한눈에 요약 재생성 중...)*\n')
+                const { generateAndSaveProjectShortSummary } = await import('@/app/(dashboard)/projects/[id]/project-actions')
+                const r = await generateAndSaveProjectShortSummary(projectId)
+                result = 'error' in r ? `실패: ${r.error}` : '한눈에 요약을 재생성했어.'
+                if ('summary' in r) revalidate()
               }
 
             } else if (block.name === 'update_pending_discussion') {

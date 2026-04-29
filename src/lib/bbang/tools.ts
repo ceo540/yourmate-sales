@@ -441,6 +441,25 @@ export const TOOLS: Anthropic.Tool[] = [
     },
   },
   {
+    name: 'update_short_summary',
+    description: '현재 프로젝트의 짧은 요약(short_summary, 한눈에 박스)을 직접 작성한 평문으로 덮어쓰기. 자동 생성은 regenerate_short_summary.',
+    input_schema: {
+      type: 'object' as const,
+      properties: {
+        content: { type: 'string', description: '저장할 평문 2-4줄. 빈 문자열이면 삭제.' },
+      },
+      required: ['content'],
+    },
+  },
+  {
+    name: 'regenerate_short_summary',
+    description: '현재 프로젝트의 짧은 요약을 자동 재생성 (기존 자세한 개요·계약·고객 정보를 보고 2-4줄 평문 압축). 사용자가 "한눈에 보이게 정리" 등 요청 시 호출.',
+    input_schema: {
+      type: 'object' as const,
+      properties: {},
+    },
+  },
+  {
     name: 'update_pending_discussion',
     description: '현재 프로젝트의 협의/미결 사항을 분류별(클라이언트/내부/외주사)로 덮어씁니다. 추가하고 싶으면 기존 내용을 포함해서 합친 markdown을 content로. target은 어느 분류 박스인지: client(클라이언트와 협의), internal(내부 결정), vendor(외주사·협력사 협의). 자동 분석은 regenerate_pending_discussion.',
     input_schema: {
