@@ -1,8 +1,7 @@
 'use client'
 import { useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
-import { updateRental, updateRentalStatus, deleteRental, addRentalItem, removeRentalItem, addRentalDelivery, updateRentalDelivery, deleteRentalDelivery, updateDeliveryChecklist, linkRentalToParent, unlinkRentalFromParent } from '../actions'
-import { RENTAL_STATUSES } from '../RentalsClient'
+import { updateRental, updateRentalStatus, deleteRental, addRentalItem, removeRentalItem, updateRentalProject } from '../actions'
 
 const STATUS_STYLE: Record<string, string> = {
   유입:      'bg-gray-100 text-gray-600',
@@ -36,27 +35,12 @@ interface RentalItem {
   notes: string | null
 }
 
-interface RentalDelivery {
+interface ProjectOption {
   id: string
-  location: string
-  contact_name: string | null
-  phone: string | null
-  delivery_date: string | null
-  pickup_date: string | null
-  delivery_method: string | null
-  status: string
-  checklist: Record<string, boolean>
-  notes: string | null
-}
-
-interface LinkedRental {
-  id: string
-  title: string | null
-  customer_name: string
-  status: string
-  rental_start: string | null
-  rental_end: string | null
-  total_amount: number
+  name: string
+  project_number: string | null
+  customer_name: string | null
+  status: string | null
 }
 
 interface Rental {
@@ -80,99 +64,54 @@ interface Rental {
   inflow_source: string | null
   notes: string | null
   content: string | null
+  project_id: string | null
   items: RentalItem[]
-  deliveries: RentalDelivery[]
-  linkedRentals: LinkedRental[]
 }
 
 interface Props {
   rental: Rental
   profiles: { id: string; name: string }[]
-  linkableRentals: LinkedRental[]
+  projects: ProjectOption[]
+  linkedProject: ProjectOption | null
 }
 
-const DELIVERY_STATUS_BADGE: Record<string, string> = {
-  '대기':    'bg-gray-100 text-gray-500',
-  '배송완료': 'bg-blue-100 text-blue-700',
-  '수거완료': 'bg-teal-100 text-teal-700',
-  '검수완료': 'bg-green-100 text-green-700',
-}
-
-const DELIVERY_CHECKLIST_GROUPS = [
-  {
-    label: '배송', color: 'text-blue-600',
-    items: [
-      { key: 'outbound_inspection', label: '출고 전 검수' },
-      { key: 'packed',              label: '포장 완료' },
-      { key: 'shipping_ready',      label: '발송 준비' },
-      { key: 'delivered',           label: '배송 완료' },
-      { key: 'delivery_confirmed',  label: '수령 확인' },
-    ],
-  },
-  {
-    label: '반납', color: 'text-teal-600',
-    items: [
-      { key: 'return_notified', label: '반납 안내' },
-      { key: 'returned',        label: '수거 완료' },
-    ],
-  },
-  {
-    label: '검수', color: 'text-orange-600',
-    items: [
-      { key: 'inspection_done', label: '검수 완료' },
-      { key: 'no_issue',        label: '이상 없음' },
-      { key: 'issue_resolved',  label: '이슈 조치 완료' },
-    ],
-  },
-]
-
-export default function RentalDetailClient({ rental, profiles, linkableRentals }: Props) {
+export default function RentalDetailClient({ rental, profiles, projects, linkedProject: initialLinkedProject }: Props) {
   const router = useRouter()
   const [isPending, startTransition] = useTransition()
   const [editing, setEditing] = useState(false)
   const [content, setContent] = useState(rental.content ?? '')
   const [contentSaved, setContentSaved] = useState(true)
 
-  // 연결된 기존 건
-  const [linkedRentals, setLinkedRentals] = useState<LinkedRental[]>(rental.linkedRentals)
-  const [showLinkSearch, setShowLinkSearch] = useState(false)
-  const [linkSearch, setLinkSearch] = useState('')
+  // 연결된 프로젝트
+  const [linkedProject, setLinkedProject] = useState<ProjectOption | null>(initialLinkedProject)
+  const [showProjectPicker, setShowProjectPicker] = useState(false)
+  const [projectSearch, setProjectSearch] = useState('')
+  const filteredProjects = (() => {
+    const q = projectSearch.trim().toLowerCase()
+    const list = q
+      ? projects.filter(p =>
+          p.name.toLowerCase().includes(q) ||
+          (p.customer_name ?? '').toLowerCase().includes(q) ||
+          (p.project_number ?? '').toLowerCase().includes(q)
+        )
+      : projects
+    return list.slice(0, 20)
+  })()
 
-  const filteredLinkable = linkableRentals.filter(r =>
-    !linkedRentals.find(l => l.id === r.id) &&
-    (r.customer_name.includes(linkSearch) || (r.title ?? '').includes(linkSearch))
-  )
-
-  // 배송일정
-  const [deliveries, setDeliveries] = useState<RentalDelivery[]>(rental.deliveries)
-  const [showAddDelivery, setShowAddDelivery] = useState(false)
-  const [expandedDelivery, setExpandedDelivery] = useState<string | null>(null)
-  const [syncingCalDelivery, setSyncingCalDelivery] = useState<string | null>(null)
-
-  async function handleSyncDeliveryCalendar(d: RentalDelivery) {
-    setSyncingCalDelivery(d.id)
-    try {
-      const events = []
-      if (d.delivery_date) events.push({ title: `[배송] ${d.location} (${rental.customer_name})`, date: d.delivery_date })
-      if (d.pickup_date) events.push({ title: `[수거] ${d.location} (${rental.customer_name})`, date: d.pickup_date })
-      await Promise.all(events.map(ev =>
-        fetch('/api/calendar/events', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ calendarKey: 'rental', ...ev, isAllDay: true }),
-        })
-      ))
-      alert(`캘린더에 ${events.length}개 일정을 등록했어요.`)
-    } catch {
-      alert('캘린더 등록에 실패했습니다.')
-    } finally {
-      setSyncingCalDelivery(null)
-    }
+  async function handleLinkProject(p: ProjectOption) {
+    const res = await updateRentalProject(rental.id, p.id)
+    if ('error' in res && res.error) { alert(res.error); return }
+    setLinkedProject(p)
+    setShowProjectPicker(false)
+    setProjectSearch('')
   }
-  const [editingDeliveryId, setEditingDeliveryId] = useState<string | null>(null)
-  const emptyDeliveryForm = { location: '', contact_name: '', phone: '', delivery_date: '', pickup_date: '', delivery_method: '', notes: '' }
-  const [deliveryForm, setDeliveryForm] = useState(emptyDeliveryForm)
-  const [editDeliveryForm, setEditDeliveryForm] = useState(emptyDeliveryForm)
+
+  async function handleUnlinkProject() {
+    if (!confirm('프로젝트 연결을 해제할까요?')) return
+    const res = await updateRentalProject(rental.id, null)
+    if ('error' in res && res.error) { alert(res.error); return }
+    setLinkedProject(null)
+  }
 
   async function handleContentSave() {
     await updateRental(rental.id, { content })
@@ -517,352 +456,78 @@ export default function RentalDetailClient({ rental, profiles, linkableRentals }
         )}
       </div>
 
-      {/* 연결된 기존 건 */}
+      {/* 연결된 프로젝트 */}
       <div className="bg-white border border-gray-200 rounded-2xl p-5 mb-4">
         <div className="flex items-center justify-between mb-3">
-          <h2 className="text-sm font-semibold text-gray-700">연결된 기존 건 <span className="text-gray-400 font-normal">({linkedRentals.length})</span></h2>
-          <button onClick={() => { setShowLinkSearch(v => !v); setLinkSearch('') }}
-            className="text-xs px-3 py-1.5 bg-gray-900 text-white rounded-lg hover:bg-gray-800">
-            + 기존 건 연결
-          </button>
+          <h2 className="text-sm font-semibold text-gray-700">
+            연결된 프로젝트
+            {linkedProject && <span className="text-gray-400 font-normal ml-1">· 1</span>}
+          </h2>
+          {!linkedProject && !showProjectPicker && (
+            <button onClick={() => setShowProjectPicker(true)}
+              className="text-xs px-3 py-1.5 bg-gray-900 text-white rounded-lg hover:bg-gray-800">
+              + 프로젝트 연결
+            </button>
+          )}
+          {linkedProject && (
+            <button onClick={handleUnlinkProject}
+              className="text-xs text-gray-400 hover:text-red-500 px-2 py-1 border border-gray-200 rounded-lg">
+              연결 해제
+            </button>
+          )}
         </div>
 
-        {showLinkSearch && (
-          <div className="mb-3 border border-yellow-200 rounded-xl p-3 bg-yellow-50 space-y-2">
+        {linkedProject ? (
+          <div className="flex items-center gap-3 px-4 py-3 border border-blue-100 bg-blue-50 rounded-xl">
+            <div className="flex-1 min-w-0">
+              <p className="text-sm font-medium text-gray-800 truncate">{linkedProject.name}</p>
+              <div className="flex items-center gap-2 mt-0.5 text-xs text-gray-500">
+                {linkedProject.project_number && <span>{linkedProject.project_number}</span>}
+                {linkedProject.customer_name && <span>· {linkedProject.customer_name}</span>}
+                {linkedProject.status && <span>· {linkedProject.status}</span>}
+              </div>
+            </div>
+            <a href={`/projects/${linkedProject.id}`}
+              className="text-xs text-blue-500 hover:text-blue-700 px-2 py-1 border border-blue-200 rounded-lg">
+              프로젝트 보기
+            </a>
+          </div>
+        ) : showProjectPicker ? (
+          <div className="border border-yellow-200 rounded-xl p-3 bg-yellow-50 space-y-2">
             <input
               autoFocus
-              value={linkSearch}
-              onChange={e => setLinkSearch(e.target.value)}
-              placeholder="고객명 또는 건명으로 검색..."
-              className="w-full text-sm border border-gray-200 rounded-lg px-3 py-1.5 bg-white focus:outline-none focus:border-yellow-400"
+              value={projectSearch}
+              onChange={e => setProjectSearch(e.target.value)}
+              placeholder="프로젝트명/고객명/번호 검색..."
+              className="w-full text-sm border border-gray-200 rounded-lg px-3 py-2 bg-white focus:outline-none focus:border-yellow-400"
             />
-            {filteredLinkable.length === 0 ? (
-              <p className="text-xs text-gray-400 text-center py-2">연결 가능한 건이 없습니다.</p>
+            {filteredProjects.length === 0 ? (
+              <p className="text-xs text-gray-400 text-center py-2">검색 결과가 없습니다.</p>
             ) : (
-              <div className="max-h-48 overflow-y-auto space-y-1">
-                {filteredLinkable.slice(0, 20).map(r => (
-                  <button key={r.id}
-                    onClick={async () => {
-                      const result = await linkRentalToParent(r.id, rental.id)
-                      if ('error' in result) { alert(result.error); return }
-                      setLinkedRentals(prev => [...prev, r])
-                      setShowLinkSearch(false)
-                      setLinkSearch('')
-                    }}
+              <div className="max-h-60 overflow-y-auto space-y-1">
+                {filteredProjects.map(p => (
+                  <button key={p.id}
+                    onClick={() => handleLinkProject(p)}
                     className="w-full text-left px-3 py-2 bg-white border border-gray-100 rounded-lg hover:border-yellow-300 hover:bg-yellow-50 transition-colors"
                   >
-                    <div className="flex items-center justify-between gap-2">
-                      <div className="min-w-0">
-                        <p className="text-xs font-medium text-gray-800 truncate">{r.title || r.customer_name}</p>
-                        {r.title && <p className="text-[10px] text-gray-400">{r.customer_name}</p>}
-                      </div>
-                      <div className="flex items-center gap-2 flex-shrink-0">
-                        {r.rental_start && <span className="text-[10px] text-gray-400">{r.rental_start}</span>}
-                        <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium ${DELIVERY_STATUS_BADGE[r.status] ?? 'bg-gray-100 text-gray-500'}`}>{r.status}</span>
-                      </div>
+                    <p className="text-sm font-medium text-gray-800 truncate">{p.name}</p>
+                    <div className="flex items-center gap-2 mt-0.5 text-[11px] text-gray-400">
+                      {p.project_number && <span>{p.project_number}</span>}
+                      {p.customer_name && <span>· {p.customer_name}</span>}
+                      {p.status && <span>· {p.status}</span>}
                     </div>
                   </button>
                 ))}
               </div>
             )}
-            <button onClick={() => { setShowLinkSearch(false); setLinkSearch('') }}
+            <button onClick={() => { setShowProjectPicker(false); setProjectSearch('') }}
               className="w-full text-xs text-gray-400 hover:text-gray-600 py-1">취소</button>
           </div>
-        )}
-
-        {linkedRentals.length === 0 && !showLinkSearch ? (
-          <p className="text-sm text-gray-400 text-center py-4">연결된 기존 건이 없습니다.</p>
         ) : (
-          <div className="space-y-2">
-            {linkedRentals.map(r => (
-              <div key={r.id} className="flex items-center gap-3 px-4 py-3 border border-gray-100 rounded-xl hover:bg-gray-50 transition-colors">
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm font-medium text-gray-800 truncate">{r.title || r.customer_name}</p>
-                  <div className="flex items-center gap-2 mt-0.5 text-xs text-gray-400">
-                    {r.title && <span>{r.customer_name}</span>}
-                    {r.rental_start && <span>{r.rental_start}</span>}
-                    {r.rental_end && <span>→ {r.rental_end}</span>}
-                    {r.total_amount > 0 && <span>{fmt(r.total_amount)}원</span>}
-                  </div>
-                </div>
-                <div className="flex items-center gap-2 flex-shrink-0">
-                  <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium ${DELIVERY_STATUS_BADGE[r.status] ?? 'bg-gray-100 text-gray-500'}`}>{r.status}</span>
-                  <a href={`/rentals/${r.id}`} className="text-xs text-blue-400 hover:text-blue-600 px-2 py-1 border border-blue-100 rounded-lg">보기</a>
-                  <button onClick={async () => {
-                    if (!confirm(`"${r.title || r.customer_name}" 연결을 해제할까요?`)) return
-                    await unlinkRentalFromParent(r.id, rental.id)
-                    setLinkedRentals(prev => prev.filter(x => x.id !== r.id))
-                  }} className="text-xs text-gray-400 hover:text-red-500 px-2 py-1 border border-gray-200 rounded-lg">해제</button>
-                </div>
-              </div>
-            ))}
-          </div>
+          <p className="text-sm text-gray-400 text-center py-4">연결된 프로젝트가 없습니다.</p>
         )}
       </div>
 
-      {/* 배송일정 */}
-      <div className="bg-white border border-gray-200 rounded-2xl p-5 mb-4">
-        <div className="flex items-center justify-between mb-4">
-          <h2 className="text-sm font-semibold text-gray-700">배송일정 <span className="text-gray-400 font-normal">({deliveries.length})</span></h2>
-          <button onClick={() => setShowAddDelivery(v => !v)}
-            className="text-xs px-3 py-1.5 bg-gray-900 text-white rounded-lg hover:bg-gray-800">
-            + 배송지 추가
-          </button>
-        </div>
-
-        {showAddDelivery && (
-          <div className="border border-yellow-200 rounded-xl p-4 mb-4 bg-yellow-50 space-y-3">
-            <p className="text-xs font-semibold text-gray-700">새 배송지</p>
-            <div className="grid grid-cols-2 gap-3">
-              <div className="col-span-2">
-                <label className="block text-xs text-gray-500 mb-1">배송지명 *</label>
-                <input value={deliveryForm.location} onChange={e => setDeliveryForm(f => ({...f, location: e.target.value}))}
-                  className="w-full border border-gray-200 rounded-lg px-3 py-1.5 text-sm bg-white" placeholder="예: 서울중학교" />
-              </div>
-              <div>
-                <label className="block text-xs text-gray-500 mb-1">현장 담당자</label>
-                <input value={deliveryForm.contact_name} onChange={e => setDeliveryForm(f => ({...f, contact_name: e.target.value}))}
-                  className="w-full border border-gray-200 rounded-lg px-3 py-1.5 text-sm bg-white" />
-              </div>
-              <div>
-                <label className="block text-xs text-gray-500 mb-1">연락처</label>
-                <input value={deliveryForm.phone} onChange={e => setDeliveryForm(f => ({...f, phone: e.target.value}))}
-                  className="w-full border border-gray-200 rounded-lg px-3 py-1.5 text-sm bg-white" />
-              </div>
-              <div>
-                <label className="block text-xs text-gray-500 mb-1">배송일</label>
-                <input type="date" value={deliveryForm.delivery_date} onChange={e => setDeliveryForm(f => ({...f, delivery_date: e.target.value}))}
-                  className="w-full border border-gray-200 rounded-lg px-3 py-1.5 text-sm bg-white" />
-              </div>
-              <div>
-                <label className="block text-xs text-gray-500 mb-1">수거일</label>
-                <input type="date" value={deliveryForm.pickup_date} onChange={e => setDeliveryForm(f => ({...f, pickup_date: e.target.value}))}
-                  className="w-full border border-gray-200 rounded-lg px-3 py-1.5 text-sm bg-white" />
-              </div>
-              <div className="col-span-2">
-                <label className="block text-xs text-gray-500 mb-1">배송방법</label>
-                <select value={deliveryForm.delivery_method} onChange={e => setDeliveryForm(f => ({...f, delivery_method: e.target.value}))}
-                  className="w-full border border-gray-200 rounded-lg px-3 py-1.5 text-sm bg-white">
-                  <option value="">선택</option>
-                  {DELIVERY_METHODS.map(m => <option key={m}>{m}</option>)}
-                </select>
-              </div>
-              <div className="col-span-2">
-                <label className="block text-xs text-gray-500 mb-1">메모</label>
-                <input value={deliveryForm.notes} onChange={e => setDeliveryForm(f => ({...f, notes: e.target.value}))}
-                  className="w-full border border-gray-200 rounded-lg px-3 py-1.5 text-sm bg-white" />
-              </div>
-            </div>
-            <div className="flex gap-2">
-              <button onClick={() => { setShowAddDelivery(false); setDeliveryForm(emptyDeliveryForm) }}
-                className="flex-1 py-1.5 border border-gray-200 rounded-lg text-sm text-gray-500 bg-white">취소</button>
-              <button
-                disabled={!deliveryForm.location.trim()}
-                onClick={async () => {
-                  const result = await addRentalDelivery(rental.id, {
-                    location: deliveryForm.location,
-                    contact_name: deliveryForm.contact_name || undefined,
-                    phone: deliveryForm.phone || undefined,
-                    delivery_date: deliveryForm.delivery_date || null,
-                    pickup_date: deliveryForm.pickup_date || null,
-                    delivery_method: deliveryForm.delivery_method || undefined,
-                    notes: deliveryForm.notes || undefined,
-                  })
-                  if ('error' in result) { alert(result.error); return }
-                  setDeliveries(prev => [...prev, {
-                    id: result.id, location: deliveryForm.location,
-                    contact_name: deliveryForm.contact_name || null,
-                    phone: deliveryForm.phone || null,
-                    delivery_date: deliveryForm.delivery_date || null,
-                    pickup_date: deliveryForm.pickup_date || null,
-                    delivery_method: deliveryForm.delivery_method || null,
-                    status: '대기', checklist: {}, notes: deliveryForm.notes || null,
-                  }])
-                  setDeliveryForm(emptyDeliveryForm)
-                  setShowAddDelivery(false)
-                  setExpandedDelivery(result.id)
-                }}
-                className="flex-1 py-1.5 bg-gray-900 text-white rounded-lg text-sm disabled:opacity-50">추가</button>
-            </div>
-          </div>
-        )}
-
-        {deliveries.length === 0 && !showAddDelivery ? (
-          <p className="text-sm text-gray-400 text-center py-6">배송지를 추가하면 각각의 배송·수거 체크리스트를 관리할 수 있어요.</p>
-        ) : (
-          <div className="space-y-2">
-            {deliveries.map(d => {
-              const isExpanded = expandedDelivery === d.id
-              const isEditing = editingDeliveryId === d.id
-              const cl = d.checklist ?? {}
-              const doneCount = Object.values(cl).filter(Boolean).length
-              const totalCount = DELIVERY_CHECKLIST_GROUPS.flatMap(g => g.items).length
-              return (
-                <div key={d.id} className="border border-gray-100 rounded-xl overflow-hidden">
-                  <div
-                    className="flex items-center gap-3 px-4 py-3 bg-gray-50 cursor-pointer hover:bg-gray-100 transition-colors"
-                    onClick={() => setExpandedDelivery(isExpanded ? null : d.id)}
-                  >
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <p className="text-sm font-semibold text-gray-800">{d.location}</p>
-                        <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium ${DELIVERY_STATUS_BADGE[d.status] ?? 'bg-gray-100 text-gray-500'}`}>{d.status}</span>
-                      </div>
-                      <div className="flex items-center gap-3 mt-0.5 text-xs text-gray-400">
-                        {d.delivery_date && <span>배송 {d.delivery_date}</span>}
-                        {d.pickup_date && <span>수거 {d.pickup_date}</span>}
-                        {d.contact_name && <span>{d.contact_name}</span>}
-                        <span className="text-gray-300">{doneCount}/{totalCount} 완료</span>
-                      </div>
-                    </div>
-                    <span className="text-gray-300 text-xs">{isExpanded ? '▲' : '▼'}</span>
-                  </div>
-
-                  {isExpanded && (
-                    <div className="px-4 py-4 space-y-4 bg-white">
-                      {isEditing ? (
-                        <div className="space-y-3">
-                          <div className="grid grid-cols-2 gap-3">
-                            <div className="col-span-2">
-                              <label className="block text-xs text-gray-500 mb-1">배송지명</label>
-                              <input value={editDeliveryForm.location} onChange={e => setEditDeliveryForm(f => ({...f, location: e.target.value}))}
-                                className="w-full border border-gray-200 rounded-lg px-3 py-1.5 text-sm" />
-                            </div>
-                            <div>
-                              <label className="block text-xs text-gray-500 mb-1">현장 담당자</label>
-                              <input value={editDeliveryForm.contact_name} onChange={e => setEditDeliveryForm(f => ({...f, contact_name: e.target.value}))}
-                                className="w-full border border-gray-200 rounded-lg px-3 py-1.5 text-sm" />
-                            </div>
-                            <div>
-                              <label className="block text-xs text-gray-500 mb-1">연락처</label>
-                              <input value={editDeliveryForm.phone} onChange={e => setEditDeliveryForm(f => ({...f, phone: e.target.value}))}
-                                className="w-full border border-gray-200 rounded-lg px-3 py-1.5 text-sm" />
-                            </div>
-                            <div>
-                              <label className="block text-xs text-gray-500 mb-1">배송일</label>
-                              <input type="date" value={editDeliveryForm.delivery_date} onChange={e => setEditDeliveryForm(f => ({...f, delivery_date: e.target.value}))}
-                                className="w-full border border-gray-200 rounded-lg px-3 py-1.5 text-sm" />
-                            </div>
-                            <div>
-                              <label className="block text-xs text-gray-500 mb-1">수거일</label>
-                              <input type="date" value={editDeliveryForm.pickup_date} onChange={e => setEditDeliveryForm(f => ({...f, pickup_date: e.target.value}))}
-                                className="w-full border border-gray-200 rounded-lg px-3 py-1.5 text-sm" />
-                            </div>
-                            <div className="col-span-2">
-                              <label className="block text-xs text-gray-500 mb-1">배송방법</label>
-                              <select value={editDeliveryForm.delivery_method} onChange={e => setEditDeliveryForm(f => ({...f, delivery_method: e.target.value}))}
-                                className="w-full border border-gray-200 rounded-lg px-3 py-1.5 text-sm bg-white">
-                                <option value="">선택</option>
-                                {DELIVERY_METHODS.map(m => <option key={m}>{m}</option>)}
-                              </select>
-                            </div>
-                            <div className="col-span-2">
-                              <label className="block text-xs text-gray-500 mb-1">메모</label>
-                              <input value={editDeliveryForm.notes} onChange={e => setEditDeliveryForm(f => ({...f, notes: e.target.value}))}
-                                className="w-full border border-gray-200 rounded-lg px-3 py-1.5 text-sm" />
-                            </div>
-                          </div>
-                          <div className="flex gap-2">
-                            <button onClick={() => setEditingDeliveryId(null)}
-                              className="flex-1 py-1.5 border border-gray-200 rounded-lg text-sm text-gray-500">취소</button>
-                            <button onClick={async () => {
-                              await updateRentalDelivery(d.id, rental.id, {
-                                location: editDeliveryForm.location,
-                                contact_name: editDeliveryForm.contact_name || null,
-                                phone: editDeliveryForm.phone || null,
-                                delivery_date: editDeliveryForm.delivery_date || null,
-                                pickup_date: editDeliveryForm.pickup_date || null,
-                                delivery_method: editDeliveryForm.delivery_method || null,
-                                notes: editDeliveryForm.notes || null,
-                              })
-                              setDeliveries(prev => prev.map(x => x.id === d.id ? {
-                                ...x,
-                                location: editDeliveryForm.location,
-                                contact_name: editDeliveryForm.contact_name || null,
-                                phone: editDeliveryForm.phone || null,
-                                delivery_date: editDeliveryForm.delivery_date || null,
-                                pickup_date: editDeliveryForm.pickup_date || null,
-                                delivery_method: editDeliveryForm.delivery_method || null,
-                                notes: editDeliveryForm.notes || null,
-                              } : x))
-                              setEditingDeliveryId(null)
-                            }} className="flex-1 py-1.5 bg-gray-900 text-white rounded-lg text-sm">저장</button>
-                          </div>
-                        </div>
-                      ) : (
-                        <div className="flex items-start justify-between">
-                          <div className="text-xs text-gray-500 space-y-1">
-                            {d.delivery_method && <p>배송방법: {d.delivery_method}</p>}
-                            {d.notes && <p>메모: {d.notes}</p>}
-                          </div>
-                          <div className="flex gap-2">
-                            {(d.delivery_date || d.pickup_date) && (
-                              <button onClick={() => handleSyncDeliveryCalendar(d)}
-                                disabled={syncingCalDelivery === d.id}
-                                className="text-xs text-gray-400 hover:text-orange-600 px-2 py-1 border border-gray-200 rounded-lg disabled:opacity-50">
-                                {syncingCalDelivery === d.id ? '...' : '📅'}
-                              </button>
-                            )}
-                            <button onClick={() => {
-                              setEditDeliveryForm({
-                                location: d.location,
-                                contact_name: d.contact_name ?? '',
-                                phone: d.phone ?? '',
-                                delivery_date: d.delivery_date ?? '',
-                                pickup_date: d.pickup_date ?? '',
-                                delivery_method: d.delivery_method ?? '',
-                                notes: d.notes ?? '',
-                              })
-                              setEditingDeliveryId(d.id)
-                            }} className="text-xs text-gray-400 hover:text-gray-700 px-2 py-1 border border-gray-200 rounded-lg">수정</button>
-                            <button onClick={async () => {
-                              if (!confirm(`"${d.location}" 배송일정을 삭제할까요?`)) return
-                              await deleteRentalDelivery(d.id, rental.id)
-                              setDeliveries(prev => prev.filter(x => x.id !== d.id))
-                            }} className="text-xs text-gray-400 hover:text-red-500 px-2 py-1 border border-gray-200 rounded-lg">삭제</button>
-                          </div>
-                        </div>
-                      )}
-
-                      {/* 체크리스트 */}
-                      {!isEditing && (
-                        <div className="space-y-3 pt-2 border-t border-gray-100">
-                          {DELIVERY_CHECKLIST_GROUPS.map(group => (
-                            <div key={group.label}>
-                              <p className={`text-xs font-semibold mb-1.5 ${group.color}`}>{group.label}</p>
-                              <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-3">
-                                {group.items.map(item => {
-                                  const checked = cl[item.key] ?? false
-                                  return (
-                                    <label key={item.key} className={`flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-xs cursor-pointer transition-colors ${checked ? 'bg-gray-900 text-white' : 'bg-gray-50 text-gray-600 hover:bg-gray-100'}`}>
-                                      <input type="checkbox" checked={checked} className="hidden"
-                                        onChange={async () => {
-                                          const newCl = { ...cl, [item.key]: !checked }
-                                          const result = await updateDeliveryChecklist(d.id, rental.id, newCl)
-                                          const newStatus = ('newStatus' in result && result.newStatus) ? result.newStatus : d.status
-                                          setDeliveries(prev => prev.map(x => x.id === d.id ? { ...x, checklist: newCl, status: newStatus } : x))
-                                        }}
-                                      />
-                                      <span className={`w-3 h-3 rounded border flex-shrink-0 flex items-center justify-center ${checked ? 'bg-white border-white' : 'border-gray-300'}`}>
-                                        {checked && <span className="text-gray-900 text-[8px] font-bold">✓</span>}
-                                      </span>
-                                      {item.label}
-                                    </label>
-                                  )
-                                })}
-                              </div>
-                            </div>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-                  )}
-                </div>
-              )
-            })}
-          </div>
-        )}
-      </div>
 
       {/* 내용 / 상담 메모 */}
       <div className="bg-white border border-gray-200 rounded-2xl p-5 mb-4">

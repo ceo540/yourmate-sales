@@ -1,4 +1,5 @@
 import { createClient } from '@/lib/supabase/server'
+import { createAdminClient } from '@/lib/supabase/admin'
 import { redirect, notFound } from 'next/navigation'
 import { createProfileNameMap } from '@/lib/utils'
 import RentalDetailClient from './RentalDetailClient'
@@ -9,18 +10,34 @@ export default async function RentalDetailPage({ params }: { params: Promise<{ i
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) redirect('/login')
 
-  const [{ data: rental }, { data: items }, { data: profilesRaw }, { data: deliveries }, { data: linkedRentals }, { data: linkableRaw }] = await Promise.all([
+  const admin = createAdminClient()
+
+  const [
+    { data: rental },
+    { data: items },
+    { data: profilesRaw },
+    { data: projectsRaw },
+    { data: customersRaw },
+  ] = await Promise.all([
     supabase.from('rentals').select('*').eq('id', id).single(),
     supabase.from('rental_items').select('*').eq('rental_id', id).order('created_at'),
-    supabase.from('profiles').select('id, name').order('name'),
-    supabase.from('rental_deliveries').select('*').eq('rental_id', id).order('delivery_date', { ascending: true }),
-    supabase.from('rentals').select('id, title, customer_name, status, rental_start, rental_end, total_amount').eq('parent_rental_id', id).order('rental_start', { ascending: true }),
-    supabase.from('rentals').select('id, title, customer_name, status, rental_start, rental_end, total_amount').is('parent_rental_id', null).neq('id', id).order('created_at', { ascending: false }),
+    admin.from('profiles').select('id, name').order('name'),
+    admin.from('projects').select('id, name, project_number, customer_id, status').order('created_at', { ascending: false }).limit(500),
+    admin.from('customers').select('id, name'),
   ])
 
   if (!rental) notFound()
 
   const profileMap = createProfileNameMap(profilesRaw)
+  const customerNameMap = Object.fromEntries((customersRaw ?? []).map(c => [c.id, c.name]))
+  const projects = (projectsRaw ?? []).map(p => ({
+    id: p.id,
+    name: p.name,
+    project_number: p.project_number ?? null,
+    customer_name: p.customer_id ? (customerNameMap[p.customer_id] ?? null) : null,
+    status: p.status ?? null,
+  }))
+  const linkedProject = rental.project_id ? projects.find(p => p.id === rental.project_id) ?? null : null
 
   return (
     <RentalDetailClient
@@ -33,10 +50,10 @@ export default async function RentalDetailPage({ params }: { params: Promise<{ i
         contact_2:     rental.contact_2 ?? null,
         contact_3:     rental.contact_3 ?? null,
         items:         items ?? [],
-        deliveries:    deliveries ?? [],
-        linkedRentals: linkedRentals ?? [],
+        project_id:    rental.project_id ?? null,
       }}
-      linkableRentals={linkableRaw ?? []}
+      linkedProject={linkedProject}
+      projects={projects}
       profiles={profilesRaw ?? []}
     />
   )

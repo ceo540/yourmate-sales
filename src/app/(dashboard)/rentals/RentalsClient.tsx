@@ -123,12 +123,22 @@ interface Rental {
   contact_3: string | null
   checklist: Record<string, boolean> | null
   parent_rental_id: string | null
+  project_id: string | null
+  project_name: string | null
   items: RentalItem[]
+}
+export interface ProjectOption {
+  id: string
+  name: string
+  project_number: string | null
+  customer_name: string | null
+  status: string | null
 }
 interface Props {
   rentals: Rental[]
   profiles: { id: string; name: string }[]
   customers: { id: string; name: string; type: string }[]
+  projects: ProjectOption[]
 }
 
 // ─── 유틸 ────────────────────────────────────────────────────────
@@ -165,7 +175,7 @@ function getCalendarDays(year: number, month: number) {
 const DAYS_KO = ['일','월','화','수','목','금','토']
 
 // ─── 메인 컴포넌트 ───────────────────────────────────────────────
-export default function RentalsClient({ rentals: initialRentals, profiles, customers }: Props) {
+export default function RentalsClient({ rentals: initialRentals, profiles, customers, projects }: Props) {
   const [rentals, setRentals] = useState<Rental[]>(initialRentals)
   const [selected, setSelected] = useState<Rental | null>(null)
   const [isPending, startTransition] = useTransition()
@@ -182,12 +192,29 @@ export default function RentalsClient({ rentals: initialRentals, profiles, custo
     assignee_id: '', rental_start: '', rental_end: '', delivery_method: '착불택배',
     inflow_source: '', total_amount: '', deposit: '', has_deposit: false,
     title: '',
+    project_id: '', project_name: '',
   })
   const [customerSearch, setCustomerSearch] = useState('')
   const [showCustomerDropdown, setShowCustomerDropdown] = useState(false)
   const filteredCustomers = customerSearch.length > 0
     ? customers.filter(c => c.name.toLowerCase().includes(customerSearch.toLowerCase())).slice(0, 8)
     : customers.slice(0, 8)
+
+  // 프로젝트 검색 (신규 등록 모달용)
+  const [projectSearch, setProjectSearch] = useState('')
+  const [showProjectDropdown, setShowProjectDropdown] = useState(false)
+  const filteredProjects = (() => {
+    const q = projectSearch.trim().toLowerCase()
+    if (!q) return projects.slice(0, 10)
+    return projects.filter(p =>
+      p.name.toLowerCase().includes(q) ||
+      (p.customer_name ?? '').toLowerCase().includes(q) ||
+      (p.project_number ?? '').toLowerCase().includes(q)
+    ).slice(0, 10)
+  })()
+
+  // 캘린더 프로젝트 필터
+  const [calProjectFilter, setCalProjectFilter] = useState<string>('')  // '' = 전체
 
   // 편집 상태
   const [editingField, setEditingField] = useState<string | null>(null)
@@ -226,6 +253,7 @@ export default function RentalsClient({ rentals: initialRentals, profiles, custo
       deposit: newForm.deposit ? parseInt(newForm.deposit) : undefined,
       has_deposit: newForm.has_deposit,
       title: newForm.title || undefined,  // 제목: 페이지 타이틀 + 드롭박스 폴더명에 사용
+      project_id: newForm.project_id || undefined,
     })
     if (res.error) { alert(res.error); return }
     setShowNew(false)
@@ -233,6 +261,7 @@ export default function RentalsClient({ rentals: initialRentals, profiles, custo
       customer_id:'', customer_name:'', contact_name:'', phone:'', customer_type:'기관',
       assignee_id:'', rental_start:'', rental_end:'', delivery_method:'착불택배',
       inflow_source:'', total_amount:'', deposit:'', has_deposit: false, title:'',
+      project_id:'', project_name:'',
     })
     window.location.reload()
   }
@@ -313,6 +342,7 @@ export default function RentalsClient({ rentals: initialRentals, profiles, custo
 
   // 필터에 따라 표시할 렌탈 목록과 기준 날짜 필드 결정
   const filteredCalRentals = rentals.filter(r => {
+    if (calProjectFilter && r.project_id !== calProjectFilter) return false
     if (calFilter === '전체') return !['취소','보류'].includes(r.status)
     if (calFilter === '배송') return ['유입','견적발송','렌탈확정','진행중'].includes(r.status)
     if (calFilter === '수거') return ['진행중','수거완료','검수중'].includes(r.status)
@@ -412,6 +442,22 @@ export default function RentalsClient({ rentals: initialRentals, profiles, custo
           ))}
         </div>
 
+        {/* 프로젝트 필터: 한 프로젝트 안의 여러 배송건만 보기 */}
+        <div className="px-4 py-1.5 border-b border-gray-100">
+          <select
+            value={calProjectFilter}
+            onChange={e => setCalProjectFilter(e.target.value)}
+            className="w-full text-xs border border-gray-200 rounded px-2 py-1 text-gray-600"
+          >
+            <option value="">전체 프로젝트</option>
+            {projects.map(p => (
+              <option key={p.id} value={p.id}>
+                {p.name}{p.customer_name ? ` · ${p.customer_name}` : ''}
+              </option>
+            ))}
+          </select>
+        </div>
+
         {/* 캘린더 네비 */}
         <div className="px-4 py-2 flex items-center gap-3 border-b border-gray-100">
           <button onClick={() => { const d=new Date(calYear,calMonth-1); setCalYear(d.getFullYear()); setCalMonth(d.getMonth()) }}
@@ -434,33 +480,41 @@ export default function RentalsClient({ rentals: initialRentals, profiles, custo
             ))}
           </div>
 
-          {/* 날짜 셀 */}
-          <div className="grid grid-cols-7 gap-px">
+          {/* 날짜 셀 — 노션 풍 멀티라인 (건명/고객/기간), text wrap, 셀 높이 자동 */}
+          <div className="grid grid-cols-7 gap-px auto-rows-min">
             {calDays.map((day, idx) => {
-              if (!day) return <div key={idx} className="min-h-[64px]" />
+              if (!day) return <div key={idx} className="min-h-[80px]" />
               const isToday = toLocalDateStr(new Date(calYear, calMonth, day)) === todayStr
               const dayRentals = rentalsByDate[day.toString()] ?? []
               const isWeekend = (idx % 7 === 0 || idx % 7 === 6)
               return (
-                <div key={idx} className={`min-h-[64px] p-0.5 rounded ${isToday ? 'bg-yellow-50 ring-1 ring-yellow-300' : 'hover:bg-gray-50'}`}>
-                  <div className={`text-xs font-medium text-center mb-0.5 ${isToday ? 'text-yellow-600 font-bold' : isWeekend ? (idx%7===0?'text-red-400':'text-blue-400') : 'text-gray-500'}`}>
+                <div key={idx} className={`min-h-[80px] p-1 rounded ${isToday ? 'bg-yellow-50 ring-1 ring-yellow-300' : 'hover:bg-gray-50'}`}>
+                  <div className={`text-xs font-medium text-center mb-1 ${isToday ? 'text-yellow-600 font-bold' : isWeekend ? (idx%7===0?'text-red-400':'text-blue-400') : 'text-gray-500'}`}>
                     {day}
                   </div>
-                  <div className="space-y-0.5">
-                    {dayRentals.map(r => (
-                      <div key={r.id}
-                        onClick={() => setSelected(r)}
-                        className={`text-[10px] leading-tight px-1 py-0.5 rounded cursor-pointer truncate
-                          ${selected?.id === r.id ? 'ring-1 ring-yellow-400' : ''}
-                          ${STATUS_BADGE[r.status] ?? 'bg-gray-100 text-gray-500'}`}
-                        title={r.title || r.customer_name}
-                      >
-                        {r.title || r.customer_name}
-                      </div>
-                    ))}
-                    {dayRentals.length > 3 && (
-                      <div className="text-[10px] text-gray-400 text-center">+{dayRentals.length - 3}</div>
-                    )}
+                  <div className="space-y-1">
+                    {dayRentals.map(r => {
+                      const period = r.rental_start && r.rental_end
+                        ? `${r.rental_start.slice(5)}~${r.rental_end.slice(5)}`
+                        : (r.rental_start ?? r.rental_end ?? '')
+                      return (
+                        <div key={r.id}
+                          onClick={() => setSelected(r)}
+                          className={`text-[10px] leading-snug px-1 py-1 rounded cursor-pointer break-words whitespace-normal
+                            ${selected?.id === r.id ? 'ring-1 ring-yellow-400' : ''}
+                            ${STATUS_BADGE[r.status] ?? 'bg-gray-100 text-gray-500'}`}
+                          title={`${r.title || r.customer_name}\n${r.customer_name}\n${period}`}
+                        >
+                          <div className="font-medium">{r.title || r.customer_name}</div>
+                          {r.title && r.customer_name && r.title !== r.customer_name && (
+                            <div className="opacity-70">{r.customer_name}</div>
+                          )}
+                          {period && (
+                            <div className="opacity-60">{period}</div>
+                          )}
+                        </div>
+                      )
+                    })}
                   </div>
                 </div>
               )
@@ -567,6 +621,49 @@ export default function RentalsClient({ rentals: initialRentals, profiles, custo
                 <input className="w-full border rounded-lg px-3 py-2 text-sm" placeholder="기관/고객명 직접 입력"
                   value={newForm.customer_name} onChange={e => setNewForm(p => ({...p, customer_name: e.target.value}))} />
               )}
+
+              {/* 프로젝트 연결 (선택) — 한 프로젝트의 여러 배송건을 묶을 때 사용 */}
+              <div className="relative">
+                <label className="text-xs text-gray-500 mb-1 block">연결할 프로젝트 (선택)</label>
+                {newForm.project_id ? (
+                  <div className="flex items-center gap-2 border rounded-lg px-3 py-2 text-sm bg-blue-50">
+                    <span className="text-blue-700 flex-1 truncate">{newForm.project_name}</span>
+                    <button type="button"
+                      className="text-xs text-gray-400 hover:text-red-500"
+                      onClick={() => {
+                        setNewForm(p => ({...p, project_id: '', project_name: ''}))
+                        setProjectSearch('')
+                      }}
+                    >해제</button>
+                  </div>
+                ) : (
+                  <>
+                    <input className="w-full border rounded-lg px-3 py-2 text-sm" placeholder="프로젝트명/고객명/번호 검색"
+                      value={projectSearch}
+                      onChange={e => { setProjectSearch(e.target.value); setShowProjectDropdown(true) }}
+                      onFocus={() => setShowProjectDropdown(true)} />
+                    {showProjectDropdown && filteredProjects.length > 0 && (
+                      <div className="absolute top-full left-0 right-0 bg-white border rounded-lg shadow-lg z-10 max-h-48 overflow-y-auto mt-1">
+                        {filteredProjects.map(pr => (
+                          <div key={pr.id} className="px-3 py-2 hover:bg-blue-50 cursor-pointer text-sm border-b border-gray-50 last:border-b-0"
+                            onClick={() => {
+                              setNewForm(p => ({...p, project_id: pr.id, project_name: pr.name}))
+                              setProjectSearch('')
+                              setShowProjectDropdown(false)
+                            }}>
+                            <div className="font-medium text-gray-800 truncate">{pr.name}</div>
+                            <div className="text-[11px] text-gray-400 flex gap-2">
+                              {pr.project_number && <span>{pr.project_number}</span>}
+                              {pr.customer_name && <span>· {pr.customer_name}</span>}
+                              {pr.status && <span>· {pr.status}</span>}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </>
+                )}
+              </div>
 
               <div className="grid grid-cols-2 gap-2">
                 <input className="border rounded-lg px-3 py-2 text-sm" placeholder="담당자명"

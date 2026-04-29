@@ -27,6 +27,7 @@ export async function createRental(data: {
   inflow_source?: string
   notes?: string
   title?: string  // 사용자가 입력한 제목 (예: "260301 대한초등학교")
+  project_id?: string
 }) {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
@@ -273,6 +274,18 @@ export async function unlinkRentalFromParent(childId: string, parentId: string) 
   if (error) return { error: error.message }
   revalidatePath(`/rentals/${parentId}`)
   revalidatePath('/rentals')
+  return { success: true }
+}
+
+export async function updateRentalProject(rentalId: string, projectId: string | null) {
+  const supabase = await createClient()
+  const { error } = await supabase.from('rentals').update({
+    project_id: projectId,
+    updated_at: new Date().toISOString(),
+  }).eq('id', rentalId)
+  if (error) return { error: error.message }
+  revalidatePath('/rentals')
+  revalidatePath(`/rentals/${rentalId}`)
   return { success: true }
 }
 
