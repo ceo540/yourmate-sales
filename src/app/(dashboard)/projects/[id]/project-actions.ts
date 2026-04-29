@@ -152,7 +152,7 @@ export async function updateProjectShortSummary(projectId: string, value: string
   revalidatePath(`/projects/${projectId}`)
 }
 
-// 짧은 요약 자동 생성 — 기존 overview_summary 있으면 압축, 없으면 데이터 직접 사용
+// 짧은 요약 자동 생성 — 리드 AI 요약 패턴(한줄·현황·반응·다음)
 export async function generateAndSaveProjectShortSummary(
   projectId: string,
 ): Promise<{ summary: string } | { error: string }> {
@@ -163,40 +163,63 @@ export async function generateAndSaveProjectShortSummary(
 
   const { data: project } = await admin
     .from('projects')
-    .select('id, name, status, overview_summary, memo, notes, customer_id')
+    .select('id, name, status, overview_summary, memo, notes, customer_id, pending_discussion_client, pending_discussion_internal, pending_discussion_vendor')
     .eq('id', projectId)
     .single()
   if (!project) return { error: '프로젝트를 찾을 수 없어' }
 
-  // 추가 컨텍스트 (요약본 없을 때 용)
-  let extraContext = ''
-  if (!project.overview_summary) {
-    const { data: contracts } = await admin
-      .from('sales')
-      .select('name, revenue, contract_stage, progress_status')
-      .eq('project_id', projectId)
-    const { data: customer } = project.customer_id
-      ? await admin.from('customers').select('name').eq('id', project.customer_id).maybeSingle()
-      : { data: null }
-    extraContext = `[고객] ${customer?.name ?? '미연결'}\n[계약] ${(contracts ?? []).map((c: any) => `${c.name} (${c.contract_stage ?? '계약'})`).join(', ') || '없음'}`
-  }
+  // 컨텍스트
+  const { data: contracts } = await admin
+    .from('sales')
+    .select('name, revenue, contract_stage, progress_status, payment_date, inflow_date')
+    .eq('project_id', projectId)
+  const { data: customer } = project.customer_id
+    ? await admin.from('customers').select('name').eq('id', project.customer_id).maybeSingle()
+    : { data: null }
+  const { data: recentLogs } = await admin
+    .from('project_logs')
+    .select('content, log_type, contacted_at, outcome')
+    .eq('project_id', projectId)
+    .order('contacted_at', { ascending: false })
+    .limit(5)
 
-  const source = project.overview_summary
-    ? `[기존 자세한 개요]\n${project.overview_summary}`
-    : `[프로젝트] ${project.name} · 상태: ${project.status}\n${extraContext}\n${project.memo ?? ''}\n${project.notes ?? ''}`
+  const ctx = `[프로젝트] ${project.name} · 상태: ${project.status}
+[고객] ${customer?.name ?? '미연결'}
+[계약] ${(contracts ?? []).map((c: any) => `${c.name} (${c.contract_stage ?? '계약'}, 매출 ${c.revenue?.toLocaleString() ?? '-'}원)`).join(' / ') || '없음'}
+${project.overview_summary ? `[자세한 개요]\n${project.overview_summary}\n` : ''}${project.pending_discussion_client ? `[클라 협의]\n${project.pending_discussion_client}\n` : ''}${project.pending_discussion_internal ? `[내부 협의]\n${project.pending_discussion_internal}\n` : ''}${project.pending_discussion_vendor ? `[외주 협의]\n${project.pending_discussion_vendor}\n` : ''}${project.memo ? `[메모]\n${project.memo}\n` : ''}${project.notes ? `[유의]\n${project.notes}\n` : ''}[최근 소통 5건]
+${(recentLogs ?? []).map((l: any) => `- [${l.log_type}] ${(l.contacted_at ?? '').slice(0, 10)}: ${l.content ?? ''}${l.outcome ? ` → ${l.outcome}` : ''}`).join('\n') || '없음'}`
 
-  const prompt = `너는 프로젝트 매니저야. 아래 정보를 보고 *2-4줄짜리* 핵심 요약을 작성해.
-누가 1초 안에 봐도 "지금 뭐 하는 프로젝트인지·어디까지 됐는지·다음 뭐 할 건지" 파악할 수 있게.
-표·bullet·헤더 사용 X. 평문 자연스러운 단락. 마크다운 코드블록 없이. 200자 이내.
+  const prompt = `너는 프로젝트 매니저 어시스턴트야. 아래 데이터를 보고 *프로젝트 한눈에 요약*을 정확히 아래 형식으로 작성해.
 
-${source}
+형식 (정확히 지킬 것 — markdown):
 
-출력 (평문, 2-4줄):`
+**한줄**
+[💰 가격·금액 핵심] · [🗓 일정·날짜 핵심] · [👤 핵심 담당자/거래처] · [🏷 분류·태그]
+
+**현황**
+지금 어디까지 진행됐고 무슨 조율 중인지 1-2문장.
+
+**반응**
+클라이언트의 태도·의견·우려 1문장. 정보 없으면 줄 자체 생략.
+
+**다음**
+다음에 *언제* *무엇*을 *누가* 해야 하는지 1문장.
+
+지침:
+- 한줄 칩 4개. 정보 없으면 \`[—]\`. 사실에 기반.
+- 추측·일반론 X. 데이터에 있는 사실만.
+- 표·헤더 추가 X. 위 4섹션만.
+- 마크다운 코드블록 없이.
+
+데이터:
+${ctx}
+
+출력:`
 
   const client = new Anthropic()
   const message = await client.messages.create({
     model: 'claude-sonnet-4-6',
-    max_tokens: 400,
+    max_tokens: 600,
     messages: [{ role: 'user', content: prompt }],
   })
   logApiUsage({ model: 'claude-sonnet-4-6', endpoint: 'project-short-summary', userId: user.id, inputTokens: message.usage.input_tokens, outputTokens: message.usage.output_tokens }).catch(() => {})
@@ -313,7 +336,16 @@ ${logSummary || '없음'}
 **📌 일정·중요 날짜**
 - 행사일, 납기, 마감 등
 
-해당 섹션 데이터 없으면 그 섹션은 빼. 표가 효과적이면 markdown 표 사용. 풍부하지만 군더더기 없이.`
+**💡 빵빵이 제안 (사람이 놓치기 쉬운 것)**
+- 데이터를 보고 *PM이 놓쳤을 만한* 항목 짚기. 예: 답변 안 한 메시지·미확인 일정·계약 단계와 진행 상태 불일치·메모와 실제 진행의 어긋남·일정 위험 등
+- 추측·일반론 X. 데이터에 근거한 항목만. 없으면 섹션 생략.
+
+해당 섹션 데이터 없으면 그 섹션은 빼. 표가 효과적이면 markdown 표 사용.
+
+**가독성 가이드**:
+- 각 섹션 사이 빈 줄 1개
+- bullet 문장은 짧고 명확. 한 줄에 한 개 사실.
+- 핵심 숫자·날짜·이름은 \`**굵게**\` 강조`
 
   const client = new Anthropic()
   const message = await client.messages.create({
@@ -541,16 +573,33 @@ export async function addProjectMember(projectId: string, profileId: string, rol
     .from('project_members')
     .insert({ project_id: projectId, profile_id: profileId, role })
   if (error) throw new Error(error.message)
+  // PM이면 projects.pm_id도 동기화 — /projects 목록은 projects.pm_id로 조회되므로
+  if (role === 'PM') {
+    await admin.from('projects').update({ pm_id: profileId, updated_at: new Date().toISOString() }).eq('id', projectId)
+    revalidatePath('/projects')
+  }
   revalidatePath(`/projects/${projectId}`)
 }
 
 export async function removeProjectMember(projectId: string, profileId: string) {
   const admin = createAdminClient()
+  // 기존 PM 여부 확인 (제거 후 projects.pm_id 동기화 판단용)
+  const { data: existing } = await admin
+    .from('project_members')
+    .select('role')
+    .eq('project_id', projectId)
+    .eq('profile_id', profileId)
+    .maybeSingle()
   await admin
     .from('project_members')
     .delete()
     .eq('project_id', projectId)
     .eq('profile_id', profileId)
+  // PM이 제거되면 projects.pm_id도 NULL
+  if (existing?.role === 'PM') {
+    await admin.from('projects').update({ pm_id: null, updated_at: new Date().toISOString() }).eq('id', projectId)
+    revalidatePath('/projects')
+  }
   revalidatePath(`/projects/${projectId}`)
 }
 

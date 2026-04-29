@@ -1189,7 +1189,9 @@ function ShortSummaryBox({ project }: { project: Project }) {
           </div>
         </div>
       ) : project.short_summary ? (
-        <p className="text-sm text-gray-800 leading-relaxed whitespace-pre-wrap">{project.short_summary}</p>
+        <div className="text-sm leading-relaxed [&_p]:mb-1 [&_strong]:text-yellow-900">
+          <MarkdownText>{project.short_summary}</MarkdownText>
+        </div>
       ) : (
         <p className="text-sm text-gray-400 italic">아직 한눈에 요약이 없어. 위 [🤖 자동 생성] 또는 [직접 수정] 클릭.</p>
       )}
@@ -1315,7 +1317,9 @@ function PendingDiscussionBox({ project }: { project: Project }) {
               </>
             ) : currentValue ? (
               <>
-                <MarkdownText>{currentValue}</MarkdownText>
+                <div className="text-sm leading-relaxed [&_h1]:text-base [&_h1]:font-bold [&_h1]:mt-2 [&_h1]:mb-1 [&_h2]:text-sm [&_h2]:font-bold [&_h2]:mt-2 [&_h2]:mb-1 [&_h3]:font-semibold [&_h3]:text-gray-700 [&_h3]:mt-1.5 [&_strong]:text-gray-900 [&_p]:mb-1.5 [&_ul]:my-1 [&_li]:my-0.5 [&_table]:my-2 [&_table]:text-xs">
+                  <MarkdownText>{currentValue}</MarkdownText>
+                </div>
                 <div className="flex gap-2 pt-1 border-t border-gray-50">
                   <button onClick={generate} disabled={generating}
                     className="text-[11px] text-blue-500 hover:text-blue-700 disabled:opacity-40">
@@ -1421,7 +1425,9 @@ function OverviewSummaryBox({ project }: { project: Project }) {
             </>
           ) : project.overview_summary ? (
             <>
-              <MarkdownText>{project.overview_summary}</MarkdownText>
+              <div className="text-sm leading-relaxed [&_h1]:text-base [&_h1]:font-bold [&_h1]:mt-3 [&_h1]:mb-1.5 [&_h2]:text-sm [&_h2]:font-bold [&_h2]:mt-3 [&_h2]:mb-1 [&_h3]:font-semibold [&_h3]:text-gray-700 [&_h3]:mt-2 [&_strong]:text-gray-900 [&_p]:mb-1.5 [&_ul]:my-1.5 [&_li]:my-0.5 [&_table]:my-2 [&_table]:text-xs [&_tr:nth-child(even)]:bg-gray-50/50">
+                <MarkdownText>{project.overview_summary}</MarkdownText>
+              </div>
               <div className="flex gap-2 pt-1 border-t border-gray-50">
                 <button onClick={generate} disabled={generating}
                   className="text-[11px] text-blue-500 hover:text-blue-700 disabled:opacity-40">
