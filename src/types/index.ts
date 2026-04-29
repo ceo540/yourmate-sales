@@ -269,3 +269,41 @@ export interface Customer {
   created_at: string
   updated_at: string
 }
+
+// 견적 (quotes / quote_items) — Step 2 추가
+export type QuoteStatus = 'draft' | 'sent' | 'accepted' | 'rejected' | 'cancelled'
+
+export interface Quote {
+  id: string
+  quote_number: string                   // 'YY-MM-NNN'
+  sale_id: string | null
+  project_id: string | null
+  lead_id: string | null
+  entity_id: string                      // business_entities.id
+  customer_id: string | null
+  client_dept: string | null
+  project_name: string
+  status: QuoteStatus
+  html_path: string | null
+  pdf_path: string | null
+  total_amount: number
+  vat_included: boolean
+  issue_date: string                     // 'YYYY-MM-DD'
+  notes: string | null
+  created_by: string | null
+  created_at: string
+  updated_at: string
+}
+
+export interface QuoteItem {
+  id: string
+  quote_id: string
+  sort_order: number
+  category: string | null
+  name: string
+  description: string | null
+  qty: number
+  unit_price: number
+  amount: number
+  created_at: string
+}
