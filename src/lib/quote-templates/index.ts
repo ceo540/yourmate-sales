@@ -12,10 +12,12 @@ import { JIJI_STUDIO_TEMPLATE } from './jiji-studio'
 import { DREAM_BNB_TEMPLATE } from './dream-bnb'
 
 // short_name → 템플릿 문자열
+// short_name은 business_entities 테이블 실제 값과 정확히 일치해야 함
+// (확인일 2026-04-29: '공공이코' / '지지' / '드림' 그대로)
 const TEMPLATES_BY_SHORT_NAME: Record<string, string> = {
   '공공이코': GONGGONG_ECO_TEMPLATE,
   '지지': JIJI_STUDIO_TEMPLATE,
-  '드림비앤비': DREAM_BNB_TEMPLATE,
+  '드림': DREAM_BNB_TEMPLATE,
 }
 
 export const SUPPORTED_ENTITY_SHORT_NAMES = Object.keys(TEMPLATES_BY_SHORT_NAME)

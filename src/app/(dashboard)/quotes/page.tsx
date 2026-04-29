@@ -3,6 +3,7 @@ import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import QuotesPageClient from './QuotesPageClient'
 import type { Quote } from '@/types'
+import { SUPPORTED_ENTITY_SHORT_NAMES } from '@/lib/quote-templates'
 
 export default async function QuotesPage() {
   const supabase = await createClient()
@@ -20,7 +21,7 @@ export default async function QuotesPage() {
     leadsRes,
   ] = await Promise.all([
     admin.from('quotes').select('*').order('created_at', { ascending: false }).limit(100),
-    admin.from('business_entities').select('id, name, short_name').eq('status', 'active').order('name'),
+    admin.from('business_entities').select('id, name, short_name').eq('status', 'active').in('short_name', SUPPORTED_ENTITY_SHORT_NAMES).order('name'),
     admin.from('customers').select('id, name').order('name'),
     admin.from('sales').select('id, name, client_org').order('created_at', { ascending: false }).limit(200),
     admin.from('projects').select('id, name, client_org').order('created_at', { ascending: false }).limit(200),
