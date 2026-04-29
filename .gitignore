@@ -36,6 +36,9 @@ yarn-error.log*
 # vercel
 .vercel
 
+# supabase CLI 부산물 (cli-latest, linked-project.json 등 자동 변경)
+supabase/.temp/
+
 # typescript
 *.tsbuildinfo
 next-env.d.ts
