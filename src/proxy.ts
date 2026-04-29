@@ -25,8 +25,12 @@ export async function proxy(request: NextRequest) {
 
   const { data: { user } } = await supabase.auth.getUser()
 
-  // 외부 웹훅 — 인증 없이 통과
+  // 외부 웹훅 — 인증 없이 통과 (라우트 자체에서 검증)
   if (request.nextUrl.pathname.startsWith('/api/channeltalk')) {
+    return NextResponse.next()
+  }
+  // Cron 라우트 — Vercel cron + 자체 Bearer 토큰 검증 (라우트 안에서)
+  if (request.nextUrl.pathname.startsWith('/api/cron')) {
     return NextResponse.next()
   }
 
