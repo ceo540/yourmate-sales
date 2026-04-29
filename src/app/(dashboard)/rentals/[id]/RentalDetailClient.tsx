@@ -2,6 +2,7 @@
 import { useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
 import { updateRental, updateRentalStatus, deleteRental, addRentalItem, removeRentalItem, updateRentalProject } from '../actions'
+import CustomerPicker, { type CustomerOption } from '@/components/CustomerPicker'
 
 const STATUS_STYLE: Record<string, string> = {
   유입:      'bg-gray-100 text-gray-600',
@@ -45,6 +46,7 @@ interface ProjectOption {
 
 interface Rental {
   id: string
+  customer_id: string | null
   customer_name: string
   contact_name: string | null
   phone: string | null
@@ -73,9 +75,11 @@ interface Props {
   profiles: { id: string; name: string }[]
   projects: ProjectOption[]
   linkedProject: ProjectOption | null
+  customers: CustomerOption[]
 }
 
-export default function RentalDetailClient({ rental, profiles, projects, linkedProject: initialLinkedProject }: Props) {
+export default function RentalDetailClient({ rental, profiles, projects, linkedProject: initialLinkedProject, customers: initialCustomers }: Props) {
+  const [customers, setCustomers] = useState<CustomerOption[]>(initialCustomers)
   const router = useRouter()
   const [isPending, startTransition] = useTransition()
   const [editing, setEditing] = useState(false)
@@ -118,6 +122,7 @@ export default function RentalDetailClient({ rental, profiles, projects, linkedP
     setContentSaved(true)
   }
   const [editForm, setEditForm] = useState({
+    customer_id: rental.customer_id ?? '',
     customer_name: rental.customer_name,
     contact_name: rental.contact_name ?? '',
     phone: rental.phone ?? '',
@@ -146,6 +151,7 @@ export default function RentalDetailClient({ rental, profiles, projects, linkedP
 
   async function handleSave() {
     const result = await updateRental(rental.id, {
+      customer_id: editForm.customer_id || null,
       customer_name: editForm.customer_name,
       contact_name: editForm.contact_name || null,
       phone: editForm.phone || null,
@@ -252,19 +258,25 @@ export default function RentalDetailClient({ rental, profiles, projects, linkedP
         <h2 className="text-sm font-semibold text-gray-700 mb-4">기본 정보</h2>
         {editing ? (
           <div className="space-y-3">
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <label className="block text-xs text-gray-500 mb-1">고객명</label>
-                <input value={editForm.customer_name} onChange={e => setEditForm(f => ({...f, customer_name: e.target.value}))}
-                  className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm" />
-              </div>
-              <div>
-                <label className="block text-xs text-gray-500 mb-1">구분</label>
-                <select value={editForm.customer_type} onChange={e => setEditForm(f => ({...f, customer_type: e.target.value}))}
-                  className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm">
-                  <option>기관</option><option>개인</option>
-                </select>
-              </div>
+            <div>
+              <label className="block text-xs text-gray-500 mb-1">기관</label>
+              <CustomerPicker
+                value={editForm.customer_id}
+                selectedName={editForm.customer_name}
+                customers={customers}
+                placeholder="🏛 기관 검색 (없으면 + 새 기관 추가)"
+                onChange={(id, name) => setEditForm(f => ({...f, customer_id: id, customer_name: name}))}
+                onCustomerCreated={(c) => {
+                  setCustomers(prev => [...prev, { id: c.id, name: c.name, type: c.type ?? null }])
+                }}
+              />
+            </div>
+            <div>
+              <label className="block text-xs text-gray-500 mb-1">구분</label>
+              <select value={editForm.customer_type} onChange={e => setEditForm(f => ({...f, customer_type: e.target.value}))}
+                className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm">
+                <option>기관</option><option>개인</option>
+              </select>
             </div>
             <div className="grid grid-cols-2 gap-3">
               <div>

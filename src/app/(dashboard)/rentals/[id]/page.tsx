@@ -23,7 +23,7 @@ export default async function RentalDetailPage({ params }: { params: Promise<{ i
     supabase.from('rental_items').select('*').eq('rental_id', id).order('created_at'),
     admin.from('profiles').select('id, name').order('name'),
     admin.from('projects').select('id, name, project_number, customer_id, status').order('created_at', { ascending: false }).limit(500),
-    admin.from('customers').select('id, name'),
+    admin.from('customers').select('id, name, type').order('name'),
   ])
 
   if (!rental) notFound()
@@ -51,10 +51,12 @@ export default async function RentalDetailPage({ params }: { params: Promise<{ i
         contact_3:     rental.contact_3 ?? null,
         items:         items ?? [],
         project_id:    rental.project_id ?? null,
+        customer_id:   rental.customer_id ?? null,
       }}
       linkedProject={linkedProject}
       projects={projects}
       profiles={profilesRaw ?? []}
+      customers={(customersRaw ?? []).map(c => ({ id: c.id, name: c.name, type: c.type ?? null }))}
     />
   )
 }

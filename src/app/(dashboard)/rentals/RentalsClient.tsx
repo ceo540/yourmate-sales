@@ -5,6 +5,7 @@ import {
   addRentalItem, removeRentalItem, addRentalContact, updateRentalChecklist,
 } from './actions'
 import { toLocalDateStr } from '@/lib/utils'
+import CustomerPicker, { type CustomerOption } from '@/components/CustomerPicker'
 
 // ─── 상수 ────────────────────────────────────────────────────────
 export const RENTAL_STATUSES = ['전체','유입','견적발송','렌탈확정','진행중','수거완료','검수중','완료','취소','보류'] as const
@@ -175,8 +176,9 @@ function getCalendarDays(year: number, month: number) {
 const DAYS_KO = ['일','월','화','수','목','금','토']
 
 // ─── 메인 컴포넌트 ───────────────────────────────────────────────
-export default function RentalsClient({ rentals: initialRentals, profiles, customers, projects }: Props) {
+export default function RentalsClient({ rentals: initialRentals, profiles, customers: initialCustomers, projects }: Props) {
   const [rentals, setRentals] = useState<Rental[]>(initialRentals)
+  const [customers, setCustomers] = useState(initialCustomers)
   const [selected, setSelected] = useState<Rental | null>(null)
   const [isPending, startTransition] = useTransition()
 
@@ -194,12 +196,6 @@ export default function RentalsClient({ rentals: initialRentals, profiles, custo
     title: '',
     project_id: '', project_name: '',
   })
-  const [customerSearch, setCustomerSearch] = useState('')
-  const [showCustomerDropdown, setShowCustomerDropdown] = useState(false)
-  const filteredCustomers = customerSearch.length > 0
-    ? customers.filter(c => c.name.toLowerCase().includes(customerSearch.toLowerCase())).slice(0, 8)
-    : customers.slice(0, 8)
-
   // 프로젝트 검색 (신규 등록 모달용)
   const [projectSearch, setProjectSearch] = useState('')
   const [showProjectDropdown, setShowProjectDropdown] = useState(false)
@@ -238,6 +234,10 @@ export default function RentalsClient({ rentals: initialRentals, profiles, custo
 
   // ─── 신규 등록 ───────────────────────────────────────────────
   async function handleCreate() {
+    if (!newForm.customer_id || !newForm.customer_name) {
+      alert('기관을 선택하거나 새로 추가해주세요.')
+      return
+    }
     const res = await createRental({
       customer_name: newForm.customer_name,
       customer_id: newForm.customer_id || undefined,
@@ -594,33 +594,20 @@ export default function RentalsClient({ rentals: initialRentals, profiles, custo
               <input className="w-full border rounded-lg px-3 py-2 text-sm" placeholder="제목 (예: 260301 대한초등학교)"
                 value={newForm.title} onChange={e => setNewForm(p => ({...p, title: e.target.value}))} />
 
-              {/* 고객 검색 */}
-              <div className="relative">
-                <input className="w-full border rounded-lg px-3 py-2 text-sm" placeholder="기관/고객명 검색"
-                  value={customerSearch}
-                  onChange={e => { setCustomerSearch(e.target.value); setShowCustomerDropdown(true) }}
-                  onFocus={() => setShowCustomerDropdown(true)} />
-                {showCustomerDropdown && filteredCustomers.length > 0 && (
-                  <div className="absolute top-full left-0 right-0 bg-white border rounded-lg shadow-lg z-10 max-h-40 overflow-y-auto">
-                    {filteredCustomers.map(c => (
-                      <div key={c.id} className="px-3 py-2 hover:bg-gray-50 cursor-pointer text-sm"
-                        onClick={() => {
-                          setNewForm(p => ({...p, customer_id: c.id, customer_name: c.name}))
-                          setCustomerSearch(c.name)
-                          setShowCustomerDropdown(false)
-                        }}>
-                        {c.name}
-                      </div>
-                    ))}
-                  </div>
-                )}
+              {/* 기관 검색 + 신규 추가 (CustomerPicker 통일) */}
+              <div>
+                <label className="text-xs text-gray-500 mb-1 block">기관 *</label>
+                <CustomerPicker
+                  value={newForm.customer_id}
+                  selectedName={newForm.customer_name}
+                  customers={customers}
+                  placeholder="🏛 기관 검색 (없으면 + 새 기관 추가)"
+                  onChange={(id, name) => setNewForm(p => ({...p, customer_id: id, customer_name: name}))}
+                  onCustomerCreated={(c: CustomerOption) => {
+                    setCustomers(prev => [...prev, { id: c.id, name: c.name, type: c.type ?? '' }])
+                  }}
+                />
               </div>
-
-              {/* 직접 입력 (검색 외) */}
-              {!newForm.customer_id && (
-                <input className="w-full border rounded-lg px-3 py-2 text-sm" placeholder="기관/고객명 직접 입력"
-                  value={newForm.customer_name} onChange={e => setNewForm(p => ({...p, customer_name: e.target.value}))} />
-              )}
 
               {/* 프로젝트 연결 (선택) — 한 프로젝트의 여러 배송건을 묶을 때 사용 */}
               <div className="relative">
