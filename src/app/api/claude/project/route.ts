@@ -389,6 +389,50 @@ ${logs && logs.length > 0 ? `\n## 최근 소통내역\n${logs.map(l => `- [${l.l
       },
     },
     {
+      name: 'update_quote',
+      description: '발행된 견적의 항목·금액·메모·상태를 수정. items는 *전체 새 list*. HTML 자동 재렌더링.',
+      input_schema: {
+        type: 'object' as const,
+        properties: {
+          quote_id: { type: 'string' },
+          project_name: { type: 'string' },
+          client_org: { type: 'string' },
+          client_dept: { type: 'string' },
+          client_manager: { type: 'string' },
+          items: {
+            type: 'array',
+            items: {
+              type: 'object',
+              properties: {
+                name: { type: 'string' },
+                description: { type: 'string' },
+                qty: { type: 'number' },
+                unit_price: { type: 'number' },
+                category: { type: 'string' },
+              },
+              required: ['name', 'qty', 'unit_price'],
+            },
+          },
+          notes: { type: 'string' },
+          vat_included: { type: 'boolean' },
+          status: { type: 'string', enum: ['draft', 'sent', 'accepted', 'rejected', 'cancelled'] },
+        },
+        required: ['quote_id'],
+      },
+    },
+    {
+      name: 'list_quotes',
+      description: '현재 컨텍스트(project/sale/lead)의 발행 견적 목록. 수정 전 quote_id 찾기용.',
+      input_schema: {
+        type: 'object' as const,
+        properties: {
+          sale_id: { type: 'string' },
+          project_id: { type: 'string' },
+          lead_id: { type: 'string' },
+        },
+      },
+    },
+    {
       name: 'update_short_summary',
       description: '한눈에 박스(short_summary)를 평문 2-4줄로 덮어쓰기.',
       input_schema: {
@@ -890,6 +934,39 @@ ${logs && logs.length > 0 ? `\n## 최근 소통내역\n${logs.map(l => `- [${l.l
                   result = `견적 생성 실패: ${r.error}`
                 }
               }
+
+            } else if (block.name === 'update_quote') {
+              send('\n*(견적 수정 중...)*\n')
+              const { updateQuote } = await import('@/app/(dashboard)/quotes/actions')
+              const r = await updateQuote({
+                quote_id: input.quote_id as string,
+                project_name: input.project_name as string | undefined,
+                client_org: input.client_org as string | undefined,
+                client_dept: input.client_dept as string | undefined,
+                client_manager: input.client_manager as string | undefined,
+                items: input.items as unknown as Array<{ name: string; description?: string; qty: number; unit_price: number; category?: string }> | undefined,
+                notes: input.notes as string | undefined,
+                vat_included: input.vat_included as unknown as boolean | undefined,
+                status: input.status as 'draft' | 'sent' | 'accepted' | 'rejected' | 'cancelled' | undefined,
+              })
+              if (r.ok) {
+                result = `견적 ${r.quote_number} 수정됨${r.html_path ? ` (Dropbox: ${r.html_path})` : ''}${r.warning ? ` · ${r.warning}` : ''}`
+                if (projectId) revalidatePath(`/projects/${projectId}`)
+                revalidate()
+              } else {
+                result = `견적 수정 실패: ${r.error}`
+              }
+
+            } else if (block.name === 'list_quotes') {
+              const { listQuotes } = await import('@/app/(dashboard)/quotes/actions')
+              const filter: { sale_id?: string; project_id?: string; lead_id?: string } = {}
+              if (input.sale_id) filter.sale_id = input.sale_id as string
+              if (input.project_id) filter.project_id = input.project_id as string
+              else if (projectId) filter.project_id = projectId
+              if (input.lead_id) filter.lead_id = input.lead_id as string
+              const quotes = await listQuotes(filter)
+              const lines = quotes.map(q => `- ${q.quote_number} · ${q.project_name} · ${Number(q.total_amount).toLocaleString()}원 · ${q.status} (id: ${q.id})`).join('\n')
+              result = quotes.length > 0 ? `견적 ${quotes.length}건:\n${lines}` : '발행된 견적 없음.'
 
             } else if (block.name === 'update_short_summary') {
               if (!projectId) {

@@ -13,7 +13,7 @@ const MUTATING_TOOLS = new Set([
   'create_project_task', 'complete_task', 'update_task', 'delete_task',
   'regenerate_overview', 'update_overview', 'update_pending_discussion', 'regenerate_pending_discussion',
   'update_short_summary', 'regenerate_short_summary',
-  'create_quote',
+  'create_quote', 'update_quote',
   'update_lead_summary', 'regenerate_lead_summary',
   'quick_create_customer', 'merge_customers', 'match_sale_to_customer', 'match_lead_to_customer',
 ])
@@ -1333,6 +1333,50 @@ async function executeTool(name: string, input: Record<string, unknown>, userRol
       quote_number: result.quote_number,
       html_path: result.html_path,
       message: `견적 ${result.quote_number} 생성됨${result.warning ? ` (${result.warning})` : ''}`,
+    }
+  }
+
+  if (name === 'update_quote') {
+    const { updateQuote } = await import('@/app/(dashboard)/quotes/actions')
+    const result = await updateQuote({
+      quote_id: input.quote_id as string,
+      project_name: input.project_name as string | undefined,
+      client_org: input.client_org as string | undefined,
+      client_dept: input.client_dept as string | undefined,
+      client_manager: input.client_manager as string | undefined,
+      items: input.items as Array<{ name: string; description?: string; qty: number; unit_price: number; category?: string }> | undefined,
+      notes: input.notes as string | undefined,
+      vat_included: input.vat_included as boolean | undefined,
+      status: input.status as 'draft' | 'sent' | 'accepted' | 'rejected' | 'cancelled' | undefined,
+    })
+    if (!result.ok) return { error: result.error }
+    return {
+      success: true,
+      quote_number: result.quote_number,
+      html_path: result.html_path,
+      message: `견적 ${result.quote_number} 수정됨${result.warning ? ` (${result.warning})` : ''}`,
+    }
+  }
+
+  if (name === 'list_quotes') {
+    const { listQuotes } = await import('@/app/(dashboard)/quotes/actions')
+    const filter: { sale_id?: string; project_id?: string; lead_id?: string } = {}
+    if (input.sale_id) filter.sale_id = input.sale_id as string
+    if (input.project_id) filter.project_id = input.project_id as string
+    else if (projectId) filter.project_id = projectId
+    if (input.lead_id) filter.lead_id = input.lead_id as string
+    const quotes = await listQuotes(filter)
+    return {
+      success: true,
+      count: quotes.length,
+      quotes: quotes.map(q => ({
+        quote_id: q.id,
+        quote_number: q.quote_number,
+        project_name: q.project_name,
+        total: q.total_amount,
+        status: q.status,
+        created_at: q.created_at,
+      })),
     }
   }
 

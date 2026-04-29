@@ -476,6 +476,51 @@ export const TOOLS: Anthropic.Tool[] = [
     },
   },
   {
+    name: 'update_quote',
+    description: `발행된 견적의 항목·금액·메모·상태를 수정합니다. "이 견적 부가세 별도로 다시 뽑아줘", "사회자 빼고 다시", "할인 추가" 같은 자연어 요청 시 호출. items 인자는 *전체 새 항목 list*. 기존 항목 수정만 원해도 *전체 list 다시 보냄*. HTML 자동 재렌더링·Dropbox 재저장.`,
+    input_schema: {
+      type: 'object' as const,
+      properties: {
+        quote_id: { type: 'string', description: '수정할 견적 UUID. 모르면 list_quotes 또는 사용자에게 quote_number 받기' },
+        project_name: { type: 'string' },
+        client_org: { type: 'string' },
+        client_dept: { type: 'string' },
+        client_manager: { type: 'string' },
+        items: {
+          type: 'array',
+          description: '*전체* 새 항목 list. 부분 수정도 list 그대로 다시 보냄. 미지정 시 기존 항목 유지.',
+          items: {
+            type: 'object',
+            properties: {
+              name: { type: 'string' },
+              description: { type: 'string' },
+              qty: { type: 'number' },
+              unit_price: { type: 'number' },
+              category: { type: 'string' },
+            },
+            required: ['name', 'qty', 'unit_price'],
+          },
+        },
+        notes: { type: 'string' },
+        vat_included: { type: 'boolean' },
+        status: { type: 'string', enum: ['draft', 'sent', 'accepted', 'rejected', 'cancelled'], description: '발송됨/수주/실주 등 상태 변경' },
+      },
+      required: ['quote_id'],
+    },
+  },
+  {
+    name: 'list_quotes',
+    description: '현재 컨텍스트(project/sale/lead)의 발행 견적 목록 조회. 수정 전 quote_id 찾기용.',
+    input_schema: {
+      type: 'object' as const,
+      properties: {
+        sale_id: { type: 'string' },
+        project_id: { type: 'string' },
+        lead_id: { type: 'string' },
+      },
+    },
+  },
+  {
     name: 'update_short_summary',
     description: '현재 프로젝트의 짧은 요약(short_summary, 한눈에 박스)을 직접 작성한 평문으로 덮어쓰기. 자동 생성은 regenerate_short_summary.',
     input_schema: {

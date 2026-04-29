@@ -236,6 +236,194 @@ export async function listQuotes(filter: ListQuotesFilter = {}) {
   return data ?? []
 }
 
+// ── updateQuote ─────────────────────────────────────────────────
+// 발행된 견적의 항목·금액·메모 수정. 새 HTML 다시 렌더링·Dropbox 재저장.
+
+export interface UpdateQuoteInput {
+  quote_id: string
+  project_name?: string
+  client_org?: string
+  client_dept?: string
+  client_manager?: string
+  items?: CreateQuoteItem[]   // 전체 교체. 부분 수정은 list 그대로 다시 보냄
+  notes?: string
+  vat_included?: boolean
+  status?: 'draft' | 'sent' | 'accepted' | 'rejected' | 'cancelled'
+}
+
+export type UpdateQuoteResult =
+  | { ok: true; quote_id: string; quote_number: string; html_path: string | null; warning?: string }
+  | { ok: false; error: string }
+
+export async function updateQuote(input: UpdateQuoteInput): Promise<UpdateQuoteResult> {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return { ok: false, error: '로그인 필요' }
+
+  const admin = createAdminClient()
+
+  // 1. 기존 견적 + 항목 fetch
+  const { data: quote, error: qErr } = await admin
+    .from('quotes')
+    .select('*')
+    .eq('id', input.quote_id)
+    .single()
+  if (qErr || !quote) return { ok: false, error: `견적 없음: ${input.quote_id}` }
+
+  const { data: existingItems } = await admin
+    .from('quote_items')
+    .select('*')
+    .eq('quote_id', input.quote_id)
+    .order('sort_order')
+
+  // 2. entity 정보 fetch (HTML 렌더용)
+  const { data: entity } = await admin
+    .from('business_entities')
+    .select('id, name, short_name, business_number, representative_name, address, bank_name, account_number, account_holder')
+    .eq('id', quote.entity_id)
+    .single()
+  if (!entity?.short_name) return { ok: false, error: '사업자 정보 누락' }
+
+  // 3. 변경된 필드 적용
+  const newItems = input.items ?? (existingItems ?? []).map((it: any) => ({
+    name: it.name,
+    description: it.description ?? undefined,
+    qty: Number(it.qty),
+    unit_price: Number(it.unit_price),
+    amount: Number(it.amount),
+    category: it.category ?? undefined,
+  }))
+
+  const items = newItems.map(it => ({
+    ...it,
+    amount: it.amount ?? Math.round(it.qty * it.unit_price),
+  }))
+  const itemsTotal = items.reduce((s, it) => s + it.amount, 0)
+  const vatIncluded = input.vat_included ?? quote.vat_included ?? true
+  const supply = vatIncluded ? Math.round(itemsTotal / 1.1) : itemsTotal
+  const vat = vatIncluded ? itemsTotal - supply : Math.round(supply * 0.1)
+  const total = supply + vat
+
+  // 4. 헤더 update
+  const headerPatch: Record<string, unknown> = {
+    total_amount: total,
+    vat_included: vatIncluded,
+  }
+  if (input.project_name !== undefined) headerPatch.project_name = input.project_name
+  if (input.client_dept !== undefined) headerPatch.client_dept = input.client_dept
+  if (input.notes !== undefined) headerPatch.notes = input.notes
+  if (input.status !== undefined) headerPatch.status = input.status
+  await admin.from('quotes').update(headerPatch).eq('id', input.quote_id)
+
+  // 5. 항목 변경됐으면 전체 교체
+  if (input.items) {
+    await admin.from('quote_items').delete().eq('quote_id', input.quote_id)
+    const itemRows = items.map((it, i) => ({
+      quote_id: input.quote_id,
+      sort_order: i,
+      category: it.category ?? null,
+      name: it.name,
+      description: it.description ?? null,
+      qty: it.qty,
+      unit_price: it.unit_price,
+      amount: it.amount,
+    }))
+    await admin.from('quote_items').insert(itemRows)
+  }
+
+  // 6. HTML 재렌더 + Dropbox 재저장
+  const issueDate = new Date(quote.issue_date)
+  const dateStr = `${issueDate.getFullYear()}년 ${issueDate.getMonth() + 1}월 ${issueDate.getDate()}일`
+  const clientOrg = input.client_org ?? quote.client_dept ?? '미지정'   // 정확히는 client_org를 별 컬럼에 둬야 하지만 quote에 client_org 컬럼 없음 — sale/project에서 가져와야 함
+  // 실제 client_org는 quotes 테이블에 컬럼 X. createQuote 흐름 그대로 fetch 필요.
+  let realClientOrg = input.client_org ?? ''
+  if (!realClientOrg) {
+    if (quote.sale_id) {
+      const { data: sale } = await admin.from('sales').select('client_org').eq('id', quote.sale_id).maybeSingle()
+      realClientOrg = sale?.client_org ?? ''
+    } else if (quote.project_id) {
+      const { data: project } = await admin.from('projects').select('client_org').eq('id', quote.project_id).maybeSingle()
+      realClientOrg = project?.client_org ?? ''
+    } else if (quote.lead_id) {
+      const { data: lead } = await admin.from('leads').select('client_org').eq('id', quote.lead_id).maybeSingle()
+      realClientOrg = lead?.client_org ?? ''
+    }
+  }
+
+  const quoteData: QuoteData = {
+    quote_number: quote.quote_number,
+    date: dateStr,
+    client_org: realClientOrg || '미지정',
+    client_dept: input.client_dept ?? quote.client_dept ?? undefined,
+    client_manager: input.client_manager ?? undefined,
+    project_name: input.project_name ?? quote.project_name,
+    items: items.map<QuoteItemInput>(it => ({
+      name: it.name,
+      description: it.description,
+      qty: it.qty,
+      unit_price: it.unit_price,
+      amount: it.amount,
+    })),
+    subtotal: supply,
+    vat,
+    total,
+    notes: input.notes ?? quote.notes ?? undefined,
+    entity: {
+      name: entity.name,
+      business_number: entity.business_number ?? '',
+      representative: entity.representative_name ?? undefined,
+      address: entity.address ?? '',
+      bank_name: entity.bank_name ?? undefined,
+      account_number: entity.account_number ?? undefined,
+      account_holder: entity.account_holder ?? undefined,
+    },
+  }
+  const html = renderQuoteHtml({ entityShortName: entity.short_name, data: quoteData })
+
+  // 7. Dropbox 재저장 (있을 때만)
+  let htmlPath = quote.html_path
+  let warning: string | undefined
+  let dropboxUrl: string | null = null
+  if (quote.sale_id) {
+    const { data: sale } = await admin.from('sales').select('dropbox_url').eq('id', quote.sale_id).maybeSingle()
+    dropboxUrl = sale?.dropbox_url ?? null
+  } else if (quote.project_id) {
+    const { data: project } = await admin.from('projects').select('dropbox_url').eq('id', quote.project_id).maybeSingle()
+    dropboxUrl = project?.dropbox_url ?? null
+  }
+
+  if (dropboxUrl) {
+    const safeOrg = (realClientOrg || '미지정').replace(/[\\/:*?"<>|\n\r\t]/g, '_').slice(0, 60)
+    const filename = `${quote.quote_number}_${safeOrg}.html`
+    const subResult = await ensureSubFolderPath(dropboxUrl, '0 행정/견적')
+    const targetWebUrl = subResult.ok ? subResult.webUrl : dropboxUrl
+    const uploadResult = await uploadTextFile({
+      folderWebUrl: targetWebUrl,
+      filename,
+      content: html,
+    })
+    if (uploadResult.ok) {
+      htmlPath = uploadResult.savedPath ?? htmlPath
+      await admin.from('quotes').update({ html_path: htmlPath }).eq('id', input.quote_id)
+    } else {
+      warning = `Dropbox 재저장 실패: ${uploadResult.error}`
+    }
+  }
+
+  revalidatePath('/quotes')
+  if (quote.sale_id) revalidatePath(`/sales/${quote.sale_id}`)
+  if (quote.project_id) revalidatePath(`/projects/${quote.project_id}`)
+  if (quote.lead_id) revalidatePath(`/leads/${quote.lead_id}`)
+
+  return {
+    ok: true,
+    quote_id: input.quote_id,
+    quote_number: quote.quote_number,
+    html_path: htmlPath,
+    warning,
+  }
+}
+
 // ── deleteQuote ─────────────────────────────────────────────────
 
 export async function deleteQuote(id: string): Promise<{ ok: true } | { ok: false; error: string }> {
