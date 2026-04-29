@@ -57,6 +57,8 @@ import {
   updateProjectStatus,
   addProjectMember,
   removeProjectMember,
+  updateProjectContactPerson,
+  createPersonAndLinkToProject,
 } from './project-actions'
 import { updateTask, deleteTask } from '../../sales/tasks/actions'
 import { searchCalendarEvents } from '../../leads/actions'
@@ -76,6 +78,7 @@ interface Project {
   work_description: string | null
   pending_discussion: string | null
   customer_id: string | null
+  contact_person_id: string | null
   pm_id: string | null
   linked_calendar_events: LinkedCalEvent[] | null
 }
@@ -84,8 +87,11 @@ interface Customer {
   contact_name: string | null; phone: string | null; contact_email: string | null
 }
 interface ContactPerson {
-  name: string; dept: string | null; title: string | null
+  id: string; name: string; dept: string | null; title: string | null
   phone: string | null; email: string | null
+}
+interface CustomerPersonOpt {
+  id: string; name: string; dept: string | null; title: string | null
 }
 interface Finance {
   revenue: number; cost: number; received: number; contractCount: number
@@ -161,6 +167,7 @@ interface Props {
   currentUserId: string
   members: { profile_id: string; role: string; name: string }[]
   customersAll: { id: string; name: string; type: string | null }[]
+  customerPersons: CustomerPersonOpt[]
   memos: Memo[]
   entities: BusinessEntity[]
 }
@@ -214,7 +221,7 @@ function KpiPill({ icon, label, value, tone }: { icon: string; label: string; va
 export default function ProjectV2Client({
   project, pmName, customer, contactPerson, finance,
   contracts, tasks, logs, rentals, leadIds, profiles, currentUserId,
-  members, customersAll, memos, entities,
+  members, customersAll, customerPersons, memos, entities,
 }: Props) {
   const [showSettings, setShowSettings] = useState(false)
   const [editingStatus, setEditingStatus] = useState(false)
@@ -407,7 +414,7 @@ export default function ProjectV2Client({
           <BbangiCard project={project} contracts={contracts} tasks={tasks} logs={logs} currentUserId={currentUserId} leadIds={leadIds} />
 
           {/* 📋 기본정보 — V1.4 */}
-          <BasicInfoCard customer={customer} contactPerson={contactPerson} pmName={pmName} project={project} customersAll={customersAll} />
+          <BasicInfoCard customer={customer} contactPerson={contactPerson} pmName={pmName} project={project} customersAll={customersAll} customerPersons={customerPersons} />
 
           {/* 💰 재무 요약 — V1.5 */}
           <FinanceCard finance={finance} profitRate={profitRate} receivedRate={receivedRate} />
@@ -635,9 +642,139 @@ function ProjectMemberChips({ projectId, members, profiles, pmName }: {
   )
 }
 
-function BasicInfoCard({ customer, contactPerson, pmName, project, customersAll }: {
+function ContactPersonSection({ customer, contactPerson, customerPersons, projectId }: {
+  customer: Customer | null
+  contactPerson: ContactPerson | null
+  customerPersons: CustomerPersonOpt[]
+  projectId: string
+}) {
+  const [editing, setEditing] = useState(false)
+  const [pending, startTransition] = useTransition()
+  const [draftPersonId, setDraftPersonId] = useState<string>('')
+  const [newName, setNewName] = useState('')
+  const [newPhone, setNewPhone] = useState('')
+  const [newEmail, setNewEmail] = useState('')
+  const [newDept, setNewDept] = useState('')
+  const [newTitle, setNewTitle] = useState('')
+
+  useEffect(() => {
+    if (editing) {
+      setDraftPersonId(contactPerson?.id ?? '')
+      setNewName(''); setNewPhone(''); setNewEmail(''); setNewDept(''); setNewTitle('')
+    }
+  }, [editing, contactPerson?.id])
+
+  const handleSave = () => {
+    if (draftPersonId === 'new') {
+      if (!customer) { alert('고객사가 먼저 연결되어야 새 담당자 등록 가능'); return }
+      if (!newName.trim()) { alert('이름은 필수'); return }
+      startTransition(async () => {
+        const res = await createPersonAndLinkToProject({
+          projectId,
+          customerId: customer.id,
+          name: newName,
+          phone: newPhone,
+          email: newEmail,
+          dept: newDept,
+          title: newTitle,
+        })
+        if (!res.ok) { alert(res.error); return }
+        setEditing(false)
+      })
+      return
+    }
+    if (draftPersonId === (contactPerson?.id ?? '')) {
+      setEditing(false)
+      return
+    }
+    startTransition(async () => {
+      await updateProjectContactPerson(projectId, draftPersonId || null)
+      setEditing(false)
+    })
+  }
+
+  if (!customer && !contactPerson) return null
+
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-0.5">
+        <p className="text-[10px] text-gray-400">고객</p>
+        {!editing && customer && (
+          <button onClick={() => setEditing(true)} className="text-[10px] text-blue-500 hover:text-blue-700">
+            변경
+          </button>
+        )}
+      </div>
+      {editing ? (
+        <div className="space-y-1.5">
+          <select
+            value={draftPersonId}
+            onChange={e => setDraftPersonId(e.target.value)}
+            disabled={pending}
+            autoFocus
+            className="w-full text-xs border border-gray-200 rounded px-2 py-1"
+          >
+            <option value="">-- 미지정 (자동 fallback) --</option>
+            {customerPersons.map(p => (
+              <option key={p.id} value={p.id}>
+                {p.name}{p.title ? ` (${p.title})` : ''}{p.dept ? ` · ${p.dept}` : ''}
+              </option>
+            ))}
+            <option value="new">+ 새 담당자 등록</option>
+          </select>
+          {draftPersonId === 'new' && (
+            <div className="space-y-1 bg-gray-50 rounded p-2">
+              <input value={newName} onChange={e => setNewName(e.target.value)} placeholder="이름 *" className="w-full text-xs border border-gray-200 rounded px-2 py-1" />
+              <div className="flex gap-1">
+                <input value={newDept} onChange={e => setNewDept(e.target.value)} placeholder="부서" className="flex-1 text-xs border border-gray-200 rounded px-2 py-1" />
+                <input value={newTitle} onChange={e => setNewTitle(e.target.value)} placeholder="직급" className="flex-1 text-xs border border-gray-200 rounded px-2 py-1" />
+              </div>
+              <input value={newPhone} onChange={e => setNewPhone(e.target.value)} placeholder="연락처" className="w-full text-xs border border-gray-200 rounded px-2 py-1" />
+              <input value={newEmail} onChange={e => setNewEmail(e.target.value)} placeholder="이메일" className="w-full text-xs border border-gray-200 rounded px-2 py-1" />
+            </div>
+          )}
+          <div className="flex gap-1">
+            <button onClick={handleSave} disabled={pending} className="text-[10px] px-2 py-0.5 bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50">
+              {pending ? '저장 중…' : '저장'}
+            </button>
+            <button onClick={() => setEditing(false)} disabled={pending} className="text-[10px] px-2 py-0.5 text-gray-500 hover:text-gray-700">
+              취소
+            </button>
+          </div>
+        </div>
+      ) : contactPerson ? (
+        <>
+          <p className="text-sm font-medium text-gray-800">
+            {contactPerson.name}
+            {contactPerson.title && <span className="text-gray-400 font-normal ml-1">· {contactPerson.title}</span>}
+          </p>
+          {contactPerson.dept && (
+            <p className="text-[11px] text-gray-500">{contactPerson.dept}</p>
+          )}
+          {contactPerson.phone && (
+            <p className="text-[11px] text-gray-400">{contactPerson.phone}</p>
+          )}
+          {contactPerson.email && (
+            <p className="text-[11px] text-gray-400 truncate">{contactPerson.email}</p>
+          )}
+        </>
+      ) : customer?.contact_name ? (
+        <>
+          <p className="text-sm font-medium text-gray-800">{customer.contact_name}</p>
+          {customer.phone && <p className="text-[11px] text-gray-400">{customer.phone}</p>}
+          {customer.contact_email && <p className="text-[11px] text-gray-400 truncate">{customer.contact_email}</p>}
+        </>
+      ) : (
+        <p className="text-sm text-gray-400">미지정</p>
+      )}
+    </div>
+  )
+}
+
+function BasicInfoCard({ customer, contactPerson, pmName, project, customersAll, customerPersons }: {
   customer: Customer | null; contactPerson: ContactPerson | null; pmName: string | null; project: Project
   customersAll: { id: string; name: string; type: string | null }[]
+  customerPersons: CustomerPersonOpt[]
 }) {
   const [editingCustomer, setEditingCustomer] = useState(false)
   const [pendingCustomer, startCustomerTransition] = useTransition()
@@ -714,24 +851,13 @@ function BasicInfoCard({ customer, contactPerson, pmName, project, customersAll 
         )}
       </div>
 
-      {(contactPerson || customer?.contact_name) && (
-        <div>
-          <p className="text-[10px] text-gray-400 mb-0.5">고객</p>
-          <p className="text-sm font-medium text-gray-800">
-            {contactPerson?.name ?? customer?.contact_name}
-            {contactPerson?.title && <span className="text-gray-400 font-normal ml-1">· {contactPerson.title}</span>}
-          </p>
-          {contactPerson?.dept && (
-            <p className="text-[11px] text-gray-500">{contactPerson.dept}</p>
-          )}
-          {(contactPerson?.phone || customer?.phone) && (
-            <p className="text-[11px] text-gray-400">{contactPerson?.phone ?? customer?.phone}</p>
-          )}
-          {(contactPerson?.email || customer?.contact_email) && (
-            <p className="text-[11px] text-gray-400 truncate">{contactPerson?.email ?? customer?.contact_email}</p>
-          )}
-        </div>
-      )}
+      <ContactPersonSection
+        customer={customer}
+        contactPerson={contactPerson}
+        customerPersons={customerPersons}
+        projectId={project.id}
+      />
+
 
       {pmName && (
         <div>

@@ -72,8 +72,38 @@ export default async function ProjectPage({ params }: { params: Promise<{ id: st
   const pmId = pmMember?.profile_id ?? project.pm_id ?? null
   const pmName = pmId ? (profileNameMap[pmId] ?? null) : null
 
-  let contactPerson: { name: string; dept: string | null; title: string | null; phone: string | null; email: string | null } | null = null
-  if (project.customer_id) {
+  let contactPerson: { id: string; name: string; dept: string | null; title: string | null; phone: string | null; email: string | null } | null = null
+  if (project.contact_person_id) {
+    // 프로젝트별로 명시적 지정된 person
+    const { data: person } = await admin
+      .from('persons')
+      .select('id, name, phone, email')
+      .eq('id', project.contact_person_id)
+      .maybeSingle()
+    if (person) {
+      let dept: string | null = null
+      let title: string | null = null
+      if (project.customer_id) {
+        const { data: rel } = await admin
+          .from('person_org_relations')
+          .select('dept, title')
+          .eq('customer_id', project.customer_id)
+          .eq('person_id', person.id)
+          .maybeSingle()
+        dept = rel?.dept ?? null
+        title = rel?.title ?? null
+      }
+      contactPerson = {
+        id: person.id,
+        name: person.name,
+        dept,
+        title,
+        phone: person.phone ?? null,
+        email: person.email ?? null,
+      }
+    }
+  } else if (project.customer_id) {
+    // fallback: customer 안의 is_current=true person 1명 (기존 동작)
     const { data: rels } = await admin
       .from('person_org_relations')
       .select('dept, title, persons(id, name, phone, email)')
@@ -83,6 +113,7 @@ export default async function ProjectPage({ params }: { params: Promise<{ id: st
     const rel = (rels as any[])?.[0]
     if (rel?.persons) {
       contactPerson = {
+        id: rel.persons.id,
         name: rel.persons.name,
         dept: rel.dept ?? null,
         title: rel.title ?? null,
@@ -90,6 +121,18 @@ export default async function ProjectPage({ params }: { params: Promise<{ id: st
         email: rel.persons.email ?? null,
       }
     }
+  }
+
+  // customer 안의 person list (PersonPicker용)
+  let customerPersons: { id: string; name: string; dept: string | null; title: string | null }[] = []
+  if (project.customer_id) {
+    const { data: rels } = await admin
+      .from('person_org_relations')
+      .select('dept, title, persons(id, name)')
+      .eq('customer_id', project.customer_id)
+    customerPersons = ((rels as any[]) ?? [])
+      .filter(r => r.persons)
+      .map(r => ({ id: r.persons.id, name: r.persons.name, dept: r.dept ?? null, title: r.title ?? null }))
   }
 
   const logs = (logsRaw ?? []).map(l => ({
@@ -124,9 +167,11 @@ export default async function ProjectPage({ params }: { params: Promise<{ id: st
         work_description: project.work_description ?? null,
         pending_discussion: project.pending_discussion ?? null,
         customer_id: project.customer_id ?? null,
+        contact_person_id: project.contact_person_id ?? null,
         pm_id: pmId,
         linked_calendar_events: project.linked_calendar_events ?? null,
       }}
+      customerPersons={customerPersons}
       pmName={pmName}
       customer={customer ? { id: customer.id, name: customer.name, type: customer.type ?? null, contact_name: customer.contact_name ?? null, phone: customer.phone ?? null, contact_email: customer.contact_email ?? null } : null}
       contactPerson={contactPerson}

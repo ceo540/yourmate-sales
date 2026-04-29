@@ -522,8 +522,58 @@ export async function updateProjectStatus(projectId: string, status: string): Pr
 
 export async function linkProjectCustomer(projectId: string, customerId: string) {
   const admin = createAdminClient()
-  await admin.from('projects').update({ customer_id: customerId || null }).eq('id', projectId)
+  // customer 변경 시 contact_person_id도 리셋 (옛 customer의 person이 잘못 연결되는 것 방지)
+  await admin.from('projects').update({ customer_id: customerId || null, contact_person_id: null }).eq('id', projectId)
   revalidatePath(`/projects/${projectId}`)
+}
+
+// 프로젝트별 담당자(person) 명시 지정. NULL이면 customer의 is_current=true person으로 fallback.
+export async function updateProjectContactPerson(projectId: string, personId: string | null) {
+  const admin = createAdminClient()
+  await admin.from('projects').update({ contact_person_id: personId }).eq('id', projectId)
+  revalidatePath(`/projects/${projectId}`)
+}
+
+// customer 안에 새 person 등록 + person_org_relations 연결 + 그 person을 프로젝트 담당자로 지정.
+// PersonPicker [+ 새 담당자 등록] 흐름.
+export async function createPersonAndLinkToProject(params: {
+  projectId: string
+  customerId: string
+  name: string
+  phone?: string
+  email?: string
+  dept?: string
+  title?: string
+}): Promise<{ ok: true; personId: string } | { ok: false; error: string }> {
+  if (!params.name.trim()) return { ok: false, error: '이름 필수' }
+  const admin = createAdminClient()
+
+  const { data: person, error: personErr } = await admin
+    .from('persons')
+    .insert({
+      name: params.name.trim(),
+      phone: params.phone?.trim() || null,
+      email: params.email?.trim() || null,
+    })
+    .select('id')
+    .single()
+  if (personErr || !person) return { ok: false, error: `person 생성 실패: ${personErr?.message ?? ''}` }
+
+  const { error: relErr } = await admin.from('person_org_relations').insert({
+    customer_id: params.customerId,
+    person_id: person.id,
+    dept: params.dept?.trim() || null,
+    title: params.title?.trim() || null,
+    is_current: false,
+  })
+  if (relErr) {
+    // person은 생성됨. 관계 생성 실패는 비치명적이지만 사용자에게 알림.
+    return { ok: false, error: `person_org_relations 생성 실패: ${relErr.message}` }
+  }
+
+  await admin.from('projects').update({ contact_person_id: person.id }).eq('id', params.projectId)
+  revalidatePath(`/projects/${params.projectId}`)
+  return { ok: true, personId: person.id }
 }
 
 export async function updateProjectServiceType(projectId: string, serviceType: string | null): Promise<{ error?: string }> {
