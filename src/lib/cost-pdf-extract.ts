@@ -8,7 +8,7 @@ export interface ExtractedCostRow {
   vendor_business_number: string | null
   due_date: string | null   // YYYY-MM-DD
   source_pdf: string
-  doc_type: '견적서' | '세금계산서' | '거래명세서' | '이체확인증' | '기타'
+  doc_type: '견적서' | '세금계산서' | '거래명세서' | '이체확인증' | '계약서' | '기타'
 }
 
 export interface PdfTextInput {
@@ -33,16 +33,18 @@ export async function extractCostsFromPdfTexts(
   const prompt = `오늘: ${today}
 
 아래는 한 프로젝트의 "원가" 폴더에 있는 PDF들에서 추출한 텍스트야.
-종류: 견적서·세금계산서·거래명세서·이체확인증 등이 섞여 있어.
+종류: 견적서·세금계산서·거래명세서·이체확인증·계약서(임대차/외주/용역) 등이 섞여 있어.
 
 같은 거래(같은 거래처·같은 항목)가 여러 PDF에 중복으로 나올 수 있음. 한 건으로 통합해서 출력해.
 
 통합 규칙:
 - 견적서를 가장 신뢰. 항목명·금액 기본은 견적서에서.
+- 계약서(임대차·외주·용역 등)도 1차 신뢰 — 계약 금액과 지급 조건이 명시됨. 견적서와 동급으로 취급.
 - 이체확인증·세금계산서가 있으면 due_date(이체일/발행일/지급일)와 실제 금액으로 보강.
 - 거래명세서는 항목 분해/금액 검증 보조용.
 - 부가세는 PDF에 적힌 총액(공급가액+부가세 합계) 그대로 사용. 별도 분리 X.
 - 한 PDF에 여러 항목이 있으면 각각 별 행. (한 줄짜리 단일 거래 PDF면 한 행.)
+- 계약서에 분할 지급(예: 계약금/중도금/잔금)이 있으면 각 회차를 별 행으로 분리, item에 "OOO 계약금" 식으로 명시.
 - 신뢰도 낮은 행(금액·항목 불명확)은 제외.
 
 출력: JSON 객체 한 개. 형식:
@@ -55,7 +57,7 @@ export async function extractCostsFromPdfTexts(
       "vendor_business_number": "<공급자 사업자번호 (xxx-xx-xxxxx). 없으면 null.>",
       "due_date": "<지급/입금 예정일 또는 실제 이체일 YYYY-MM-DD. 없으면 null.>",
       "source_pdf": "<통합 근거가 된 대표 PDF 파일명. 입력 [FILE:] 값 그대로.>",
-      "doc_type": "견적서|세금계산서|거래명세서|이체확인증|기타"
+      "doc_type": "견적서|세금계산서|거래명세서|이체확인증|계약서|기타"
     }
   ]
 }
@@ -112,7 +114,7 @@ ${corpus}
     if (!item || !amount || amount <= 0) continue
     const docTypeRaw = String(r.doc_type ?? '기타')
     const doc_type: ExtractedCostRow['doc_type'] =
-      docTypeRaw === '견적서' || docTypeRaw === '세금계산서' || docTypeRaw === '거래명세서' || docTypeRaw === '이체확인증'
+      docTypeRaw === '견적서' || docTypeRaw === '세금계산서' || docTypeRaw === '거래명세서' || docTypeRaw === '이체확인증' || docTypeRaw === '계약서'
         ? docTypeRaw : '기타'
     rows.push({
       item,
