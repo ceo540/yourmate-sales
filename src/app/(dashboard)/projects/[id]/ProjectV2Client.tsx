@@ -53,6 +53,10 @@ import {
   updateProjectMemoCard,
   deleteProjectMemo,
   createSaleForProject,
+  linkProjectCustomer,
+  updateProjectStatus,
+  addProjectMember,
+  removeProjectMember,
 } from './project-actions'
 import { updateTask, deleteTask } from '../../sales/tasks/actions'
 import { searchCalendarEvents } from '../../leads/actions'
@@ -213,6 +217,21 @@ export default function ProjectV2Client({
   members, customersAll, memos, entities,
 }: Props) {
   const [showSettings, setShowSettings] = useState(false)
+  const [editingStatus, setEditingStatus] = useState(false)
+  const [pendingStatus, startStatusTransition] = useTransition()
+
+  const handleChangeStatus = (newStatus: string) => {
+    if (newStatus === project.status) {
+      setEditingStatus(false)
+      return
+    }
+    startStatusTransition(async () => {
+      const res = await updateProjectStatus(project.id, newStatus)
+      if (res.cancelMsg) alert(`상태 변경됨 — 취소 후처리:\n${res.cancelMsg}`)
+      setEditingStatus(false)
+    })
+  }
+
   const profitRate = finance.revenue > 0
     ? Math.round(((finance.revenue - finance.cost) / finance.revenue) * 100)
     : null
@@ -253,17 +272,40 @@ export default function ProjectV2Client({
             </span>
           )}
           <h1 className="text-2xl font-bold text-gray-900">{project.name}</h1>
-          <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${STATUS_CLR[project.status] ?? 'bg-gray-100 text-gray-500'}`}>
-            {project.status}
-          </span>
+          {editingStatus ? (
+            <select
+              autoFocus
+              value={project.status}
+              onChange={e => handleChangeStatus(e.target.value)}
+              onBlur={() => setEditingStatus(false)}
+              disabled={pendingStatus}
+              className="text-xs px-2 py-0.5 rounded-full font-medium border border-gray-300 bg-white"
+            >
+              {['기획중', '진행중', '완료', '취소', '보류'].map(s => (
+                <option key={s} value={s}>{s}</option>
+              ))}
+            </select>
+          ) : (
+            <button
+              type="button"
+              onClick={() => setEditingStatus(true)}
+              title="클릭해서 상태 변경"
+              className={`text-xs px-2 py-0.5 rounded-full font-medium hover:opacity-80 ${STATUS_CLR[project.status] ?? 'bg-gray-100 text-gray-500'}`}
+            >
+              {project.status}
+            </button>
+          )}
           {project.service_type && (
             <span className="text-xs text-gray-500 border border-gray-200 px-2 py-0.5 rounded-full">
               {project.service_type}
             </span>
           )}
-          {pmName && (
-            <span className="text-xs text-gray-400">PM {pmName}</span>
-          )}
+          <ProjectMemberChips
+            projectId={project.id}
+            members={members}
+            profiles={profiles}
+            pmName={pmName}
+          />
           <button
             onClick={() => setShowSettings(true)}
             className="ml-auto text-gray-400 hover:text-gray-700 p-1.5 rounded hover:bg-gray-100"
@@ -365,7 +407,7 @@ export default function ProjectV2Client({
           <BbangiCard project={project} contracts={contracts} tasks={tasks} logs={logs} currentUserId={currentUserId} leadIds={leadIds} />
 
           {/* 📋 기본정보 — V1.4 */}
-          <BasicInfoCard customer={customer} contactPerson={contactPerson} pmName={pmName} project={project} />
+          <BasicInfoCard customer={customer} contactPerson={contactPerson} pmName={pmName} project={project} customersAll={customersAll} />
 
           {/* 💰 재무 요약 — V1.5 */}
           <FinanceCard finance={finance} profitRate={profitRate} receivedRate={receivedRate} />
@@ -419,25 +461,188 @@ function BbangiCard({ project }: {
   )
 }
 
-function BasicInfoCard({ customer, contactPerson, pmName, project }: {
-  customer: Customer | null; contactPerson: ContactPerson | null; pmName: string | null; project: Project
+function ProjectMemberChips({ projectId, members, profiles, pmName }: {
+  projectId: string
+  members: { profile_id: string; role: string; name: string }[]
+  profiles: ProfileOpt[]
+  pmName: string | null
 }) {
+  const [open, setOpen] = useState(false)
+  const [pending, startTransition] = useTransition()
+  const [selectedProfile, setSelectedProfile] = useState('')
+  const [selectedRole, setSelectedRole] = useState('팀원')
+
+  const memberIds = new Set(members.map(m => m.profile_id))
+  const candidates = profiles.filter(p => !memberIds.has(p.id))
+
+  const initial = (name: string) => name.slice(0, 1)
+
+  const handleAdd = () => {
+    if (!selectedProfile) return
+    startTransition(async () => {
+      try {
+        await addProjectMember(projectId, selectedProfile, selectedRole)
+        setSelectedProfile('')
+        setOpen(false)
+      } catch (e) {
+        alert(`추가 실패: ${e instanceof Error ? e.message : ''}`)
+      }
+    })
+  }
+
+  const handleRemove = (profileId: string, name: string) => {
+    if (!confirm(`${name}을(를) 멤버에서 제거할까?`)) return
+    startTransition(async () => {
+      try {
+        await removeProjectMember(projectId, profileId)
+      } catch (e) {
+        alert(`제거 실패: ${e instanceof Error ? e.message : ''}`)
+      }
+    })
+  }
+
+  return (
+    <div className="flex items-center gap-1.5">
+      {pmName && (
+        <span className="text-xs text-gray-400 mr-1">PM {pmName}</span>
+      )}
+      <div className="flex -space-x-1">
+        {members.slice(0, 5).map(m => (
+          <button
+            key={m.profile_id}
+            type="button"
+            onClick={() => handleRemove(m.profile_id, m.name)}
+            title={`${m.name} (${m.role}) — 클릭해서 제거`}
+            disabled={pending}
+            className="w-6 h-6 rounded-full bg-blue-100 text-blue-700 text-[10px] font-medium flex items-center justify-center border-2 border-white hover:bg-red-100 hover:text-red-700 transition-colors disabled:opacity-50"
+          >
+            {initial(m.name)}
+          </button>
+        ))}
+        {members.length > 5 && (
+          <span
+            title={members.slice(5).map(m => m.name).join(', ')}
+            className="w-6 h-6 rounded-full bg-gray-100 text-gray-500 text-[10px] font-medium flex items-center justify-center border-2 border-white"
+          >
+            +{members.length - 5}
+          </span>
+        )}
+      </div>
+      <div className="relative">
+        <button
+          type="button"
+          onClick={() => setOpen(o => !o)}
+          title="멤버 추가"
+          className="w-6 h-6 rounded-full border border-dashed border-gray-300 text-gray-400 text-xs hover:border-blue-400 hover:text-blue-500"
+        >
+          +
+        </button>
+        {open && (
+          <div className="absolute top-7 left-0 z-30 bg-white border border-gray-200 rounded shadow-lg p-2 min-w-[240px] space-y-1.5">
+            <div className="text-[10px] font-semibold text-gray-500">멤버 추가</div>
+            <select
+              value={selectedProfile}
+              onChange={e => setSelectedProfile(e.target.value)}
+              autoFocus
+              className="w-full text-xs border border-gray-200 rounded px-2 py-1"
+            >
+              <option value="">-- 선택 --</option>
+              {candidates.map(p => (
+                <option key={p.id} value={p.id}>{p.name}</option>
+              ))}
+            </select>
+            <div className="flex gap-1">
+              <select
+                value={selectedRole}
+                onChange={e => setSelectedRole(e.target.value)}
+                className="flex-1 text-xs border border-gray-200 rounded px-2 py-1"
+              >
+                <option value="팀원">팀원</option>
+                <option value="PM">PM</option>
+                <option value="기타">기타</option>
+              </select>
+              <button
+                type="button"
+                onClick={handleAdd}
+                disabled={!selectedProfile || pending}
+                className="text-xs px-2 py-1 bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50"
+              >
+                {pending ? '...' : '추가'}
+              </button>
+              <button
+                type="button"
+                onClick={() => { setOpen(false); setSelectedProfile('') }}
+                className="text-xs px-2 py-1 text-gray-500 hover:text-gray-700"
+              >
+                ✕
+              </button>
+            </div>
+            {candidates.length === 0 && (
+              <p className="text-[10px] text-gray-400">추가 가능한 프로필이 없어</p>
+            )}
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
+function BasicInfoCard({ customer, contactPerson, pmName, project, customersAll }: {
+  customer: Customer | null; contactPerson: ContactPerson | null; pmName: string | null; project: Project
+  customersAll: { id: string; name: string; type: string | null }[]
+}) {
+  const [editingCustomer, setEditingCustomer] = useState(false)
+  const [pendingCustomer, startCustomerTransition] = useTransition()
+
+  const handleChangeCustomer = (id: string) => {
+    startCustomerTransition(async () => {
+      await linkProjectCustomer(project.id, id)
+      setEditingCustomer(false)
+    })
+  }
+
   return (
     <div className="bg-white border border-gray-100 rounded-xl px-4 py-3 space-y-2.5">
       <p className="text-xs font-semibold text-gray-700">📋 기본정보</p>
 
-      {customer ? (
-        <div>
-          <p className="text-[10px] text-gray-400 mb-0.5">고객사</p>
-          <p className="text-sm font-medium text-gray-800">{customer.name}</p>
-          {customer.type && <p className="text-[11px] text-gray-400">{customer.type}</p>}
+      <div>
+        <div className="flex items-center justify-between mb-0.5">
+          <p className="text-[10px] text-gray-400">고객사</p>
+          {!editingCustomer && (
+            <button
+              onClick={() => setEditingCustomer(true)}
+              className="text-[10px] text-blue-500 hover:text-blue-700"
+            >
+              변경
+            </button>
+          )}
         </div>
-      ) : (
-        <div>
-          <p className="text-[10px] text-gray-400 mb-0.5">고객사</p>
+        {editingCustomer ? (
+          <div className="space-y-1">
+            <CustomerPicker
+              value={customer?.id ?? ''}
+              selectedName={customer?.name ?? ''}
+              customers={customersAll}
+              onChange={(id) => { if (id && id !== customer?.id) handleChangeCustomer(id) }}
+              placeholder="고객사 검색"
+            />
+            <button
+              onClick={() => setEditingCustomer(false)}
+              disabled={pendingCustomer}
+              className="text-[10px] text-gray-500 hover:text-gray-700"
+            >
+              {pendingCustomer ? '저장 중…' : '취소'}
+            </button>
+          </div>
+        ) : customer ? (
+          <>
+            <p className="text-sm font-medium text-gray-800">{customer.name}</p>
+            {customer.type && <p className="text-[11px] text-gray-400">{customer.type}</p>}
+          </>
+        ) : (
           <p className="text-sm text-gray-400">미연결</p>
-        </div>
-      )}
+        )}
+      </div>
 
       {(contactPerson || customer?.contact_name) && (
         <div>
