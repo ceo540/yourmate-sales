@@ -194,22 +194,30 @@ ${(recentLogs ?? []).map((l: any) => `- [${l.log_type}] ${(l.contacted_at ?? '')
 형식 (정확히 지킬 것 — markdown):
 
 **한줄**
-[💰 가격·금액 핵심] · [🗓 일정·날짜 핵심] · [👤 핵심 담당자/거래처] · [🏷 분류·태그]
+[💰 핵심 금액] · [🗓 핵심 날짜] · [👤 핵심 인물] · [🏷 분류]
 
 **현황**
-지금 어디까지 진행됐고 무슨 조율 중인지 1-2문장.
+지금 어디까지 진행됐고 무슨 조율 중인지. 2문장 이내.
 
 **반응**
 클라이언트의 태도·의견·우려 1문장. 정보 없으면 줄 자체 생략.
 
 **다음**
-다음에 *언제* *무엇*을 *누가* 해야 하는지 1문장.
+*언제* *무엇*을 *누가* 해야 하는지 1문장.
 
-지침:
-- 한줄 칩 4개. 정보 없으면 \`[—]\`. 사실에 기반.
-- 추측·일반론 X. 데이터에 있는 사실만.
+★ 한줄 칩 작성 규칙 (가장 중요):
+- 각 칩은 **20자 이내**. 핵심 1개만.
+- 💰 = 가장 중요한 금액 1개. 여러 금액 나열 X. 예: "16,272천원 (VAT포함)"
+- 🗓 = 가장 중요한 날짜 1개. 행사일·마감일 우선. 예: "행사 5/15 · 견적컨펌 5/2"
+- 👤 = 가장 자주 소통한 1명 + 소속. 예: "김승희 주무관(용인교육청)"
+- 🏷 = 1-2단어. 예: "국제교류 · 인쇄제작"
+- 정보 없으면 \`[—]\`
+
+★ 본문 작성 규칙:
+- 사실에 기반. 추측·일반론 X.
 - 표·헤더 추가 X. 위 4섹션만.
 - 마크다운 코드블록 없이.
+- *반드시 4섹션 모두 마침표로 완전히 끝맺을 것*. 중간에 자르지 마.
 
 데이터:
 ${ctx}
@@ -219,7 +227,7 @@ ${ctx}
   const client = new Anthropic()
   const message = await client.messages.create({
     model: 'claude-sonnet-4-6',
-    max_tokens: 600,
+    max_tokens: 1200,
     messages: [{ role: 'user', content: prompt }],
   })
   logApiUsage({ model: 'claude-sonnet-4-6', endpoint: 'project-short-summary', userId: user.id, inputTokens: message.usage.input_tokens, outputTokens: message.usage.output_tokens }).catch(() => {})

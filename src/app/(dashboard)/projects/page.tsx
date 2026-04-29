@@ -15,7 +15,7 @@ export default async function ProjectsPage() {
   const isAdmin = isAdminOrManager(profile?.role)
 
   // 프로젝트 목록 — sales join으로 단계/매출 정보 포함
-  const [{ data: projectsRaw }, { data: profiles }, { data: customers }] = await Promise.all([
+  const [{ data: projectsRaw }, { data: profiles }, { data: customers }, { data: pmMembers }] = await Promise.all([
     admin.from('projects')
       .select(`
         id, name, service_type, status, project_number, customer_id, pm_id, created_at,
@@ -25,12 +25,17 @@ export default async function ProjectsPage() {
       .order('created_at', { ascending: false }),
     admin.from('profiles').select('id, name').order('name'),
     admin.from('customers').select('id, name').order('name'),
+    // PM 동기화 안 된 옛 데이터 대비 — project_members.role='PM' 우선 조회
+    admin.from('project_members').select('project_id, profile_id').eq('role', 'PM'),
   ])
 
   const profileMap = createProfileNameMap(profiles)
+  const pmMemberMap = new Map<string, string>(((pmMembers ?? []) as Array<{ project_id: string; profile_id: string }>).map(m => [m.project_id, m.profile_id]))
 
   const projects = (projectsRaw ?? []).map((p: any) => {
     const sale = (p.sales ?? [])[0] ?? null
+    // PM = project_members.role='PM' 우선, fallback projects.pm_id
+    const effectivePmId = pmMemberMap.get(p.id) ?? p.pm_id ?? null
     return {
       id: p.id,
       name: p.name,
@@ -38,7 +43,7 @@ export default async function ProjectsPage() {
       service_type: p.service_type ?? null,
       status: p.status ?? '진행중',
       customer_name: p.customers?.name ?? null,
-      pm_name: p.pm_id ? (profileMap[p.pm_id] ?? null) : null,
+      pm_name: effectivePmId ? (profileMap[effectivePmId] ?? null) : null,
       revenue: sale?.revenue ?? null,
       contract_stage: sale?.contract_stage ?? null,
       inflow_date: sale?.inflow_date ?? p.created_at?.slice(0, 10) ?? null,

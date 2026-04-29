@@ -28,7 +28,6 @@ export default function ProjectLoading() {
           <div className="h-32 bg-white border border-gray-100 rounded-xl animate-pulse" />
         </div>
       </div>
-      <div className="mt-6 text-xs text-gray-400 text-center">프로젝트 불러오는 중…</div>
     </div>
   )
 }

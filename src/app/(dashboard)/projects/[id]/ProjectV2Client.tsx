@@ -1189,7 +1189,7 @@ function ShortSummaryBox({ project }: { project: Project }) {
           </div>
         </div>
       ) : project.short_summary ? (
-        <div className="text-sm leading-relaxed [&_p]:mb-1 [&_strong]:text-yellow-900">
+        <div className="text-sm leading-relaxed [&_strong]:block [&_strong]:text-[10px] [&_strong]:font-bold [&_strong]:text-yellow-700 [&_strong]:uppercase [&_strong]:tracking-wide [&_strong]:mt-3 [&_strong]:mb-0.5 [&_strong:first-child]:mt-0 [&_p]:mb-1 [&_p]:text-gray-800 [&_p]:leading-relaxed">
           <MarkdownText>{project.short_summary}</MarkdownText>
         </div>
       ) : (
