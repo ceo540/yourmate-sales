@@ -1246,13 +1246,15 @@ function PendingDiscussionBox({ project }: { project: Project }) {
     })
   }
 
-  async function generate() {
+  async function generateAll() {
     setGenerating(true)
     setGenError(null)
     try {
-      const res = await generateAndSavePendingDiscussion(project.id, tab)
-      if ('error' in res) setGenError(res.error)
-      else { setInput(res.summary); router.refresh() }
+      const targets: DiscussionTab[] = ['client', 'internal', 'vendor']
+      const results = await Promise.all(targets.map(t => generateAndSavePendingDiscussion(project.id, t)))
+      const errors = results.flatMap(r => 'error' in r ? [r.error] : [])
+      if (errors.length) setGenError(errors.join(' / '))
+      router.refresh()
     } catch (e: any) {
       setGenError(e?.message ?? '실패')
     } finally {
@@ -1278,6 +1280,19 @@ function PendingDiscussionBox({ project }: { project: Project }) {
       </button>
       {open && (
         <div className="border-t border-gray-50">
+          {/* 통합 분석 버튼 (3분류 동시 분석) */}
+          <div className="px-4 py-2.5 border-b border-gray-50 flex items-center justify-between gap-2 bg-yellow-50/40">
+            <p className="text-[11px] text-gray-500">한 번에 3분류 모두 분석</p>
+            <button
+              onClick={generateAll}
+              disabled={generating}
+              className="px-3 py-1.5 text-xs font-semibold rounded-lg hover:opacity-80 disabled:opacity-40"
+              style={{ backgroundColor: '#FFCE00', color: '#121212' }}
+            >
+              {generating ? '🤖 분석 중...' : hasAny ? '🤖 빵빵이로 다시 분석' : '🤖 빵빵이로 분석'}
+            </button>
+          </div>
+
           {/* 탭 헤더 */}
           <div className="flex border-b border-gray-100 bg-gray-50">
             {(Object.keys(TAB_META) as DiscussionTab[]).map(t => {
@@ -1321,23 +1336,14 @@ function PendingDiscussionBox({ project }: { project: Project }) {
                   <MarkdownText>{currentValue}</MarkdownText>
                 </div>
                 <div className="flex gap-2 pt-1 border-t border-gray-50">
-                  <button onClick={generate} disabled={generating}
-                    className="text-[11px] text-blue-500 hover:text-blue-700 disabled:opacity-40">
-                    {generating ? '🤖 분석 중...' : '🤖 다시 분석'}
-                  </button>
                   <button onClick={() => { setInput(currentValue); setEditing(true) }}
                     className="text-[11px] text-gray-400 hover:text-gray-700">직접 수정</button>
                 </div>
               </>
             ) : (
               <>
-                <p className="text-[11px] text-gray-400 italic">아직 {TAB_META[tab].label} 협의 분석이 없어.</p>
+                <p className="text-[11px] text-gray-400 italic">아직 {TAB_META[tab].label} 협의 분석이 없어. 위 버튼으로 일괄 생성하거나, 이 분류만 직접 작성.</p>
                 <div className="flex gap-2">
-                  <button onClick={generate} disabled={generating}
-                    className="px-3 py-1.5 text-xs font-semibold rounded-lg hover:opacity-80 disabled:opacity-40"
-                    style={{ backgroundColor: '#FFCE00', color: '#121212' }}>
-                    {generating ? '🤖 분석 중...' : '🤖 빵빵이로 분석'}
-                  </button>
                   <button onClick={() => { setInput(''); setEditing(true) }}
                     className="px-3 py-1.5 text-xs border border-gray-200 rounded-lg text-gray-500">직접 작성</button>
                 </div>
