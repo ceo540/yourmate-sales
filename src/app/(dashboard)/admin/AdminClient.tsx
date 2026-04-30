@@ -712,9 +712,15 @@ function ApiUsageTab() {
     byEndpoint: { endpoint: string; cost_usd: number; requests: number }[]
     byModel: { model: string; cost_usd: number; requests: number }[]
     byUser: { user_id: string; name: string; cost_usd: number; requests: number }[]
+    byUserPeriod: {
+      months: string[]
+      weeks: string[]
+      users: { user_id: string; name: string; byMonth: Record<string, number>; byWeek: Record<string, number>; total_usd: number }[]
+    }
     total: { cost_usd: number; requests: number; input_tokens: number; output_tokens: number }
   } | null>(null)
   const [loading, setLoading] = useState(true)
+  const [userPeriodMode, setUserPeriodMode] = useState<'month' | 'week'>('month')
 
   useEffect(() => {
     fetch('/api/admin/api-usage?months=3')
@@ -729,13 +735,24 @@ function ApiUsageTab() {
   const fmtNum = (n: number) => n.toLocaleString()
 
   const MODEL_COLORS: Record<string, string> = {
-    'gpt-4o-mini':      'bg-green-100 text-green-700',
-    'gpt-4o':           'bg-blue-100 text-blue-700',
-    'gpt-4.1':          'bg-blue-100 text-blue-700',
-    'claude-sonnet-4-6':'bg-purple-100 text-purple-700',
+    'claude-sonnet-4-6':         'bg-purple-100 text-purple-700',
     'claude-haiku-4-5-20251001': 'bg-pink-100 text-pink-700',
+    'claude-opus-4-7':           'bg-indigo-100 text-indigo-700',
+    'gpt-4o-mini':               'bg-gray-100 text-gray-500',
+    'gpt-4o':                    'bg-gray-100 text-gray-500',
+    'gpt-4.1':                   'bg-gray-100 text-gray-500',
   }
   const modelColor = (model: string) => MODEL_COLORS[model] ?? 'bg-gray-100 text-gray-600'
+  // 사용처 → 현재 라우트가 실제 쓰는 모델 라벨
+  const ENDPOINT_MODEL: Record<string, string> = {
+    chat: 'claude-sonnet-4-6',
+    channeltalk: 'claude-haiku-4-5-20251001',
+  }
+  const ENDPOINT_LABEL: Record<string, string> = {
+    chat: '시스템 빵빵이',
+    channeltalk: '채널톡 빵빵이',
+    'create-sale': '계약 자동등록',
+  }
 
   const thisMonth = new Date().toISOString().slice(0, 7)
   const thisMonthData = data?.monthly.find(m => m.month === thisMonth)
@@ -772,9 +789,9 @@ function ApiUsageTab() {
             <div className="space-y-2">
               {data.byEndpoint.map(e => {
                 const pct = data.total.cost_usd > 0 ? (e.cost_usd / data.total.cost_usd) * 100 : 0
-                const label = e.endpoint === 'channeltalk' ? '채널톡 빵빵이' : e.endpoint === 'chat' ? '시스템 빵빵이' : e.endpoint
-                const modelLabel = e.endpoint === 'channeltalk' ? 'gpt-4o-mini' : e.endpoint === 'chat' ? 'gpt-4o' : null
-                const barColor = e.endpoint === 'channeltalk' ? 'bg-green-400' : e.endpoint === 'chat' ? 'bg-blue-400' : 'bg-gray-400'
+                const label = ENDPOINT_LABEL[e.endpoint] ?? e.endpoint
+                const modelLabel = ENDPOINT_MODEL[e.endpoint] ?? null
+                const barColor = e.endpoint === 'channeltalk' ? 'bg-pink-400' : e.endpoint === 'chat' ? 'bg-purple-400' : 'bg-gray-400'
                 return (
                   <div key={e.endpoint} className="flex items-center gap-3">
                     <div className="shrink-0 w-28">
@@ -846,9 +863,9 @@ function ApiUsageTab() {
           </table>
         </div>
 
-        {/* 사용자별 */}
+        {/* 사용자별 사용량 합계 */}
         <div className="bg-white rounded-xl border border-gray-200 p-4">
-          <h3 className="text-sm font-semibold text-gray-800 mb-3">사용자별 사용량</h3>
+          <h3 className="text-sm font-semibold text-gray-800 mb-3">사용자별 누적</h3>
           <table className="w-full text-xs">
             <thead>
               <tr className="text-gray-400 border-b border-gray-100">
@@ -871,6 +888,71 @@ function ApiUsageTab() {
           </table>
         </div>
 
+      </div>
+
+      {/* 사용자별 추이 (cross-tab) */}
+      <div className="bg-white rounded-xl border border-gray-200 p-4">
+        <div className="flex items-center justify-between mb-3">
+          <h3 className="text-sm font-semibold text-gray-800">사용자별 추이</h3>
+          <div className="inline-flex bg-gray-100 rounded-lg p-0.5">
+            {(['month', 'week'] as const).map(mode => (
+              <button
+                key={mode}
+                onClick={() => setUserPeriodMode(mode)}
+                className={`px-3 py-1 text-xs font-medium rounded-md ${
+                  userPeriodMode === mode ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500'
+                }`}
+              >
+                {mode === 'month' ? '월별' : '주별'}
+              </button>
+            ))}
+          </div>
+        </div>
+        {(() => {
+          if (!data.byUserPeriod || data.byUserPeriod.users.length === 0) {
+            return <p className="text-xs text-gray-300 text-center py-4">데이터 없음</p>
+          }
+          const periods = userPeriodMode === 'month'
+            ? data.byUserPeriod.months.slice(-3)        // 최근 3개월
+            : data.byUserPeriod.weeks.slice(-8)         // 최근 8주
+          const fmtPeriodLabel = (p: string) =>
+            userPeriodMode === 'month' ? p.slice(2) /* 26-04 */ : p.slice(5) /* 04-29 */
+          return (
+            <div className="overflow-x-auto">
+              <table className="w-full text-xs">
+                <thead>
+                  <tr className="text-gray-400 border-b border-gray-100">
+                    <th className="text-left py-1.5 sticky left-0 bg-white">이름</th>
+                    {periods.map(p => (
+                      <th key={p} className="text-right py-1.5 px-2 whitespace-nowrap">{fmtPeriodLabel(p)}</th>
+                    ))}
+                    <th className="text-right py-1.5 px-2 font-semibold">합계</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {data.byUserPeriod.users.map(u => {
+                    const cells = periods.map(p =>
+                      userPeriodMode === 'month' ? (u.byMonth[p] ?? 0) : (u.byWeek[p] ?? 0)
+                    )
+                    const sum = cells.reduce((a, b) => a + b, 0)
+                    if (sum === 0) return null
+                    return (
+                      <tr key={u.user_id} className="border-b border-gray-50">
+                        <td className="py-1.5 text-gray-700 sticky left-0 bg-white">{u.name}</td>
+                        {cells.map((c, i) => (
+                          <td key={periods[i]} className="py-1.5 px-2 text-right text-gray-600 whitespace-nowrap">
+                            {c > 0 ? fmtKrw(c) : <span className="text-gray-200">·</span>}
+                          </td>
+                        ))}
+                        <td className="py-1.5 px-2 text-right text-gray-900 font-semibold whitespace-nowrap">{fmtKrw(sum)}</td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )
+        })()}
       </div>
     </div>
   )

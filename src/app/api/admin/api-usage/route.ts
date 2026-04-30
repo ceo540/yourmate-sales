@@ -84,6 +84,51 @@ export async function GET(req: NextRequest) {
     .map(([uid, v]) => ({ user_id: uid, name: uid === '(시스템)' ? '(시스템)' : (nameMap[uid] ?? uid.slice(0, 8)), ...v }))
     .sort((a, b) => b.cost_usd - a.cost_usd)
 
+  // 사용자별 × 월/주 cross 집계 (KST 기준)
+  // 주 = 그 주의 월요일 KST 날짜 (YYYY-MM-DD)
+  function kstMonday(isoStr: string): string {
+    const d = new Date(isoStr)
+    const kst = new Date(d.getTime() + 9 * 3600 * 1000)
+    const dow = kst.getUTCDay() // 0=Sun..6=Sat
+    const offset = dow === 0 ? -6 : 1 - dow
+    const monday = new Date(kst.getTime() + offset * 86400 * 1000)
+    return monday.toISOString().slice(0, 10)
+  }
+  function kstMonth(isoStr: string): string {
+    const d = new Date(isoStr)
+    const kst = new Date(d.getTime() + 9 * 3600 * 1000)
+    return kst.toISOString().slice(0, 7)
+  }
+
+  const userPeriodMap: Record<string, { byMonth: Record<string, number>; byWeek: Record<string, number> }> = {}
+  const monthsSet = new Set<string>()
+  const weeksSet = new Set<string>()
+  for (const r of data) {
+    const key = r.user_id ?? '(시스템)'
+    if (!userPeriodMap[key]) userPeriodMap[key] = { byMonth: {}, byWeek: {} }
+    const m = kstMonth(r.created_at)
+    const w = kstMonday(r.created_at)
+    monthsSet.add(m)
+    weeksSet.add(w)
+    userPeriodMap[key].byMonth[m] = (userPeriodMap[key].byMonth[m] ?? 0) + Number(r.cost_usd)
+    userPeriodMap[key].byWeek[w] = (userPeriodMap[key].byWeek[w] ?? 0) + Number(r.cost_usd)
+  }
+  const allMonths = [...monthsSet].sort()
+  const allWeeks = [...weeksSet].sort()
+  const byUserPeriod = {
+    months: allMonths,
+    weeks: allWeeks,
+    users: Object.entries(userPeriodMap)
+      .map(([uid, v]) => ({
+        user_id: uid,
+        name: uid === '(시스템)' ? '(시스템)' : (nameMap[uid] ?? uid.slice(0, 8)),
+        byMonth: v.byMonth,
+        byWeek: v.byWeek,
+        total_usd: Object.values(v.byMonth).reduce((a, b) => a + b, 0),
+      }))
+      .sort((a, b) => b.total_usd - a.total_usd),
+  }
+
   // 전체 합계
   const total = data.reduce(
     (acc, r) => ({
@@ -95,5 +140,5 @@ export async function GET(req: NextRequest) {
     { cost_usd: 0, requests: 0, input_tokens: 0, output_tokens: 0 }
   )
 
-  return NextResponse.json({ monthly, byEndpoint, byModel, byUser, total })
+  return NextResponse.json({ monthly, byEndpoint, byModel, byUser, byUserPeriod, total })
 }
