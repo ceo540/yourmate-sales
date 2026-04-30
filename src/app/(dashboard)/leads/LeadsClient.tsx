@@ -526,7 +526,6 @@ export default function LeadsClient({ leads, profiles, persons, customers, curre
   const [quoteItems, setQuoteItems] = useState<QuoteItem[]>([{ ...EMPTY_QUOTE_ITEM }])
   const [generatingQuote, setGeneratingQuote] = useState(false)
   const [generatedQuoteUrl, setGeneratedQuoteUrl] = useState<string | null>(null)
-  const [draftingQuote, setDraftingQuote] = useState(false)
 
   // Log state
   const [leadLogs, setLeadLogs] = useState<LeadLog[]>([])
@@ -911,26 +910,6 @@ export default function LeadsClient({ leads, profiles, persons, customers, curre
     })
   }
 
-  async function handleDraftQuote() {
-    if (!selectedLead) return
-    setDraftingQuote(true)
-    try {
-      const res = await fetch('/api/quotation/draft', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ leadId: selectedLead.id, quoteType }),
-      })
-      const result = await res.json()
-      if (result.items) {
-        setQuoteItems(result.items.map((it: QuoteItem) => ({
-          category: it.category ?? '', name: it.name ?? '', detail: it.detail ?? '',
-          qty: Number(it.qty) || 1, months: Number(it.months) || 1,
-          unit: it.unit ?? '식', price: Number(it.price) || 0,
-        })))
-      } else { alert('초안 생성 실패: ' + (result.error ?? '알 수 없는 오류')) }
-    } catch { alert('초안 생성 중 오류가 발생했습니다.') }
-    finally { setDraftingQuote(false) }
-  }
 
   async function handleGenerateQuote() {
     if (!selectedLead) return
@@ -2294,20 +2273,12 @@ export default function LeadsClient({ leads, profiles, persons, customers, curre
             <div className="mb-4">
               <div className="flex items-center justify-between mb-2">
                 <label className={LABEL_CLS}>품목 목록</label>
-                <div className="flex gap-1.5">
-                  <button type="button" onClick={handleDraftQuote} disabled={draftingQuote}
-                    className="text-xs px-2.5 py-1 rounded-lg font-medium disabled:opacity-50 flex items-center gap-1"
-                    style={{ backgroundColor: '#FFCE00', color: '#121212' }}>
-                    {draftingQuote ? '⏳ AI 작성 중...' : '✨ AI 초안 작성'}
-                  </button>
-                  <button type="button"
-                    onClick={() => setQuoteItems(prev => [...prev, { ...EMPTY_QUOTE_ITEM }])}
-                    className="text-xs px-2 py-1 border border-gray-200 rounded-lg hover:bg-gray-50 text-gray-500">
-                    + 행 추가
-                  </button>
-                </div>
+                <button type="button"
+                  onClick={() => setQuoteItems(prev => [...prev, { ...EMPTY_QUOTE_ITEM }])}
+                  className="text-xs px-2 py-1 border border-gray-200 rounded-lg hover:bg-gray-50 text-gray-500">
+                  + 행 추가
+                </button>
               </div>
-              {draftingQuote && <p className="text-xs text-yellow-600 mt-1 text-right">Claude AI가 소통 내역을 분석 중입니다. 보통 10~20초 소요됩니다.</p>}
 
               <div className="border border-gray-200 rounded-xl overflow-hidden">
                 <div className={`grid text-xs font-semibold text-gray-400 bg-gray-50 px-3 py-2 gap-2 ${quoteType === '렌탈' ? 'grid-cols-[2fr_1.5fr_0.6fr_0.6fr_1fr_auto]' : 'grid-cols-[1fr_2fr_1.5fr_0.6fr_0.7fr_1fr_auto]'}`}>

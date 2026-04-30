@@ -134,9 +134,9 @@ revalidatePath('/tasks')
 
 ## AI / 외부 연동
 
-**시스템 내 빵빵이** (`/api/chat/route.ts`): OpenAI `gpt-4o`. `export const maxDuration = 60` 필수.
+**시스템 내 빵빵이** (`/api/chat/route.ts`): Anthropic `claude-sonnet-4-6`. `export const maxDuration = 60` 필수.
 
-**채널톡 빵빵이** (`/api/channeltalk/route.ts`): OpenAI `gpt-4o-mini`. HMAC-SHA256 서명 검증 포함.
+**채널톡 빵빵이** (`/api/channeltalk/route.ts`): Anthropic `claude-haiku-4-5-20251001`. HMAC-SHA256 서명 검증 포함.
 
 **AI 사용량 로깅:** 모든 AI 호출 후 `logApiUsage()` (`src/lib/api-usage.ts`) 호출.
 
@@ -154,7 +154,8 @@ revalidatePath('/tasks')
 NEXT_PUBLIC_SUPABASE_URL
 NEXT_PUBLIC_SUPABASE_ANON_KEY
 SUPABASE_SERVICE_ROLE_KEY
-OPENAI_API_KEY
+ANTHROPIC_API_KEY
+OPENAI_API_KEY        # 현재는 /api/transcribe (Whisper 음성 STT) 전용. 빵빵이는 Claude.
 DROPBOX_ACCESS_TOKEN
 DROPBOX_ROOT_NAMESPACE   # 기본값 3265523555 하드코딩됨
 NOTION_TOKEN
