@@ -36,6 +36,9 @@ export default function WorkersClient({
   const [typeFilter, setTypeFilter] = useState<string>('all')
   const [expandedId, setExpandedId] = useState<string | null>(null)
   const [pending, startTransition] = useTransition()
+  const [paymentMonth, setPaymentMonth] = useState<Record<string, string>>({})  // worker_id → YYYY-MM
+
+  const defaultMonth = new Date().toISOString().slice(0, 7)
 
   const filtered = useMemo(() => {
     return workers.filter(w => {
@@ -78,8 +81,7 @@ export default function WorkersClient({
   }
 
   const handleCreateMonthly = (workerId: string) => {
-    const ym = prompt('정산 월 (YYYY-MM):', new Date().toISOString().slice(0, 7))
-    if (!ym) return
+    const ym = paymentMonth[workerId] ?? defaultMonth
     startTransition(async () => {
       const { createMonthlyPaymentAction } = await import('@/lib/worker-payments-actions')
       const r = await createMonthlyPaymentAction({ worker_id: workerId, year_month: ym })
@@ -196,13 +198,22 @@ export default function WorkersClient({
 
                             {/* 정산 묶음 */}
                             <div>
-                              <div className="flex items-center justify-between mb-2">
+                              <div className="flex items-center justify-between mb-2 gap-2 flex-wrap">
                                 <h3 className="text-xs font-semibold text-gray-700">💰 월 정산 ({myPayments.length}건)</h3>
-                                <button
-                                  onClick={(ev) => { ev.stopPropagation(); handleCreateMonthly(w.id) }}
-                                  disabled={pending}
-                                  className="text-[11px] px-2 py-0.5 bg-yellow-400 hover:bg-yellow-500 text-white rounded"
-                                >+ 월 정산 묶음</button>
+                                <div className="flex items-center gap-1" onClick={(ev) => ev.stopPropagation()}>
+                                  <input
+                                    type="month"
+                                    value={paymentMonth[w.id] ?? defaultMonth}
+                                    onChange={(ev) => setPaymentMonth(prev => ({ ...prev, [w.id]: ev.target.value }))}
+                                    className="text-[11px] px-1.5 py-0.5 border border-gray-200 rounded"
+                                  />
+                                  <button
+                                    onClick={() => handleCreateMonthly(w.id)}
+                                    disabled={pending}
+                                    title={`${paymentMonth[w.id] ?? defaultMonth} 정산 묶음 생성. 다른 월도 만들려면 월 변경 후 다시 +`}
+                                    className="text-[11px] px-2 py-0.5 bg-yellow-400 hover:bg-yellow-500 text-white rounded whitespace-nowrap"
+                                  >+ 정산 추가</button>
+                                </div>
                               </div>
                               {myPayments.length === 0 ? (
                                 <p className="text-xs text-gray-400">정산 묶음 없음. 위 [+ 월 정산 묶음] 또는 빵빵이.</p>
