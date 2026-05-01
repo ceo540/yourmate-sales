@@ -13,7 +13,7 @@ export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url)
   const type = searchParams.get('type') ?? 'projects'
   const query = searchParams.get('query') ?? ''
-  if (!query) return NextResponse.json({ error: 'query 필수' }, { status: 400 })
+  if (type !== 'record_engagement_sim' && !query) return NextResponse.json({ error: 'query 필수' }, { status: 400 })
 
   const admin = createAdminClient()
 
