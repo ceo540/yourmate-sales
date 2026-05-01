@@ -1148,7 +1148,7 @@ function WorkerEngagementsBlock({ projectId, engagements }: {
               <button
                 onClick={() => handleUnlink(e.id, e.worker_name)}
                 disabled={pending}
-                className="opacity-0 group-hover:opacity-100 text-red-400 hover:text-red-600 text-[11px] px-1"
+                className="text-red-400 hover:text-red-600 hover:bg-red-50 text-[11px] px-1.5 py-0.5 rounded"
                 title="보류 처리"
               >✕</button>
             </div>

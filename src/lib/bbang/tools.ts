@@ -698,13 +698,21 @@ export const TOOLS: Anthropic.Tool[] = [
   },
   {
     name: 'record_engagement',
-    description: '외부 인력의 프로젝트 참여 기록. amount 자동 계산 (rate_type + rate + hours). **project_id 또는 project_query 둘 중 하나 필수** — query 주면 자동 검색·매칭.',
+    description: `외부 인력의 프로젝트 참여 기록. amount 자동 계산 (rate_type + rate + hours).
+
+⭐ **사용자 자연어 그대로 project_query·worker_query에 넣어.** 절대 사용자에게 정확한 이름·번호·UUID 다시 물어보지 마.
+- 사용자 "용인 미르아이밴드캠프에 서림석 4시간" → project_query="용인 미르아이밴드캠프", worker_query="서림석"
+- 공백·구두점 차이·일부분 다 OK. 서버가 자동 fallback (정확 → 공백 무시 → 토큰 AND).
+- 0건이면 응답에 candidates 후보 같이 줘. 사용자에게 그 후보 보여주고 어느 건 선택할지만 물어봐.
+
+worker_id·project_id 직접 알면 우선 사용. 모르면 worker_query·project_query.`,
     input_schema: {
       type: 'object' as const,
       properties: {
-        worker_id: { type: 'string', description: '외부 인력 UUID' },
-        project_id: { type: 'string', description: '프로젝트 UUID (직접 알 때)' },
-        project_query: { type: 'string', description: '프로젝트명·번호 부분 검색. 1건 매칭되면 자동 사용. 다수면 에러 (사용자에게 명확화 요청)' },
+        worker_id: { type: 'string', description: '외부 인력 UUID (직접 알 때만)' },
+        worker_query: { type: 'string', description: '외부 인력 이름·전화 부분 검색 (사용자가 말한 그대로 넣기)' },
+        project_id: { type: 'string', description: '프로젝트 UUID (직접 알 때만)' },
+        project_query: { type: 'string', description: '프로젝트명·번호 (사용자가 말한 그대로. 공백·일부분 OK)' },
         role: { type: 'string', description: '참여 역할 (예: 메인 강사·MC·음향)' },
         date_start: { type: 'string', description: '시작일 YYYY-MM-DD' },
         date_end: { type: 'string', description: '종료일 YYYY-MM-DD (선택)' },
@@ -713,7 +721,6 @@ export const TOOLS: Anthropic.Tool[] = [
         rate: { type: 'number', description: '단가 (생략 시 worker.default_rate)' },
         note: { type: 'string' },
       },
-      required: ['worker_id'],
     },
   },
   {

@@ -1756,9 +1756,43 @@ async function executeTool(name: string, input: Record<string, unknown>, userRol
   if (name === 'record_engagement') {
     const supabase = createAdminClient()
     const { computeEngagementAmount } = await import('@/lib/external-workers')
+    const { fuzzyMatch } = await import('@/lib/fuzzy-search')
 
-    const worker_id = input.worker_id as string
+    let worker_id = input.worker_id as string | undefined
     let project_id = input.project_id as string | undefined
+
+    // worker_query로 worker_id 자동 매칭
+    if (!worker_id && typeof input.worker_query === 'string' && input.worker_query) {
+      const wq = (input.worker_query as string).trim()
+      // 1차 ILIKE
+      const { data: exact } = await supabase
+        .from('external_workers')
+        .select('id, name, type, phone, default_rate, default_rate_type')
+        .ilike('name', `%${wq}%`)
+        .eq('archive_status', 'active')
+        .limit(5)
+      let workers = exact ?? []
+      // 2·3차 fuzzy
+      if (workers.length === 0) {
+        const { data: all } = await supabase
+          .from('external_workers')
+          .select('id, name, type, phone, default_rate, default_rate_type')
+          .eq('archive_status', 'active')
+        const fb = fuzzyMatch(all ?? [], wq, ['name', 'phone'])
+        workers = fb.matched.slice(0, 5)
+      }
+      if (workers.length === 0) {
+        return { error: `외부 인력 검색 결과 없음 (query="${wq}"). add_external_worker로 신규 등록 필요할 수도.` }
+      }
+      if (workers.length > 1) {
+        return {
+          error: `다수 외부 인력 매칭 (query="${wq}", ${workers.length}건). 사용자에게 어느 건인지 후보 보여주고 확인 받아.`,
+          candidates: workers,
+        }
+      }
+      worker_id = workers[0].id
+    }
+    if (!worker_id) return { error: 'worker_id 또는 worker_query 필요' }
 
     // project_id 없으면 project_query로 자동 검색 (search_projects와 동일 fallback)
     if (!project_id && typeof input.project_query === 'string' && input.project_query) {
