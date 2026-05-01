@@ -307,3 +307,20 @@ export interface QuoteItem {
   amount: number
   created_at: string
 }
+
+// sale ↔ project N:M (yourmate-spec.md §3.2)
+// 한 매출이 여러 프로젝트에, 한 프로젝트도 여러 매출에 묶일 수 있는 관계.
+// 비기술 설명: "연결만 담당하는 표 1개"
+export type SaleProjectRole = '주계약' | '부계약' | '예산분할' | '추가'
+
+export interface SaleProject {
+  id: string
+  sale_id: string
+  project_id: string
+  role: SaleProjectRole
+  revenue_share_pct: number  // sale.revenue 중 이 project에 귀속될 % (0~100)
+  cost_share_pct: number     // sale_costs 분배 % (0~100)
+  note: string | null
+  created_at: string
+  updated_at: string
+}
