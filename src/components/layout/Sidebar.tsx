@@ -23,6 +23,7 @@ const NAV_ITEMS: NavItem[] = [
 const NAV_BOTTOM: NavItem[] = [
   { href: '/notice',  label: '공지', icon: '📢', pageKey: 'notice' },
   { href: '/tasks',   label: '업무', icon: '✅', pageKey: 'tasks' },
+  { href: '/m',       label: '모바일', icon: '📱' },
   { href: '/admin',   label: '관리', icon: '⚙️', pageKey: 'admin_panel', adminOnly: true },
 ]
 
