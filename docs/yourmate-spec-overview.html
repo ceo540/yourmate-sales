@@ -180,14 +180,25 @@ th { background: #f5f5f5; font-weight: 600; }
 <h2>2. 사업부 5개</h2>
 
 <div class="grid grid-5">
-<div class="dept"><div class="dept-name">Sound of School</div><div class="dept-role">학교 방문공연 + <strong>발표회·축제 겸업 多</strong></div></div>
+<div class="dept"><div class="dept-name">Sound of School</div><div class="dept-role">학교 방문공연 + 음향 운영</div></div>
 <div class="dept"><div class="dept-name">Artkiwoom</div><div class="dept-role">교육 운영 + <strong>발표회·영상 제작 겸업 多</strong></div></div>
-<div class="dept main"><div class="dept-name">002 Creative <span class="badge">메인</span></div><div class="dept-role">디자인·영상·행사 (복합형)</div></div>
+<div class="dept main"><div class="dept-name">002 Creative <span class="badge">메인</span></div><div class="dept-role">디자인·영상·콘텐츠 + <strong>발표회·축제 운영 ⭐</strong> + 장비</div></div>
 <div class="dept"><div class="dept-name">School Store</div><div class="dept-role">납품·렌탈·제작 (솔루션 방향)</div></div>
 <div class="dept"><div class="dept-name">002 Entertainment</div><div class="dept-role">음원 유통 (별도 시스템, 트래킹만)</div></div>
 </div>
-<div class="tip" style="margin-top: 12px; font-size: 13px;">
-<strong>사업부 겸업 = 한 프로젝트에 여러 사업부 참여의 자연스러운 결과.</strong> 예: Artkiwoom 교육 + SOS 발표회 + 002C 영상 = 1 프로젝트. §3 N:M 데이터 모델이 이걸 표현.
+
+<div class="card" style="margin-top: 16px;">
+<h3 style="margin-top: 0;">두 시각 차이 — N:M 모델의 진짜 이유 ⭐</h3>
+<table>
+<thead><tr><th>시각</th><th>보이는 것</th></tr></thead>
+<tbody>
+<tr><td><strong>기관 (고객)</strong></td><td>그냥 <em>1 계약</em>. 견적서 1장에 수업+발표회 같이. 세금계산서 1장</td></tr>
+<tr><td><strong>내부 (yourmate)</strong></td><td>사업부 겸업으로 풀어냄. 예: 수업=Artkiwoom 강사, 발표회 운영=002C, 영상=002C</td></tr>
+</tbody>
+</table>
+<p style="margin-top: 12px; font-size: 13px; color: #444;">
+<strong>예시:</strong> "수업 + 발표회 한 번에" 견적 → 계약 1건 + 견적 1장 → 내부 Artkiwoom + 002C 동시 가동 → 영업이익은 사업부별 분배 자동 계산.
+</p>
 </div>
 
 <h2>3. 데이터 모델 — sales ↔ projects N:M ⭐ 우선순위 1</h2>
