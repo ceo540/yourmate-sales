@@ -149,6 +149,35 @@ export async function generateTaxHandoffXlsxAction(input: {
   }
 }
 
+export async function cancelWorkerPaymentAction(input: {
+  payment_id: string
+}): Promise<{ success: true } | { error: string }> {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return { error: '로그인 필요' }
+
+  const admin = createAdminClient()
+  // pending만 취소 가능. paid·cancelled는 거부.
+  const { data: existing } = await admin
+    .from('worker_payments')
+    .select('id, status, worker_id')
+    .eq('id', input.payment_id)
+    .maybeSingle()
+  if (!existing) return { error: '정산 묶음을 찾을 수 없음' }
+  if (existing.status === 'paid') return { error: '이미 지급 완료된 묶음은 취소 X. 별도 절차 필요.' }
+  if (existing.status === 'cancelled') return { error: '이미 취소됨' }
+
+  const { error } = await admin
+    .from('worker_payments')
+    .update({ archive_status: 'cancelled', status: 'cancelled' })
+    .eq('id', input.payment_id)
+  if (error) return { error: error.message }
+
+  revalidatePath('/team')
+  revalidatePath('/admin')
+  return { success: true }
+}
+
 export async function markPaymentPaidAction(input: {
   payment_id: string
   paid_date: string

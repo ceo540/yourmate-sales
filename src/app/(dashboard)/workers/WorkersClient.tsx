@@ -80,6 +80,19 @@ export default function WorkersClient({
     })
   }
 
+  const handleCancelPayment = (paymentId: string, amount: number) => {
+    if (!confirm(`정산 묶음 (${(amount / 10000).toFixed(0)}만원)을 취소할까요?\n(삭제 X — 데이터는 보존, archive_status=cancelled. 새로 만들려면 [+ 정산 추가] 다시.)`)) return
+    startTransition(async () => {
+      const { cancelWorkerPaymentAction } = await import('@/lib/worker-payments-actions')
+      const r = await cancelWorkerPaymentAction({ payment_id: paymentId })
+      if ('error' in r) {
+        alert(`실패: ${r.error}`)
+        return
+      }
+      router.refresh()
+    })
+  }
+
   const handleCreateMonthly = (workerId: string) => {
     const ym = paymentMonth[workerId] ?? defaultMonth
     startTransition(async () => {
@@ -232,11 +245,19 @@ export default function WorkersClient({
                                         </span>
                                       </div>
                                       {p.status === 'pending' && (
-                                        <button
-                                          onClick={(ev) => { ev.stopPropagation(); handleMarkPaid(p.id) }}
-                                          disabled={pending}
-                                          className="mt-1 text-[10px] px-2 py-0.5 bg-green-500 hover:bg-green-600 text-white rounded"
-                                        >지급 완료 표시</button>
+                                        <div className="mt-1 flex items-center gap-1">
+                                          <button
+                                            onClick={(ev) => { ev.stopPropagation(); handleMarkPaid(p.id) }}
+                                            disabled={pending}
+                                            className="text-[10px] px-2 py-0.5 bg-green-500 hover:bg-green-600 text-white rounded"
+                                          >지급 완료 표시</button>
+                                          <button
+                                            onClick={(ev) => { ev.stopPropagation(); handleCancelPayment(p.id, p.total_amount) }}
+                                            disabled={pending}
+                                            title="이 정산 묶음 취소 (삭제 X, 보류 폴더 이동)"
+                                            className="text-[10px] px-2 py-0.5 bg-gray-200 hover:bg-red-100 text-gray-600 hover:text-red-600 rounded"
+                                          >✕ 취소</button>
+                                        </div>
                                       )}
                                       {p.tax_form_sent_at && (
                                         <div className="text-[10px] text-blue-500 mt-0.5">📧 세무사 발송됨 · {p.tax_form_sent_at.slice(0, 10)}</div>
