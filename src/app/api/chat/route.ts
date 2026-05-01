@@ -1604,11 +1604,12 @@ async function executeTool(name: string, input: Record<string, unknown>, userRol
 
   if (name === 'search_workers') {
     const supabase = createAdminClient()
-    const query = (input.query as string) ?? ''
+    const query = ((input.query as string) ?? '').trim()
     const type = input.type as string | undefined
     const specialty = input.specialty as string | undefined
     const onlyPreferred = input.only_preferred as boolean | undefined
 
+    // 1차: 기본 ILIKE
     let q = supabase.from('external_workers')
       .select('id, name, type, phone, email, default_rate_type, default_rate, specialties, rating, reuse_status, total_engagements, total_paid')
       .eq('archive_status', 'active')
@@ -1622,10 +1623,27 @@ async function executeTool(name: string, input: Record<string, unknown>, userRol
     if (error) return { error: error.message }
 
     let rows = data ?? []
+    let matchMode: 'exact' | 'fuzzy' | 'tokens' = 'exact'
+
+    // 2·3차 fallback (query 있고 결과 0건일 때)
+    if (query && rows.length === 0) {
+      const { fuzzyMatch } = await import('@/lib/fuzzy-search')
+      let fbQ = supabase.from('external_workers')
+        .select('id, name, type, phone, email, default_rate_type, default_rate, specialties, rating, reuse_status, total_engagements, total_paid')
+        .eq('archive_status', 'active')
+        .order('rating', { ascending: false, nullsFirst: false })
+      if (type) fbQ = fbQ.eq('type', type)
+      if (onlyPreferred) fbQ = fbQ.eq('reuse_status', 'preferred')
+      const { data: all } = await fbQ
+      const fb = fuzzyMatch(all ?? [], query, ['name', 'phone', 'email'])
+      rows = fb.matched.slice(0, 30)
+      matchMode = fb.mode === 'none' ? 'exact' : fb.mode
+    }
+
     if (specialty) {
       rows = rows.filter(r => Array.isArray(r.specialties) && r.specialties.some((s: string) => s.includes(specialty)))
     }
-    return { success: true, count: rows.length, workers: rows }
+    return { success: true, count: rows.length, match_mode: matchMode, workers: rows }
   }
 
   if (name === 'add_external_worker') {
