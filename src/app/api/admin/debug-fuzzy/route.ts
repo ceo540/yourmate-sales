@@ -63,5 +63,53 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ query, mode, count: result.length, results: result })
   }
 
-  return NextResponse.json({ error: 'type=projects|workers' }, { status: 400 })
+  // record_engagement 시뮬레이션 — 빵빵이가 호출하는 그 로직 그대로
+  if (type === 'record_engagement_sim') {
+    const wq = searchParams.get('worker_query') ?? ''
+    const pq = searchParams.get('project_query') ?? ''
+    const out: Record<string, unknown> = { worker_query: wq, project_query: pq }
+
+    // worker 매칭
+    if (wq) {
+      const { data: wExact } = await admin
+        .from('external_workers')
+        .select('id, name, type, phone, default_rate, default_rate_type')
+        .ilike('name', `%${wq}%`)
+        .eq('archive_status', 'active')
+        .limit(5)
+      let workers = wExact ?? []
+      if (workers.length === 0) {
+        const { data: wAll } = await admin
+          .from('external_workers').select('id, name, type, phone, default_rate, default_rate_type')
+          .eq('archive_status', 'active')
+        const fb = fuzzyMatch(wAll ?? [], wq, ['name', 'phone'])
+        workers = fb.matched.slice(0, 5)
+      }
+      out.workers_matched = workers
+      out.workers_count = workers.length
+    }
+
+    // project 매칭
+    if (pq) {
+      const { data: pExact } = await admin
+        .from('projects')
+        .select('id, name, project_number, status')
+        .or(`name.ilike.%${pq}%,project_number.ilike.%${pq}%`)
+        .neq('status', '취소')
+        .limit(5)
+      let projects = pExact ?? []
+      if (projects.length === 0) {
+        const { data: pAll } = await admin
+          .from('projects').select('id, name, project_number, status').neq('status', '취소')
+        const fb = fuzzyMatch(pAll ?? [], pq, ['name', 'project_number'])
+        projects = fb.matched.slice(0, 5)
+      }
+      out.projects_matched = projects
+      out.projects_count = projects.length
+    }
+
+    return NextResponse.json(out)
+  }
+
+  return NextResponse.json({ error: 'type=projects|workers|record_engagement_sim' }, { status: 400 })
 }
