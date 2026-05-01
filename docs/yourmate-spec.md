@@ -1,0 +1,1664 @@
+# yourmate-system 종합 명세 (Spec + Roadmap)
+
+> **목적:** 빠진 기능 로드맵 위주 단일 진실 원천. 다음 6개월 구축 합의.
+> **사용자 검토:** 빨간 줄(❌⚠️❓✂️🆕) 표기 후 라운드 정리.
+> **현 상태 자세한 카탈로그:** [`docs/yourmate-spec-0-current.md`](./yourmate-spec-0-current.md) — 이 문서는 *지금 있는 것*은 요약, *빠진 것·정책*은 풍부히.
+
+| 항목 | 값 |
+|---|---|
+| 작성일 | 2026-05-01 |
+| 작성 토대 | 라운드 1~19 사용자 답변 + Phase 0 자동 추출 |
+| main 커밋 | `29ef837` |
+| 시각 보조 | [`docs/yourmate-spec-overview.html`](./yourmate-spec-overview.html) (예정) |
+
+---
+
+## 0. 사용 안내
+
+### 누가 읽나
+- **대표(사용자)**: 빠진 기능 로드맵 합의 + 빨간 줄 표시
+- **계약담당자·PM**: 자기 페르소나 §4.5 검토 + 워크플로 의견
+- **신규 직원**: 시스템 전체 그림 (입사 시 빵빵이가 자동 투어 — §5.14)
+- **유지보수자(미래)**: 데이터 모델·보안 아키텍처 이해
+
+### 빨간 줄 표기 가이드
+
+| 표시 | 의미 |
+|---|---|
+| ❌ | "이 기능 안 쓸 거야 / 죽었어" |
+| ⚠️ | "사실 다르게 동작·정의" |
+| ❓ | "모호 — 정해야 함" |
+| ✂️ | "이 둘 합치자" |
+| 🆕 | "여기 빠짐" |
+
+### 갱신 정책
+- 운영 영향 큰 결정 변경 시 이 문서 우선 갱신 → 코드 작업 진입
+- 사용자 답변·정책 변경 시 §4.5·§4.6 표 갱신
+- 분기마다 §6 우선순위 매트릭스 재검토
+
+---
+
+## 1. 정체성 / 비전
+
+### 1.1 회사 최종 정의 (라운드 4 사용자 정의)
+
+> **"유어메이트는 *프로젝트 단위*로 사업부와 외부 자원을 결합하여
+> 기획부터 실행, 결과물, 정산까지 완성하는 *통합 서비스 운영 조직*."**
+
+### 1.2 전체 운영 흐름
+
+```
+고객 요청
+  → 분석/견적
+  → 프로젝트 생성
+  → 사업부 배정·협업 (1 프로젝트 ↔ N 사업부)
+  → 실행 (내부 + 외부 인력)
+  → 결과물 납품
+  → 정산 / 아카이빙
+```
+
+### 1.3 운영 원칙 (사용자 명시 4개)
+
+1. 모든 업무는 **프로젝트 단위** 관리
+2. 사업부는 독립이지만 **프로젝트 중심으로 유기 연결**
+3. **외부 인력(강사·아티스트·스태프·기술)** 이 *핵심 자원*
+4. 결과물·계약·정산까지 **통합 관리**
+
+### 1.4 시스템 비전 — 발전 단계
+
+| 단계 | 정의 | 위치 |
+|---|---|---|
+| 1 | **디지털화** — 노션·시트 분산, 사람 손 | 과거 |
+| 2 | **AI 결합** — 통합 DB + 빵빵이 능동 도구. 사람 결정·확인 중심 | **현재** |
+| 3 | **AI 직접 실행** — AI가 실행자, 사람은 매니징·현장만 | 목표 |
+
+### 1.5 핵심 정책 (사용자 확정)
+
+- **시스템 = 프로젝트 중심** (사업부 중심 X)
+- **빵빵이 자율 = 일기·분석·제안·일상 쓰기**
+- **빵빵이 컨펌 필수 = 외부 송신·재무·사용자 관련**
+- **빵빵이 권한 = `role=admin` 자동 인지** (별도 모드 전환 X — "대표 전용 모드 웃기지 않아?")
+- **외부 송신 = 초안만, 사람이 검토 후 발송** (안정화 전까지)
+- **수의계약 100%** (입찰 후순위)
+- **모바일 필수** (직원 절반 이상 외출)
+- **명세 작업 핵심 동기 = 대표 손에서 떼어내기 + 담당자 교체에도 영향 없게**
+
+### 1.6 설계 원칙 5개
+
+모든 기능 추가·UI 결정·우선순위 판단 시 다음 질문을 같이:
+
+1. **AI가 직접 할 수 있나?** — 새 UI 만들면 빵빵이 도구도 동시에
+2. **데이터 구조가 AI 친화인가?** — 마크다운·태그·날짜 명확히
+3. **자동 분석 적극 활용** — regenerate_* 능동 호출 확장
+4. **사용자 결정 부담 최소** — 모달 적게, 의도 명확하면 바로 실행
+5. **현장·모바일 우선** — 사용자 절반 이상 외출
+
+---
+
+## 2. 사업부 · 사업자 · 서비스
+
+### 2.1 사업부 5개 (yourmate 본부 = 통합 조직)
+
+| 사업부 | 핵심 역할 | 특징 | 매출 비중 |
+|---|---|---|---|
+| **Sound of School** | 학교 방문공연 + 음향 운영 + 발표회/무대 | 공연 중심, 학교 일정·대응 핵심 | — |
+| **Artkiwoom** | 교육 프로그램 기획·운영. 발주사·강사·일정 관리 | "프로그램이 아닌 *운영 중심*" | — |
+| **002 Creative** | 디자인·영상·콘텐츠 + 행사 운영 + 행사 장비 렌탈 | 제작+실행+장비 *복합형* | **메인** ⭐ |
+| **School Store** | 교육물품 납품 + 장비 렌탈 + 기념품 제작·인쇄 | 물류+제작. ⚠️ 네이밍 한계 → "솔루션" 방향 | — |
+| **002 Entertainment** | 음원 유통(FLO·벅스·카카오) + 아티스트·계약·권리 | 장기 수익형. **별도 시스템 운영** — yourmate에선 *내부 프로젝트 트래킹만* | 장기 |
+
+### 2.2 사업자 6개 (`business_entities`)
+
+| 정식명 | short_name | 견적 템플릿 | 용도 |
+|---|---|---|---|
+| 주식회사 공공이코퍼레이션 | 공공이코 | ✓ | 메인. 통상 default |
+| 주식회사 공공이크리에이티브 | 공공이크 | ❓ 부재 | 분할결제·수의계약 한도 초과 시 |
+| 지지스튜디오 | 지지 | ✓ | — |
+| 드림비앤비 | 드림 | ✓ | — |
+| 넥스트플랜 | 넥스트 | ❓ 부재 | — |
+| 유어메이트 | 유어 | ❓ 부재 | — |
+
+> ❓ **결정 필요:** 템플릿 부재 3개(공공이크·넥스트·유어) — 만들지 / 안 쓰지
+
+### 2.3 서비스 → 사업부 매핑 (11종)
+
+상세 표는 [`yourmate-spec-0-current.md` §6.2`](./yourmate-spec-0-current.md#62-서비스--사업부-매핑-srclibservicests). 핵심:
+
+- SOS / 002ENT / 교육프로그램 / 납품설치·유지보수·교구대여·제작인쇄(=학교상점) / 콘텐츠제작·행사운영·행사대여·프로젝트(=002Creative)
+- 채널톡 그룹·Dropbox 경로 매핑 완비 (`src/lib/services.ts`)
+
+### 2.4 사업부 정체성 — 미답변
+
+> ❓ **결정 필요:** 사업부 5개 각자 *한 줄 더 깊은 정체성·고객·사업 모델*. 본 §2.1은 사용자 라운드 4 답변 그대로.
+
+---
+
+## 3. 데이터 모델 ⭐⭐⭐ (사용자 우선순위 1)
+
+### 3.1 핵심 도메인 (현재)
+
+자세한 카탈로그는 [`yourmate-spec-0-current.md §4`](./yourmate-spec-0-current.md#4-데이터베이스-supabase-58-테이블). 압축:
+
+```
+[customers] ──── [persons] ─── [person_org_relations]
+   │
+   └─ [leads] ──→ [sales] ←──→ [projects] ──→ [tasks]
+                    │             │
+                    │             ├─ [project_logs]
+                    │             ├─ [project_memos]
+                    │             ├─ [project_members]
+                    │             └─ [project_deliverables] 🆕
+                    │
+                    ├─ [payment_schedules]
+                    ├─ [sale_costs]
+                    └─ [quotes] ← [quote_items]
+
+[vendors] ──→ [vendor_payments]
+[external_workers] 🆕 ──→ [worker_payments] 🆕
+[internal_requests] 🆕 (사업부 간 의뢰)
+[sale_projects] 🆕 (N:M join)
+[activity_logs] 🆕 (자동 업무표 토대)
+```
+
+🆕 = 이 명세에서 신규 제안.
+
+### 3.2 sales ↔ projects N:M ⭐⭐⭐
+
+**현재 문제:**
+- `projects._source_sale_id` (uuid 1개)·`leads.converted_sale_id` 등 *단일 연결*
+- 실제 운영은 N:M (사용자 라운드 4 답변)
+
+**비기술 설명 — "join 테이블이란?"**
+
+> 한 매출(=계약)이 여러 프로젝트에 묶이고, 한 프로젝트도 여러 매출에 묶일 수 있는 관계를 표현하려면 *연결만 담당하는 표 1개*를 새로 만든다.
+>
+> 비유: 학생-과목 관계처럼. 학생 1명이 여러 과목 듣고, 과목 1개도 여러 학생 들음. 학생표·과목표 외에 *수강 표*가 따로 필요. 거기에 (학생ID, 과목ID) 한 줄 = 한 수강 관계.
+>
+> yourmate 적용: `sale_projects(sale_id, project_id, role)`. 한 줄 = "이 계약은 이 프로젝트에 이런 역할로 묶여 있다."
+
+**운영 사례 3종 (사용자 라운드 4 답변):**
+
+| 패턴 | 사례 | 설명 |
+|---|---|---|
+| 1:1 | 다수 | 가장 흔한 기본형 |
+| **1:N** (계약 1 → 프로젝트 N) | **경기도교육청 특수교육원** | 프로젝트 3개 → 1 계약 통합 예정. 견적서 1개. 3개 다른 프로젝트 운영 |
+| **N:1** (계약 N → 프로젝트 1) | **평택교육지원청 신규교사 연수**, **남부연수원 관리자 연수** | 1 프로젝트 + *부서별 예산* 분할 → 계약 2~4개. ⭐ "너무 흔함" |
+| **N:M (혼합)** | 가끔이지만 *무조건 있음* | 다른 프로젝트들인데 *기관이 여러 예산 돌려서 막 섞임*. ⚠️ **영업이익 특정 가장 어려움** |
+
+**제안 — `sale_projects` join 테이블 도입:**
+
+```sql
+CREATE TABLE sale_projects (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  sale_id uuid NOT NULL,
+  project_id uuid NOT NULL,
+  role text,                          -- '주계약' / '부계약' / '예산분할' / '추가' 등
+  revenue_share_pct numeric,          -- 이 sale의 revenue 중 이 project에 귀속될 %
+  cost_share_pct numeric,             -- sale_costs 분배 % (혹은 project별 직접)
+  note text,
+  created_at timestamptz DEFAULT now(),
+  UNIQUE(sale_id, project_id)
+);
+```
+
+**마이그 절차 (별도 작업, 명세 검증 후):**
+
+1. `sale_projects` 테이블 생성 (UNIQUE + 기본값)
+2. 백필: `INSERT ... SELECT (id, _source_sale_id, '주계약', 100, 100) FROM projects WHERE _source_sale_id IS NOT NULL`
+3. UI에서 N:M 추가 (프로젝트 페이지 *관련 계약* 다중 선택, 계약 페이지 *관련 프로젝트* 다중 선택)
+4. 빵빵이 도구: `link_sale_project(sale_id, project_id, role)`, `set_revenue_share(sale_id, project_id, pct)`, `unlink_sale_project`
+5. 영업이익 자동 계산 로직 (§3.3)을 `sale_projects`로 정합화
+6. `_source_sale_id` 잔존 라우트 정리 (별 라운드)
+
+### 3.3 N:M 영업이익 자동 계산 ⭐⭐ (라운드 4 핵심 문제)
+
+**문제 (사용자 답변):**
+- N:M 막섞임 케이스에서 영업이익 특정이 *정말 어려움*
+- 현재 = 머리·구글시트로 추정
+
+**제안:**
+
+```
+프로젝트 영업이익 = Σ (sale_projects.revenue_share_pct × sale.revenue)
+                 - Σ (sale_projects.cost_share_pct × sale_costs.amount where sale_id = ...)
+                 - Σ (project_costs WHERE project_id = ...)   -- 프로젝트 직접 비용
+                 - Σ (worker_payments.amount WHERE project_id = ...) -- 외부 인력 비용
+```
+
+- **분배 정책:**
+  - 1:1 → 둘 다 100% (기본값)
+  - 1:N → 사용자가 명시 분배 (예: 50/30/20). 빵빵이가 *균등 초안* 제안
+  - N:1 → revenue 합산. cost는 sale별 직접
+  - N:M → revenue·cost 둘 다 share_pct로 분배
+- **빵빵이 도구:** `compute_project_profit(project_id)`, `suggest_revenue_share(project_ids)` (계약·프로젝트 관계 보고 자동 비율 제안)
+- **대시보드:**
+  - `/projects/[id]` — *영업이익 박스* (분배 명세 같이 표시)
+  - `/admin/profit` 신규 — 사업부·기간별 영업이익 (§3.6 손익 뷰)
+
+> ❓ **사용자 결정 필요:** 분배 단위 — *프로젝트* 단위가 정답인지, *사업부* 단위로도 봐야 하는지
+
+### 3.4 매출 인식 시점 — 한국 표준 제안 ⭐ (Q32 사용자 항상 고민)
+
+**사용자 현 상황:** "유입 시기 / 계약서 작성 / 입금 확인 사이에서 헷갈림. 과거: 유입시기 → 세금계산서 발행. 보통 회사는 어떤 방법 써?"
+
+**표준 안내:**
+
+| 기준 | 회계 표준 | yourmate 적용 권장 |
+|---|---|---|
+| **유입일자** | ❌ 표준 아님 | 마케팅·영업 분석용으로만 |
+| **계약 체결** | 발생주의·매출 인식 가능 — 인도 의무 명확 시 | 1차 후보. *내부 매출 추정* |
+| **세금계산서 발행** | 부가세 신고 기준 — *세무 매출* | **세무 장부**용 |
+| **현금주의(입금)** | 자금 흐름 관리용 | **현금 흐름·자금 압박** 분석용 |
+
+**권장 — 두 트랙 동시 운영:**
+
+1. **회계 매출 (영업이익 분석)** = `progress_status='완수'` 시점 (서비스 인도 완료) ← 발생주의 → 영업이익 계산은 이 시점부터 N:M 분배
+2. **세무 매출 (세무사 신고)** = `세금계산서 발행 시점` ← 부가세 기준
+3. **현금 매출 (자금)** = `payment_schedules.received_date` ← 현금흐름 분석
+
+**시스템에 둘 다 필드 + 자동 동기화. 영업이익 = 회계 매출 기준.**
+
+세무사 보고는 §3.5 두 종류의 완료와 합쳐 자동화 가능.
+
+### 3.5 두 종류의 *완료* 모델 ⭐⭐ (Q58 사용자 막힘)
+
+**사용자 답변:** "관점마다 다름. 결과물 납품+고객확인 ≠ 외주사 결제 완료. 잔금 들어왔는데 외주사 결제 남아 있는 상황 = 애매."
+
+**제안 — 2단계 완료 필드:**
+
+```sql
+ALTER TABLE projects
+  ADD COLUMN biz_completed_at timestamptz,    -- 영업적 완료 (잔금 입금)
+  ADD COLUMN finance_completed_at timestamptz; -- 재무적 완료 (외주 결제·정산까지)
+```
+
+**상태 머신:**
+
+```
+[진행중]
+  ↓ 결과물 납품 + 고객 확인
+[영업 완료] biz_completed_at 기록
+  ↓ 모든 외주사 지급 + 외부 인력 지급 + 세무 처리
+[재무 완료] finance_completed_at 기록 ← 진짜 끝
+```
+
+- 영업 완료 = 매출 인식 (§3.4)
+- 재무 완료 = 영업이익 *확정* (역청구·정산 변동 0)
+- 빵빵이 알림: "프로젝트 X — 영업 완료 후 14일, 외주 미지급 N건. 정산 마무리?"
+
+### 3.6 사업부·프로젝트 손익 뷰 ⭐ (Q21 내 제안)
+
+3종 뷰 제안:
+
+**(A) 사업부별 월간 손익 대시보드 (가장 단순, 1순위 구현)**
+
+```
+[사업부] | [월] | [매출] | [외부 비용] | [영업이익] | [이익률]
+002C    2026-04   50,000   -30,000    20,000      40%
+SOS     2026-04   30,000   -10,000    20,000      66%
+...
+```
+
+- 데이터 = `sale_projects` 분배 후 사업부별 합산
+- 그래프: 월별 추이 + 전년 동월 비교
+
+**(B) 프로젝트별 영업이익·손실 (디테일)**
+
+- `/projects/[id]` 영업이익 박스
+- 분배 명세 (이 프로젝트는 sale A에서 70% + sale B에서 30%)
+- 외주·외부인력·기타 비용 *건별*
+- 빵빵이가 *마진 비정상 감지* — "프로젝트 Y 마진 -5%, 비용 점검?"
+
+**(C) 대표 의사결정 화면 (자금·미수·외주지급 일목)**
+
+- 이번 주·다음 주 *입금 예정 vs 외주 지급 예정* 균형
+- 자금 압박 알림: "다음 주 외주 5,000만 vs 입금 3,000만 = 부족 2,000만. 미수금 N건 회수 우선?"
+- ⭐ 사용자 답변 Q61: "돈은 그 다음. 일부터" — 메인 대시보드 1순위 X. 별도 `/admin/cashflow-view`
+
+---
+
+## 4. 시스템 구성 현황 + 정책
+
+### 4.1 현재 구성 요약 (자세한 건 Phase 0 doc 링크)
+
+| 영역 | 현재 | 링크 |
+|---|---|---|
+| 사이드바 메뉴 | 메인 9 + 하단 3 | [Phase 0 §1](./yourmate-spec-0-current.md#1-사이드바-메뉴-srccomponentslayoutsidebartsx) |
+| 페이지 | 60+ 라우트 | [Phase 0 §2](./yourmate-spec-0-current.md#2-페이지-트리-srcapp) |
+| API | 30+ 엔드포인트 | [Phase 0 §3](./yourmate-spec-0-current.md#3-api-라우트-srcappapi) |
+| DB 테이블 | 58개 | [Phase 0 §4](./yourmate-spec-0-current.md#4-데이터베이스-supabase-58-테이블) |
+| 빵빵이 도구 | 109개 (4개 진입점) | [Phase 0 §5](./yourmate-spec-0-current.md#5-빵빵이-ai-어시스턴트) |
+| 외부 연동 | 8개 (Anthropic·OpenAI·Supabase·Dropbox·채널톡·Notion·Google·pdf-parse) | [Phase 0 §9](./yourmate-spec-0-current.md#9-외부-연동) |
+| cron | 1개 (`/api/cron/payment-reminders` 매일 KST 09시) | [Phase 0 §8](./yourmate-spec-0-current.md#8-자동화) |
+
+### 4.2 권한 모델 + 보안 아키텍처 ⭐⭐⭐ (Q53 수준별 트레이드오프 보고서)
+
+**현 상태:** `role` = admin/manager/member. `role_permissions(page_key, role, access_level)`. **사용자: "아직 안 잡힘 — 명세에서 제안"**
+
+**진짜 막힘 (Q46 사용자 답변):** *유지보수 담당자 + 외부 보안 = 개인정보 노출 우려*. HR 기능 미진행 핵심 원인.
+
+#### 보안 아키텍처 4단계 트레이드오프
+
+| 수준 | 설명 | 기술 | 비용·노력 | 막힘 풀림? |
+|---|---|---|---|---|
+| **L1 — 현 상태** | Supabase 기본 + service_role 비밀 | 0 | 0 | ❌ 못 풂 — 유지보수 담당자도 service_role 알면 다 봄 |
+| **L2 — RLS 강화** | RLS 모든 테이블. role별 행 제한. 직원 본인 데이터만 | 1~2주 | 중 | ⚠️ 부분. service_role 여전히 모든 데이터 |
+| **L3 — RLS + 민감 컬럼 암호화** | L2 + pgcrypto로 주민번호·계좌·신분증 URL 암호화. 키는 *대표만* | 2~3주 | 큼 | ✅ 풂. 유지보수 담당자도 민감 컬럼 못 봄 |
+| **L4 — RLS + 암호화 + 외부 KMS + 감사 로그** | L3 + AWS KMS or HashiCorp Vault. 모든 민감 조회 audit log | 4~6주 | 매우 큼 | ✅ 풂 + 법적 추적 가능 |
+
+**권고:** **L3 단계** — yourmate 규모와 위험 균형. 외부 보안 컨설팅은 L4 단계로 갈 때 검토.
+
+#### L3 단계 구체 설계
+
+```sql
+-- 모든 핵심 테이블 RLS 활성화
+ALTER TABLE customers ENABLE ROW LEVEL SECURITY;
+-- 등...
+
+-- 민감 컬럼 암호화 (pgcrypto)
+ALTER TABLE persons ADD COLUMN ssn_encrypted bytea;
+ALTER TABLE external_workers ADD COLUMN ssn_encrypted bytea;
+ALTER TABLE external_workers ADD COLUMN bank_account_encrypted bytea;
+-- ID 사진·통장 사진은 Dropbox 보관, URL만 DB에 + URL도 암호화
+
+-- 복호화는 대표 계정 + 별도 키 (Supabase Vault 또는 환경변수 admin-only)
+```
+
+**유지보수자 권한 분리:**
+- 유지보수자 role = `developer` (신규)
+- `role_permissions` 에 `developer` 추가 → 모든 페이지 *데이터 접근* 차단, 코드·구조만
+- service_role 키는 대표만 보유 + 유지보수자는 별도 *기술 admin* 키 (RLS 적용된 권한)
+
+#### 민감정보 저장 정책 ⭐ (Q43 내 제안)
+
+| 정보 | 저장 위치 | 암호화 | 접근 |
+|---|---|---|---|
+| 주민번호 | DB (`persons.ssn_encrypted`, `external_workers.ssn_encrypted`) | pgcrypto | 대표 + 세무사 핸드오프 자동만 |
+| 계좌번호 | DB (`*.bank_account_encrypted`) | pgcrypto | 대표 + 세무사 핸드오프 자동만 |
+| 신분증 사진 | Dropbox `/0_민감정보/외부인력/` (대표만 권한) | Dropbox 권한 | URL만 DB, 복호화된 URL 노출 X |
+| 통장 사본 | Dropbox `/0_민감정보/외부인력/` (대표만 권한) | Dropbox 권한 | 동일 |
+| 채널톡 대화 | Supabase + 채널톡 (이미) | 표준 | 직원 본인 + 대표 |
+| 급여·평가 | DB | pgcrypto | 본인 + 대표만 |
+
+**보안 검증 절차 (사용자가 추후 진행):**
+1. L3 마이그 후 *모의 침투 테스트* (외부 펜테스트 또는 자체 OWASP)
+2. 유지보수자 입사 전 *NDA + 데이터 접근 약관* 서명
+3. 분기마다 audit log 검토
+
+### 4.3 백업 정책 ⭐ (Q36 내 제안)
+
+**현 상태:** Supabase·Vercel 자동 백업 의존. *사용자 검증 안 됨*.
+
+#### 권장 다중 백업
+
+| 대상 | 1차 (자동) | 2차 (yourmate 자체) | 주기 |
+|---|---|---|---|
+| Supabase DB | Supabase 자동 PITR (Pro=7일·Team=14일) | `pg_dump` → Dropbox `/0_시스템백업/db/` | 매일 KST 03시 cron |
+| Vercel 환경변수 | Vercel export | 1Password (대표 개인 vault) | 변경 시 |
+| Vercel 코드 | GitHub 자동 | (불필요) | 자동 |
+| Dropbox 파일 | Dropbox 자체 30일 복원 | (충분) | 자동 |
+| 운영 데이터 export | (없음) | 매주 금요일 자동 export → Dropbox `/0_시스템백업/weekly/` | 주간 |
+
+#### 자동 cron 추가 (vercel.ts)
+
+```typescript
+// vercel.ts
+crons: [
+  { path: '/api/cron/payment-reminders', schedule: '0 0 * * *' },     // 기존
+  { path: '/api/cron/db-backup',         schedule: '0 18 * * *' },    // 신규 KST 03시
+  { path: '/api/cron/weekly-export',     schedule: '0 0 * * FRI' },   // 신규 매주 금
+];
+```
+
+#### 재해 복구 시나리오 매뉴얼
+
+명세에 별도 §A.1로 — 사용자가 *데이터 손실 의심 시* 따라 할 수 있는 단계별 가이드.
+
+### 4.4 환경 변수 + 외부 키 (현 상태)
+
+[Phase 0 §9](./yourmate-spec-0-current.md#9-외부-연동) 참조. 추가:
+
+- 신규 권한 분리 시 `SUPABASE_DEVELOPER_ROLE_KEY` 등 분기
+
+---
+
+## 4.5 직원 역할 / 워크플로 — 페르소나 6종 ⭐⭐⭐ (Q64 사용자 정의 미완 → 내 신규)
+
+### 4.5.1 회사 형태 (라운드 3 답변)
+
+- **소규모 + 이중 역할.** 한 사람이 계약담당+PM, 운영+디자인 등 겸직
+- **역할 경계 흐림.** "고객 응대 → 리드 → 견적" 단계마다 누가 손인지 *항상 겹침*
+
+### 4.5.2 역할 정의 6개
+
+| 역할 | 권한 | 핵심 책임 | 시스템 사용 패턴 |
+|---|---|---|---|
+| **대표** | admin | 전체 결정·재무 최종·HR·외부 인력 정산·전략 | 전 영역. 모바일 절반 이상 |
+| **계약담당+PM 겸** | admin/manager | 계약·정산 + 평소 PM. *이벤트 드리븐* | 평소 PM 화면, 계약 발생 시 빵빵이 호출로 진입 |
+| **PM (전담)** | manager | 프로젝트 1개 풀 책임. 조율·디테일·사업부별 다층 | 프로젝트 페이지 + 빵빵이 |
+| **현장 직원** | member | 행사·공연 당일 운영. 외출 多 | **모바일 위주**. 사진·메모·음성·GPS·영수증 |
+| **외부 인력** (미래 노출) | external_worker | 자기 일정·정산 조회. 서류 제출 | 외부 포털 (장기) |
+| **고객** (미래 노출) | client | 자기 프로젝트 진행·결과물·견적 보기 | 고객 포털 (장기) |
+
+### 4.5.3 페르소나 디테일
+
+#### A. 대표 — 일주일 패턴
+
+```
+월요일 아침   : 이번 주 시급 할 일 + 활성 프로젝트 일람 (메인 대시보드)
+              빵빵이 일일 브리핑: "이번주 마감 N건, 입금 예정 X원, 외주 지급 Y원, 미결 Z건"
+
+매일         : 채널톡·메일 응대 (빵빵이 초안 검토 후 발송)
+              현장 출장 (절반 이상)
+
+금요일       : 주간 정산 (외부 인력 정산은 월말이나 익월 초)
+              세무사 핸드오프 카톡 (빵빵이 자동 정리 → 검토 → 발송)
+
+월말·익월초  : 인건비·프리랜서 항목 구글시트 정리 → 카톡으로 세무사
+```
+
+**시스템 도움 1순위:**
+1. 메인 대시보드 (시급 할 일 + 활성 프로젝트) — §4.8
+2. 빵빵이 외부 인력 정산 자동화 (대표 직접 체크 → 오류 多 풀기) — §5.5
+3. 모바일 풀 사용 — §4.7
+
+#### B. 계약담당+PM 겸 — *이벤트 드리븐* 패턴
+
+```
+평소         : 다른 PM 업무 (자기 프로젝트 진행)
+계약 이벤트  : 빵빵이가 호출 — "용인시청소년미래재단에서 견적 요청. 컨텍스트 정리해줄게"
+              빵빵이가 과거 거래 이력·표준 견적 기준·서비스 컨텍스트 자동 제공
+              계약담당 모드로 전환 (시스템이 알아서 — UI 변경 X, 빵빵이 도움 변경 O)
+
+계약 진행 중 : 입금 확인·세금계산서 발행·외주비 지급 — 모든 결정 정보를 *손에*
+              대표 판단 의존 X (현재는 의존 中)
+
+계약 완료 후 : 영업 완료 → 외주 정산 → 재무 완료 (§3.5)
+```
+
+**핵심 — 대표 손 떼기 (Q12·Q49):**
+- 입금 확인: 빵빵이가 매일 *입금 매칭 후보* 자동 제안 → 계약담당이 *클릭 한 번* 확인
+- 세금계산서 발행: 빵빵이가 *서식·시점·금액* 자동 추출 → 계약담당이 *e-세금계산서 발행 클릭*
+- 외주비 지급: 외주사·외부 인력 *대상자·금액·예정일* 자동 정리 → 계약담당이 *지급 승인*
+- 모든 작업 빵빵이가 *컨텍스트 충분히 줘서* — 대표 모르고도 OK
+
+#### C. PM 페르소나 — 다층 (사업부별 다름)
+
+| 사업부 | PM 하루 패턴 |
+|---|---|
+| Sound of School PM | 공연 일정·장소·아티스트 조율. 학교 담당자 응대 (오전 多). 출장 多 |
+| Artkiwoom PM | 강사 섭외·교육 운영. 발주사 응대 + 강사 응대. 사무실 中 |
+| 002 Creative PM | 디자인·영상·행사 조율. 외주 디자이너·촬영팀 응대. *복합형* |
+| School Store PM | 납품·렌탈 일정. 물류·창고. 사무실 + 가끔 출장 |
+
+**공통:**
+- 프로젝트 페이지 + 빵빵이 = 핵심
+- 채널톡 대화 = 매일 (빵빵이 초안)
+- 이메일·카톡 = 자주 (빵빵이 초안)
+
+#### D. 현장 직원 ⭐⭐ (Q67 사용자 디테일 답변)
+
+**핵심 요구사항:**
+
+| 기능 | 우선순위 |
+|---|---|
+| 고객 연락처·프로젝트 주요 정보 *조회* | 1순위 |
+| 사진·메모·음성 *빠르게 올리기* (프로젝트 자동 매칭) | 1순위 |
+| GPS 위치 기록 (출근체크 X — 위치 로그 자체) | 2순위 |
+| 법인카드 사용 영수증 처리 | 2순위 |
+| 개인카드 경비 처리 | 2순위 |
+| 출근체크·도착 알림·이동일지 | 후순위 (이동일지는 당장 X) |
+
+**모바일 화면 디자인 가이드 (§4.7):**
+
+- 한 손 조작 가능 (엄지 닿는 영역만 액션 버튼)
+- 하단 고정 액션 바: [📷 사진] [🎙 음성] [📝 메모] [📍 위치] [🧾 영수증]
+- 사진·음성 → 프로젝트 자동 매칭 (현재 진행 중 활성 프로젝트 추천)
+- GPS 자동 첨부 (위치 로그 동시)
+
+#### E. 외부 인력 (미래 포털)
+
+- 자기 일정 보기
+- 정산 내역 조회
+- 서류 제출 (신분증·통장 사본)
+- 빵빵이 채팅 (자기 일정·정산 질문)
+
+#### F. 고객 (미래 포털)
+
+- 자기 프로젝트 진행도
+- 견적·계약·결과물 다운로드
+- 채널톡 통합
+
+### 4.5.4 단계별 디폴트 책임자 (Q11 흐름 정리 답)
+
+| 단계 | 디폴트 | 오버라이드 |
+|---|---|---|
+| 채널톡 1차 응대 | 자동 매칭 (서비스별 그룹) → 그룹 담당 | 사람이 수동 배정 가능 |
+| 리드 등록 | 응대 직원 | `lead.assignee_id` 직접 변경 |
+| 견적 작성 | 리드 assignee = PM | 계약담당이 검토 |
+| 계약 체결 | 계약담당 (이벤트 진입) | 대표 검토 *지금*, 자동 X 미래 |
+| 프로젝트 진행 | PM | 사업부별 멤버 |
+| 외주 정산 | 계약담당 | 빵빵이 자동 정리 + 대표 승인 (지금) → 계약담당 자율 (목표) |
+| 세무 핸드오프 | 계약담당 | 빵빵이 자동 (월말 카톡) |
+
+빵빵이가 단계 진입 시 *"이 단계는 보통 X 역할이 처리. 본인이 맡으시겠어요?"* 자연 안내.
+
+---
+
+## 4.6 빵빵이 — 자율성·권한·학습·피드백 ⭐⭐ (Q15·Q40·Q71·Q73·Q74 종합)
+
+### 4.6.1 자율성 매트릭스 (Q15 사용자 정의 + 디테일)
+
+| 도구 분류 | 자율 OK | 컨펌 필수 | 이유 |
+|---|---|---|---|
+| **읽기 (read)** | ✅ 모든 영역 | — | 정보 노출 = 권한 모델로 통제 (§4.2) |
+| **분석·요약·제안** | ✅ 모든 영역 | — | 정보 가공만, 부작용 없음 |
+| **시스템 내부 쓰기 — 일상** | ✅ 할일·메모·로그·개요·협의·요약 | — | 수정 가능. 사용자가 사후 검토 |
+| **시스템 내부 쓰기 — 상태 변경** | ✅ project.status·lead.status·task.status | — | 가역적 |
+| **외부 송신** | ❌ | ✅ 이메일·채널톡·SMS·카톡 | 회사 밖으로 — 안정화 전 *초안만* |
+| **재무 변경** | ❌ | ✅ 입금·세금계산서·외주지급·금액 변경 | 비가역적 + 법적 책임 |
+| **사용자 변경** | ❌ | ✅ profile·person 삭제·고객사 삭제·정합 변경 | 데이터 손상 위험 |
+| **민감정보 노출** | ❌ | ✅ 주민번호·계좌·신분증 조회 (대표만) | 개인정보 |
+| **삭제** | ❌ | ✅ 모든 DELETE | 비가역 |
+
+**빵빵이 시스템 프롬프트 권고문 (적용):**
+
+```
+당신은 yourmate의 비서 빵빵이입니다.
+도구 호출 시 다음 정책을 *스스로* 따르세요:
+
+자율 OK (사용자 컨펌 없이 호출):
+- 모든 read 도구
+- 분석·요약·제안 도구 (regenerate_*)
+- 시스템 내부 쓰기 (할일·메모·로그·상태 변경)
+
+컨펌 필수 (사용자에게 "이 작업 해도 될까요?" 확인 후 호출):
+- 외부 송신 (이메일·채널톡·SMS·카톡 → 외부)
+- 재무 변경 (입금·세금계산서·금액·외주 지급)
+- 사용자 변경 (profile·person·고객사 삭제·정합)
+- 민감정보 노출 (주민번호·계좌·신분증)
+- 모든 삭제
+
+판단이 모호하면 *컨펌 받기* 우선. 안전 > 효율.
+```
+
+### 4.6.2 권한별 답변 분리 (Q73 사용자 답변)
+
+**사용자: "대표 전용 모드가 웃기지 않아? 그냥 대표 계정으로 로그인 상태면 대표인지 알 수는 없나?"**
+
+→ **`role=admin` 자동 인지**, 별도 모드 전환 X.
+
+```typescript
+// /api/chat 시스템 프롬프트에 자동 주입
+if (user.role === 'admin') {
+  systemPrompt += `
+당신은 *대표* 계정과 대화 중입니다.
+- 직원 평가·HR 분석·민감정보 조회 응답 가능
+- 모든 사업부·재무 데이터 노출 가능
+- 다만 *외부 송신·재무 쓰기*는 여전히 컨펌 필수
+`;
+} else {
+  systemPrompt += `
+당신은 직원 계정 (${user.name})과 대화 중입니다.
+- 본인·소속 프로젝트 데이터만 응답
+- 다른 직원 평가·HR·민감정보 응답 거부
+- 대표 정책·결정 스타일은 *공개 가능 정책만* 응답
+`;
+}
+```
+
+**대표 전용 기능 (자연 활성):**
+- 직원 업무 평가 ("X 직원이 이번 분기 어땠어?")
+- HR 분석 (업무량·병목·기여도)
+- 민감정보 조회 (주민번호 등 — UI에서도 대표만)
+- 회사 자금·외주 결정
+
+### 4.6.3 빵빵이 학습 구조 — 단계별 (Q74 가장 효율적)
+
+**사용자 비전:** *"마치 사용자처럼 회사 모든 걸 이해. 나도 이번 기회로 머리 속 정리"*
+
+3단계 도입 — 비용·노력·효과 균형:
+
+#### 단계 1: 시스템 프롬프트 강화 (즉시, 0.5일)
+
+- 회사 정의·사업부 5개·운영 원칙·핵심 정책 → 시스템 프롬프트
+- 사업자 6개·서비스 11종 매핑
+- 빵빵이 자율성 정책 (§4.6.1)
+- 권한별 분리 (§4.6.2)
+
+→ *항상 알아야 할 회사 기본*
+
+#### 단계 2: 동적 컨텍스트 주입 (1~2주, 도구 단위)
+
+빵빵이 도구 호출 시 *해당 작업에 필요한 컨텍스트* 자동 첨부:
+
+| 작업 | 자동 컨텍스트 |
+|---|---|
+| 견적 작성 | 과거 비슷한 견적 3개 + 서비스별 견적 기준 + 고객 과거 거래 이력 |
+| 리드 응대 | 고객사 · 담당자 · 과거 프로젝트 · 협의 내역 |
+| 프로젝트 분석 | brief.md + 최근 logs + 미결 협의 + 멤버 |
+| 정산·재무 | sale_projects 분배 + 외주 비용 + 입금 일정 |
+| 직원 평가 (대표만) | activity_logs 기반 행위 통계 + 프로젝트 기여도 |
+
+→ *항상 알 필요는 없지만 그 작업에 필요한 정보*
+
+#### 단계 3: RAG (벡터 DB) — 항상 학습 (2~3주, 별도 구축)
+
+- 드롭박스 매뉴얼·운영가이드·과거 brief.md → 임베딩
+- 전 프로젝트 logs·메모 → 임베딩
+- 빵빵이 질문 시 *관련 문서 자동 검색* + 답변에 활용
+
+기술 선택: pgvector (Supabase 내장) — 추가 인프라 0.
+
+#### 단계 4: 학습 피드백 루프 (Q40 사용자 요청)
+
+```sql
+CREATE TABLE bbang_feedback (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id uuid,
+  conversation_id uuid,
+  message_id uuid,
+  feedback_type text,    -- 'wrong_analysis' / 'wrong_proposal' / 'good'
+  correction text,
+  created_at timestamptz DEFAULT now()
+);
+```
+
+- 빵빵이 답변 옆 [👍/👎] 버튼 → 잘못된 케이스 기록
+- 잘못 패턴 누적 → 시스템 프롬프트 *교정 사례* 추가 (정기 cron)
+- 빵빵이는 답변 시 과거 비슷한 *교정 사례* 참고
+
+### 4.6.4 빵빵이 톤·캐릭터 (Q37 사용자 답변)
+
+**상황별 자동 조절:**
+
+| 컨텍스트 | 톤 |
+|---|---|
+| 일상 대화 | 친근한 비서 (반말+공손, 따뜻함) — 현재 그대로 |
+| 재무·계약 | 정중·명확·단답·신뢰감 우선 |
+| 외부 송신 초안 | 정중·전문 (대고객 어조) |
+| 직원 평가 (대표 전용) | 객관·증거 기반 |
+| 회의 분석 | 정확·중립 |
+
+→ 빵빵이가 *컨텍스트 자동 감지* 후 톤 조절. 시스템 프롬프트에 가이드 같이.
+
+추후 변경 가능 (사용자 답변).
+
+---
+
+## 4.7 모바일 UX ⭐⭐ (사용자 우선순위 3 / Q33·Q60 모바일 필수)
+
+### 4.7.1 현 상태 (Q33)
+
+- **모바일 전용 레이아웃 아예 안 만듦** (사용자 인정)
+- 사용자(대표) 본인도 *못 씀*
+- *직원 절반 이상 외출* — 모바일 필수
+
+### 4.7.2 단계별 도입
+
+#### 단계 1: 빠른 입력 화면 (1주)
+
+`/m` 라우트 신규 — 모바일 전용 단일 페이지:
+
+```
+┌─────────────────────────────┐
+│  📍 현재 프로젝트 (자동 매칭)  │
+│  [용인 청소년 어울림한마당]  ▼│  ← 활성 프로젝트 picker
+├─────────────────────────────┤
+│   [📷 사진]   [🎙 음성]      │
+│   [📝 메모]   [🧾 영수증]    │
+│   [📍 위치 로그]            │
+└─────────────────────────────┘
+       하단 고정 액션 바
+```
+
+- 현재 진행 중 활성 프로젝트 자동 추천 (GPS·시간·캘린더 기반)
+- 사진·음성 → 프로젝트로 자동 첨부 + GPS 메타데이터
+- 영수증 → OCR (§5.0.3 단계 1)
+- 위치 로그 → 단순 기록 (출근체크 X)
+
+#### 단계 2: 핵심 조회 (1주)
+
+- 고객 연락처 · 프로젝트 주요 정보 *읽기 전용* 모바일 카드
+- 빵빵이 채팅 (음성 입력 강조)
+- 오늘 일정 + 도착해야 할 곳 (캘린더)
+
+#### 단계 3: 응답·관리 (2주)
+
+- 채널톡 알림 → 빵빵이 초안 → 모바일에서 *발송 클릭*
+- 외주 결정·정산 *모바일에서도* (대표 외출 多)
+- 풀 데스크탑 기능 점진 이식
+
+### 4.7.3 기술 선택
+
+- Next.js App Router 모바일 분기 (`@media (max-width: 768px)`)
+- Tailwind 책임 (이미 사용 중)
+- PWA 가능성 검토 (오프라인·홈 화면 추가)
+
+### 4.7.4 GPS·영수증·경비 단계별 (Q69 내 제안)
+
+#### GPS — Q70 사용자 답변 ("위치 로그 자체가 가치, 출근체크 X")
+
+```sql
+CREATE TABLE location_logs (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  actor_id uuid,
+  project_id uuid,            -- nullable
+  lat numeric,
+  lng numeric,
+  accuracy_m numeric,
+  context text,                -- '사진 첨부' / '메모' / '도착 체크'
+  created_at timestamptz DEFAULT now()
+);
+```
+
+- 사진·메모·음성 첨부 시 *자동 위치 같이 기록*
+- 별도 *도착 체크* 버튼 (현장 도착 시 1회)
+- 추후 위치 분석으로 *어느 학교에서 자주 일했나* 통계
+- 이동일지 = 후순위 (사용자 답변)
+
+#### 영수증·경비 단계별 (Q69 사용자 광곽 → 내 제안)
+
+**단계 1: 사진 첨부 + 수동 (즉시, 0.5주)**
+- 모바일에서 영수증 사진 → `/m` 빠른 입력 → 프로젝트 첨부
+- 금액·날짜는 직원 손으로
+- `expenses` 테이블 (이미 있음 [Phase 0 §4.6](./yourmate-spec-0-current.md#46-재무))
+
+**단계 2: OCR 자동 추출 (1주)**
+- Anthropic Sonnet vision으로 영수증 사진 → 금액·가맹점·날짜 자동 추출
+- 직원이 *확인·수정* 후 저장
+- 빵빵이 도구: `extract_receipt(image_url)`
+
+**단계 3: 카드 자동 매칭 (3주)**
+- 법인카드 자동 명세 (은행 API or 명세서 업로드)
+- 영수증 사진 ↔ 카드 명세 자동 매칭
+- 매칭 안 된 명세 = *영수증 누락* 알림 → 직원 확인
+
+**단계 4: 경비 승인 워크플로 (2주)**
+- 직원 첨부 → 대표 승인 → 정산 큐
+- 빵빵이 알림 (대표): "이번 주 경비 N건, 승인 대기"
+
+→ 단계 1·2가 *현장 직원 모바일 1순위*. 단계 3·4는 안정화 후.
+
+---
+
+## 4.8 메인 대시보드 (사용자 우선순위 4) ⭐ (Q61·Q68 내 제안)
+
+### 4.8.1 사용자 명시 (Q61)
+
+> **"이번주 시급 할 일 + 활성 프로젝트 상태 일람. 돈은 그 다음. 일부터."**
+
+### 4.8.2 메인 화면 디자인
+
+```
+┌─────────────────────────────────────────────────┐
+│  안녕하세요 OOO님. 오늘 N건 시급.              │
+│  빵빵이 일일 브리핑 (자동, 09시 cron):          │
+│   • 오늘 마감 3건                                │
+│   • 응답 지연 2건                                │
+│   • 외주 D-3 1건                                 │
+├─────────────────────────────────────────────────┤
+│  📌 이번주 시급 할 일 (자동 우선순위)             │
+│  [Critical]                                      │
+│  ◆ 용인 어울림한마당 — 마감 D-2, 외주 미확정       │
+│  ◆ 안성수험번호 — 입금 D-1, 미수                 │
+│  [High]                                          │
+│  ◆ ... (5건)                                    │
+├─────────────────────────────────────────────────┤
+│  🚧 활성 프로젝트 (10개)                          │
+│  [용인] 진행중 · PM 김OO · 마감 6/15  [→ 열기]    │
+│  [평택] 견적 · ...                               │
+│  ...                                            │
+├─────────────────────────────────────────────────┤
+│  💰 자금 (접힌 영역, 펼치면)                     │
+│  이번 주 입금 예정 X / 외주 지급 Y / 차이 Z       │
+└─────────────────────────────────────────────────┘
+```
+
+### 4.8.3 시급 할 일 *우선순위 결정 알고리즘* (Q68 내 제안)
+
+**점수 = (마감 가까움 × 가중치) + (금액 규모 × 가중치) + (고객 등급 × 가중치) + (지연 위험 × 가중치)**
+
+```typescript
+function calculatePriority(item) {
+  const daysToDue = (dueDate - now) / DAY_MS;
+  const dueScore = daysToDue <= 0 ? 100 : Math.max(0, 30 - daysToDue) * 3;  // 0~100
+  const amountScore = Math.min(item.amount / 1_000_000, 30);                 // 0~30
+  const customerScore = item.customer.priority === 'high' ? 20 : 0;          // 0/20
+  const delayScore = item.responseDelayDays > 7 ? 30 : item.responseDelayDays * 4;
+  
+  return dueScore + amountScore + customerScore + delayScore;
+}
+
+// Critical: > 100
+// High: 70~100
+// Medium: 40~70
+// Low: < 40
+```
+
+**가중치는 사용자 조정 가능 (admin 설정).**
+
+빵빵이가 매주 월요일 *우선순위 자동 재정렬* + 사용자가 드래그로 *수동 재배치 가능*.
+
+### 4.8.4 활성 프로젝트 일람
+
+- 진행 중 프로젝트 카드형
+- 핵심 정보: 단계 · PM · 마감 · 미결 협의 수 · 외주 진행도
+- 클릭 → `/projects/[id]`
+
+### 4.8.5 자금 영역 (접힘)
+
+사용자: "돈은 그 다음."
+- 기본 *접힘*
+- 펼치면 *이번 주 입금 vs 외주 지급* 균형 (§3.6 (C))
+- 별도 `/admin/cashflow-view` 풀 화면
+
+---
+
+## 5. 빠진 기능 로드맵 ⭐⭐⭐
+
+### 5.0 견적서 + 현장 운영 자동화 (Q14 손작업 1순위)
+
+#### 5.0.1 견적서 자동 초안 (RAG/과거 견적 학습)
+
+**현 상태:** Step 1·2·3 완료, Step 4 PDF 미진행. 매번 특수 항목 → 손으로.
+
+**제안:**
+- 빵빵이가 *과거 비슷한 견적 3개 자동 검색* (§4.6.3 RAG 단계 3 + 빵빵이 도구 `search_similar_quotes`)
+- 시나리오 기반 자동 항목 추출 (SOS PoC → 다른 서비스로 확장)
+- PDF 출력 (Puppeteer or Claude PDF API)
+- 사업자 6개 중 부재 3개 템플릿 — Q2 결정 후 작성
+
+**자율성:** 자동 초안은 자율 (§4.6.1), 발송은 컨펌.
+
+#### 5.0.2 현장 운영 조율 자동 충돌 감지
+
+**현 상태:** 외주사·장비·일정 겹침을 사람이 머리로 조율 (사용자 답변).
+
+**제안:**
+- `check_vendor_availability(vendor_id, date)` — vendors 일정 + 캘린더 충돌
+- `check_equipment_conflict(equipment_ids, date_range)` — rentals + 002C 행사 장비 통합
+- `find_schedule_overlap(project_id)` — 프로젝트 일정 + tasks due_date + 캘린더 중첩
+
+**AI 직접 실행 비전 정합:** 사람은 결정만, AI가 후보·충돌 분석.
+
+### 5.1 알림·청구 자동화 (Phase 2 확장)
+
+[plan §5.1과 동일]
+
+**현재:** payment-reminders cron 1개. 백본 코드 있으나 *dry-run 검증 미완*.
+
+**우선순위 1 (즉시):**
+- 직원별 1인 채널톡 채널 *검증* (메모리에 기능 있음, 미검증)
+- "발행 후 7일 미입금" 1줄 알림 운영 → MVP
+
+**확장:**
+- 외주비 D-day 알림
+- 미수금 D+N 알림
+- 세금계산서 발행 후 미입금 의심
+- 매출 누락 의심 (sale_projects 미연결 등)
+
+**알림 채널:**
+1. 직원별 1인 채널톡 (1순위)
+2. 시스템 내 알림 인박스 (선택)
+3. 이메일 (선택)
+
+### 5.2 외부 채널 자동 회신 — 초안만 (Q5·Q44 정책)
+
+**핵심 정책:** 빵빵이는 *초안만*, 사람이 검토 후 발송. 안정화 전까지.
+
+**채널별 저장 (Q5 사용자 답변):**
+
+| 채널 | 초안 저장 위치 | 작업량 |
+|---|---|---|
+| 이메일 | Gmail/Outlook 임시보관함 (Gmail API/IMAP) | 큼 (3주) |
+| 채널톡 | 직원별 1인 채널톡 채널 (검증 후 사용) | 작음 (2~4시간, 기능 이미) |
+| 카카오톡 | ❓ 결정 필요 — 카톡 비즈 봇? | 미정 |
+| SMS | 솔라피 임시발송함? | 미정 |
+
+**빵빵이 도구 신규:**
+- `draft_email_reply(thread_id, instruction)` — 메일 초안 임시보관함
+- `draft_channeltalk_reply(conversation_id, instruction)` — 1인 채널 초안
+
+**단계별 도입 (Q44 사용자 답변):**
+1. 안정 전: 모든 채널 *초안만* (빵빵이가 사람에게 제공, 사람이 보냄)
+2. 안정 후: FAQ 자동 응대 (채널톡 자주 묻는 질문 빵빵이 즉답)
+
+### 5.3 음성·문서 AI 자동 변환 (Q7 사용자 답변)
+
+#### 5.3.1 PLAUD 통합 (현장용)
+
+- PLAUD 결과(텍스트·요약) 프로젝트/리드에 *수동 첨부*
+- 빵빵이 도구: `attach_plaud_meeting(project_id, transcript, summary)`
+- 빵빵이가 attached 회의록 → 프로젝트 brief.md 자동 통합
+
+#### 5.3.2 자체 STT 품질 개선 (웹용 — PLAUD 대체 옵션)
+
+**현재:** `/api/transcribe` = OpenAI Whisper 단일. PLAUD 대비 품질 부족.
+
+**개선 단계 (사용자 요청 — "PLAUD 만큼 퀄리티 나오려면?"):**
+
+| 단계 | 개선 | 효과 |
+|---|---|---|
+| 1 | **분할 처리** | 30분 이상은 chunk → 통합 요약. Whisper API 25MB 제한 회피 |
+| 2 | **컨텍스트 주입** | 프로젝트 정보·참여자 목록 같이 줘서 정확도 ↑ |
+| 3 | **후처리 프롬프트** | Sonnet에 "회의록 + 액션 + 결정 + 미결 사항" 분리 추출 few-shot |
+| 4 | **화자 분리** | Whisper만으로는 약함. **AssemblyAI ($0.01/min) 또는 Deepgram 도입 비교** ⭐ 가장 큰 키 |
+| 5 | **회의 도메인 사후 학습** | 회사 용어·고객명 사전(prompt)으로 인식률 ↑ |
+
+**권고:** 단계 1·2·3까지는 *현 Whisper로* (1주 작업), 단계 4 화자 분리는 *별도 도입* — 이게 PLAUD 핵심 차이.
+
+#### 5.3.3 HWPX 공공기관 문서 자동화
+
+[메모리 `yourmate-hwpx-automation-idea.md`] 별도 트랙. 100% 수의계약(Q19)이라 *후순위*.
+
+### 5.4 자동 점검 · 정기 분석 + **자동 업무표** ⭐⭐⭐ (Q6 가장 큰 야망)
+
+#### 5.4.1 자동 점검 (단기)
+
+- 매일 cron: 모든 활성 리드/프로젝트 자동 분석
+- 미결·마감 임박·응답 지연·소통 공백 감지 → 담당자 알림
+- 빵빵이 능동: `regenerate_overview` 정기 + 변화 감지
+
+#### 5.4.2 자동 업무표 (중장기) ⭐⭐ (Q6 사용자 비전 정수)
+
+**목표:** 직원의 *모든 행위* 자동 추적 → 일일/주간 업무표 자동 생성. 사람은 *추가 사항만*.
+
+**HR 활용 (사용자 비전):**
+- 업무 병목 분석
+- 1:1 미팅 자료
+- 노력 시각화
+- *"잘하지만 어필 못 하는 직원에게 좋고, 어필만 잘하는 사람에게 아쉬워도 현실 직시"*
+
+**소스 통합 단계 (사용자 답변 = 모든 것 다):**
+
+| 단계 | 소스 | 환경 구축 | 우선순위 |
+|---|---|---|---|
+| 1 | yourmate 내부 행위 | 0 (이미 다 기록) | **즉시** ⭐ |
+| 2 | 채널톡 대화 | 1~2일 (직원 자동 추론) | 즉시 |
+| 3 | 캘린더 (구글) | 0.5일 (이미 일부) | 1~2개월 |
+| 4 | 드롭박스 행위 | 1~2주 (행위 로그 부재) | 3~4개월 |
+| 5 | 이메일 송수신 | 2~3주 (Gmail API + 본문 파싱) | 3~6개월 |
+| 6 | 외부 메신저 (카톡 등) | 미정 | 6개월+ |
+
+**데이터 모델:**
+
+```sql
+CREATE TABLE activity_logs (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  actor_id uuid NOT NULL,         -- 누가
+  source text NOT NULL,            -- 'yourmate' / 'channeltalk' / 'calendar' / 'dropbox' / 'gmail' / ...
+  action text NOT NULL,            -- 'create_log' / 'send_message' / 'meeting' / ...
+  ref_type text,                   -- 'project' / 'lead' / 'task' / ...
+  ref_id uuid,
+  summary text,                    -- 빵빵이 1줄 요약
+  raw jsonb,                       -- 원본 데이터
+  occurred_at timestamptz NOT NULL,
+  created_at timestamptz DEFAULT now()
+);
+CREATE INDEX ON activity_logs(actor_id, occurred_at DESC);
+CREATE INDEX ON activity_logs(ref_type, ref_id);
+```
+
+**자동 업무표 형식:**
+
+```
+김OO 일일 업무표 — 2026-05-01
+─────────────────────────────────
+[작성: 빵빵이, 18:00 자동 / 사람 검토 후 저장]
+
+📋 오늘 한 일 (자동 추출)
+- 09:15  채널톡 응대 — 안성 학교 견적 문의 (15분)
+- 10:00  프로젝트 [용인 어울림한마당] 미팅 (사무실, 60분)
+- 11:30  견적 작성 — 안성 학교 (40분)
+- 14:00  현장 출장 — 평택고등학교 (4시간, GPS 기록)
+- 18:00  채널톡 정리 — 5건
+
+✏️ 추가 (직원 작성)
+- (여기에 자유 메모)
+
+🎯 내일 계획
+- (자동 추천 + 직원 수정)
+```
+
+- 매일 18시 빵빵이가 직원별 자동 작성 → 알림 → 직원 보강·승인 → 저장
+- 주간: 매주 금요일 통합 + 부서장 자동 공유
+- HR 활용: 분기마다 대표 *직원별 활동 통계* 조회 가능 (대표 전용)
+
+### 5.5 외부 인력 통합 모델 ⭐⭐⭐ (사용자 우선순위 2)
+
+**현 상태:** DB *없음* (Q24). 신분증·통장 *대표 개인 폴더*. **대표 직접 체크 → 오류 多** (Q17).
+
+#### 5.5.1 데이터 모델
+
+```sql
+CREATE TABLE external_workers (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  name text NOT NULL,
+  type text NOT NULL,                  -- '강사' / '아티스트' / '스태프' / '기술' / '복합'
+  phone text,
+  email text,
+  
+  -- 정산 정보 (암호화)
+  ssn_encrypted bytea,                 -- 주민번호
+  bank_name text,
+  bank_account_encrypted bytea,        -- 계좌번호
+  
+  -- 첨부 (Dropbox URL — 권한 분리)
+  id_card_url text,                    -- 신분증 사본
+  bank_book_url text,                  -- 통장 사본
+  
+  -- 단가·전문
+  default_rate_type text,              -- 'per_hour' / 'per_session' / 'per_project'
+  default_rate numeric,
+  specialties text[],                  -- ['공연', '교육', '디자인', ...]
+  notes text,
+  
+  -- 평가·재사용 (5.5.4)
+  rating numeric,                      -- 0~5, 빵빵이 자동 + 사람 수정
+  evaluation_notes text,
+  reuse_status text,                   -- 'preferred' / 'normal' / 'avoid'
+  
+  -- 메타
+  first_engaged_at date,
+  last_engaged_at date,
+  total_engagements int DEFAULT 0,
+  total_paid numeric DEFAULT 0,
+  
+  created_at timestamptz DEFAULT now(),
+  updated_at timestamptz DEFAULT now()
+);
+
+CREATE TABLE worker_engagements (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  worker_id uuid NOT NULL,
+  project_id uuid NOT NULL,
+  role text,                           -- '메인 강사' / '서브' / 'MC' / '음향' / ...
+  date_start date,
+  date_end date,
+  hours numeric,
+  rate_type text,
+  rate numeric,
+  amount numeric,                      -- = hours * rate (per_hour) or rate (다른 타입)
+  note text,
+  created_at timestamptz DEFAULT now()
+);
+
+CREATE TABLE worker_payments (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  worker_id uuid NOT NULL,
+  engagement_ids uuid[],               -- 묶음 정산 (월 정산 다건)
+  total_amount numeric NOT NULL,
+  scheduled_date date,
+  paid_date date,
+  status text DEFAULT 'pending',       -- 'pending' / 'paid' / 'failed'
+  tax_form_sent_at timestamptz,        -- 세무사 핸드오프 시점
+  created_at timestamptz DEFAULT now()
+);
+```
+
+#### 5.5.2 빵빵이 도구
+
+- `find_available_workers(type, date_range, specialties)` — 가용 + 평가 우수 추천
+- `assign_worker_to_project(worker_id, project_id, role, rate)`
+- `create_engagement(worker_id, project_id, ...)`
+- `compute_monthly_payments(worker_id, year_month)` — 그 달 모든 engagement 묶음
+- `generate_tax_handoff(year_month)` — 세무사 보낼 구글시트 자동 생성 (§5.5.5)
+- `evaluate_worker(worker_id, project_id, rating, notes)`
+
+#### 5.5.3 정산 자동화 (Q17 "대표 직접 체크 → 오류 多" 풀기)
+
+**현 흐름 (오류 多):**
+```
+프로젝트 끝 → 대표가 노트·머리로 정리 → 계약담당이 세무사 카톡 → 세무사 신고
+```
+
+**개선 흐름:**
+```
+engagement 자동 누적 (PM이 입력 — 빵빵이 도움)
+  → 매월 말 빵빵이 자동 worker_payments 묶음
+  → 월말·익월 초 자동 generate_tax_handoff (구글시트 .csv·.xlsx)
+  → 빵빵이 자동 카톡 발송 (대표 컨펌 후) — Q27 패턴 그대로
+  → 외주사·외부인력 분리 송출 (Q31: 외주사=건별, 외부인력=월묶음)
+```
+
+#### 5.5.4 평가·재사용 결정 모델 (Q48 내 제안)
+
+**현 상태:** "그 사람 잘해서 다시" 머릿속 (사용자 답변).
+
+**제안 — 정량 + 정성 결합:**
+
+| 신호 | 자동 추출 | 가중치 |
+|---|---|---|
+| 프로젝트 완수율 | engagement 끝난 비율 | 30% |
+| 결제 분쟁 0 | worker_payments dispute 없음 | 10% |
+| 클라이언트 피드백 | project_logs에서 빵빵이가 이 외부인력 언급 분석 | 20% |
+| PM 평가 | 사람이 직접 1~5점 + 자유 메모 | 30% |
+| 재계약률 | engagement 횟수 (`total_engagements`) | 10% |
+
+→ rating = 0~5 자동 계산. PM이 5~10점 가중 수정 가능.
+
+**reuse_status:**
+- `preferred` (>=4.0) — 빵빵이가 *우선 추천*
+- `normal` (2.0~4.0) — 일반
+- `avoid` (<2.0 또는 사람 명시) — 추천 X
+
+**빵빵이 도구:** `find_available_workers`가 *preferred 우선* 정렬.
+
+#### 5.5.5 세무사 자동 핸드오프 ⭐ (Q27 + 자동화)
+
+```typescript
+// /api/admin/tax-handoff/[year_month]/route.ts
+// 매월 말일 23시 자동 cron + 수동 호출 가능
+
+async function generateTaxHandoff(yearMonth: string) {
+  const workers = await getMonthlyPayments(yearMonth);
+  
+  // 구글시트 형식 (사용자 현재 패턴)
+  const sheetData = [
+    ['이름', '주민번호', '계좌번호', '금액', '구분(인건비/외주)', '비고'],
+    ...workers.map(w => [
+      w.name,
+      decrypt(w.ssn_encrypted),
+      decrypt(w.bank_account_encrypted),
+      w.total_amount,
+      w.type === '외주사' ? '외주' : '인건비',
+      w.note,
+    ]),
+  ];
+  
+  // .xlsx 생성
+  const xlsxPath = await generateXlsx(sheetData);
+  
+  // 카톡 발송 자동 (대표 컨펌 후) — 채널톡 알림 도구로
+  await sendChannelTalkDraft({
+    to: '세무사',
+    body: `${yearMonth} 인건비·외주 명세 첨부`,
+    attachment: xlsxPath,
+  });
+  
+  return { count: workers.length, total: sum, draftId: ... };
+}
+```
+
+### 5.6 사업부 간 내부 의뢰 시스템 ⭐⭐ (라운드 4 §C-3)
+
+**현 상태:** 디자인·장비·강사 의뢰는 *카톡·구두*. 정산은 안 함 (단일 회사). 시각화는 원함.
+
+```sql
+CREATE TABLE internal_requests (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  project_id uuid,                     -- 의뢰 맥락
+  from_dept text NOT NULL,
+  to_dept text NOT NULL,
+  type text NOT NULL,                  -- '디자인' / '장비' / '강사' / '음향' / '인쇄' / ...
+  content text NOT NULL,
+  due_date date,
+  status text DEFAULT 'open',          -- 'open' / 'accepted' / 'in_progress' / 'done' / 'rejected'
+  responder_id uuid,
+  notes text,
+  
+  created_by uuid,
+  created_at timestamptz DEFAULT now(),
+  resolved_at timestamptz
+);
+```
+
+**빵빵이 도구:**
+- `create_internal_request(project_id, from, to, type, content, due)`
+- `respond_internal_request(id, status, notes)`
+- `list_my_pending_requests` — 자기 사업부에 들어온 의뢰
+
+**자동 업무표 통합:** internal_requests = `activity_logs` 소스 → 사업부 간 협업 트래픽 정량화.
+
+**시각화:** Sankey 다이어그램 — *어느 사업부가 어디로 의뢰* (월별).
+
+### 5.7 장비·렌탈 통합 (라운드 4 §C-4)
+
+**현 상태:** `rentals` = School Store. 002 Creative 행사 장비(음향·텐트) 별도 추적 X.
+
+**제안:**
+
+```sql
+CREATE TABLE equipment_master (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  name text NOT NULL,
+  category text,                       -- '음향' / '영상' / '텐트' / '교구' / ...
+  owning_dept text NOT NULL,           -- 'school_store' / '002_creative' / ...
+  total_qty int NOT NULL DEFAULT 1,
+  unit_price numeric,                  -- 자체 환산용
+  notes text
+);
+
+CREATE TABLE equipment_rentals (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  equipment_id uuid NOT NULL,
+  qty int NOT NULL DEFAULT 1,
+  project_id uuid,                     -- 내부 의뢰면 NULL
+  customer_id uuid,                    -- 외부 대여
+  date_start date NOT NULL,
+  date_end date NOT NULL,
+  status text DEFAULT 'reserved',      -- 'reserved' / 'in_use' / 'returned' / 'lost'
+  rate numeric,
+  notes text,
+  created_at timestamptz DEFAULT now()
+);
+```
+
+- 002 Creative + School Store 통합
+- 충돌 감지(§5.0.2)와 연동
+- 기존 `rentals` 테이블은 점진 이행 (별도 마이그)
+
+### 5.8 결과물 아카이브 + 드롭박스 트리 *AI 친화* 재설계 ⭐ (Q26 사용자 요청)
+
+**사용자 답변:** "드롭박스에 프로젝트별 *잘 정리됨*. 이제 AI 전환 과정이라 AI와 함께 일하는 환경. 드롭박스 폴더 트리에 대해 *제안해줘도 좋을 듯*."
+
+#### 5.8.1 결과물 아카이브 데이터 모델
+
+```sql
+CREATE TABLE project_deliverables (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  project_id uuid NOT NULL,
+  type text NOT NULL,                  -- '공연영상' / '교육결과물' / '디자인산출물' / '음원' / '회의록' / 'brief' / ...
+  title text,
+  dropbox_path text,                   -- Dropbox URL
+  format text,                         -- 'mp4' / 'pdf' / 'wav' / 'md' / ...
+  size_bytes bigint,
+  delivered_at timestamptz,
+  client_confirmed_at timestamptz,
+  metadata jsonb,                      -- 추출 메타 (GPS·EXIF·duration 등)
+  ai_summary text,                     -- 빵빵이 자동 요약
+  ai_tags text[],                      -- 빵빵이 자동 태그
+  created_at timestamptz DEFAULT now()
+);
+```
+
+#### 5.8.2 드롭박스 폴더 트리 *AI 친화* 재설계 ⭐
+
+**현 트리 (사용자 자평 = 잘 정리됨):**
+```
+/1 아트키움/2 프로젝트/[프로젝트명]/
+/2 SOS/2 프로젝트/[프로젝트명]/
+/3 학교상점/1 납품 설치/[프로젝트명]/
+/4 002Creative.../2 콘텐츠제작/[프로젝트명]/
+/5 002ent/[프로젝트명]/
+```
+
+**제안 — 사업부 분기 *유지* + 프로젝트 안에 AI 친화 표준 서브폴더:**
+
+```
+/[사업부]/[서비스]/[프로젝트번호 - 프로젝트명]/
+├── 00_브리프/                         ← AI가 가장 먼저 읽음
+│   ├── brief.md                       ← 프로젝트 한 페이지 요약 (이미)
+│   ├── overview.md                    ← 사용자 작성 의도·맥락
+│   └── stakeholders.md                ← 고객·외부인력·내부 멤버 정리
+├── 01_기획/
+│   ├── 견적/
+│   ├── 계약/
+│   └── 회의록/                        ← PLAUD/Whisper 자동 첨부 + ai_summary
+├── 02_실행/
+│   ├── 외주/
+│   ├── 자료/
+│   └── 일정/
+├── 03_결과물/                         ← project_deliverables.dropbox_path
+│   ├── 공연영상/
+│   ├── 사진/
+│   ├── 디자인산출물/
+│   └── 음원/
+├── 04_정산/
+│   ├── 입금영수/
+│   ├── 외주지급/
+│   ├── 외부인력정산/
+│   └── 세금계산서/
+└── 99_아카이브/                       ← 종료 후 압축
+
+/0_민감정보/                            ← 대표 권한만
+└── 외부인력/[이름]/
+    ├── 신분증.jpg
+    ├── 통장.jpg
+    └── 정보.json
+
+/0_시스템백업/                          ← 자동 백업 (§4.3)
+├── db/2026-04-30.dump.gz
+└── weekly/2026-W18.xlsx
+```
+
+**핵심 개선:**
+- `00_브리프` 모든 프로젝트 동일 위치 → 빵빵이가 RAG 시 *항상 처음 본다*
+- `03_결과물` 표준화 → `project_deliverables` 자동 매칭
+- `04_정산` 분리 → 대표 손 떼기 + 세무 자동 핸드오프 토대
+- 민감정보·백업 분리 (보안 §4.2)
+
+#### 5.8.3 마이그 절차
+
+**기존 트리 그대로 유지** (사용자 인정 — 잘 정리됨)
+**신규 프로젝트만** 위 표준 적용 (점진)
+**과거 프로젝트** 빵빵이 도구 `migrate_project_folder(project_id)` 단발 — 사용자 트리거.
+
+### 5.9 회의·의사결정 시스템 서포트 ⭐ (Q47 내 제안)
+
+**현 상태:** 사용자 "아직 명확 안함 — 명세에서 제안"
+
+**제안 — 2종 회의 패턴:**
+
+#### A. 정기 주간 회의 (자동 자료 취합)
+
+- 매주 월요일 09시 빵빵이 자동: *지난주 활동 + 이번주 계획* 통합 자료
+  - 새 리드·계약·프로젝트
+  - 시급 미결·지연
+  - 입금·외주 균형
+  - 외부 인력 활동 통계
+- 회의 끝나면 빵빵이가 *결정사항·액션* 추출 → tasks 자동 등록
+
+#### B. 비정기 이슈 회의 (빵빵이 의사결정 도우미)
+
+- 이슈 발생 시 빵빵이 호출
+- 빵빵이가 *관련 컨텍스트 자동 정리*: 과거 비슷한 케이스, 데이터, 옵션
+- 결정 후 빵빵이가 *기록·전파* (project_logs + 관련자 알림)
+
+#### 데이터 모델
+
+```sql
+CREATE TABLE decisions (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  project_id uuid,
+  context text,                        -- 어떤 상황
+  options_considered jsonb,            -- 검토한 옵션
+  decision text NOT NULL,              -- 최종 결정
+  decided_by uuid,                     -- 결정자
+  participants uuid[],                 -- 관련자
+  rationale text,                      -- 근거
+  decided_at timestamptz NOT NULL,
+  created_at timestamptz DEFAULT now()
+);
+```
+
+`meetings` (이미 있음) + 신규 `decisions` 결합. 빵빵이가 회의 음성 → decisions 자동 추출.
+
+### 5.10 마이그레이션 방법·관리 ⭐ (Q63 내 제안)
+
+**현 상태:** "노션·구글시트·드롭박스 보관 고객·계약·프로젝트를 yourmate로 옮기면 좋은데, 어떻게 옮길지 제안해줘"
+
+#### 5.10.1 옮길 데이터 분류
+
+| 데이터 | 현 위치 | 옮길 가치 | 우선순위 |
+|---|---|---|---|
+| 핵심 고객사 (재구매 高) | 노션·시트 | ⭐⭐⭐ | 1 |
+| 핵심 외부 인력 (재사용 高) | 대표 머릿속·드롭박스 | ⭐⭐⭐ | 1 |
+| 최근 1년 프로젝트 | 노션·드롭박스 | ⭐⭐ | 2 |
+| 1년 이상 과거 프로젝트 | 노션·드롭박스 | ⭐ | 3 |
+| 음원 사업 (002E) | 자체 시스템 | 0 (별도 운영, Q20) | 후순위 |
+| 영업 활동 리스트 (콜드메일) | 구글시트 | ⭐⭐ | 2 (§5.13) |
+
+#### 5.10.2 단계별 진행
+
+**단계 1: 핵심 데이터 이전 (1주, 빵빵이 도구 도움)**
+- `import_customer_csv(file_url)` — 구글시트 export → 빵빵이 정합화 → customers
+- 외부 인력 첫 입력 = 대표가 *신분증·통장 사진 정리하면서* 등록
+- 결과: yourmate가 *현재 진행*에 충분
+
+**단계 2: 최근 프로젝트 백필 (2주)**
+- 최근 1년 프로젝트 = 드롭박스 폴더 → 빵빵이 자동 추출
+  - 폴더명 → 프로젝트명·날짜
+  - brief.md → overview
+  - 견적·계약 PDF → 빵빵이 OCR → 항목 추출
+- 사람이 *확인·수정* 후 저장
+
+**단계 3: 영업 활동 시스템 합류 (1주)**
+- 구글시트 리스트 → `prospects` 테이블 (§5.13)
+- 빵빵이 도구로 매일 영업 활동 기록
+
+**단계 4: 과거 데이터 (분기 지나가도 OK)**
+- 1년 이상은 *드롭박스 그대로*. 검색은 RAG로 (§4.6.3 단계 3)
+
+#### 5.10.3 데이터 검증 체크리스트
+
+- 누락 0 — 사용자가 "이 고객 어디 갔어?" 했을 때 빵빵이가 다 찾아내야
+- 중복 0 — quick_create_customer + find_duplicate_customers 활용
+- 정합성 — N:M sale_projects 다 연결
+
+### 5.11 외부 노출 — 고객 포털·외부 인력 포털 (Q39 사용자 답변)
+
+**사용자: "둘 다 — 장기적으로 원함"**
+
+장기 (6개월~1년):
+
+#### A. 고객 포털 `/portal/client/[token]`
+
+- 자기 프로젝트 진행도 (Gantt 또는 카드)
+- 견적·계약·결과물 다운로드
+- 채널톡 통합 (옵션)
+- 만족도·후기 입력 (§5.4 자동 후기 수집)
+
+기술: `/share/[token]` 패턴 확장 + 인증 추가 (`magic_link`).
+
+#### B. 외부 인력 포털 `/portal/worker/[token]`
+
+- 자기 일정 보기
+- 정산 내역 조회
+- 서류 제출 (신분증·통장 사본 — 단계 1 시 활성)
+- 빵빵이 채팅 (자기 일정·정산 질문)
+
+### 5.12 나라장터·세금계산서 자동화 단계별 ⭐ (Q54 내 제안)
+
+**사용자 답변:** "고객이 돈 줄 때는 세금계산서 발행, 보통 *나라장터 사용*"
+
+#### 단계 1: e-세금계산서 자동 발행 (1~2주)
+
+- 국세청 e-세금계산서 OpenAPI (홈택스 연동)
+- 사용자가 yourmate에서 *클릭* → 자동 발행 → PDF 자동 첨부
+- payment_schedules에 발행 시점 자동 기록 → 매출 인식 (§3.4)
+
+#### 단계 2: 입금 자동 매칭 (2주)
+
+- 은행 OpenAPI (오픈뱅킹) 도입 → 매일 거래내역 import
+- 빵빵이 자동 매칭: 거래 → payment_schedules
+- 매칭 실패 = 알림 (사람 결정)
+
+#### 단계 3: 나라장터 OpenAPI 연동 (3~4주, 후순위)
+
+- 나라장터 입찰 정보 (yourmate 100% 수의계약이라 *후순위*)
+- 수의계약 등록·관리 자동화 (가능한 부분만)
+
+→ 단계 1·2가 *대표 손 떼기* 직결. 단계 3은 입찰 시작 시점.
+
+### 5.13 영업 활동 추적 시스템 ⭐ (Q55 내 제안)
+
+**사용자 답변:** "콜드메일 매일 영업. 구글시트에서 리스트 두고 따로 관리. *내가 시스템 합류 디자인 해줘*"
+
+#### 데이터 모델
+
+```sql
+CREATE TABLE prospects (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  org_name text NOT NULL,              -- 학교·기관명
+  region text,                         -- 지역
+  category text,                       -- 학교 / 교육청 / 기관 / 기업
+  contact_name text,
+  contact_role text,
+  contact_phone text,
+  contact_email text,
+  service_target text,                 -- 어떤 서비스 영업 타깃 (SOS·교육·002C 등)
+  source text,                         -- '인스타' / '네이버 검색' / '소개' / '콜드메일' / ...
+  status text DEFAULT 'cold',          -- 'cold' / 'contacted' / 'interested' / 'lead_converted' / 'lost'
+  last_contacted_at timestamptz,
+  next_action_at date,                 -- 다음 영업 시도일
+  notes text,
+  converted_lead_id uuid,              -- 리드 전환 시
+  
+  created_by uuid,
+  created_at timestamptz DEFAULT now(),
+  updated_at timestamptz DEFAULT now()
+);
+
+CREATE TABLE prospect_activities (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  prospect_id uuid NOT NULL,
+  activity_type text NOT NULL,         -- 'cold_email' / 'cold_call' / 'sms' / 'visit' / 'event'
+  outcome text,                        -- 'no_response' / 'declined' / 'interested' / 'meeting_scheduled' / ...
+  notes text,
+  done_by uuid,
+  done_at timestamptz NOT NULL,
+  created_at timestamptz DEFAULT now()
+);
+```
+
+#### 빵빵이 도구
+
+- `add_prospect(org_name, region, ...)` — 영업 후보 추가
+- `log_prospect_activity(prospect_id, type, outcome, notes)` — 매일 활동 기록
+- `convert_prospect_to_lead(prospect_id)` — 관심 보이면 리드 전환
+- `suggest_today_targets(service, region)` — 오늘 콜드메일 후보 자동 추천 (last_contacted 30일 이상 + 지역·서비스 매칭)
+
+#### 페이지
+
+`/prospects` — 영업 활동 메인:
+- 오늘 *영업 후보 N개* 자동 추천
+- 이번 주 활동 통계 (매일 N건 / 응답률 % / 리드 전환율 %)
+- 서비스별·지역별 *유입 시기 분석* (Q22 사용자 비전 — "어느 시기에 많이 유입되는지" 데이터 모이면)
+
+#### 자동 업무표 통합
+
+`prospect_activities` = activity_logs 소스 → 자동 업무표에 *오늘 콜드메일 N건* 자동 반영.
+
+### 5.14 온보딩 빵빵이 봇 ⭐ (Q56 사용자 답변)
+
+**사용자 답변:** "메뉴얼 + 시스템 사용법 결합 → 신규 직원 투어 빵빵이가 자동 마련"
+
+#### 입사 첫날 시나리오
+
+```
+1. 대표가 신규 직원 계정 생성 (admin/invite)
+2. 신규 직원 첫 로그인 → 빵빵이 자동 인사:
+   "안녕하세요 OOO님! yourmate에 오신 걸 환영해요.
+    오늘 1시간만 같이 둘러볼게요. 시작할까요? [네/나중에]"
+
+3. [네] 클릭 → 빵빵이가 단계별 투어:
+   - 회사 소개 (사업부 5개 + 운영 원칙) — 시스템 프롬프트
+   - 사용자 본인 역할 (대표가 입력한 role 기반 맞춤)
+   - 사이드바 메뉴 핵심 (역할별)
+   - 빵빵이 사용법 (자율성 정책 + 자율 vs 컨펌 구분)
+   - 모바일 사용법 (현장 직원이면)
+   - Q&A — 빵빵이가 *RAG로 매뉴얼 검색* + 답변
+
+4. 끝 → onboarding_items 자동 체크 (이미 테이블 있음)
+5. 첫 주: 빵빵이가 매일 *오늘 시도해볼 것* 제안 (점진 학습)
+```
+
+#### 데이터 모델 (이미 있음)
+
+`onboarding_items` 활용 + 빵빵이 자동 진행도 추적.
+
+#### 빵빵이 도구
+
+- `start_onboarding_tour(user_id)` — 투어 시작
+- `progress_onboarding(user_id, item)` — 단계 진행
+- `answer_with_manual_rag(user_id, question)` — 매뉴얼 RAG 검색 + 답변
+
+---
+
+## 6. 우선순위 매트릭스 (사용자 결정 Q72)
+
+**사용자 결정 순서: 2번(N:M+영업이익) → 1번(외부인력) → 4번(모바일) → 3번(메인 대시보드)**
+
+| # | 항목 | 임팩트 | 노력 | 사용자 우선순위 | 비고 |
+|---|---|---|---|---|---|
+| **1** | sales↔projects N:M sale_projects + 영업이익 N:M 자동 계산 | ⭐⭐⭐ | 2~3일 + 1~2일 | **1순위** | §3.2·§3.3 |
+| **2** | 외부 인력 통합 모델 (external_workers + 정산 자동화) | ⭐⭐⭐ | 4~5일 | **2순위** | §5.5 — 대표 손 떼기 핵심 |
+| **3** | 모바일 UX (`/m` + GPS + 영수증 단계 1·2) | ⭐⭐ | 2주 | **3순위** | §4.7 |
+| **4** | 메인 대시보드 (시급 할 일 + 활성 프로젝트) | ⭐⭐ | 3~4일 | **4순위** | §4.8 |
+| 5 | 자동 업무표 단계 1 (yourmate 내부 행위) | ⭐⭐ | 2일 | 5 | §5.4.2 |
+| 6 | 알림 dry-run 검증 + 1개 알림 운영 | ⭐⭐ | 1일 | 6 | §5.1 |
+| 7 | 직원별 1인 채널톡 채널 *검증* | ⭐ | 0.5일 | 7 | §5.1 |
+| 8 | 견적서 자동 초안 (RAG) | ⭐⭐ | 2~3일 | 8 | §5.0.1 |
+| 9 | 채널톡 대화 자동 업무표 통합 | ⭐ | 1~2일 | 9 | §5.4 |
+| 10 | 사업부 간 내부 의뢰 시스템 | ⭐⭐ | 2~3일 | 10 | §5.6 |
+| 11 | 결과물 아카이브 + 드롭박스 트리 재설계 | ⭐⭐ | 2일 | 11 | §5.8 |
+| 12 | 보안 L3 마이그 (RLS + 암호화) | ⭐⭐⭐ | 2~3주 | 12 (HR 막힘 풀기 직전 필수) | §4.2 |
+| 13 | 자체 STT 화자 분리 PoC | ⭐ | 1~2일 | 후 | §5.3.2 |
+| 14 | 영업 활동 추적 prospects | ⭐⭐ | 1주 | 후 | §5.13 |
+| 15 | 온보딩 빵빵이 봇 | ⭐ | 3~4일 | 후 | §5.14 |
+| 16 | e-세금계산서 자동 발행 | ⭐⭐ | 1~2주 | 후 | §5.12 |
+| 17 | 회의 시스템 서포트 (decisions) | ⭐ | 1주 | 후 | §5.9 |
+| 18 | 외부 노출 (고객·외부인력 포털) | ⭐⭐ | 4주+ | 장기 | §5.11 |
+| 19 | 이메일 임시보관함 + Gmail API | ⭐⭐ | 3주 | 장기 | §5.2 |
+| 20 | 드롭박스 행위 로그 | ⭐ | 1~2주 | 후 | §5.4.2 |
+| 21 | HWPX 공공기관 자동화 | ⭐ | 별도 | 후 | 100% 수의라 후순위 |
+
+---
+
+## 7. 정리 라운드 후보 (deprecate)
+
+[Phase 0 §11](./yourmate-spec-0-current.md#11-알려진-deprecate--정리-후보) 그대로 + 추가:
+
+- 노션 도구·Notion API 의존 (정책상 안 씀)
+- ux-demo 7종, /sales/[id] (SaleHub), /projects/[id]/v2 라우트
+- debug 엔드포인트, leads.contact_1/2/3 (멀티 담당자 옛 흔적)
+- rental_deliveries / parent_rental_id
+
+---
+
+## 8. 결정·미결 사항
+
+### 8.1 사용자 답변 받아야 할 것
+
+- [ ] 사업부별 *더 깊은 정체성* (§2.1 한 줄 → 더 디테일)
+- [ ] 사업자 견적 템플릿 부재 3개(공공이크/넥스트/유어) — 만들지/안 쓰지
+- [ ] 카카오톡/SMS 추가 시기·방식 (§5.2)
+- [ ] 002 Entertainment 트래킹 디테일 (§2.1·Q62 — 광곽 답변)
+- [ ] 회의 정기 패턴 (§5.9 — 주간 회의 있는지·언제)
+- [ ] 보안 수준 결정 (§4.2 L1~L4 중 어디까지)
+- [ ] 분배 단위 — 영업이익 *프로젝트* vs *사업부* (§3.3)
+- [ ] N:M 분배 비율 결정 사례 (§3.3 — 1:N 시 균등? 명시?)
+- [ ] 모바일 PWA vs 네이티브 (§4.7)
+
+### 8.2 내가 본 명세에서 *제안 책임* 진 영역 (재확인)
+
+이미 제안 완료 — 사용자 검토 후 *수정·반려·확정* 필요:
+
+| § | 영역 | 위치 |
+|---|---|---|
+| §3.4 | 매출 인식 시점 한국 표준 | 본 문서 |
+| §3.5 | 두 종류의 완료 (영업·재무) | 본 문서 |
+| §3.6 | 사업부 손익 뷰 3종 | 본 문서 |
+| §4.2 | 보안 아키텍처 L1~L4 | 본 문서 |
+| §4.3 | 백업 정책 | 본 문서 |
+| §4.5 | 페르소나 6종 | 본 문서 |
+| §4.6 | 빵빵이 자율성·권한·학습·피드백 | 본 문서 |
+| §4.7.4 | GPS·영수증·경비 단계별 | 본 문서 |
+| §4.8.3 | 우선순위 결정 알고리즘 | 본 문서 |
+| §5.5.4 | 외부 인력 평가·재사용 모델 | 본 문서 |
+| §5.5.5 | 세무사 자동 핸드오프 | 본 문서 |
+| §5.8.2 | 드롭박스 트리 AI 친화 재설계 | 본 문서 |
+| §5.9 | 회의·의사결정 | 본 문서 |
+| §5.10 | 마이그레이션 방법·관리 | 본 문서 |
+| §5.12 | 나라장터 단계별 | 본 문서 |
+| §5.13 | 영업 활동 추적 | 본 문서 |
+| §5.14 | 온보딩 빵빵이 봇 | 본 문서 |
+
+---
+
+## 9. 부록
+
+### 9.1 자동 추출 카탈로그
+[`docs/yourmate-spec-0-current.md`](./yourmate-spec-0-current.md) — 페이지·API·DB·도구·연동 디테일 506줄
+
+### 9.2 시각 자료
+[`docs/yourmate-spec-overview.html`](./yourmate-spec-overview.html) — 한눈 보기 다이어그램 (예정)
+
+### 9.3 기존 비전·계획 메모리
+- `yourmate-vision.md` — AI 직접 실행 비전
+- `yourmate-todo.md` — 누적 할 일
+- `yourmate-spec-plan.md` — 4단계 계획 (Phase 0 완료, 본 문서 = 통합판)
+- `yourmate-vercel-projects.md` — 운영 alias·배포
+
+### 9.4 라운드 1~19 답변 원본
+이 명세 작성 토대. 자세한 raw 답변은 plan 파일 `~/.claude/plans/snazzy-cooking-eagle.md` §D 참조.
+
+---
+
+**다음 단계:**
+1. 사용자 본 문서 검토 → 빨간 줄(❌⚠️❓✂️🆕) 표시
+2. §8.1 미결 답변 → 본 문서 갱신
+3. §6 우선순위 1번(N:M+영업이익) → 코드 작업 진입
+4. 본 명세 갱신은 *코드 변경 직전*에 항상 (단일 진실 원천)

@@ -1,0 +1,473 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>yourmate-system 종합 명세 — 한눈 보기</title>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Pretendard', 'Apple SD Gothic Neo', system-ui, sans-serif;
+  background: #fafafa;
+  color: #1a1a1a;
+  line-height: 1.6;
+  padding: 32px 16px;
+}
+.container { max-width: 1200px; margin: 0 auto; }
+h1 { font-size: 32px; margin-bottom: 8px; }
+.subtitle { color: #666; margin-bottom: 32px; }
+h2 {
+  font-size: 22px;
+  margin-top: 48px;
+  margin-bottom: 16px;
+  padding-bottom: 8px;
+  border-bottom: 2px solid #1a1a1a;
+}
+h3 { font-size: 17px; margin-top: 24px; margin-bottom: 12px; color: #444; }
+.card {
+  background: white;
+  border-radius: 12px;
+  padding: 20px;
+  margin: 12px 0;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+}
+.grid { display: grid; gap: 12px; }
+.grid-2 { grid-template-columns: repeat(2, 1fr); }
+.grid-3 { grid-template-columns: repeat(3, 1fr); }
+.grid-5 { grid-template-columns: repeat(5, 1fr); }
+@media (max-width: 768px) {
+  .grid-3, .grid-5 { grid-template-columns: 1fr; }
+  .grid-2 { grid-template-columns: 1fr; }
+}
+.dept {
+  border: 2px solid #ddd;
+  border-radius: 12px;
+  padding: 14px;
+  background: white;
+}
+.dept.main { border-color: #f59e0b; background: #fffbeb; }
+.dept-name { font-weight: 700; font-size: 14px; margin-bottom: 6px; }
+.dept-role { font-size: 12px; color: #555; }
+.dept .badge { font-size: 10px; padding: 2px 6px; border-radius: 4px; background: #f59e0b; color: white; margin-left: 6px; }
+.flow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  font-size: 14px;
+  margin: 16px 0;
+  padding: 16px;
+  background: white;
+  border-radius: 12px;
+  border: 1px solid #e5e5e5;
+}
+.flow-step {
+  padding: 8px 12px;
+  background: #f5f5f5;
+  border-radius: 8px;
+  white-space: nowrap;
+}
+.flow-arrow { color: #888; }
+table { width: 100%; border-collapse: collapse; background: white; border-radius: 8px; overflow: hidden; }
+th, td { padding: 10px 12px; text-align: left; border-bottom: 1px solid #eee; font-size: 13px; }
+th { background: #f5f5f5; font-weight: 600; }
+.priority-1 { background: #fef3c7 !important; }
+.priority-2 { background: #ddd6fe !important; }
+.priority-3 { background: #d1fae5 !important; }
+.priority-4 { background: #fce7f3 !important; }
+.star { color: #f59e0b; }
+.persona {
+  background: white;
+  border-radius: 12px;
+  padding: 16px;
+  border-left: 4px solid #888;
+}
+.persona.exec { border-left-color: #ef4444; }
+.persona.contract { border-left-color: #f59e0b; }
+.persona.pm { border-left-color: #3b82f6; }
+.persona.field { border-left-color: #10b981; }
+.persona.external { border-left-color: #8b5cf6; }
+.persona.client { border-left-color: #ec4899; }
+.persona-name { font-weight: 700; font-size: 14px; margin-bottom: 4px; }
+.persona-role { font-size: 11px; color: #666; margin-bottom: 8px; }
+.persona-desc { font-size: 12px; color: #444; }
+.matrix {
+  display: grid;
+  grid-template-columns: 1fr 80px 80px;
+  gap: 0;
+  background: white;
+  border-radius: 8px;
+  overflow: hidden;
+}
+.matrix > div {
+  padding: 8px 12px;
+  border-bottom: 1px solid #eee;
+  font-size: 13px;
+}
+.matrix .head { background: #f5f5f5; font-weight: 600; }
+.matrix .yes { background: #d1fae5; text-align: center; color: #047857; font-weight: 600; }
+.matrix .no { background: #fee2e2; text-align: center; color: #b91c1c; font-weight: 600; }
+.nm-diagram {
+  background: white;
+  padding: 24px;
+  border-radius: 12px;
+  margin: 16px 0;
+}
+.nm-row { display: flex; align-items: center; gap: 16px; margin: 12px 0; flex-wrap: wrap; }
+.nm-label { font-weight: 600; min-width: 60px; }
+.nm-box { padding: 8px 14px; border-radius: 6px; font-size: 13px; }
+.nm-sale { background: #fef3c7; }
+.nm-proj { background: #dbeafe; }
+.nm-link { color: #888; }
+.policy-list { display: grid; gap: 8px; }
+.policy-list li { background: white; padding: 10px 14px; border-radius: 8px; list-style: none; font-size: 13px; border-left: 3px solid #1a1a1a; }
+.warning { background: #fee2e2; padding: 12px 16px; border-radius: 8px; border-left: 4px solid #b91c1c; margin: 12px 0; font-size: 13px; }
+.tip { background: #dbeafe; padding: 12px 16px; border-radius: 8px; border-left: 4px solid #1d4ed8; margin: 12px 0; font-size: 13px; }
+.footer { margin-top: 64px; padding-top: 24px; border-top: 1px solid #ddd; color: #888; font-size: 12px; text-align: center; }
+.legend { display: flex; gap: 12px; flex-wrap: wrap; margin: 8px 0; font-size: 12px; }
+.legend-item { display: flex; align-items: center; gap: 4px; }
+.legend-color { width: 12px; height: 12px; border-radius: 2px; }
+</style>
+</head>
+<body>
+<div class="container">
+
+<h1>yourmate-system 종합 명세</h1>
+<p class="subtitle">한눈 보기 — 2026-05-01 작성. 자세한 명세: <a href="./yourmate-spec.md">yourmate-spec.md</a></p>
+
+<div class="tip">
+<strong>이 문서의 목적:</strong> 라운드 1~19 사용자 답변 기반 + 빠진 기능 로드맵 종합. 다음 6개월 구축 합의용.
+</div>
+
+<h2>1. 회사 정체성</h2>
+
+<div class="card">
+<p style="font-size: 17px; line-height: 1.7;">
+<strong>"유어메이트는 <span style="color: #f59e0b;">프로젝트 단위</span>로 사업부와 외부 자원을 결합하여
+기획부터 실행, 결과물, 정산까지 완성하는 <span style="color: #f59e0b;">통합 서비스 운영 조직</span>."</strong>
+</p>
+</div>
+
+<h3>전체 흐름</h3>
+<div class="flow">
+<span class="flow-step">고객 요청</span>
+<span class="flow-arrow">→</span>
+<span class="flow-step">분석/견적</span>
+<span class="flow-arrow">→</span>
+<span class="flow-step">프로젝트 생성</span>
+<span class="flow-arrow">→</span>
+<span class="flow-step">사업부 배정·협업 (1↔N)</span>
+<span class="flow-arrow">→</span>
+<span class="flow-step">실행 (내부+외부)</span>
+<span class="flow-arrow">→</span>
+<span class="flow-step">결과물 납품</span>
+<span class="flow-arrow">→</span>
+<span class="flow-step">정산/아카이빙</span>
+</div>
+
+<h3>핵심 정책 (사용자 확정)</h3>
+<ul class="policy-list">
+<li><strong>시스템 = 프로젝트 중심</strong> (사업부 중심 X)</li>
+<li><strong>빵빵이 자율</strong> = 일기·분석·제안·일상 쓰기 / <strong>컨펌 필수</strong> = 외부 송신·재무·사용자</li>
+<li><strong>대표 권한</strong> = role=admin 자동 인지 (별도 모드 X)</li>
+<li><strong>외부 송신</strong> = 초안만, 사람이 검토 후 발송</li>
+<li><strong>수의계약 100%</strong> (입찰 후순위)</li>
+<li><strong>모바일 필수</strong> (직원 절반 이상 외출)</li>
+<li><strong>핵심 동기</strong> = 대표 손에서 떼어내기 + 담당자 교체에도 영향 없게</li>
+</ul>
+
+<h2>2. 사업부 5개</h2>
+
+<div class="grid grid-5">
+<div class="dept"><div class="dept-name">Sound of School</div><div class="dept-role">학교 방문공연 + 음향 + 발표회/무대</div></div>
+<div class="dept"><div class="dept-name">Artkiwoom</div><div class="dept-role">교육 운영 (발주사+강사+일정)</div></div>
+<div class="dept main"><div class="dept-name">002 Creative <span class="badge">메인</span></div><div class="dept-role">디자인·영상·행사 (복합형)</div></div>
+<div class="dept"><div class="dept-name">School Store</div><div class="dept-role">납품·렌탈·제작 (솔루션 방향)</div></div>
+<div class="dept"><div class="dept-name">002 Entertainment</div><div class="dept-role">음원 유통 (별도 시스템, 트래킹만)</div></div>
+</div>
+
+<h2>3. 데이터 모델 — sales ↔ projects N:M ⭐ 우선순위 1</h2>
+
+<div class="warning">
+<strong>현 문제:</strong> N:M 막섞임 케이스에서 영업이익 특정이 *정말 어려움*. (사용자 라운드 4 답변)
+</div>
+
+<h3>운영 사례 3종</h3>
+
+<div class="nm-diagram">
+<div class="nm-row">
+<div class="nm-label">1:N</div>
+<div class="nm-box nm-sale">계약 1 (특수교육원)</div>
+<div class="nm-link">─→</div>
+<div class="nm-box nm-proj">프로젝트 A</div>
+<div class="nm-box nm-proj">프로젝트 B</div>
+<div class="nm-box nm-proj">프로젝트 C</div>
+</div>
+
+<div class="nm-row">
+<div class="nm-label">N:1 ⭐</div>
+<div class="nm-box nm-sale">계약 1 (부서A 예산)</div>
+<div class="nm-box nm-sale">계약 2 (부서B 예산)</div>
+<div class="nm-box nm-sale">계약 3 (부서C 예산)</div>
+<div class="nm-link">─→</div>
+<div class="nm-box nm-proj">프로젝트 1 (평택연수)</div>
+</div>
+
+<div class="nm-row">
+<div class="nm-label">N:M</div>
+<div class="nm-box nm-sale">계약 1</div>
+<div class="nm-box nm-sale">계약 2</div>
+<div class="nm-link">↔</div>
+<div class="nm-box nm-proj">프로젝트 X</div>
+<div class="nm-box nm-proj">프로젝트 Y</div>
+<span style="color: #b91c1c; font-weight: 600;">막섞임</span>
+</div>
+
+<div style="margin-top: 16px; padding: 12px; background: #f5f5f5; border-radius: 8px; font-size: 13px;">
+<strong>제안:</strong> sale_projects join 테이블 도입 (sale_id, project_id, role, revenue_share_pct, cost_share_pct)<br>
+<strong>비기술 설명:</strong> "한 매출이 여러 프로젝트에 묶이고 한 프로젝트도 여러 매출에 묶일 수 있게, 연결만 담당하는 표 1개를 새로 만든다."
+</div>
+</div>
+
+<h2>4. 페르소나 6종 ⭐ (Q64 사용자 정의 미완)</h2>
+
+<div class="grid grid-3">
+<div class="persona exec">
+<div class="persona-name">대표</div>
+<div class="persona-role">admin · 모든 결정·재무·HR·전략</div>
+<div class="persona-desc">메인 대시보드 + 일일 브리핑. 채널톡·메일 응대. 외출 절반 이상. 모바일 풀 사용.</div>
+</div>
+<div class="persona contract">
+<div class="persona-name">계약담당+PM 겸</div>
+<div class="persona-role">admin/manager · 이벤트 드리븐</div>
+<div class="persona-desc">평소 PM. 계약 발생 시 빵빵이 호출 → 컨텍스트 자동 제공 → 처리. 대표 손 떼기 핵심.</div>
+</div>
+<div class="persona pm">
+<div class="persona-name">PM (전담)</div>
+<div class="persona-role">manager · 사업부별 다층</div>
+<div class="persona-desc">SOS·Artkiwoom·002C 사업부별 다른 패턴. 프로젝트 페이지 + 빵빵이 위주.</div>
+</div>
+<div class="persona field">
+<div class="persona-name">현장 직원</div>
+<div class="persona-role">member · 모바일 위주</div>
+<div class="persona-desc">사진·메모·음성·GPS·영수증 빠르게. 한 손 조작. 현장 도착 알림.</div>
+</div>
+<div class="persona external">
+<div class="persona-name">외부 인력 (미래)</div>
+<div class="persona-role">external_worker · 포털</div>
+<div class="persona-desc">자기 일정·정산 조회. 서류 제출. 빵빵이 채팅. 장기 도입.</div>
+</div>
+<div class="persona client">
+<div class="persona-name">고객 (미래)</div>
+<div class="persona-role">client · 포털</div>
+<div class="persona-desc">자기 프로젝트 진행도·결과물·견적. magic_link 인증. 장기 도입.</div>
+</div>
+</div>
+
+<h2>5. 빵빵이 자율성 매트릭스</h2>
+
+<div class="matrix">
+<div class="head">도구 분류</div>
+<div class="head">자율</div>
+<div class="head">컨펌</div>
+
+<div>읽기·분석·요약·제안</div>
+<div class="yes">✅</div>
+<div></div>
+
+<div>시스템 내부 쓰기 (할일·메모·로그·상태)</div>
+<div class="yes">✅</div>
+<div></div>
+
+<div>외부 송신 (이메일·채널톡·SMS)</div>
+<div></div>
+<div class="no">필수</div>
+
+<div>재무 변경 (입금·세계서·외주 지급)</div>
+<div></div>
+<div class="no">필수</div>
+
+<div>사용자 변경 (profile·person 삭제)</div>
+<div></div>
+<div class="no">필수</div>
+
+<div>민감정보 노출 (주민번호·계좌)</div>
+<div></div>
+<div class="no">대표만</div>
+
+<div>모든 삭제</div>
+<div></div>
+<div class="no">필수</div>
+</div>
+
+<h2>6. 빠진 기능 로드맵 — 우선순위 (사용자 결정)</h2>
+
+<table>
+<thead>
+<tr><th>#</th><th>항목</th><th>임팩트</th><th>노력</th><th>우선순위</th></tr>
+</thead>
+<tbody>
+<tr class="priority-1"><td>1</td><td>sales↔projects N:M + 영업이익 자동 계산</td><td>⭐⭐⭐</td><td>3~5일</td><td><strong>1</strong></td></tr>
+<tr class="priority-2"><td>2</td><td>외부 인력 통합 모델 + 정산 자동화</td><td>⭐⭐⭐</td><td>4~5일</td><td><strong>2</strong></td></tr>
+<tr class="priority-3"><td>3</td><td>모바일 UX (`/m` + GPS + 영수증)</td><td>⭐⭐</td><td>2주</td><td><strong>3</strong></td></tr>
+<tr class="priority-4"><td>4</td><td>메인 대시보드 (시급 할 일 + 활성 프로젝트)</td><td>⭐⭐</td><td>3~4일</td><td><strong>4</strong></td></tr>
+<tr><td>5</td><td>자동 업무표 단계 1 (yourmate 내부)</td><td>⭐⭐</td><td>2일</td><td>5</td></tr>
+<tr><td>6</td><td>알림 dry-run 검증 + 1개 운영</td><td>⭐⭐</td><td>1일</td><td>6</td></tr>
+<tr><td>7</td><td>직원별 1인 채널톡 검증</td><td>⭐</td><td>0.5일</td><td>7</td></tr>
+<tr><td>8</td><td>견적서 자동 초안 (RAG)</td><td>⭐⭐</td><td>2~3일</td><td>8</td></tr>
+<tr><td>9</td><td>채널톡 자동 업무표 통합</td><td>⭐</td><td>1~2일</td><td>9</td></tr>
+<tr><td>10</td><td>사업부 간 내부 의뢰 시스템</td><td>⭐⭐</td><td>2~3일</td><td>10</td></tr>
+<tr><td>11</td><td>결과물 아카이브 + 드롭박스 트리</td><td>⭐⭐</td><td>2일</td><td>11</td></tr>
+<tr style="background: #fee2e2;"><td>12</td><td>보안 L3 마이그 (RLS + 암호화) ⚠️ HR 막힘 풀기</td><td>⭐⭐⭐</td><td>2~3주</td><td>12</td></tr>
+</tbody>
+</table>
+
+<h2>7. 자동 업무표 비전 (Q6 사용자 핵심)</h2>
+
+<div class="card">
+<p>직원의 모든 행위 자동 추적 → 일일/주간 업무표 자동 생성. 사람은 <em>추가 사항만 작성</em>.</p>
+<p style="margin-top: 8px; color: #666; font-size: 13px;">"잘하지만 어필 못 하는 직원에게 좋고, 어필만 잘하는 사람에게 아쉬워도 현실 직시" — 사용자 비전</p>
+</div>
+
+<h3>소스 통합 단계</h3>
+<table>
+<thead><tr><th>단계</th><th>소스</th><th>구축 난이도</th><th>우선순위</th></tr></thead>
+<tbody>
+<tr><td>1</td><td>yourmate 내부 행위</td><td>0 (이미 다 기록)</td><td>즉시</td></tr>
+<tr><td>2</td><td>채널톡 대화</td><td>1~2일</td><td>즉시</td></tr>
+<tr><td>3</td><td>구글 캘린더</td><td>0.5일</td><td>1~2개월</td></tr>
+<tr><td>4</td><td>드롭박스 행위</td><td>1~2주</td><td>3~4개월</td></tr>
+<tr><td>5</td><td>이메일 송수신</td><td>2~3주</td><td>3~6개월</td></tr>
+<tr><td>6</td><td>외부 메신저 (카톡 등)</td><td>미정</td><td>6개월+</td></tr>
+</tbody>
+</table>
+
+<h2>8. 보안 아키텍처 4단계 (HR 막힘 풀기)</h2>
+
+<div class="warning">
+<strong>HR 막힘 진짜 이유 (Q46):</strong> 유지보수 담당자 + 외부 보안 = 개인정보 노출 우려. <strong>L3 단계 권고.</strong>
+</div>
+
+<table>
+<thead><tr><th>수준</th><th>설명</th><th>비용</th><th>막힘 풀림?</th></tr></thead>
+<tbody>
+<tr><td>L1</td><td>현 상태 (Supabase 기본)</td><td>0</td><td>❌</td></tr>
+<tr><td>L2</td><td>RLS 강화</td><td>1~2주</td><td>⚠️ 부분</td></tr>
+<tr style="background: #d1fae5;"><td><strong>L3</strong></td><td>RLS + 민감 컬럼 암호화 (pgcrypto)</td><td>2~3주</td><td>✅ 권고</td></tr>
+<tr><td>L4</td><td>L3 + 외부 KMS + 감사 로그</td><td>4~6주</td><td>✅ + 법적</td></tr>
+</tbody>
+</table>
+
+<h2>9. 매출 인식 시점 — 한국 표준 제안 (Q32)</h2>
+
+<div class="grid grid-3">
+<div class="card">
+<h3 style="margin-top: 0;">회계 매출</h3>
+<p style="font-size: 13px;"><strong>= progress_status='완수' 시점</strong></p>
+<p style="font-size: 12px; color: #666;">발생주의. 영업이익 계산 기준. N:M 분배 시작.</p>
+</div>
+<div class="card">
+<h3 style="margin-top: 0;">세무 매출</h3>
+<p style="font-size: 13px;"><strong>= 세금계산서 발행 시점</strong></p>
+<p style="font-size: 12px; color: #666;">부가세 신고 기준. 세무사 핸드오프.</p>
+</div>
+<div class="card">
+<h3 style="margin-top: 0;">현금 매출</h3>
+<p style="font-size: 13px;"><strong>= payment_schedules.received_date</strong></p>
+<p style="font-size: 12px; color: #666;">자금 흐름. 미수금 추적.</p>
+</div>
+</div>
+
+<h2>10. 두 종류의 *완료* (Q58)</h2>
+
+<div class="flow">
+<span class="flow-step">진행중</span>
+<span class="flow-arrow">→ 결과물 납품 + 고객 확인</span>
+<span class="flow-step" style="background: #fef3c7;">영업 완료 (biz_completed_at)</span>
+<span class="flow-arrow">→ 외주·외부 인력 정산</span>
+<span class="flow-step" style="background: #d1fae5;">재무 완료 (finance_completed_at)</span>
+</div>
+
+<div class="tip">
+영업 완료 = 매출 인식. 재무 완료 = 영업이익 *확정*. 빵빵이가 영업 완료 후 14일 외주 미지급 알림.
+</div>
+
+<h2>11. 메인 대시보드 (사용자 우선순위 4)</h2>
+
+<div class="card" style="font-family: monospace; white-space: pre-wrap; font-size: 12px; line-height: 1.5; background: #1a1a1a; color: #d1fae5;">
+안녕하세요 OOO님. 오늘 N건 시급.
+빵빵이 일일 브리핑 (09시 cron):
+ • 오늘 마감 3건
+ • 응답 지연 2건
+ • 외주 D-3 1건
+─────────────────────────────────
+📌 이번주 시급 할 일 (자동 우선순위)
+[Critical]
+◆ 용인 어울림한마당 — 마감 D-2, 외주 미확정
+◆ 안성수험번호 — 입금 D-1, 미수
+[High] ...
+
+🚧 활성 프로젝트 (10개)
+[용인] 진행중 · PM 김OO · 마감 6/15  [→ 열기]
+...
+
+💰 자금 (접힘 — "돈은 그 다음, 일부터") ▽
+</div>
+
+<h3>우선순위 결정 알고리즘</h3>
+<div class="card">
+<p style="font-family: monospace; font-size: 12px; background: #f5f5f5; padding: 12px; border-radius: 6px;">
+점수 = (마감 가까움 × 가중치) + (금액 규모 × 가중치) + (고객 등급 × 가중치) + (지연 위험 × 가중치)<br>
+Critical &gt; 100 / High 70~100 / Medium 40~70 / Low &lt; 40
+</p>
+</div>
+
+<h2>12. 드롭박스 폴더 트리 — AI 친화 재설계 (Q26)</h2>
+
+<div class="card" style="font-family: monospace; font-size: 12px; line-height: 1.5;">
+/[사업부]/[서비스]/[프로젝트번호 - 프로젝트명]/<br>
+├── <strong style="color: #f59e0b;">00_브리프/</strong>             ← AI 가장 먼저 읽음<br>
+│   ├── brief.md<br>
+│   ├── overview.md<br>
+│   └── stakeholders.md<br>
+├── 01_기획/   (견적·계약·회의록)<br>
+├── 02_실행/   (외주·자료·일정)<br>
+├── 03_결과물/ (공연영상·사진·디자인·음원)<br>
+├── 04_정산/   (입금·외주지급·세금계산서)<br>
+└── 99_아카이브/<br>
+<br>
+<strong style="color: #b91c1c;">/0_민감정보/</strong>            ← 대표 권한만<br>
+└── 외부인력/[이름]/<br>
+<br>
+<strong style="color: #1d4ed8;">/0_시스템백업/</strong>          ← 자동 (§4.3)
+</div>
+
+<h2>13. 다음 단계</h2>
+
+<div class="grid grid-2">
+<div class="card">
+<h3 style="margin-top: 0;">사용자 액션</h3>
+<ol style="padding-left: 20px; font-size: 14px;">
+<li>본 명세 검토 — 빨간 줄(❌⚠️❓✂️🆕) 표시</li>
+<li>§8.1 미결 답변</li>
+<li>우선순위 1번(N:M+영업이익) 코드 작업 합의</li>
+</ol>
+</div>
+<div class="card">
+<h3 style="margin-top: 0;">시스템 액션</h3>
+<ol style="padding-left: 20px; font-size: 14px;">
+<li>본 명세 갱신은 *코드 변경 직전* 항상</li>
+<li>분기마다 우선순위 매트릭스 재검토</li>
+<li>본 문서 = 단일 진실 원천</li>
+</ol>
+</div>
+</div>
+
+<div class="footer">
+yourmate-system 종합 명세 · 2026-05-01<br>
+자동 추출 카탈로그: <a href="./yourmate-spec-0-current.md">yourmate-spec-0-current.md</a>
+</div>
+
+</div>
+</body>
+</html>

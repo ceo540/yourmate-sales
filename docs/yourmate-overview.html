@@ -1,0 +1,391 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>yourmate 시스템 한눈에</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Apple SD Gothic Neo", "Noto Sans KR", system-ui, sans-serif;
+    background: #fafafa;
+    color: #121212;
+    line-height: 1.65;
+    -webkit-font-smoothing: antialiased;
+  }
+  .wrap { max-width: 1100px; margin: 0 auto; padding: 48px 24px 80px; }
+  /* HERO */
+  .hero {
+    background: linear-gradient(135deg, #FFCE00 0%, #FFD93D 100%);
+    border-radius: 24px;
+    padding: 56px 44px;
+    margin-bottom: 48px;
+    box-shadow: 0 12px 40px -12px rgba(255, 206, 0, 0.4);
+  }
+  .hero .tag { display: inline-block; background: rgba(0,0,0,0.08); color: #121212; font-size: 12px; font-weight: 600; padding: 6px 12px; border-radius: 999px; margin-bottom: 16px; }
+  .hero h1 { font-size: 48px; font-weight: 800; letter-spacing: -1px; margin-bottom: 14px; }
+  .hero p.lede { font-size: 19px; color: #2a2a2a; max-width: 720px; }
+  .hero .meta { margin-top: 28px; display: flex; gap: 24px; flex-wrap: wrap; font-size: 13px; color: #444; }
+  .hero .meta b { font-weight: 700; color: #121212; }
+
+  /* SECTION */
+  section { margin-bottom: 56px; }
+  h2 { font-size: 26px; font-weight: 800; letter-spacing: -0.5px; margin-bottom: 8px; display: flex; align-items: center; gap: 10px; }
+  h2 .em { font-size: 28px; }
+  h2 + .desc { color: #666; font-size: 14px; margin-bottom: 24px; max-width: 700px; }
+
+  /* CARDS */
+  .grid-3 { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 16px; }
+  .grid-2 { display: grid; grid-template-columns: repeat(auto-fill, minmax(340px, 1fr)); gap: 16px; }
+  .grid-4 { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 14px; }
+  .card {
+    background: #fff;
+    border: 1px solid #ececec;
+    border-radius: 16px;
+    padding: 20px 22px;
+    transition: all 0.2s;
+  }
+  .card:hover { border-color: #FFCE00; box-shadow: 0 8px 24px -8px rgba(0,0,0,0.08); transform: translateY(-2px); }
+  .card .icon { font-size: 24px; margin-bottom: 10px; display: block; }
+  .card h3 { font-size: 16px; font-weight: 700; margin-bottom: 6px; }
+  .card p { font-size: 13px; color: #555; line-height: 1.55; }
+  .card .tags { margin-top: 12px; display: flex; flex-wrap: wrap; gap: 4px; }
+  .card .tag { font-size: 10px; padding: 2px 8px; border-radius: 999px; background: #f3f3f3; color: #555; font-weight: 500; }
+
+  /* MEGA CALLOUT */
+  .callout {
+    background: linear-gradient(180deg, #FFFBE6 0%, #FFFDF2 100%);
+    border-left: 4px solid #FFCE00;
+    border-radius: 12px;
+    padding: 20px 24px;
+    margin: 20px 0;
+  }
+  .callout h4 { font-size: 14px; font-weight: 700; margin-bottom: 6px; color: #5a4500; }
+  .callout p { font-size: 13px; color: #5a4500; }
+
+  /* TABLE */
+  table { width: 100%; border-collapse: collapse; background: #fff; border-radius: 12px; overflow: hidden; border: 1px solid #ececec; font-size: 13px; }
+  th, td { padding: 12px 16px; text-align: left; border-bottom: 1px solid #f3f3f3; }
+  th { background: #fafafa; font-weight: 700; color: #555; font-size: 12px; }
+  tr:last-child td { border-bottom: none; }
+  td.muted { color: #888; }
+
+  /* TOOL CHIP */
+  .tool-list { display: flex; flex-wrap: wrap; gap: 6px; }
+  .tool {
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 11px;
+    padding: 4px 10px;
+    background: #fff;
+    border: 1px solid #e8e8e8;
+    border-radius: 6px;
+    color: #333;
+    font-weight: 500;
+  }
+  .tool.alpha { border-color: #FFCE00; background: #FFFBE6; }
+
+  /* WORKFLOW */
+  .flow { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 18px; background: #fff; border: 1px solid #ececec; border-radius: 12px; margin-bottom: 12px; }
+  .flow .step { padding: 8px 14px; background: #f7f7f7; border-radius: 8px; font-size: 13px; font-weight: 500; }
+  .flow .step.start { background: #FFFBE6; border: 1px solid #FFCE00; }
+  .flow .step.end { background: #E6F7E6; border: 1px solid #5cb85c; }
+  .flow .arrow { color: #aaa; font-size: 14px; }
+
+  /* SUMMARY BAR */
+  .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 16px; margin: 16px 0 32px; }
+  .stat { background: #fff; border: 1px solid #ececec; border-radius: 14px; padding: 18px 20px; }
+  .stat .num { font-size: 28px; font-weight: 800; letter-spacing: -1px; color: #121212; }
+  .stat .lbl { font-size: 12px; color: #777; margin-top: 4px; }
+
+  /* FOOTER */
+  footer { text-align: center; color: #aaa; font-size: 12px; padding: 40px 0 0; border-top: 1px solid #ececec; margin-top: 60px; }
+
+  /* SECTION DIVIDER */
+  .divider { text-align: center; color: #ccc; margin: 48px 0; font-size: 14px; letter-spacing: 4px; }
+
+  /* PRINT */
+  @media print {
+    body { background: #fff; }
+    .wrap { padding: 20px; max-width: none; }
+    .hero { box-shadow: none; }
+    .card:hover { transform: none; }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<!-- HERO -->
+<div class="hero">
+  <span class="tag">YOURMATE INTERNAL SYSTEM</span>
+  <h1>유어메이트 운영 시스템</h1>
+  <p class="lede">리드부터 계약·실행·정산까지, 사무실에서 일어나는 모든 일을 AI(빵빵이)와 함께 정리·실행하는 자체 시스템.</p>
+  <div class="meta">
+    <span><b>사용자</b> 유어메이트 임직원</span>
+    <span><b>접속</b> yourmate-system.vercel.app</span>
+    <span><b>구성</b> Next.js + Supabase + Dropbox + Anthropic Claude</span>
+  </div>
+</div>
+
+<!-- 핵심 비전 -->
+<section>
+  <h2><span class="em">⭐</span> 우리가 만드는 것</h2>
+  <p class="desc">"AI가 사무업무를 직접 실행하고, 사람은 매니징과 현장에 집중한다." 새 기능 검토 시 항상 묻는 질문 — <b>"이거, AI가 직접 할 수 있나?"</b></p>
+  <div class="callout">
+    <h4>왜 이 시스템을 만드나</h4>
+    <p>중소기업이 흔히 겪는 "여러 도구(노션·엑셀·카톡·이메일·드롭박스) 사이를 사람이 손으로 옮기며 일하는" 비효율을 없애는 것. 한 곳에서 다 보고, AI가 정리·생성·전달까지 해준다.</p>
+  </div>
+</section>
+
+<div class="divider">— 한눈에 보기 —</div>
+
+<!-- 통계 카드 -->
+<div class="stats">
+  <div class="stat"><div class="num">11</div><div class="lbl">메인 메뉴</div></div>
+  <div class="stat"><div class="num">50+</div><div class="lbl">빵빵이 도구</div></div>
+  <div class="stat"><div class="num">6</div><div class="lbl">사업부 분리</div></div>
+  <div class="stat"><div class="num">3</div><div class="lbl">자동화 흐름</div></div>
+</div>
+
+<!-- 메뉴 카탈로그 -->
+<section>
+  <h2><span class="em">📋</span> 메뉴 카탈로그</h2>
+  <p class="desc">사이드바에 보이는 11개 메뉴. 각자 어떤 일을 하는 화면인지.</p>
+
+  <div class="grid-3">
+    <div class="card">
+      <span class="icon">🏠</span>
+      <h3>홈 (대시보드)</h3>
+      <p>로그인 직후 첫 화면. 오늘 할 일·임박 리드·진행 중 프로젝트 한눈에.</p>
+    </div>
+    <div class="card">
+      <span class="icon">📥</span>
+      <h3>리드</h3>
+      <p>문의가 들어와서 아직 계약은 안 된 상태. 채널톡·전화·이메일 들어온 거 다 모임. 빵빵이가 견적 초안 자동 생성.</p>
+      <div class="tags"><span class="tag">유입→회신대기→견적발송→조율중→진행중→완료</span></div>
+    </div>
+    <div class="card">
+      <span class="icon">◈</span>
+      <h3>프로젝트</h3>
+      <p>실제 진행 중인 일들. 한눈에·자세한 개요, 협의해야 할 내용(클라이언트/내부/외주사 3분류), 할 일, 캘린더 일정, 메모, 빵빵이 협업.</p>
+      <div class="tags"><span class="tag">63건 진행 중</span></div>
+    </div>
+    <div class="card">
+      <span class="icon">📜</span>
+      <h3>계약 (sales)</h3>
+      <p>매출 건. 계약→착수→선금→중도금→완수→계산서발행→잔금 7단계. 사업부별 통계, 한도 현황, 정렬·필터.</p>
+    </div>
+    <div class="card">
+      <span class="icon">⬡</span>
+      <h3>서비스</h3>
+      <p>교구대여(rentals), SOS, 사업부별 라인업. 캘린더 멀티라인 표시, 신규 등록 picker.</p>
+    </div>
+    <div class="card">
+      <span class="icon">🗂️</span>
+      <h3>고객</h3>
+      <p>기관(customers) + 담당자(persons) 분리 관리. 같은 기관 다른 부서 산하 매핑(예: 미래재단 산하 청소년수련관) 가능.</p>
+    </div>
+    <div class="card">
+      <span class="icon">📅</span>
+      <h3>캘린더</h3>
+      <p>모든 프로젝트 일정 한 화면. 멀티라인 셀(건명/고객/날짜). Google Calendar 연동(WIP).</p>
+    </div>
+    <div class="card">
+      <span class="icon">📊</span>
+      <h3>재무</h3>
+      <p>관리자 전용. 월별 매출·미수금·외주비·마진. 사업부별 분리.</p>
+      <div class="tags"><span class="tag">관리자 전용</span></div>
+    </div>
+    <div class="card">
+      <span class="icon">👥</span>
+      <h3>팀 / HR / 출근</h3>
+      <p>직원 명단·역할·연락처·소속 부서. 출근 체크는 별도 시스템(yourmate-attendance) 연동.</p>
+    </div>
+    <div class="card">
+      <span class="icon">📢</span>
+      <h3>공지</h3>
+      <p>회사 공지사항. 모든 직원 즉시 확인.</p>
+    </div>
+    <div class="card">
+      <span class="icon">✅</span>
+      <h3>업무 (tasks)</h3>
+      <p>모든 프로젝트의 할 일을 사람별로 모아 보기. 데드라인·우선순위·상태·생성순 정렬.</p>
+    </div>
+    <div class="card">
+      <span class="icon">⚙️</span>
+      <h3>관리</h3>
+      <p>관리자 영역. 팀 관리, 직원, 사업자, 권한, 알림 설정, API 사용료(빵빵이 비용 추적).</p>
+      <div class="tags"><span class="tag">관리자 전용</span></div>
+    </div>
+  </div>
+</section>
+
+<!-- 빵빵이 -->
+<section>
+  <h2><span class="em">🤖</span> 빵빵이 — AI 도우미</h2>
+  <p class="desc">사이드바 우측에 항상 떠있는 AI 도우미. 자연어로 시키면 시스템 곳곳을 직접 조작·정리·생성한다. 모델: Claude Sonnet 4.6.</p>
+
+  <div class="grid-2">
+    <div class="card">
+      <h3>📝 새 계약 / 새 리드 등록</h3>
+      <p>"OO학교 행사운영 2천만원 계약 체결했어" → DB에 자동 등록 + Dropbox 폴더 생성 + 프로젝트 자동 생성.</p>
+      <div class="tool-list" style="margin-top:10px">
+        <span class="tool">create_sale</span>
+        <span class="tool">create_lead</span>
+      </div>
+    </div>
+    <div class="card">
+      <h3>🔄 기존 건 업데이트</h3>
+      <p>"포천시청소년재단 견적 보냈어" → 상태·내용 자동 변경 + 소통 로그 자동 추가.</p>
+      <div class="tool-list" style="margin-top:10px">
+        <span class="tool">update_sale_status</span>
+        <span class="tool">update_lead</span>
+        <span class="tool">add_communication_log</span>
+      </div>
+    </div>
+    <div class="card">
+      <h3>💬 자연어 질문</h3>
+      <p>"이번달 매출 얼마야?" "리마인드 임박한 리드 있어?" "미수금 현황 알려줘" 등 자연어로 즉시 답변.</p>
+    </div>
+    <div class="card">
+      <h3>🧠 프로젝트 분석</h3>
+      <p>프로젝트 페이지에서 "한눈에 자동 생성", "협의 일괄 분석", "자세한 개요 다시 작성" 등.</p>
+      <div class="tool-list" style="margin-top:10px">
+        <span class="tool">regenerate_overview</span>
+        <span class="tool">regenerate_pending_discussion</span>
+        <span class="tool">regenerate_short_summary</span>
+      </div>
+    </div>
+    <div class="card">
+      <h3>📋 견적 자동 생성</h3>
+      <p>"이 리드로 견적 뽑아줘. 항목은 사회자 30만원, 음향 200만원, 부가세 포함" → HTML 견적서 + Dropbox 자동 저장.</p>
+      <div class="tool-list" style="margin-top:10px">
+        <span class="tool">create_quote</span>
+        <span class="tool">update_quote</span>
+        <span class="tool">list_quotes</span>
+      </div>
+    </div>
+    <div class="card">
+      <h3>📋 할 일 관리</h3>
+      <p>"내일까지 견적서 보내라고 메모 남겨줘" → 할 일 자동 추가. 완료/삭제도 자연어로.</p>
+      <div class="tool-list" style="margin-top:10px">
+        <span class="tool">create_task</span>
+        <span class="tool">complete_task</span>
+        <span class="tool">update_task</span>
+      </div>
+    </div>
+    <div class="card">
+      <h3>📁 Dropbox 직접 조회</h3>
+      <p>"이 프로젝트 견적 PDF 뭐 있는지 확인해" → 폴더 목록 + 파일 직접 읽기.</p>
+      <div class="tool-list" style="margin-top:10px">
+        <span class="tool">list_project_files</span>
+        <span class="tool">read_project_file</span>
+      </div>
+    </div>
+    <div class="card">
+      <h3>👤 고객 검색·생성</h3>
+      <p>"지난번 진행한 OO학교 정보 찾아줘" → DB 검색 + 즉시 결과. 새 기관도 빵빵이가 직접 등록.</p>
+      <div class="tool-list" style="margin-top:10px">
+        <span class="tool">search_customers</span>
+        <span class="tool">quick_create_customer</span>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- 자동화 흐름 -->
+<section>
+  <h2><span class="em">⚡</span> 자동화 — 사람 손 안 가는 일들</h2>
+  <p class="desc">사람이 매번 챙기지 않아도 시스템이 알아서 도는 일.</p>
+
+  <div class="flow">
+    <span class="step start">매일 아침 09시</span>
+    <span class="arrow">→</span>
+    <span class="step">결제일 임박/지연 프로젝트 자동 검색</span>
+    <span class="arrow">→</span>
+    <span class="step">담당자에게 SMS·이메일 자동 발송</span>
+    <span class="arrow">→</span>
+    <span class="step end">미수금 손실 0</span>
+  </div>
+
+  <div class="flow">
+    <span class="step start">채널톡으로 문의 도착</span>
+    <span class="arrow">→</span>
+    <span class="step">채널톡 빵빵이가 1차 응대</span>
+    <span class="arrow">→</span>
+    <span class="step">의도 파악 후 리드 자동 생성</span>
+    <span class="arrow">→</span>
+    <span class="step end">담당자 알림 + 후속 사람 응대</span>
+  </div>
+
+  <div class="flow">
+    <span class="step start">계약 → 진행중 변경</span>
+    <span class="arrow">→</span>
+    <span class="step">Dropbox에 프로젝트 폴더 자동 생성</span>
+    <span class="arrow">→</span>
+    <span class="step">템플릿 폴더 구조 복사</span>
+    <span class="arrow">→</span>
+    <span class="step end">바로 협업 가능</span>
+  </div>
+</section>
+
+<!-- 사업부 -->
+<section>
+  <h2><span class="em">🏢</span> 사업부 분리</h2>
+  <p class="desc">매출·계약·세금계산서·정산이 사업부별로 자동 분리됨. 한 시스템에서 6개 사업 다 운영.</p>
+
+  <div class="grid-3">
+    <div class="card"><h3>유어메이트</h3><p class="card-tag">교구 렌탈·납품·설치</p></div>
+    <div class="card"><h3>스쿨 스토어</h3><p class="card-tag">학교 직접 납품</p></div>
+    <div class="card"><h3>스쿨 사운드</h3><p class="card-tag">학교 음향·방송 시스템</p></div>
+    <div class="card"><h3>아트키움</h3><p class="card-tag">예술 교육·문화 사업</p></div>
+    <div class="card"><h3>002 크리에이티브</h3><p class="card-tag">기획·이벤트·운영</p></div>
+    <div class="card"><h3>002 엔터테인먼트</h3><p class="card-tag">공연·라이브 기획</p></div>
+  </div>
+</section>
+
+<!-- 정책 -->
+<section>
+  <h2><span class="em">📐</span> 운영 정책</h2>
+  <p class="desc">개발하면서 굳어진 일하는 방식의 원칙들.</p>
+
+  <table>
+    <thead><tr><th>원칙</th><th>이유</th></tr></thead>
+    <tbody>
+      <tr><td><b>고객 폼은 항상 "선택 + 직접 추가"</b></td><td>상황 따라 신규 기관도 그 자리에서 등록 가능해야 함</td></tr>
+      <tr><td><b>담당자는 부서·직급 입력 가능</b></td><td>같은 기관 다른 부서를 별도로 묶기 위함</td></tr>
+      <tr><td><b>협의 내용은 클라이언트/내부/외주사 3분할</b></td><td>중간에서 중계할 때 감정·체력 소모 큼 → 분리 정리</td></tr>
+      <tr><td><b>노션 최대한 안 쓰기</b></td><td>한 시스템에서 다 보는 게 목표. 노션은 검토 후 좋은 기능만 흡수</td></tr>
+      <tr><td><b>한눈에 vs 자세히</b></td><td>매니저는 한눈에 박스만 보면 됨. 자세한 개요는 PM 정독용</td></tr>
+      <tr><td><b>개별 분석 버튼 → 통합 버튼</b></td><td>3분류 분석을 클릭 1번으로 — 체력 절약</td></tr>
+    </tbody>
+  </table>
+</section>
+
+<!-- 기술 -->
+<section>
+  <h2><span class="em">🛠️</span> 기술 구성</h2>
+  <p class="desc">비개발자가 알 필요는 없지만, 누가 물어볼 때 답하기 위한 정리.</p>
+
+  <table>
+    <tbody>
+      <tr><td><b>화면</b></td><td>Next.js 16 (App Router) + React + Tailwind CSS</td></tr>
+      <tr><td><b>데이터베이스</b></td><td>Supabase (PostgreSQL)</td></tr>
+      <tr><td><b>파일 저장</b></td><td>Dropbox (Business 팀 계정)</td></tr>
+      <tr><td><b>AI</b></td><td>Anthropic Claude (Sonnet 4.6 시스템 빵빵이 / Haiku 4.5 채널톡)</td></tr>
+      <tr><td><b>배포</b></td><td>Vercel (yourmate-system.vercel.app)</td></tr>
+      <tr><td><b>음성 텍스트화</b></td><td>OpenAI Whisper (브리프 받아쓰기 전용)</td></tr>
+      <tr><td><b>알림</b></td><td>채널톡 + 솔라피 SMS + 이메일</td></tr>
+    </tbody>
+  </table>
+</section>
+
+<!-- 푸터 -->
+<footer>
+  <p>yourmate 운영 시스템 · 비개발자용 한눈에 안내 · 작성일 2026-05-01</p>
+  <p style="margin-top: 6px;">자세한 사항은 시스템 직접 사용 또는 개발팀(api@yourmate.io) 문의</p>
+</footer>
+
+</div>
+</body>
+</html>
