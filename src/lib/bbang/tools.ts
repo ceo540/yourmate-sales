@@ -664,7 +664,7 @@ export const TOOLS: Anthropic.Tool[] = [
   },
   {
     name: 'add_external_worker',
-    description: '외부 인력 신규 등록. 사용자에게 한 번 확인 후 호출. 주민번호·계좌는 추후 보안 L3 마이그 후 암호화 예정 (지금은 평문 저장 — §4.2.1).',
+    description: '외부 인력 신규 등록. 사용자 컨펌 후 호출. **중복 감지 자동** — 이름 동일(전화번호 있으면 같이) + 활성 인력 발견 시 duplicate_found:true 응답 (등록 X). 사용자에게 "이미 있어요. 다시 등록할까요?" 안내 후 force=true로 강제 등록 가능. 주민번호·계좌는 보안 L3 마이그 후 암호화 예정 (지금 평문 — §4.2.1).',
     input_schema: {
       type: 'object' as const,
       properties: {
@@ -679,6 +679,7 @@ export const TOOLS: Anthropic.Tool[] = [
         default_rate: { type: 'number', description: '기본 단가 (원)' },
         specialties: { type: 'array', items: { type: 'string' }, description: '전문 영역 배열 (예: ["공연", "교육"])' },
         notes: { type: 'string' },
+        force: { type: 'boolean', description: 'true면 동명 활성 인력 있어도 강제 신규 등록 (사용자 명시 컨펌 후만)' },
       },
       required: ['name', 'type'],
     },

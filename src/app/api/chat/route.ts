@@ -1630,10 +1630,35 @@ async function executeTool(name: string, input: Record<string, unknown>, userRol
 
   if (name === 'add_external_worker') {
     const supabase = createAdminClient()
+    const reqName = (input.name as string)?.trim()
+    const reqPhone = (input.phone as string)?.trim() || null
+    const force = (input as { force?: boolean }).force === true
+
+    // 중복 감지: 이름 동일 + 활성. 전화번호 있으면 같이 매칭.
+    const { data: existing } = await supabase
+      .from('external_workers')
+      .select('id, name, type, phone, default_rate, total_engagements, archive_status')
+      .eq('name', reqName)
+      .eq('archive_status', 'active')
+      .limit(5)
+
+    const dupes = (existing ?? []).filter(w => {
+      if (!reqPhone) return true  // 전화번호 미입력 시 이름만으로 판단
+      return !w.phone || w.phone === reqPhone
+    })
+
+    if (dupes.length > 0 && !force) {
+      return {
+        duplicate_found: true,
+        existing: dupes,
+        message: `⚠️ "${reqName}" 동명 활성 인력 ${dupes.length}건 발견. 추가 등록하려면 force=true. 기존 인력 사용은 그 ID 그대로 record_engagement 호출.`,
+      }
+    }
+
     const newWorker = {
-      name: input.name as string,
+      name: reqName,
       type: input.type as string,
-      phone: (input.phone as string) ?? null,
+      phone: reqPhone,
       email: (input.email as string) ?? null,
       bank_name: (input.bank_name as string) ?? null,
       bank_account_text: (input.bank_account as string) ?? null,
