@@ -651,11 +651,11 @@ export const TOOLS: Anthropic.Tool[] = [
   },
   {
     name: 'search_workers',
-    description: '외부 인력(강사·아티스트·스태프·기술) 검색. 이름·전문영역·재사용상태 필터 가능. preferred 우선 정렬. archive_status=active만.',
+    description: '외부 인력(강사·아티스트·스태프·기술) 풀 검색. **모든 인자가 선택**. 인자 없이 호출하면 *전체 목록* (최대 30건, rating 내림차순) 반환. 이름·전문영역·재사용상태 필터 가능. preferred 우선 정렬. archive_status=active만. 0건이면 외부 인력 DB가 비어있다는 뜻 — add_external_worker로 등록 권유.',
     input_schema: {
       type: 'object' as const,
       properties: {
-        query: { type: 'string', description: '이름 부분 검색 (선택)' },
+        query: { type: 'string', description: '이름 부분 검색 (선택, 생략 시 전체)' },
         type: { type: 'string', description: '강사 | 아티스트 | 스태프 | 기술 | 복합 (선택)' },
         specialty: { type: 'string', description: '전문 영역 부분 일치 (예: "공연", "교육")' },
         only_preferred: { type: 'boolean', description: 'true면 reuse_status=preferred만' },
