@@ -439,7 +439,7 @@ export default function ProjectV2Client({
           <BasicInfoCard customer={customer} contactPerson={contactPerson} pmName={pmName} project={project} customersAll={customersAll} customerPersons={customerPersons} />
 
           {/* 💰 재무 요약 — V1.5 */}
-          <FinanceCard finance={finance} profitRate={profitRate} receivedRate={receivedRate} />
+          <FinanceCard finance={finance} profitRate={profitRate} receivedRate={receivedRate} contracts={contracts} />
 
           {/* 📁 드롭박스 */}
           {project.dropbox_url
@@ -898,10 +898,12 @@ function BasicInfoCard({ customer, contactPerson, pmName, project, customersAll,
   )
 }
 
-function FinanceCard({ finance, profitRate, receivedRate }: {
+function FinanceCard({ finance, profitRate, receivedRate, contracts }: {
   finance: Finance; profitRate: number | null; receivedRate: number
+  contracts?: Contract[]
 }) {
   const profit = finance.revenue - finance.cost
+  const contractNameMap = new Map((contracts ?? []).map(c => [c.id, c.name]))
   return (
     <div className="bg-white border border-gray-100 rounded-xl px-4 py-3 space-y-2.5">
       <div className="flex items-center justify-between">
@@ -929,17 +931,20 @@ function FinanceCard({ finance, profitRate, receivedRate }: {
         </div>
       </div>
 
-      {/* N:M 분배 명세 — 2개 이상 계약 분배 시만 표시 (1:1 케이스는 안 보임) */}
+      {/* 분배 명세 — 2개 이상 계약 매핑 시만 표시 (1:1 케이스는 안 보임) */}
       {finance.breakdown && finance.breakdown.length > 1 && (
         <div className="pt-1 border-t border-gray-50">
-          <p className="text-[10px] text-gray-400 mb-1">N:M 분배 명세</p>
+          <p className="text-[10px] text-gray-400 mb-1">계약 매핑 명세 (N:M)</p>
           <div className="space-y-0.5">
-            {finance.breakdown.map((b) => (
-              <div key={b.sale_id} className="flex items-center justify-between text-[10px] text-gray-500">
-                <span className="font-mono">{b.sale_id.slice(0, 8)}</span>
-                <span>{b.revenue_share_pct}% · {fmtMoney(b.revenue_attributed)}원</span>
-              </div>
-            ))}
+            {finance.breakdown.map((b) => {
+              const name = contractNameMap.get(b.sale_id) || b.sale_id.slice(0, 8)
+              return (
+                <div key={b.sale_id} className="flex items-center justify-between text-[10px] text-gray-500 gap-2">
+                  <span className="truncate" title={name}>{name}</span>
+                  <span className="whitespace-nowrap">{b.revenue_share_pct}% · {fmtMoney(b.revenue_attributed)}원</span>
+                </div>
+              )
+            })}
           </div>
         </div>
       )}
