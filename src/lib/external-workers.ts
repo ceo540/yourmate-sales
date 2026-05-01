@@ -159,3 +159,50 @@ export function isPayableWorker(worker: ExternalWorker): {
   if (!worker.bank_book_url) missing.push('통장 사본')
   return { payable: missing.length === 0, missing }
 }
+
+/**
+ * 세무사 핸드오프 .xlsx 행 생성 — 사용자 답변 Q27 패턴 그대로.
+ * 컬럼: 이름 / 주민번호 / 계좌번호 / 금액 / 구분(인건비/외주) / 비고
+ *
+ * @param payments — worker_payments 행 (status='pending' 또는 'paid')
+ * @param workers — payments의 worker_id 매핑
+ */
+export function generateTaxHandoffRows(input: {
+  payments: { worker_id: string; total_amount: number; note: string | null }[]
+  workers: ExternalWorker[]
+}): {
+  headers: string[]
+  rows: (string | number)[][]
+  total: number
+  warnings: string[]
+} {
+  const { payments, workers } = input
+  const workerMap = new Map(workers.map(w => [w.id, w]))
+  const headers = ['이름', '주민번호', '계좌번호', '금액', '구분', '비고']
+  const rows: (string | number)[][] = []
+  const warnings: string[] = []
+  let total = 0
+
+  for (const p of payments) {
+    const w = workerMap.get(p.worker_id)
+    if (!w) {
+      warnings.push(`worker_id=${p.worker_id} 누락`)
+      continue
+    }
+    const payable = isPayableWorker(w)
+    if (!payable.payable) {
+      warnings.push(`${w.name}: 누락 — ${payable.missing.join(', ')}`)
+    }
+    rows.push([
+      w.name,
+      w.ssn_text ?? '(누락)',
+      w.bank_account_text ?? '(누락)',
+      p.total_amount,
+      '인건비',  // 외부 인력 = 인건비 / 외주사 = 외주 (Q31)
+      p.note ?? '',
+    ])
+    total += p.total_amount
+  }
+
+  return { headers, rows, total, warnings }
+}

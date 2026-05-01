@@ -6,6 +6,7 @@ import {
   suggestReuseStatus,
   detectRateVariation,
   isPayableWorker,
+  generateTaxHandoffRows,
 } from '../src/lib/external-workers'
 import type { ExternalWorker, WorkerEngagement } from '../src/types'
 
@@ -85,6 +86,28 @@ const missingDocs: ExternalWorker = { ...fullyPayable, ssn_text: null, bank_book
 const r2 = isPayableWorker(missingDocs)
 ok('주민번호·통장 누락 → payable=false', false, r2.payable)
 ok('missing 2건', 2, r2.missing.length)
+
+console.log('\n━━━ generateTaxHandoffRows ━━━')
+{
+  const w1: ExternalWorker = { ...fullyPayable, id: 'W1', name: '서림석', ssn_text: '900101-1234567', bank_account_text: '국민 123-456' }
+  const w2: ExternalWorker = { ...fullyPayable, id: 'W2', name: '홍길동', ssn_text: null, bank_account_text: '신한 789-012' }
+  const r = generateTaxHandoffRows({
+    payments: [
+      { worker_id: 'W1', total_amount: 600000, note: '4월 묶음' },
+      { worker_id: 'W2', total_amount: 300000, note: '4월 묶음' },
+    ],
+    workers: [w1, w2],
+  })
+  ok('헤더 6개', 6, r.headers.length)
+  ok('rows 2건', 2, r.rows.length)
+  ok('총합 900,000', 900000, r.total)
+  ok('서림석 첫 행 이름', '서림석', r.rows[0][0])
+  ok('서림석 주민번호', '900101-1234567', r.rows[0][1])
+  ok('서림석 금액 600k', 600000, r.rows[0][3])
+  ok('서림석 구분 = 인건비', '인건비', r.rows[0][4])
+  ok('홍길동 ssn 누락 → "(누락)"', '(누락)', r.rows[1][1])
+  ok('warnings에 홍길동 누락 표시', true, r.warnings.some(w => w.includes('홍길동') && w.includes('주민')))
+}
 
 console.log(`\n━━━ 결과: ${pass} 통과 / ${fail} 실패 ━━━`)
 process.exit(fail > 0 ? 1 : 0)

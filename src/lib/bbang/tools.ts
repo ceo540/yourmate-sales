@@ -715,6 +715,43 @@ export const TOOLS: Anthropic.Tool[] = [
     },
   },
   {
+    name: 'create_monthly_payment',
+    description: '특정 외부 인력의 특정 월 정산 묶음을 worker_payments에 INSERT. status=pending. 사용자 컨펌 필수 (재무 변경). 이미 pending 있으면 거부 — 먼저 처리 후 재생성.',
+    input_schema: {
+      type: 'object' as const,
+      properties: {
+        worker_id: { type: 'string', description: '외부 인력 UUID' },
+        year_month: { type: 'string', description: 'YYYY-MM' },
+        scheduled_date: { type: 'string', description: '지급 예정일 YYYY-MM-DD (선택)' },
+      },
+      required: ['worker_id', 'year_month'],
+    },
+  },
+  {
+    name: 'generate_tax_handoff',
+    description: '세무사 핸드오프 .xlsx 자동 생성. 특정 월의 모든 pending worker_payments → 이름·주민번호·계좌번호·금액·구분·비고 .xlsx. Q27 사용자 패턴 (매월 말·익월 초 카톡 전송용). xlsx_base64 반환 — 사용자가 다운로드 또는 카톡 첨부.',
+    input_schema: {
+      type: 'object' as const,
+      properties: {
+        year_month: { type: 'string', description: 'YYYY-MM (이 월에 생성된 pending payments)' },
+        mark_sent: { type: 'boolean', description: 'true면 tax_form_sent_at 갱신 (발송 후 호출)' },
+      },
+      required: ['year_month'],
+    },
+  },
+  {
+    name: 'mark_payment_paid',
+    description: 'worker_payment 지급 완료 처리. status=paid + paid_date 기록. worker.total_paid 누적 자동.',
+    input_schema: {
+      type: 'object' as const,
+      properties: {
+        payment_id: { type: 'string', description: 'worker_payment UUID' },
+        paid_date: { type: 'string', description: 'YYYY-MM-DD' },
+      },
+      required: ['payment_id', 'paid_date'],
+    },
+  },
+  {
     name: 'analyze_cost_folder',
     description: '계약(sale)의 Dropbox 0행정/원가 폴더 PDF를 자동 분석. 견적서·세금계산서·거래명세서·이체확인증·계약서를 OCR + 통합해서 sale_costs 후보 목록 반환. 미리보기만 (DB 변경 X). 결과 좋으면 사용자가 [📎 원가 폴더 분석] 모달에서 [추가] 클릭하거나 빵빵이에게 import 요청. compute_project_profit에서 cost가 0이거나 부족하면 자동 권장.',
     input_schema: {

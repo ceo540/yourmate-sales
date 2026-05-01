@@ -18,6 +18,7 @@ const MUTATING_TOOLS = new Set([
   'quick_create_customer', 'merge_customers', 'match_sale_to_customer', 'match_lead_to_customer',
   'link_sale_project', 'unlink_sale_project', 'set_revenue_share',
   'add_external_worker', 'record_engagement',
+  'create_monthly_payment', 'generate_tax_handoff', 'mark_payment_paid',
 ])
 import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
@@ -1735,6 +1736,44 @@ async function executeTool(name: string, input: Record<string, unknown>, userRol
       details: result.details,
       note: 'worker_payments INSERT는 사용자 컨펌 후 별도 호출. 지금은 미리보기.',
     }
+  }
+
+  if (name === 'create_monthly_payment') {
+    const { createMonthlyPaymentAction } = await import('@/lib/worker-payments-actions')
+    const r = await createMonthlyPaymentAction({
+      worker_id: input.worker_id as string,
+      year_month: input.year_month as string,
+      scheduled_date: (input.scheduled_date as string) ?? null,
+    })
+    return r
+  }
+
+  if (name === 'generate_tax_handoff') {
+    const { generateTaxHandoffXlsxAction } = await import('@/lib/worker-payments-actions')
+    const r = await generateTaxHandoffXlsxAction({
+      year_month: input.year_month as string,
+      mark_sent: (input.mark_sent as boolean) ?? false,
+    })
+    if ('error' in r) return r
+    // base64 xlsx는 빵빵이 응답에 길게 들어가면 부담 — 길이만 응답하고 별도 다운로드 endpoint 권장
+    return {
+      success: true,
+      filename: r.filename,
+      total: r.total,
+      row_count: r.row_count,
+      warnings: r.warnings,
+      xlsx_size_kb: Math.round(r.xlsx_base64.length * 3 / 4 / 1024),
+      note: '실제 .xlsx 다운로드는 추후 별도 endpoint 제공. 지금은 워커 정산 미리보기 + 발송 표시만.',
+    }
+  }
+
+  if (name === 'mark_payment_paid') {
+    const { markPaymentPaidAction } = await import('@/lib/worker-payments-actions')
+    const r = await markPaymentPaidAction({
+      payment_id: input.payment_id as string,
+      paid_date: input.paid_date as string,
+    })
+    return r
   }
 
   if (name === 'analyze_cost_folder') {
