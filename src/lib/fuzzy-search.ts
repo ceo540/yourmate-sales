@@ -1,8 +1,12 @@
-// 사용자 자연어 검색 — 공백·구두점·토큰 변형 흡수 (feedback_input_flexibility 정책)
+// 사용자 자연어 검색 — 공백·구두점·토큰·NFC/NFD 변형 흡수 (feedback_input_flexibility 정책)
 // 모든 search_* 도구·UI·매칭에 적용.
+//
+// macOS Dropbox 동기화로 DB 한글이 NFD 분해 형태("용" = ㅇ+ㅛ+ㅇ)인데
+// 사용자 입력 한글은 NFC 통합 형태("용") → SQL ILIKE 매칭 0건 발생.
+// .normalize('NFC')로 양쪽 통일.
 
 export const normalizeForSearch = (s: string | null | undefined): string =>
-  (s ?? '').toLowerCase().replace(/[\s\-_().,·\\/]/g, '')
+  (s ?? '').normalize('NFC').toLowerCase().replace(/[\s\-_().,·\\/]/g, '')
 
 /**
  * 사용자 query에 매칭되는 후보 필터.
