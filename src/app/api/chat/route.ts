@@ -1683,21 +1683,53 @@ async function executeTool(name: string, input: Record<string, unknown>, userRol
     const limit = typeof input.limit === 'number' ? input.limit : 10
     if (!query) return { error: 'query 필수' }
 
-    // 이름·번호 부분 일치 (status != 취소)
-    const { data, error } = await supabase
+    // 1차: 정확한 ILIKE 부분 일치
+    const { data: exact, error } = await supabase
       .from('projects')
       .select('id, name, project_number, status, customer_id, service_type')
       .or(`name.ilike.%${query}%,project_number.ilike.%${query}%`)
       .neq('status', '취소')
       .limit(limit)
     if (error) return { error: error.message }
+
+    let result = exact ?? []
+    let matchMode = 'exact'
+
+    // 2차 fallback: 공백·구두점 무시 (사용자 "용인 미르아이밴드캠프" vs DB "용인미르아이밴드캠프")
+    if (result.length === 0) {
+      const { data: all } = await supabase
+        .from('projects')
+        .select('id, name, project_number, status, customer_id, service_type')
+        .neq('status', '취소')
+      const normalize = (s: string) => s.toLowerCase().replace(/[\s\-_().,·]/g, '')
+      const nq = normalize(query)
+      result = (all ?? []).filter(p => {
+        const n = normalize(p.name ?? '')
+        const num = normalize(p.project_number ?? '')
+        return n.includes(nq) || num.includes(nq)
+      }).slice(0, limit)
+      matchMode = 'fuzzy'
+
+      // 3차 fallback: 토큰 분리 후 모든 토큰 포함 (AND)
+      if (result.length === 0 && query.includes(' ')) {
+        const tokens = query.split(/\s+/).map(t => normalize(t)).filter(t => t.length > 0)
+        result = (all ?? []).filter(p => {
+          const n = normalize(p.name ?? '')
+          const num = normalize(p.project_number ?? '')
+          return tokens.every(t => n.includes(t) || num.includes(t))
+        }).slice(0, limit)
+        matchMode = 'tokens'
+      }
+    }
+
     return {
       success: true,
-      count: data?.length ?? 0,
-      projects: data ?? [],
-      hint: (data?.length ?? 0) === 0
+      count: result.length,
+      match_mode: matchMode,
+      projects: result,
+      hint: result.length === 0
         ? '결과 없음 — 사용자에게 정확한 이름·번호 다시 물어보기'
-        : (data?.length ?? 0) > 1
+        : result.length > 1
           ? '다수 매칭 — 사용자에게 어느 건인지 확인 필요'
           : '단일 매칭 — 그대로 record_engagement 등에서 project_id로 사용',
     }
@@ -1710,16 +1742,39 @@ async function executeTool(name: string, input: Record<string, unknown>, userRol
     const worker_id = input.worker_id as string
     let project_id = input.project_id as string | undefined
 
-    // project_id 없으면 project_query로 자동 검색
+    // project_id 없으면 project_query로 자동 검색 (search_projects와 동일 fallback)
     if (!project_id && typeof input.project_query === 'string' && input.project_query) {
       const q = (input.project_query as string).trim()
-      const { data: prjs } = await supabase
+      // 1차: ILIKE
+      const { data: exact } = await supabase
         .from('projects')
         .select('id, name')
         .or(`name.ilike.%${q}%,project_number.ilike.%${q}%`)
         .neq('status', '취소')
         .limit(5)
-      if (!prjs || prjs.length === 0) {
+      let prjs = exact ?? []
+      // 2차: 공백·구두점 무시
+      if (prjs.length === 0) {
+        const { data: all } = await supabase
+          .from('projects').select('id, name, project_number').neq('status', '취소')
+        const normalize = (s: string) => s.toLowerCase().replace(/[\s\-_().,·]/g, '')
+        const nq = normalize(q)
+        prjs = (all ?? []).filter(p => {
+          const n = normalize(p.name ?? '')
+          const num = normalize(p.project_number ?? '')
+          return n.includes(nq) || num.includes(nq)
+        }).slice(0, 5)
+        // 3차: 토큰 AND
+        if (prjs.length === 0 && q.includes(' ')) {
+          const tokens = q.split(/\s+/).map(t => normalize(t)).filter(t => t.length > 0)
+          prjs = (all ?? []).filter(p => {
+            const n = normalize(p.name ?? '')
+            const num = normalize(p.project_number ?? '')
+            return tokens.every(t => n.includes(t) || num.includes(t))
+          }).slice(0, 5)
+        }
+      }
+      if (prjs.length === 0) {
         return { error: `프로젝트 검색 결과 없음 (query="${q}"). 정확한 이름·번호 확인 필요.` }
       }
       if (prjs.length > 1) {
