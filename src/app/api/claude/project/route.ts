@@ -613,6 +613,41 @@ ${logs && logs.length > 0 ? `\n## 최근 소통내역\n${logs.map(l => `- [${l.l
         required: ['project_id'],
       },
     },
+    {
+      name: 'search_workers',
+      description: '외부 인력(강사·아티스트·스태프·기술) 검색. query 없으면 전체. 공백·구두점 변형 자동 흡수.',
+      input_schema: {
+        type: 'object' as const,
+        properties: {
+          query: { type: 'string' },
+          type: { type: 'string', description: '강사 | 아티스트 | 스태프 | 기술 | 복합' },
+        },
+      },
+    },
+    {
+      name: 'record_engagement',
+      description: `현재 프로젝트(또는 다른 프로젝트)에 외부 인력 참여 기록. amount 자동 계산.
+
+사용자 자연어 그대로 worker_query 넣어. 정확한 이름·UUID 다시 묻지 마.
+project_id 생략 시 *현재 프로젝트* 자동 사용 (프로젝트 페이지 컨텍스트).
+다른 프로젝트면 project_query로 검색.`,
+      input_schema: {
+        type: 'object' as const,
+        properties: {
+          worker_id: { type: 'string', description: 'worker UUID 직접' },
+          worker_query: { type: 'string', description: '외부 인력 이름 (사용자 말 그대로)' },
+          project_id: { type: 'string', description: '프로젝트 UUID (생략 시 현재 프로젝트)' },
+          project_query: { type: 'string', description: '다른 프로젝트면 이름·번호' },
+          role: { type: 'string', description: '메인 강사·MC·음향 등' },
+          date_start: { type: 'string', description: 'YYYY-MM-DD' },
+          date_end: { type: 'string' },
+          hours: { type: 'number' },
+          rate_type: { type: 'string', description: 'per_hour | per_session | per_project' },
+          rate: { type: 'number' },
+          note: { type: 'string' },
+        },
+      },
+    },
   ]
 
   const encoder = new TextEncoder()
@@ -1412,6 +1447,154 @@ ${logs && logs.length > 0 ? `\n## 최근 소통내역\n${logs.map(l => `- [${l.l
                     revenue_share_pct: b.revenue_share_pct,
                   })),
                 })
+              }
+            } else if (block.name === 'search_workers') {
+              const q = String((input as Record<string, unknown>).query ?? '').trim()
+              const wType = (input as Record<string, unknown>).type as string | undefined
+              const { fuzzyMatch } = await import('@/lib/fuzzy-search')
+
+              let qBuilder = admin.from('external_workers')
+                .select('id, name, type, phone, default_rate, default_rate_type, reuse_status')
+                .eq('archive_status', 'active')
+                .order('rating', { ascending: false, nullsFirst: false })
+                .limit(30)
+              if (q) qBuilder = qBuilder.ilike('name', `%${q}%`)
+              if (wType) qBuilder = qBuilder.eq('type', wType)
+              const { data: exact } = await qBuilder
+              let rows = exact ?? []
+              if (q && rows.length === 0) {
+                let allQ = admin.from('external_workers')
+                  .select('id, name, type, phone, default_rate, default_rate_type, reuse_status')
+                  .eq('archive_status', 'active')
+                if (wType) allQ = allQ.eq('type', wType)
+                const { data: all } = await allQ
+                const fb = fuzzyMatch(all ?? [], q, ['name', 'phone'])
+                rows = fb.matched.slice(0, 30)
+              }
+              result = JSON.stringify({ count: rows.length, workers: rows })
+            } else if (block.name === 'record_engagement') {
+              const { computeEngagementAmount } = await import('@/lib/external-workers')
+              const { fuzzyMatch } = await import('@/lib/fuzzy-search')
+              const inp = input as Record<string, unknown>
+
+              // worker 매칭
+              let worker_id = inp.worker_id as string | undefined
+              if (!worker_id && typeof inp.worker_query === 'string' && inp.worker_query) {
+                const wq = (inp.worker_query as string).trim()
+                const { data: wExact } = await admin
+                  .from('external_workers')
+                  .select('id, name, type, default_rate, default_rate_type')
+                  .ilike('name', `%${wq}%`)
+                  .eq('archive_status', 'active')
+                  .limit(5)
+                let workers = wExact ?? []
+                if (workers.length === 0) {
+                  const { data: wAll } = await admin
+                    .from('external_workers').select('id, name, type, phone, default_rate, default_rate_type')
+                    .eq('archive_status', 'active')
+                  const fb = fuzzyMatch(wAll ?? [], wq, ['name', 'phone'])
+                  workers = fb.matched.slice(0, 5)
+                }
+                if (workers.length === 0) {
+                  result = `외부 인력 검색 결과 없음 ("${wq}"). add_external_worker로 등록 필요.`
+                  toolResults.push({ type: 'tool_result', tool_use_id: block.id, content: result })
+                  continue
+                }
+                if (workers.length > 1) {
+                  result = JSON.stringify({ error: `다수 매칭 (${workers.length}건)`, candidates: workers })
+                  toolResults.push({ type: 'tool_result', tool_use_id: block.id, content: result })
+                  continue
+                }
+                worker_id = workers[0].id
+              }
+              if (!worker_id) {
+                result = 'worker_id 또는 worker_query 필요'
+                toolResults.push({ type: 'tool_result', tool_use_id: block.id, content: result })
+                continue
+              }
+
+              // project 매칭 — 생략 시 *현재 프로젝트* 자동
+              let project_id = inp.project_id as string | undefined
+              if (!project_id && typeof inp.project_query === 'string' && inp.project_query) {
+                const pq = (inp.project_query as string).trim()
+                const { data: pExact } = await admin
+                  .from('projects')
+                  .select('id, name')
+                  .or(`name.ilike.%${pq}%,project_number.ilike.%${pq}%`)
+                  .neq('status', '취소')
+                  .limit(5)
+                let prjs = pExact ?? []
+                if (prjs.length === 0) {
+                  const { data: pAll } = await admin
+                    .from('projects').select('id, name, project_number').neq('status', '취소')
+                  const fb = fuzzyMatch(pAll ?? [], pq, ['name', 'project_number'])
+                  prjs = fb.matched.slice(0, 5)
+                }
+                if (prjs.length === 0) {
+                  result = `프로젝트 검색 결과 없음 ("${pq}").`
+                  toolResults.push({ type: 'tool_result', tool_use_id: block.id, content: result })
+                  continue
+                }
+                if (prjs.length > 1) {
+                  result = JSON.stringify({ error: `다수 매칭 (${prjs.length}건)`, candidates: prjs })
+                  toolResults.push({ type: 'tool_result', tool_use_id: block.id, content: result })
+                  continue
+                }
+                project_id = prjs[0].id
+              }
+              if (!project_id) project_id = projectId  // 현재 프로젝트 컨텍스트
+              if (!project_id) {
+                result = 'project_id·project_query 필요 또는 프로젝트 페이지에서 호출'
+                toolResults.push({ type: 'tool_result', tool_use_id: block.id, content: result })
+                continue
+              }
+
+              // worker default 로드
+              const { data: w } = await admin
+                .from('external_workers')
+                .select('default_rate_type, default_rate, name')
+                .eq('id', worker_id)
+                .maybeSingle()
+
+              const rate_type = (inp.rate_type as string) ?? w?.default_rate_type ?? null
+              const rate = typeof inp.rate === 'number' ? inp.rate : (w?.default_rate ?? null)
+              const hours = typeof inp.hours === 'number' ? inp.hours : null
+              const amount = computeEngagementAmount({
+                rate_type: rate_type as 'per_hour' | 'per_session' | 'per_project' | null,
+                rate, hours,
+              })
+
+              const { data: engData, error: engErr } = await admin
+                .from('worker_engagements')
+                .insert({
+                  worker_id, project_id,
+                  role: (inp.role as string) ?? null,
+                  date_start: (inp.date_start as string) ?? null,
+                  date_end: (inp.date_end as string) ?? null,
+                  hours, rate_type, rate, amount,
+                  note: (inp.note as string) ?? null,
+                })
+                .select('id')
+                .maybeSingle()
+
+              if (engErr) {
+                result = `등록 실패: ${engErr.message}`
+              } else {
+                // worker 누적 갱신
+                const { data: stats } = await admin
+                  .from('worker_engagements').select('id, date_start')
+                  .eq('worker_id', worker_id).eq('archive_status', 'active')
+                const total = (stats ?? []).length
+                const dates = (stats ?? []).map(s => s.date_start).filter((d): d is string => !!d).sort()
+                await admin.from('external_workers').update({
+                  total_engagements: total,
+                  first_engaged_at: dates[0] ?? null,
+                  last_engaged_at: dates[dates.length - 1] ?? null,
+                }).eq('id', worker_id)
+
+                revalidatePath(`/projects/${project_id}`)
+                revalidate()
+                result = `✅ ${w?.name ?? '외부 인력'} 참여 기록: ${(amount / 10000).toFixed(0)}만원 (engagement_id=${engData?.id})`
               }
             }
 
