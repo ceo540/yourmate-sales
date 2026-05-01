@@ -650,6 +650,17 @@ export const TOOLS: Anthropic.Tool[] = [
     },
   },
   {
+    name: 'analyze_cost_folder',
+    description: '계약(sale)의 Dropbox 0행정/원가 폴더 PDF를 자동 분석. 견적서·세금계산서·거래명세서·이체확인증·계약서를 OCR + 통합해서 sale_costs 후보 목록 반환. 미리보기만 (DB 변경 X). 결과 좋으면 사용자가 [📎 원가 폴더 분석] 모달에서 [추가] 클릭하거나 빵빵이에게 import 요청. compute_project_profit에서 cost가 0이거나 부족하면 자동 권장.',
+    input_schema: {
+      type: 'object' as const,
+      properties: {
+        sale_id: { type: 'string', description: '계약 UUID' },
+      },
+      required: ['sale_id'],
+    },
+  },
+  {
     name: 'create_calendar_event',
     description: '구글 캘린더에 일정을 등록합니다. 행사, 배송, 미팅, 마감일 등.',
     input_schema: {

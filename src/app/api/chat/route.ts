@@ -1600,6 +1600,34 @@ async function executeTool(name: string, input: Record<string, unknown>, userRol
     }
   }
 
+  if (name === 'analyze_cost_folder') {
+    const sale_id = input.sale_id as string
+    if (!sale_id) return { error: 'sale_id 필요' }
+    try {
+      const { analyzeCostFolder } = await import('@/app/(dashboard)/sales/[id]/cost-actions')
+      const r = await analyzeCostFolder(sale_id)
+      if ('error' in r) return { error: r.error, diagnostic: r.diagnostic }
+      return {
+        success: true,
+        sale_id,
+        pdfs_scanned: r.pdfsScanned,
+        rows_count: r.rows.length,
+        rows: r.rows.map(row => ({
+          item: row.item,
+          amount: row.amount,
+          vendor: row.vendor_name,
+          due_date: row.due_date,
+          doc_type: row.doc_type,
+          source_pdf: row.source_pdf,
+          duplicate: row.duplicate,
+        })),
+        note: '미리보기. sale_costs 등록은 [📎 원가 폴더 분석] 모달에서 [추가] 클릭 또는 사용자 별도 요청.',
+      }
+    } catch (e) {
+      return { error: e instanceof Error ? e.message : '원가 분석 실패' }
+    }
+  }
+
   if (name === 'create_calendar_event') {
     const calKey = (input.calendar_key as string) || 'main'
     const title = input.title as string
