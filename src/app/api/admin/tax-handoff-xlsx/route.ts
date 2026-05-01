@@ -5,12 +5,14 @@ import { generateTaxHandoffXlsxAction } from '@/lib/worker-payments-actions'
 // GET /api/admin/tax-handoff-xlsx?year_month=2026-05&mark_sent=false
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url)
-  const yearMonth = searchParams.get('year_month')
+  const ymRaw = searchParams.get('year_month')
   const markSent = searchParams.get('mark_sent') === 'true'
 
-  if (!yearMonth || !/^\d{4}-\d{2}$/.test(yearMonth)) {
-    return NextResponse.json({ error: 'year_month=YYYY-MM 필요' }, { status: 400 })
-  }
+  // 융통성: "2026-05", "2026-5", "2026/05", "202605" 다 허용. 자동 정규화.
+  if (!ymRaw) return NextResponse.json({ error: 'year_month 필수 (예: 2026-05)' }, { status: 400 })
+  const m = ymRaw.trim().match(/^(\d{4})[\-\/]?(\d{1,2})$/)
+  if (!m) return NextResponse.json({ error: `year_month 형식 인식 X: "${ymRaw}". 예: 2026-05, 2026/05, 2026-5` }, { status: 400 })
+  const yearMonth = `${m[1]}-${m[2].padStart(2, '0')}`
 
   const r = await generateTaxHandoffXlsxAction({ year_month: yearMonth, mark_sent: markSent })
   if ('error' in r) {
