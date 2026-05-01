@@ -101,6 +101,18 @@ interface CustomerPersonOpt {
 }
 interface Finance {
   revenue: number; cost: number; received: number; contractCount: number
+  // N:M 분배 인지 영업이익 (yourmate-spec.md §3.3)
+  // 1:1 케이스 = revenue·cost와 동일 결과. N:M 케이스 = 분배 비율 적용.
+  profit?: number       // = revenue - cost (분배 후)
+  margin?: number       // 이익률 (%)
+  breakdown?: {
+    sale_id: string
+    sale_revenue: number
+    revenue_share_pct: number
+    revenue_attributed: number
+    cost_share_pct: number
+    cost_attributed: number
+  }[]
 }
 interface PaymentSchedule {
   id: string; label: string; amount: number
@@ -916,6 +928,21 @@ function FinanceCard({ finance, profitRate, receivedRate }: {
           </span>
         </div>
       </div>
+
+      {/* N:M 분배 명세 — 2개 이상 계약 분배 시만 표시 (1:1 케이스는 안 보임) */}
+      {finance.breakdown && finance.breakdown.length > 1 && (
+        <div className="pt-1 border-t border-gray-50">
+          <p className="text-[10px] text-gray-400 mb-1">N:M 분배 명세</p>
+          <div className="space-y-0.5">
+            {finance.breakdown.map((b) => (
+              <div key={b.sale_id} className="flex items-center justify-between text-[10px] text-gray-500">
+                <span className="font-mono">{b.sale_id.slice(0, 8)}</span>
+                <span>{b.revenue_share_pct}% · {fmtMoney(b.revenue_attributed)}원</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       <div>
         <div className="flex items-center justify-between mb-1">

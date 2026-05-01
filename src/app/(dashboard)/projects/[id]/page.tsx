@@ -3,6 +3,8 @@ import { createAdminClient } from '@/lib/supabase/admin'
 import { notFound, redirect } from 'next/navigation'
 import { isAdminOrManager } from '@/lib/permissions'
 import { createProfileNameMap } from '@/lib/utils'
+import { computeProjectProfit } from '@/lib/sale-projects'
+import type { SaleProject } from '@/types'
 import ProjectV2Client from './ProjectV2Client'
 
 export default async function ProjectPage({ params }: { params: Promise<{ id: string }> }) {
@@ -145,8 +147,39 @@ export default async function ProjectPage({ params }: { params: Promise<{ id: st
     outcome: l.outcome ?? null,
   }))
 
-  const totalRevenue = (contractsRaw ?? []).reduce((s, c: any) => s + (c.revenue ?? 0), 0)
-  const totalCost = (costsRaw ?? []).reduce((s, c: any) => s + (c.amount ?? 0), 0)
+  // N:M 분배 인지 영업이익 (yourmate-spec.md §3.3)
+  const { data: saleProjectsRaw } = await admin
+    .from('sale_projects')
+    .select('*')
+    .eq('project_id', id)
+  const saleProjects = (saleProjectsRaw ?? []) as SaleProject[]
+
+  // 매핑 누락된 sale은 기본 100% 분배 fallback (sales.project_id 직접 매핑이지만 sale_projects 미백필 케이스)
+  const mappedSaleIds = new Set(saleProjects.map(sp => sp.sale_id))
+  const fallbackMappings: SaleProject[] = (contractsRaw ?? [])
+    .filter((c: any) => !mappedSaleIds.has(c.id))
+    .map((c: any) => ({
+      id: '_fallback_' + c.id,
+      sale_id: c.id,
+      project_id: id,
+      role: '주계약',
+      revenue_share_pct: 100,
+      cost_share_pct: 100,
+      note: null,
+      created_at: '',
+      updated_at: '',
+    }))
+  const allMappings = [...saleProjects, ...fallbackMappings]
+
+  const profitResult = computeProjectProfit({
+    projectId: id,
+    sales: (contractsRaw ?? []).map((c: any) => ({ id: c.id, revenue: c.revenue ?? 0 })),
+    saleCosts: (costsRaw ?? []).map((c: any) => ({ sale_id: c.sale_id, amount: c.amount ?? 0 })),
+    saleProjects: allMappings,
+  })
+
+  const totalRevenue = profitResult.revenue
+  const totalCost = profitResult.cost
   const totalReceived = (contractsRaw ?? []).reduce((sum, c: any) => {
     return sum + ((c.payment_schedules ?? []).filter((p: any) => p.is_received).reduce((s: number, p: any) => s + (p.amount ?? 0), 0))
   }, 0)
@@ -179,7 +212,15 @@ export default async function ProjectPage({ params }: { params: Promise<{ id: st
       pmName={pmName}
       customer={customer ? { id: customer.id, name: customer.name, type: customer.type ?? null, contact_name: customer.contact_name ?? null, phone: customer.phone ?? null, contact_email: customer.contact_email ?? null } : null}
       contactPerson={contactPerson}
-      finance={{ revenue: totalRevenue, cost: totalCost, received: totalReceived, contractCount: (contractsRaw ?? []).length }}
+      finance={{
+        revenue: totalRevenue,
+        cost: totalCost,
+        received: totalReceived,
+        contractCount: (contractsRaw ?? []).length,
+        profit: profitResult.profit,
+        margin: profitResult.margin,
+        breakdown: profitResult.breakdown,
+      }}
       contracts={(contractsRaw ?? []).map((c: any) => ({
         id: c.id, name: c.name, revenue: c.revenue ?? null,
         contract_stage: c.contract_stage ?? null, progress_status: c.progress_status ?? null,
