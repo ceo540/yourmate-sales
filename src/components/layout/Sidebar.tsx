@@ -16,7 +16,7 @@ const NAV_ITEMS: NavItem[] = [
   { href: '/services',   label: '서비스',   icon: '⬡', activePrefixes: ['/rentals', '/sos', '/departments'] },
   { href: '/customers',  label: '고객',    icon: '🗂️', pageKey: 'customers' },
   { href: '/calendar',   label: '캘린더',   icon: '📅' },
-  { href: '/finance',    label: '재무',    icon: '📊', pageKey: 'finance', adminOnly: true },
+  { href: '/finance',    label: '재무',    icon: '📊', pageKey: 'finance', adminOnly: true, activePrefixes: ['/admin/revenue'] },
   { href: '/team',       label: '팀',      icon: '👥', activePrefixes: ['/hr', '/attendance', '/workers'] },
 ]
 
