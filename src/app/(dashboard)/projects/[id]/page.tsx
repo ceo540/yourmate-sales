@@ -154,6 +154,18 @@ export default async function ProjectPage({ params }: { params: Promise<{ id: st
     .eq('project_id', id)
   const saleProjects = (saleProjectsRaw ?? []) as SaleProject[]
 
+  // 외부 인력 engagement (yourmate-spec.md §5.5)
+  const { data: workerEngagementsRaw } = await admin
+    .from('worker_engagements')
+    .select('*')
+    .eq('project_id', id)
+    .eq('archive_status', 'active')
+    .order('date_start', { ascending: false })
+  const workerIds = Array.from(new Set((workerEngagementsRaw ?? []).map((e: { worker_id: string }) => e.worker_id)))
+  const { data: projectWorkersRaw } = workerIds.length > 0
+    ? await admin.from('external_workers').select('id, name, type, default_rate, default_rate_type, reuse_status').in('id', workerIds)
+    : { data: [] }
+
   // 매핑 누락된 sale은 기본 100% 분배 fallback (sales.project_id 직접 매핑이지만 sale_projects 미백필 케이스)
   const mappedSaleIds = new Set(saleProjects.map(sp => sp.sale_id))
   const fallbackMappings: SaleProject[] = (contractsRaw ?? [])
@@ -276,6 +288,24 @@ export default async function ProjectPage({ params }: { params: Promise<{ id: st
         updated_at: m.updated_at,
         author_name: m.author_id ? (profileNameMap[m.author_id] ?? null) : null,
       }))}
+      workerEngagements={(workerEngagementsRaw ?? []).map((e: any) => {
+        const w = (projectWorkersRaw ?? []).find((x: any) => x.id === e.worker_id)
+        return {
+          id: e.id,
+          worker_id: e.worker_id,
+          worker_name: w?.name ?? '?',
+          worker_type: w?.type ?? '?',
+          worker_reuse_status: w?.reuse_status ?? 'normal',
+          role: e.role ?? null,
+          date_start: e.date_start ?? null,
+          date_end: e.date_end ?? null,
+          hours: e.hours ?? null,
+          rate_type: e.rate_type ?? null,
+          rate: e.rate ?? null,
+          amount: e.amount ?? null,
+          note: e.note ?? null,
+        }
+      })}
     />
   )
 }

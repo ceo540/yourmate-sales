@@ -114,6 +114,22 @@ interface Finance {
     cost_attributed: number
   }[]
 }
+
+interface WorkerEngagementProp {
+  id: string
+  worker_id: string
+  worker_name: string
+  worker_type: string
+  worker_reuse_status: string
+  role: string | null
+  date_start: string | null
+  date_end: string | null
+  hours: number | null
+  rate_type: string | null
+  rate: number | null
+  amount: number | null
+  note: string | null
+}
 interface PaymentSchedule {
   id: string; label: string; amount: number
   due_date: string | null; is_received: boolean
@@ -189,6 +205,7 @@ interface Props {
   customerPersons: CustomerPersonOpt[]
   memos: Memo[]
   entities: BusinessEntity[]
+  workerEngagements?: WorkerEngagementProp[]
 }
 
 const STATUS_CLR: Record<string, string> = {
@@ -240,7 +257,7 @@ function KpiPill({ icon, label, value, tone }: { icon: string; label: string; va
 export default function ProjectV2Client({
   project, pmName, customer, contactPerson, finance,
   contracts, tasks, logs, rentals, leadIds, profiles, currentUserId,
-  members, customersAll, customerPersons, memos, entities,
+  members, customersAll, customerPersons, memos, entities, workerEngagements,
 }: Props) {
   const [showSettings, setShowSettings] = useState(false)
   const [editingStatus, setEditingStatus] = useState(false)
@@ -407,6 +424,9 @@ export default function ProjectV2Client({
 
           {/* 3. 할일 (tasks) */}
           <TasksSection tasks={tasks} contracts={contracts} projectId={project.id} profiles={profiles} serviceType={project.service_type} />
+
+          {/* 외부 인력 (engagement) — yourmate-spec.md §5.5 */}
+          <WorkerEngagementsBlock projectId={project.id} engagements={workerEngagements ?? []} />
 
           {/* 5. 일정 (due_date 임박 순) */}
           <ScheduleSection tasks={tasks} projectId={project.id} linkedEvents={project.linked_calendar_events ?? []} />
@@ -1080,6 +1100,68 @@ function NotesBlock({ project }: { project: Project }) {
 }
 
 // 메모 카드 리스트 — project_memos 테이블 기반 multiple
+function WorkerEngagementsBlock({ projectId, engagements }: {
+  projectId: string
+  engagements: WorkerEngagementProp[]
+}) {
+  const router = useRouter()
+  const [pending, startTransition] = useTransition()
+  void projectId
+
+  const total = engagements.reduce((s, e) => s + (e.amount ?? 0), 0)
+
+  const handleUnlink = (engagementId: string, workerName: string) => {
+    if (!confirm(`${workerName} 참여 기록을 보류 처리할까요?\n(삭제 X — archive_status='cancelled' 이동)`)) return
+    startTransition(async () => {
+      const res = await fetch('/api/admin/worker-engagement-archive', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ engagement_id: engagementId, archive_status: 'cancelled' }),
+      })
+      if (!res.ok) { alert('실패'); return }
+      router.refresh()
+    })
+  }
+
+  return (
+    <section className="bg-white rounded-2xl border border-gray-100 p-4">
+      <header className="flex items-center justify-between mb-3">
+        <h2 className="text-sm font-semibold text-gray-700">🎤 외부 인력 참여 ({engagements.length}건)</h2>
+        <span className="text-xs text-gray-500">총 {(total / 10000).toFixed(0)}만원</span>
+      </header>
+      {engagements.length === 0 ? (
+        <p className="text-xs text-gray-400">
+          참여 기록 없음. 빵빵이에게: <code className="bg-gray-50 px-1 rounded">"이 프로젝트에 (강사명) N시간 (날짜) 참여 기록해줘"</code>
+        </p>
+      ) : (
+        <div className="space-y-1.5">
+          {engagements.map(e => (
+            <div key={e.id} className="flex items-center justify-between text-xs bg-gray-50 rounded px-3 py-2 gap-3 group">
+              <span className="font-medium text-gray-800 min-w-[80px]">{e.worker_name}</span>
+              <span className="text-gray-500">{e.worker_type}</span>
+              <span className="text-gray-500 truncate flex-1">{e.role ?? '—'}</span>
+              <span className="text-gray-500">{e.date_start ?? '—'}</span>
+              <span className="text-gray-500">
+                {e.rate_type === 'per_hour' && e.hours ? `${e.hours}시간 × ${(e.rate ?? 0) / 10000}만` : `${(e.rate ?? 0) / 10000}만/${e.rate_type === 'per_session' ? '회' : '건'}`}
+              </span>
+              <span className="font-semibold text-gray-700">{((e.amount ?? 0) / 10000).toFixed(0)}만원</span>
+              <button
+                onClick={() => handleUnlink(e.id, e.worker_name)}
+                disabled={pending}
+                className="opacity-0 group-hover:opacity-100 text-red-400 hover:text-red-600 text-[11px] px-1"
+                title="보류 처리"
+              >✕</button>
+            </div>
+          ))}
+        </div>
+      )}
+      <p className="mt-2 text-[11px] text-gray-400">
+        💡 빵빵이로 추가·검색·평가 가능. <a href="/workers" className="text-blue-500 hover:underline">/workers 페이지 →</a>
+      </p>
+    </section>
+  )
+}
+
 function MemosBlock({ projectId, memos, legacyMemo }: {
   projectId: string
   memos: Memo[]
