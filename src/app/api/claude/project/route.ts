@@ -565,6 +565,54 @@ ${logs && logs.length > 0 ? `\n## 최근 소통내역\n${logs.map(l => `- [${l.l
         required: ['name'],
       },
     },
+    {
+      name: 'link_sale_project',
+      description: '계약(sale)과 프로젝트(project)를 N:M 관계로 연결합니다. 한 계약을 여러 프로젝트에, 한 프로젝트도 여러 계약에 묶을 수 있음. revenue_share_pct는 영업이익 분배 비율 (1:N 분배 시 50/30/20 등). 1:1 또는 N:1은 100 그대로.',
+      input_schema: {
+        type: 'object' as const,
+        properties: {
+          sale_id: { type: 'string' },
+          project_id: { type: 'string' },
+          role: { type: 'string', description: '주계약 | 부계약 | 예산분할 | 추가 (기본: 주계약)' },
+          revenue_share_pct: { type: 'number', description: '매출 분배 % (0~100, 기본: 100)' },
+          cost_share_pct: { type: 'number', description: '비용 분배 % (0~100, 기본: 100)' },
+          note: { type: 'string' },
+        },
+        required: ['sale_id', 'project_id'],
+      },
+    },
+    {
+      name: 'unlink_sale_project',
+      description: '계약-프로젝트 N:M 연결 해제. 매핑만 제거 (계약·프로젝트 데이터 유지). 사용자 컨펌 권장.',
+      input_schema: {
+        type: 'object' as const,
+        properties: { sale_id: { type: 'string' }, project_id: { type: 'string' } },
+        required: ['sale_id', 'project_id'],
+      },
+    },
+    {
+      name: 'set_revenue_share',
+      description: '계약-프로젝트 매핑 분배 비율 변경. 1:N 케이스 영업이익 분배 조정. 합계 100% 안 맞아도 경고만.',
+      input_schema: {
+        type: 'object' as const,
+        properties: {
+          sale_id: { type: 'string' },
+          project_id: { type: 'string' },
+          revenue_share_pct: { type: 'number' },
+          cost_share_pct: { type: 'number' },
+        },
+        required: ['sale_id', 'project_id', 'revenue_share_pct'],
+      },
+    },
+    {
+      name: 'compute_project_profit',
+      description: '프로젝트 영업이익을 N:M 분배 비율 기반 자동 계산. 매출(분배 후) - 비용(분배 후) = 이익. 분배 명세 같이 반환.',
+      input_schema: {
+        type: 'object' as const,
+        properties: { project_id: { type: 'string' } },
+        required: ['project_id'],
+      },
+    },
   ]
 
   const encoder = new TextEncoder()
@@ -1274,6 +1322,96 @@ ${logs && logs.length > 0 ? `\n## 최근 소통내역\n${logs.map(l => `- [${l.l
                     result = `✅ "${orgName}" 등록 완료. customer_id=${r.customer_id}${r.person_id ? `, person_id=${r.person_id}` : ''}`
                   }
                 }
+              }
+            } else if (block.name === 'link_sale_project') {
+              const sale_id = String((input as any).sale_id || '')
+              const project_id = String((input as any).project_id || '')
+              const role = String((input as any).role || '주계약')
+              const revenue_share_pct = typeof (input as any).revenue_share_pct === 'number' ? (input as any).revenue_share_pct : 100
+              const cost_share_pct = typeof (input as any).cost_share_pct === 'number' ? (input as any).cost_share_pct : 100
+              const note = (input as any).note ?? null
+              const { data, error } = await admin
+                .from('sale_projects')
+                .upsert({ sale_id, project_id, role, revenue_share_pct, cost_share_pct, note }, { onConflict: 'sale_id,project_id' })
+                .select('*')
+                .maybeSingle()
+              if (error) {
+                result = `매핑 실패: ${error.message}`
+              } else {
+                revalidatePath(`/projects/${project_id}`)
+                revalidate()
+                result = `✅ 계약-프로젝트 연결: revenue ${revenue_share_pct}%, cost ${cost_share_pct}%`
+              }
+            } else if (block.name === 'unlink_sale_project') {
+              const sale_id = String((input as any).sale_id || '')
+              const project_id = String((input as any).project_id || '')
+              const { error } = await admin.from('sale_projects').delete().match({ sale_id, project_id })
+              if (error) {
+                result = `해제 실패: ${error.message}`
+              } else {
+                revalidatePath(`/projects/${project_id}`)
+                revalidate()
+                result = '✅ 계약-프로젝트 매핑 해제됨'
+              }
+            } else if (block.name === 'set_revenue_share') {
+              const sale_id = String((input as any).sale_id || '')
+              const project_id = String((input as any).project_id || '')
+              const revenue_share_pct = Number((input as any).revenue_share_pct)
+              const cost_share_pct = typeof (input as any).cost_share_pct === 'number' ? (input as any).cost_share_pct : revenue_share_pct
+              const { data: existing } = await admin
+                .from('sale_projects').select('id').match({ sale_id, project_id }).maybeSingle()
+              if (!existing) {
+                await admin.from('sale_projects').insert({ sale_id, project_id, role: '주계약', revenue_share_pct, cost_share_pct })
+              } else {
+                await admin.from('sale_projects').update({ revenue_share_pct, cost_share_pct }).match({ sale_id, project_id })
+              }
+              const { data: allShares } = await admin.from('sale_projects').select('revenue_share_pct').eq('sale_id', sale_id)
+              const total = (allShares ?? []).reduce((s, x: any) => s + (x.revenue_share_pct ?? 0), 0)
+              revalidatePath(`/projects/${project_id}`)
+              revalidate()
+              result = total !== 100
+                ? `✅ 분배 비율 ${revenue_share_pct}% 설정. ⚠️ 이 계약의 합계 ${total}% (100%가 아님)`
+                : `✅ 분배 비율 ${revenue_share_pct}% 설정. 합계 100% OK`
+            } else if (block.name === 'compute_project_profit') {
+              const project_id = String((input as any).project_id || '')
+              const { computeProjectProfit } = await import('@/lib/sale-projects')
+              const [{ data: prj }, { data: spsRaw }, { data: salesRaw }] = await Promise.all([
+                admin.from('projects').select('id, name').eq('id', project_id).maybeSingle(),
+                admin.from('sale_projects').select('*').eq('project_id', project_id),
+                admin.from('sales').select('id, revenue, name').eq('project_id', project_id),
+              ])
+              if (!prj) {
+                result = '프로젝트를 찾을 수 없음'
+              } else {
+                const allSales = (salesRaw ?? []) as any[]
+                const saleIds = allSales.map(s => s.id)
+                const { data: scs } = saleIds.length > 0
+                  ? await admin.from('sale_costs').select('sale_id, amount').in('sale_id', saleIds)
+                  : { data: [] as any[] }
+                const mappedIds = new Set(((spsRaw ?? []) as any[]).map((sp: any) => sp.sale_id))
+                const fallback = allSales.filter(s => !mappedIds.has(s.id)).map(s => ({
+                  id: '_f_' + s.id, sale_id: s.id, project_id, role: '주계약' as const,
+                  revenue_share_pct: 100, cost_share_pct: 100, note: null, created_at: '', updated_at: '',
+                }))
+                const r = computeProjectProfit({
+                  projectId: project_id,
+                  sales: allSales.map(s => ({ id: s.id, revenue: s.revenue ?? 0 })),
+                  saleCosts: ((scs ?? []) as any[]).map(c => ({ sale_id: c.sale_id, amount: c.amount ?? 0 })),
+                  saleProjects: [...((spsRaw ?? []) as any[]), ...fallback],
+                })
+                const nameMap = new Map(allSales.map(s => [s.id, s.name]))
+                result = JSON.stringify({
+                  project: prj.name,
+                  revenue: r.revenue,
+                  cost: r.cost,
+                  profit: r.profit,
+                  margin_pct: Math.round(r.margin * 10) / 10,
+                  breakdown: r.breakdown.map(b => ({
+                    sale: nameMap.get(b.sale_id) ?? b.sale_id.slice(0, 8),
+                    revenue_attributed: b.revenue_attributed,
+                    revenue_share_pct: b.revenue_share_pct,
+                  })),
+                })
               }
             }
 

@@ -597,6 +597,59 @@ export const TOOLS: Anthropic.Tool[] = [
     },
   },
   {
+    name: 'link_sale_project',
+    description: '계약(sale)과 프로젝트(project)를 N:M 관계로 연결합니다. 한 계약을 여러 프로젝트에, 한 프로젝트도 여러 계약에 묶을 수 있습니다. revenue_share_pct는 영업이익 분배 비율 (1:N 분배 시 균등 50/30/20 등). 1:1 또는 N:1 케이스에서는 100을 그대로 사용.',
+    input_schema: {
+      type: 'object' as const,
+      properties: {
+        sale_id: { type: 'string', description: '계약 UUID' },
+        project_id: { type: 'string', description: '프로젝트 UUID' },
+        role: { type: 'string', description: '주계약 | 부계약 | 예산분할 | 추가 (기본: 주계약)' },
+        revenue_share_pct: { type: 'number', description: '매출 분배 % (0~100, 기본: 100)' },
+        cost_share_pct: { type: 'number', description: '비용 분배 % (0~100, 기본: 100)' },
+        note: { type: 'string', description: '메모 (선택)' },
+      },
+      required: ['sale_id', 'project_id'],
+    },
+  },
+  {
+    name: 'unlink_sale_project',
+    description: '계약-프로젝트 N:M 연결을 해제합니다. 매핑 자체 제거 (계약·프로젝트 데이터는 유지). 사용자 컨펌 권장.',
+    input_schema: {
+      type: 'object' as const,
+      properties: {
+        sale_id: { type: 'string', description: '계약 UUID' },
+        project_id: { type: 'string', description: '프로젝트 UUID' },
+      },
+      required: ['sale_id', 'project_id'],
+    },
+  },
+  {
+    name: 'set_revenue_share',
+    description: '계약-프로젝트 매핑의 분배 비율을 변경합니다. 1:N(1 계약 → N 프로젝트) 케이스에서 영업이익 분배 비율 조정. 합이 100% 안 맞아도 경고만, 저장은 됨.',
+    input_schema: {
+      type: 'object' as const,
+      properties: {
+        sale_id: { type: 'string', description: '계약 UUID' },
+        project_id: { type: 'string', description: '프로젝트 UUID' },
+        revenue_share_pct: { type: 'number', description: '매출 분배 % (0~100)' },
+        cost_share_pct: { type: 'number', description: '비용 분배 % (0~100, 생략 시 revenue_share_pct와 동일)' },
+      },
+      required: ['sale_id', 'project_id', 'revenue_share_pct'],
+    },
+  },
+  {
+    name: 'compute_project_profit',
+    description: '프로젝트 영업이익을 N:M 분배 비율 기반으로 자동 계산합니다. 매출(분배 후) - 비용(분배 후) = 이익. 분배 명세도 같이 반환.',
+    input_schema: {
+      type: 'object' as const,
+      properties: {
+        project_id: { type: 'string', description: '프로젝트 UUID' },
+      },
+      required: ['project_id'],
+    },
+  },
+  {
     name: 'create_calendar_event',
     description: '구글 캘린더에 일정을 등록합니다. 행사, 배송, 미팅, 마감일 등.',
     input_schema: {

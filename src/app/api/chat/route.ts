@@ -16,6 +16,7 @@ const MUTATING_TOOLS = new Set([
   'create_quote', 'update_quote',
   'update_lead_summary', 'regenerate_lead_summary',
   'quick_create_customer', 'merge_customers', 'match_sale_to_customer', 'match_lead_to_customer',
+  'link_sale_project', 'unlink_sale_project', 'set_revenue_share',
 ])
 import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
@@ -1471,6 +1472,131 @@ async function executeTool(name: string, input: Record<string, unknown>, userRol
       return { success: true, message: '리드 요약을 재생성했어.' }
     } catch (e: unknown) {
       return { error: e instanceof Error ? e.message : '리드 요약 재생성 실패' }
+    }
+  }
+
+  if (name === 'link_sale_project') {
+    const supabase = createAdminClient()
+    const sale_id = input.sale_id as string
+    const project_id = input.project_id as string
+    const role = (input.role as string) || '주계약'
+    const revenue_share_pct = typeof input.revenue_share_pct === 'number' ? input.revenue_share_pct : 100
+    const cost_share_pct = typeof input.cost_share_pct === 'number' ? input.cost_share_pct : 100
+    const note = (input.note as string) ?? null
+
+    const { data: sale } = await supabase.from('sales').select('id, name').eq('id', sale_id).maybeSingle()
+    const { data: project } = await supabase.from('projects').select('id, name').eq('id', project_id).maybeSingle()
+    if (!sale || !project) return { error: '계약 또는 프로젝트를 찾을 수 없음' }
+
+    const { data, error } = await supabase
+      .from('sale_projects')
+      .upsert({ sale_id, project_id, role, revenue_share_pct, cost_share_pct, note }, { onConflict: 'sale_id,project_id' })
+      .select('*')
+      .maybeSingle()
+    if (error) return { error: error.message }
+    return { success: true, link: data, sale: { id: sale.id, name: sale.name }, project: { id: project.id, name: project.name } }
+  }
+
+  if (name === 'unlink_sale_project') {
+    const supabase = createAdminClient()
+    const sale_id = input.sale_id as string
+    const project_id = input.project_id as string
+    const { error } = await supabase.from('sale_projects').delete().match({ sale_id, project_id })
+    if (error) return { error: error.message }
+    return { success: true, sale_id, project_id }
+  }
+
+  if (name === 'set_revenue_share') {
+    const supabase = createAdminClient()
+    const sale_id = input.sale_id as string
+    const project_id = input.project_id as string
+    const revenue_share_pct = input.revenue_share_pct as number
+    const cost_share_pct = typeof input.cost_share_pct === 'number' ? input.cost_share_pct : revenue_share_pct
+
+    const { data: existing } = await supabase
+      .from('sale_projects')
+      .select('id')
+      .match({ sale_id, project_id })
+      .maybeSingle()
+    if (!existing) {
+      // 없으면 자동 생성 (link_sale_project + 비율)
+      const { data, error } = await supabase
+        .from('sale_projects')
+        .insert({ sale_id, project_id, role: '주계약', revenue_share_pct, cost_share_pct })
+        .select('*')
+        .maybeSingle()
+      if (error) return { error: error.message }
+      return { success: true, link: data, created: true }
+    }
+    const { data, error } = await supabase
+      .from('sale_projects')
+      .update({ revenue_share_pct, cost_share_pct })
+      .match({ sale_id, project_id })
+      .select('*')
+      .maybeSingle()
+    if (error) return { error: error.message }
+
+    // 합계 100% 검증 (이 sale의 모든 매핑 합)
+    const { data: allShares } = await supabase
+      .from('sale_projects')
+      .select('revenue_share_pct')
+      .eq('sale_id', sale_id)
+    const totalShare = (allShares ?? []).reduce((s, x: any) => s + (x.revenue_share_pct ?? 0), 0)
+    return { success: true, link: data, total_revenue_share_pct: totalShare, warning: totalShare !== 100 ? `합계 ${totalShare}% (100%가 아님)` : null }
+  }
+
+  if (name === 'compute_project_profit') {
+    const supabase = createAdminClient()
+    const project_id = input.project_id as string
+
+    const { computeProjectProfit } = await import('@/lib/sale-projects')
+    const [{ data: project }, { data: saleProjects }, { data: sales }] = await Promise.all([
+      supabase.from('projects').select('id, name').eq('id', project_id).maybeSingle(),
+      supabase.from('sale_projects').select('*').eq('project_id', project_id),
+      supabase.from('sales').select('id, revenue, name').eq('project_id', project_id),
+    ])
+    if (!project) return { error: '프로젝트를 찾을 수 없음' }
+
+    const allSales = (sales ?? []) as any[]
+    const saleIds = allSales.map(s => s.id)
+    const { data: saleCosts } = saleIds.length > 0
+      ? await supabase.from('sale_costs').select('sale_id, amount').in('sale_id', saleIds)
+      : { data: [] as any[] }
+
+    // 매핑 누락 sale은 100% fallback (page.tsx와 동일 로직)
+    const mappedSaleIds = new Set((saleProjects ?? []).map((sp: any) => sp.sale_id))
+    const fallbackMappings = allSales
+      .filter(s => !mappedSaleIds.has(s.id))
+      .map(s => ({
+        id: '_fallback_' + s.id, sale_id: s.id, project_id, role: '주계약' as const,
+        revenue_share_pct: 100, cost_share_pct: 100, note: null, created_at: '', updated_at: '',
+      }))
+    const allMappings = [...((saleProjects ?? []) as any[]), ...fallbackMappings]
+
+    const result = computeProjectProfit({
+      projectId: project_id,
+      sales: allSales.map(s => ({ id: s.id, revenue: s.revenue ?? 0 })),
+      saleCosts: ((saleCosts ?? []) as any[]).map(c => ({ sale_id: c.sale_id, amount: c.amount ?? 0 })),
+      saleProjects: allMappings,
+    })
+
+    const saleNameMap = new Map(allSales.map(s => [s.id, s.name]))
+    return {
+      success: true,
+      project: { id: project.id, name: project.name },
+      revenue: result.revenue,
+      cost: result.cost,
+      profit: result.profit,
+      margin_pct: Math.round(result.margin * 10) / 10,
+      breakdown: result.breakdown.map(b => ({
+        sale_id: b.sale_id,
+        sale_name: saleNameMap.get(b.sale_id) ?? null,
+        sale_revenue: b.sale_revenue,
+        revenue_share_pct: b.revenue_share_pct,
+        revenue_attributed: b.revenue_attributed,
+        cost_share_pct: b.cost_share_pct,
+        cost_attributed: b.cost_attributed,
+      })),
     }
   }
 
