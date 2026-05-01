@@ -17,11 +17,19 @@ interface LeadData {
   remind_date: string | null
 }
 
+interface ToolTraceItem {
+  name: string
+  ok: boolean
+  error?: string | null
+  inputSummary?: Record<string, unknown>
+}
+
 interface Message {
   role: 'user' | 'assistant'
   content: string
   imagePreview?: string | null   // 썸네일용 (localStorage 저장용)
   leadData?: LeadData | null
+  toolTrace?: ToolTraceItem[]    // 디버그 — 빵빵이가 호출한 도구 trace
 }
 
 const INIT_MSG = '뭐 할 거야?'
@@ -202,6 +210,7 @@ export default function AiChat() {
         role: 'assistant',
         content,
         leadData: data.leadData ?? null,
+        toolTrace: Array.isArray(data.toolTrace) ? data.toolTrace : undefined,
       }])
       // 빵빵이 도구가 데이터를 변경했으면 페이지 SC 재로딩
       if (data.mutated) router.refresh()
@@ -436,6 +445,30 @@ export default function AiChat() {
                     ? <MarkdownText>{msg.content}</MarkdownText>
                     : msg.content}
                 </div>
+
+                {/* 도구 호출 trace — 빵빵이가 진짜 어떤 도구 호출했는지 진단용 */}
+                {msg.role === 'assistant' && msg.toolTrace && msg.toolTrace.length > 0 && (
+                  <details className="mt-1 text-[10px] text-gray-400">
+                    <summary className="cursor-pointer hover:text-gray-600">
+                      🔧 호출한 도구 {msg.toolTrace.length}개
+                    </summary>
+                    <div className="mt-1 space-y-0.5 pl-2">
+                      {msg.toolTrace.map((t, ti) => (
+                        <div key={ti} className={`font-mono ${t.ok ? 'text-gray-500' : 'text-red-500'}`}>
+                          {t.ok ? '✓' : '✗'} <b>{t.name}</b>
+                          {t.inputSummary && Object.keys(t.inputSummary).length > 0 && (
+                            <span className="text-gray-400">
+                              ({Object.entries(t.inputSummary).slice(0, 3).map(([k, v]) =>
+                                `${k}=${typeof v === 'string' ? `"${v}"` : v}`
+                              ).join(', ')})
+                            </span>
+                          )}
+                          {t.error && <span className="text-red-400"> — {t.error}</span>}
+                        </div>
+                      ))}
+                    </div>
+                  </details>
+                )}
 
                 {/* Brief 저장 버튼 (프로젝트 페이지 + 어시스턴트 메시지) */}
                 {msg.role === 'assistant' && projectId && i > 0 && (
