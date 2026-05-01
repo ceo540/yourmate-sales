@@ -439,7 +439,7 @@ export default function ProjectV2Client({
           <BasicInfoCard customer={customer} contactPerson={contactPerson} pmName={pmName} project={project} customersAll={customersAll} customerPersons={customerPersons} />
 
           {/* 💰 재무 요약 — V1.5 */}
-          <FinanceCard finance={finance} profitRate={profitRate} receivedRate={receivedRate} contracts={contracts} />
+          <FinanceCard finance={finance} profitRate={profitRate} receivedRate={receivedRate} contracts={contracts} projectId={project.id} />
 
           {/* 📁 드롭박스 */}
           {project.dropbox_url
@@ -898,12 +898,56 @@ function BasicInfoCard({ customer, contactPerson, pmName, project, customersAll,
   )
 }
 
-function FinanceCard({ finance, profitRate, receivedRate, contracts }: {
+function FinanceCard({ finance, profitRate, receivedRate, contracts, projectId }: {
   finance: Finance; profitRate: number | null; receivedRate: number
   contracts?: Contract[]
+  projectId?: string
 }) {
+  const router = useRouter()
   const profit = finance.revenue - finance.cost
   const contractNameMap = new Map((contracts ?? []).map(c => [c.id, c.name]))
+  const [editingId, setEditingId] = useState<string | null>(null)
+  const [editValue, setEditValue] = useState<string>('')
+  const [pending, startTransition] = useTransition()
+
+  const handleSave = (saleId: string) => {
+    if (!projectId) return
+    const pct = Number(editValue)
+    if (isNaN(pct) || pct < 0 || pct > 100) {
+      alert('0~100 사이 숫자')
+      return
+    }
+    startTransition(async () => {
+      const { updateSaleProjectShareAction } = await import('@/lib/sale-projects-actions')
+      const r = await updateSaleProjectShareAction({
+        sale_id: saleId, project_id: projectId, revenue_share_pct: pct,
+      })
+      if ('error' in r) {
+        alert(`수정 실패: ${r.error}`)
+        return
+      }
+      setEditingId(null)
+      router.refresh()
+      if (r.total_revenue_share_pct !== 100) {
+        // 합계 100% 안 맞으면 작은 알림
+        setTimeout(() => alert(`⚠️ 이 계약의 분배 합계: ${r.total_revenue_share_pct}% (100%가 아님)`), 100)
+      }
+    })
+  }
+
+  const handleUnlink = (saleId: string, name: string) => {
+    if (!projectId) return
+    if (!confirm(`"${name}" 매핑을 해제하시겠어요?\n(계약·프로젝트 자체는 유지됩니다)`)) return
+    startTransition(async () => {
+      const { unlinkSaleProjectAction } = await import('@/lib/sale-projects-actions')
+      const r = await unlinkSaleProjectAction({ sale_id: saleId, project_id: projectId })
+      if ('error' in r) {
+        alert(`해제 실패: ${r.error}`)
+        return
+      }
+      router.refresh()
+    })
+  }
   return (
     <div className="bg-white border border-gray-100 rounded-xl px-4 py-3 space-y-2.5">
       <div className="flex items-center justify-between">
@@ -934,14 +978,62 @@ function FinanceCard({ finance, profitRate, receivedRate, contracts }: {
       {/* 분배 명세 — 2개 이상 계약 매핑 시만 표시 (1:1 케이스는 안 보임) */}
       {finance.breakdown && finance.breakdown.length > 1 && (
         <div className="pt-1 border-t border-gray-50">
-          <p className="text-[10px] text-gray-400 mb-1">계약 매핑 명세 (N:M)</p>
+          <p className="text-[10px] text-gray-400 mb-1">
+            계약 매핑 명세 (N:M)
+            {projectId && (
+              <span className="ml-1 text-[9px] text-gray-300">
+                · 빵빵이에게 "이 프로젝트에 (계약명) N% 분배 추가해줘" 자연어 입력 가능
+              </span>
+            )}
+          </p>
           <div className="space-y-0.5">
             {finance.breakdown.map((b) => {
               const name = contractNameMap.get(b.sale_id) || b.sale_id.slice(0, 8)
+              const isEditing = editingId === b.sale_id
               return (
-                <div key={b.sale_id} className="flex items-center justify-between text-[10px] text-gray-500 gap-2">
-                  <span className="truncate" title={name}>{name}</span>
-                  <span className="whitespace-nowrap">{b.revenue_share_pct}% · {fmtMoney(b.revenue_attributed)}원</span>
+                <div key={b.sale_id} className="flex items-center justify-between text-[10px] text-gray-500 gap-2 group">
+                  <span className="truncate flex-1" title={name}>{name}</span>
+                  {isEditing ? (
+                    <span className="flex items-center gap-1">
+                      <input
+                        type="number" min={0} max={100} step={1}
+                        value={editValue}
+                        onChange={e => setEditValue(e.target.value)}
+                        className="w-12 px-1 py-0.5 text-[10px] border border-gray-300 rounded"
+                        disabled={pending}
+                        autoFocus
+                      />
+                      <span>%</span>
+                      <button
+                        onClick={() => handleSave(b.sale_id)}
+                        disabled={pending}
+                        className="text-blue-600 hover:underline px-1"
+                      >저장</button>
+                      <button
+                        onClick={() => setEditingId(null)}
+                        disabled={pending}
+                        className="text-gray-400 hover:underline px-1"
+                      >취소</button>
+                    </span>
+                  ) : (
+                    <span className="flex items-center gap-1 whitespace-nowrap">
+                      <span>{b.revenue_share_pct}% · {fmtMoney(b.revenue_attributed)}원</span>
+                      {projectId && (
+                        <span className="opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-0.5">
+                          <button
+                            onClick={() => { setEditingId(b.sale_id); setEditValue(String(b.revenue_share_pct)) }}
+                            title="비율 수정"
+                            className="text-blue-500 hover:text-blue-700 text-[11px] px-0.5"
+                          >✏️</button>
+                          <button
+                            onClick={() => handleUnlink(b.sale_id, name)}
+                            title="매핑 해제"
+                            className="text-red-400 hover:text-red-600 text-[11px] px-0.5"
+                          >✕</button>
+                        </span>
+                      )}
+                    </span>
+                  )}
                 </div>
               )
             })}
