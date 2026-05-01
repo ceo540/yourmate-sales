@@ -324,3 +324,75 @@ export interface SaleProject {
   created_at: string
   updated_at: string
 }
+
+// 외부 인력 통합 모델 (yourmate-spec.md §5.5)
+export type ExternalWorkerType = '강사' | '아티스트' | '스태프' | '기술' | '복합'
+export type ExternalWorkerReuseStatus = 'preferred' | 'normal' | 'avoid'
+export type ArchiveStatus = 'active' | 'pending' | 'cancelled' | 'archived'
+export type RateType = 'per_hour' | 'per_session' | 'per_project'
+
+export interface ExternalWorker {
+  id: string
+  name: string
+  type: ExternalWorkerType
+  phone: string | null
+  email: string | null
+
+  ssn_text: string | null              // 주민번호 (L3 마이그 시 암호화 예정)
+  bank_name: string | null
+  bank_account_text: string | null     // L3 마이그 시 암호화 예정
+  id_card_url: string | null           // Dropbox URL (대표만 권한)
+  bank_book_url: string | null
+
+  default_rate_type: RateType | null
+  default_rate: number | null
+  specialties: string[] | null
+  notes: string | null
+
+  rating: number | null                // 0~5 자동 + 사람 수정
+  evaluation_notes: string | null
+  reuse_status: ExternalWorkerReuseStatus
+
+  first_engaged_at: string | null
+  last_engaged_at: string | null
+  total_engagements: number
+  total_paid: number
+
+  archive_status: ArchiveStatus
+
+  created_at: string
+  updated_at: string
+}
+
+export interface WorkerEngagement {
+  id: string
+  worker_id: string
+  project_id: string
+  role: string | null                  // '메인 강사' | '서브' | 'MC' | '음향' | ...
+  date_start: string | null
+  date_end: string | null
+  hours: number | null
+  rate_type: RateType | null
+  rate: number | null
+  amount: number | null
+  note: string | null
+  archive_status: ArchiveStatus
+  created_at: string
+}
+
+export type WorkerPaymentStatus = 'pending' | 'paid' | 'failed' | 'cancelled'
+
+export interface WorkerPayment {
+  id: string
+  worker_id: string
+  engagement_ids: string[] | null
+  total_amount: number
+  scheduled_date: string | null
+  paid_date: string | null
+  status: WorkerPaymentStatus
+  tax_form_sent_at: string | null
+  note: string | null
+  archive_status: ArchiveStatus
+  created_at: string
+  updated_at: string
+}
