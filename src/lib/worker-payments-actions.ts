@@ -104,7 +104,9 @@ export async function generateTaxHandoffXlsxAction(input: {
     .lt('created_at', nextMonth)
 
   if (!payments || payments.length === 0) {
-    return { error: `${input.year_month}에 pending worker_payments 없음. 먼저 createMonthlyPaymentAction 호출 권장.` }
+    return {
+      error: `${input.year_month}에 발송할 정산 묶음이 없습니다. 먼저 /workers 페이지 [+ 월 정산 묶음] 버튼 또는 빵빵이에게 "X 강사 ${input.year_month} 정산 묶음 만들어줘"라고 명령해서 worker_payments를 만들어야 합니다.`,
+    }
   }
 
   const workerIds = Array.from(new Set(payments.map(p => p.worker_id)))

@@ -1039,16 +1039,16 @@ function FinanceCard({ finance, profitRate, receivedRate, contracts, projectId }
                     <span className="flex items-center gap-1 whitespace-nowrap">
                       <span>{b.revenue_share_pct}% · {fmtMoney(b.revenue_attributed)}원</span>
                       {projectId && (
-                        <span className="opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-0.5">
+                        <span className="flex items-center gap-0.5 ml-1">
                           <button
                             onClick={() => { setEditingId(b.sale_id); setEditValue(String(b.revenue_share_pct)) }}
                             title="비율 수정"
-                            className="text-blue-500 hover:text-blue-700 text-[11px] px-0.5"
+                            className="text-blue-500 hover:text-blue-700 hover:bg-blue-50 text-[11px] px-1 rounded"
                           >✏️</button>
                           <button
                             onClick={() => handleUnlink(b.sale_id, name)}
                             title="매핑 해제"
-                            className="text-red-400 hover:text-red-600 text-[11px] px-0.5"
+                            className="text-red-400 hover:text-red-600 hover:bg-red-50 text-[11px] px-1 rounded"
                           >✕</button>
                         </span>
                       )}

@@ -685,13 +685,26 @@ export const TOOLS: Anthropic.Tool[] = [
     },
   },
   {
+    name: 'search_projects',
+    description: '프로젝트 검색 — 이름·project_number 부분 일치. 사용자가 "용인 미르아이밴드캠프" 같이 *이름만* 말해도 ID 자동 매칭. 기본 active만 (status != 취소).',
+    input_schema: {
+      type: 'object' as const,
+      properties: {
+        query: { type: 'string', description: '프로젝트명·번호 부분 검색 (예: "용인", "26-069", "미르아이밴드")' },
+        limit: { type: 'number', description: '최대 결과 (기본 10)' },
+      },
+      required: ['query'],
+    },
+  },
+  {
     name: 'record_engagement',
-    description: '외부 인력의 프로젝트 참여 기록. amount는 자동 계산 (rate_type + rate + hours).',
+    description: '외부 인력의 프로젝트 참여 기록. amount 자동 계산 (rate_type + rate + hours). **project_id 또는 project_query 둘 중 하나 필수** — query 주면 자동 검색·매칭.',
     input_schema: {
       type: 'object' as const,
       properties: {
         worker_id: { type: 'string', description: '외부 인력 UUID' },
-        project_id: { type: 'string', description: '프로젝트 UUID' },
+        project_id: { type: 'string', description: '프로젝트 UUID (직접 알 때)' },
+        project_query: { type: 'string', description: '프로젝트명·번호 부분 검색. 1건 매칭되면 자동 사용. 다수면 에러 (사용자에게 명확화 요청)' },
         role: { type: 'string', description: '참여 역할 (예: 메인 강사·MC·음향)' },
         date_start: { type: 'string', description: '시작일 YYYY-MM-DD' },
         date_end: { type: 'string', description: '종료일 YYYY-MM-DD (선택)' },
@@ -700,7 +713,7 @@ export const TOOLS: Anthropic.Tool[] = [
         rate: { type: 'number', description: '단가 (생략 시 worker.default_rate)' },
         note: { type: 'string' },
       },
-      required: ['worker_id', 'project_id'],
+      required: ['worker_id'],
     },
   },
   {

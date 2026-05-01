@@ -1677,12 +1677,60 @@ async function executeTool(name: string, input: Record<string, unknown>, userRol
     return { success: true, worker: data, note: '⚠️ 보안 L3 마이그 전이라 주민번호·계좌번호는 평문 저장됨. 신분증·통장 사본은 /0_민감정보/외부인력/ 폴더 권장.' }
   }
 
+  if (name === 'search_projects') {
+    const supabase = createAdminClient()
+    const query = (input.query as string ?? '').trim()
+    const limit = typeof input.limit === 'number' ? input.limit : 10
+    if (!query) return { error: 'query 필수' }
+
+    // 이름·번호 부분 일치 (status != 취소)
+    const { data, error } = await supabase
+      .from('projects')
+      .select('id, name, project_number, status, customer_id, service_type')
+      .or(`name.ilike.%${query}%,project_number.ilike.%${query}%`)
+      .neq('status', '취소')
+      .limit(limit)
+    if (error) return { error: error.message }
+    return {
+      success: true,
+      count: data?.length ?? 0,
+      projects: data ?? [],
+      hint: (data?.length ?? 0) === 0
+        ? '결과 없음 — 사용자에게 정확한 이름·번호 다시 물어보기'
+        : (data?.length ?? 0) > 1
+          ? '다수 매칭 — 사용자에게 어느 건인지 확인 필요'
+          : '단일 매칭 — 그대로 record_engagement 등에서 project_id로 사용',
+    }
+  }
+
   if (name === 'record_engagement') {
     const supabase = createAdminClient()
     const { computeEngagementAmount } = await import('@/lib/external-workers')
 
     const worker_id = input.worker_id as string
-    const project_id = input.project_id as string
+    let project_id = input.project_id as string | undefined
+
+    // project_id 없으면 project_query로 자동 검색
+    if (!project_id && typeof input.project_query === 'string' && input.project_query) {
+      const q = (input.project_query as string).trim()
+      const { data: prjs } = await supabase
+        .from('projects')
+        .select('id, name')
+        .or(`name.ilike.%${q}%,project_number.ilike.%${q}%`)
+        .neq('status', '취소')
+        .limit(5)
+      if (!prjs || prjs.length === 0) {
+        return { error: `프로젝트 검색 결과 없음 (query="${q}"). 정확한 이름·번호 확인 필요.` }
+      }
+      if (prjs.length > 1) {
+        return {
+          error: `다수 프로젝트 매칭 (query="${q}", ${prjs.length}건). 사용자에게 어느 건인지 확인 필요.`,
+          candidates: prjs,
+        }
+      }
+      project_id = prjs[0].id
+    }
+    if (!project_id) return { error: 'project_id 또는 project_query 필요' }
 
     // worker default 로드
     const { data: worker } = await supabase
