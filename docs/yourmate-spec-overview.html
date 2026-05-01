@@ -165,25 +165,29 @@ th { background: #f5f5f5; font-weight: 600; }
 <span class="flow-step">정산/아카이빙</span>
 </div>
 
-<h3>핵심 정책 (사용자 확정)</h3>
+<h3>핵심 정책 (사용자 확정 + 검토 반영)</h3>
 <ul class="policy-list">
-<li><strong>시스템 = 프로젝트 중심</strong> (사업부 중심 X)</li>
+<li><strong>데이터 = 프로젝트 중심 / 운영 = 사업부 중심</strong> (둘 다 살아있음 — UI는 사업부 분기 유지, 데이터는 프로젝트 ID 통합)</li>
 <li><strong>빵빵이 자율</strong> = 일기·분석·제안·일상 쓰기 / <strong>컨펌 필수</strong> = 외부 송신·재무·사용자</li>
+<li><strong>🚫 빵빵이 삭제 권한 0</strong> ⭐ — 보류·취소 폴더 이동만. 삭제는 사람만</li>
 <li><strong>대표 권한</strong> = role=admin 자동 인지 (별도 모드 X)</li>
 <li><strong>외부 송신</strong> = 초안만, 사람이 검토 후 발송</li>
-<li><strong>수의계약 100%</strong> (입찰 후순위)</li>
-<li><strong>모바일 필수</strong> (직원 절반 이상 외출)</li>
+<li><strong>수의계약 = 공공기관만 100%</strong> (일반·기업 카드결제는 일반 계약)</li>
+<li><strong>모바일 필수</strong> (대표 + 직원 2명 모두 절반 이상 외출)</li>
 <li><strong>핵심 동기</strong> = 대표 손에서 떼어내기 + 담당자 교체에도 영향 없게</li>
 </ul>
 
 <h2>2. 사업부 5개</h2>
 
 <div class="grid grid-5">
-<div class="dept"><div class="dept-name">Sound of School</div><div class="dept-role">학교 방문공연 + 음향 + 발표회/무대</div></div>
-<div class="dept"><div class="dept-name">Artkiwoom</div><div class="dept-role">교육 운영 (발주사+강사+일정)</div></div>
+<div class="dept"><div class="dept-name">Sound of School</div><div class="dept-role">학교 방문공연 + <strong>발표회·축제 겸업 多</strong></div></div>
+<div class="dept"><div class="dept-name">Artkiwoom</div><div class="dept-role">교육 운영 + <strong>발표회·영상 제작 겸업 多</strong></div></div>
 <div class="dept main"><div class="dept-name">002 Creative <span class="badge">메인</span></div><div class="dept-role">디자인·영상·행사 (복합형)</div></div>
 <div class="dept"><div class="dept-name">School Store</div><div class="dept-role">납품·렌탈·제작 (솔루션 방향)</div></div>
 <div class="dept"><div class="dept-name">002 Entertainment</div><div class="dept-role">음원 유통 (별도 시스템, 트래킹만)</div></div>
+</div>
+<div class="tip" style="margin-top: 12px; font-size: 13px;">
+<strong>사업부 겸업 = 한 프로젝트에 여러 사업부 참여의 자연스러운 결과.</strong> 예: Artkiwoom 교육 + SOS 발표회 + 002C 영상 = 1 프로젝트. §3 N:M 데이터 모델이 이걸 표현.
 </div>
 
 <h2>3. 데이터 모델 — sales ↔ projects N:M ⭐ 우선순위 1</h2>
@@ -235,22 +239,17 @@ th { background: #f5f5f5; font-weight: 600; }
 <div class="persona exec">
 <div class="persona-name">대표</div>
 <div class="persona-role">admin · 모든 결정·재무·HR·전략</div>
-<div class="persona-desc">메인 대시보드 + 일일 브리핑. 채널톡·메일 응대. 외출 절반 이상. 모바일 풀 사용.</div>
+<div class="persona-desc">메인 대시보드 + 일일 브리핑. 채널톡·메일 응대. 절반 이상 외출. 모바일 풀.</div>
 </div>
 <div class="persona contract">
-<div class="persona-name">계약담당+PM 겸</div>
-<div class="persona-role">admin/manager · 이벤트 드리븐</div>
-<div class="persona-desc">평소 PM. 계약 발생 시 빵빵이 호출 → 컨텍스트 자동 제공 → 처리. 대표 손 떼기 핵심.</div>
+<div class="persona-name">계약담당+PM 겸 (이사) ⭐</div>
+<div class="persona-role">admin/manager · 회사 핵심·이벤트 드리븐</div>
+<div class="persona-desc"><strong>회사 핵심 구성원·이사.</strong> 평소 PM. 계약 발생 시 빵빵이 호출 → 처리. 대표 손 떼기 핵심.</div>
 </div>
 <div class="persona pm">
-<div class="persona-name">PM (전담)</div>
-<div class="persona-role">manager · 사업부별 다층</div>
-<div class="persona-desc">SOS·Artkiwoom·002C 사업부별 다른 패턴. 프로젝트 페이지 + 빵빵이 위주.</div>
-</div>
-<div class="persona field">
-<div class="persona-name">현장 직원</div>
-<div class="persona-role">member · 모바일 위주</div>
-<div class="persona-desc">사진·메모·음성·GPS·영수증 빠르게. 한 손 조작. 현장 도착 알림.</div>
+<div class="persona-name">PM ↔ 현장 직원 (자주 겹침) ⭐</div>
+<div class="persona-role">manager·member · 작은 회사 구조</div>
+<div class="persona-desc">PM이 현장도 같이 가는 경우 多. 사무실+현장 모두. 모바일 필수. 컨텍스트 자유 전환.</div>
 </div>
 <div class="persona external">
 <div class="persona-name">외부 인력 (미래)</div>
@@ -262,6 +261,9 @@ th { background: #f5f5f5; font-weight: 600; }
 <div class="persona-role">client · 포털</div>
 <div class="persona-desc">자기 프로젝트 진행도·결과물·견적. magic_link 인증. 장기 도입.</div>
 </div>
+</div>
+<div class="tip" style="margin-top: 12px; font-size: 13px;">
+<strong>직원 6명 + 프리랜서.</strong> 단일 직원이 PM ↔ 현장 ↔ 운영 자유 전환. 시스템 UI는 *역할 고정*보다 *그때그때 컨텍스트* 중심.
 </div>
 
 <h2>5. 빵빵이 자율성 매트릭스</h2>
@@ -295,9 +297,13 @@ th { background: #f5f5f5; font-weight: 600; }
 <div></div>
 <div class="no">대표만</div>
 
-<div>모든 삭제</div>
+<div>🚫 모든 삭제 (사용자 정책)</div>
 <div></div>
-<div class="no">필수</div>
+<div class="no" style="background: #b91c1c; color: white;">권한 X</div>
+</div>
+
+<div class="warning" style="margin-top: 12px;">
+<strong>🚫 빵빵이 삭제 권한 자체 없음.</strong> 보류·취소 폴더 이동만 가능. 삭제는 무조건 사람만. <em>유어메이트는 데이터를 계속 쌓아가는 과정.</em>
 </div>
 
 <h2>6. 빠진 기능 로드맵 — 우선순위 (사용자 결정)</h2>
