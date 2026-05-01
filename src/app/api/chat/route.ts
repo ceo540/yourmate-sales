@@ -17,6 +17,7 @@ const MUTATING_TOOLS = new Set([
   'update_lead_summary', 'regenerate_lead_summary',
   'quick_create_customer', 'merge_customers', 'match_sale_to_customer', 'match_lead_to_customer',
   'link_sale_project', 'unlink_sale_project', 'set_revenue_share',
+  'add_external_worker', 'record_engagement',
 ])
 import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
@@ -1597,6 +1598,142 @@ async function executeTool(name: string, input: Record<string, unknown>, userRol
         cost_share_pct: b.cost_share_pct,
         cost_attributed: b.cost_attributed,
       })),
+    }
+  }
+
+  if (name === 'search_workers') {
+    const supabase = createAdminClient()
+    const query = (input.query as string) ?? ''
+    const type = input.type as string | undefined
+    const specialty = input.specialty as string | undefined
+    const onlyPreferred = input.only_preferred as boolean | undefined
+
+    let q = supabase.from('external_workers')
+      .select('id, name, type, phone, email, default_rate_type, default_rate, specialties, rating, reuse_status, total_engagements, total_paid')
+      .eq('archive_status', 'active')
+      .order('rating', { ascending: false, nullsFirst: false })
+      .limit(30)
+    if (query) q = q.ilike('name', `%${query}%`)
+    if (type) q = q.eq('type', type)
+    if (onlyPreferred) q = q.eq('reuse_status', 'preferred')
+
+    const { data, error } = await q
+    if (error) return { error: error.message }
+
+    let rows = data ?? []
+    if (specialty) {
+      rows = rows.filter(r => Array.isArray(r.specialties) && r.specialties.some((s: string) => s.includes(specialty)))
+    }
+    return { success: true, count: rows.length, workers: rows }
+  }
+
+  if (name === 'add_external_worker') {
+    const supabase = createAdminClient()
+    const newWorker = {
+      name: input.name as string,
+      type: input.type as string,
+      phone: (input.phone as string) ?? null,
+      email: (input.email as string) ?? null,
+      bank_name: (input.bank_name as string) ?? null,
+      bank_account_text: (input.bank_account as string) ?? null,
+      ssn_text: (input.ssn as string) ?? null,
+      default_rate_type: (input.default_rate_type as string) ?? null,
+      default_rate: typeof input.default_rate === 'number' ? input.default_rate : null,
+      specialties: Array.isArray(input.specialties) ? (input.specialties as string[]) : null,
+      notes: (input.notes as string) ?? null,
+    }
+    const { data, error } = await supabase
+      .from('external_workers')
+      .insert(newWorker)
+      .select('id, name, type')
+      .maybeSingle()
+    if (error) return { error: error.message }
+    return { success: true, worker: data, note: '⚠️ 보안 L3 마이그 전이라 주민번호·계좌번호는 평문 저장됨. 신분증·통장 사본은 /0_민감정보/외부인력/ 폴더 권장.' }
+  }
+
+  if (name === 'record_engagement') {
+    const supabase = createAdminClient()
+    const { computeEngagementAmount } = await import('@/lib/external-workers')
+
+    const worker_id = input.worker_id as string
+    const project_id = input.project_id as string
+
+    // worker default 로드
+    const { data: worker } = await supabase
+      .from('external_workers')
+      .select('default_rate_type, default_rate, name')
+      .eq('id', worker_id)
+      .maybeSingle()
+    if (!worker) return { error: '외부 인력을 찾을 수 없음' }
+
+    const rate_type = (input.rate_type as string) ?? worker.default_rate_type ?? null
+    const rate = typeof input.rate === 'number' ? input.rate : worker.default_rate ?? null
+    const hours = typeof input.hours === 'number' ? input.hours : null
+    const amount = computeEngagementAmount({ rate_type: rate_type as 'per_hour' | 'per_session' | 'per_project' | null, rate, hours })
+
+    const { data, error } = await supabase
+      .from('worker_engagements')
+      .insert({
+        worker_id, project_id,
+        role: (input.role as string) ?? null,
+        date_start: (input.date_start as string) ?? null,
+        date_end: (input.date_end as string) ?? null,
+        hours, rate_type, rate, amount,
+        note: (input.note as string) ?? null,
+      })
+      .select('*')
+      .maybeSingle()
+    if (error) return { error: error.message }
+
+    // worker 누적 업데이트 (total_engagements, last_engaged_at)
+    const { data: stats } = await supabase
+      .from('worker_engagements')
+      .select('id, date_start')
+      .eq('worker_id', worker_id)
+      .eq('archive_status', 'active')
+    const total = (stats ?? []).length
+    const dates = (stats ?? []).map(s => s.date_start).filter((d): d is string => !!d).sort()
+    await supabase.from('external_workers').update({
+      total_engagements: total,
+      first_engaged_at: dates[0] ?? null,
+      last_engaged_at: dates[dates.length - 1] ?? null,
+    }).eq('id', worker_id)
+
+    return {
+      success: true,
+      engagement: data,
+      computed_amount: amount,
+      worker_name: worker.name,
+      worker_total_engagements: total,
+    }
+  }
+
+  if (name === 'compute_worker_monthly_payment') {
+    const supabase = createAdminClient()
+    const { computeMonthlyPayment } = await import('@/lib/external-workers')
+    const worker_id = input.worker_id as string
+    const yearMonth = input.year_month as string
+
+    const [{ data: worker }, { data: engagements }] = await Promise.all([
+      supabase.from('external_workers').select('*').eq('id', worker_id).maybeSingle(),
+      supabase.from('worker_engagements').select('*').eq('worker_id', worker_id),
+    ])
+    if (!worker) return { error: '외부 인력을 찾을 수 없음' }
+
+    const result = computeMonthlyPayment({
+      worker: worker as never,
+      engagements: (engagements ?? []) as never[],
+      yearMonth,
+    })
+
+    return {
+      success: true,
+      worker_name: worker.name,
+      year_month: yearMonth,
+      total_amount: result.total,
+      engagement_count: result.count,
+      details: result.details,
+      note: 'worker_payments INSERT는 사용자 컨펌 후 별도 호출. 지금은 미리보기.',
     }
   }
 

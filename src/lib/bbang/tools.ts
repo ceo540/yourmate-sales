@@ -650,6 +650,71 @@ export const TOOLS: Anthropic.Tool[] = [
     },
   },
   {
+    name: 'search_workers',
+    description: '외부 인력(강사·아티스트·스태프·기술) 검색. 이름·전문영역·재사용상태 필터 가능. preferred 우선 정렬. archive_status=active만.',
+    input_schema: {
+      type: 'object' as const,
+      properties: {
+        query: { type: 'string', description: '이름 부분 검색 (선택)' },
+        type: { type: 'string', description: '강사 | 아티스트 | 스태프 | 기술 | 복합 (선택)' },
+        specialty: { type: 'string', description: '전문 영역 부분 일치 (예: "공연", "교육")' },
+        only_preferred: { type: 'boolean', description: 'true면 reuse_status=preferred만' },
+      },
+    },
+  },
+  {
+    name: 'add_external_worker',
+    description: '외부 인력 신규 등록. 사용자에게 한 번 확인 후 호출. 주민번호·계좌는 추후 보안 L3 마이그 후 암호화 예정 (지금은 평문 저장 — §4.2.1).',
+    input_schema: {
+      type: 'object' as const,
+      properties: {
+        name: { type: 'string', description: '이름 (필수)' },
+        type: { type: 'string', description: '강사 | 아티스트 | 스태프 | 기술 | 복합 (필수)' },
+        phone: { type: 'string' },
+        email: { type: 'string' },
+        bank_name: { type: 'string', description: '은행명' },
+        bank_account: { type: 'string', description: '계좌번호' },
+        ssn: { type: 'string', description: '주민번호 (세무용)' },
+        default_rate_type: { type: 'string', description: 'per_hour | per_session | per_project' },
+        default_rate: { type: 'number', description: '기본 단가 (원)' },
+        specialties: { type: 'array', items: { type: 'string' }, description: '전문 영역 배열 (예: ["공연", "교육"])' },
+        notes: { type: 'string' },
+      },
+      required: ['name', 'type'],
+    },
+  },
+  {
+    name: 'record_engagement',
+    description: '외부 인력의 프로젝트 참여 기록. amount는 자동 계산 (rate_type + rate + hours).',
+    input_schema: {
+      type: 'object' as const,
+      properties: {
+        worker_id: { type: 'string', description: '외부 인력 UUID' },
+        project_id: { type: 'string', description: '프로젝트 UUID' },
+        role: { type: 'string', description: '참여 역할 (예: 메인 강사·MC·음향)' },
+        date_start: { type: 'string', description: '시작일 YYYY-MM-DD' },
+        date_end: { type: 'string', description: '종료일 YYYY-MM-DD (선택)' },
+        hours: { type: 'number', description: '시간 (per_hour일 때)' },
+        rate_type: { type: 'string', description: 'per_hour | per_session | per_project (생략 시 worker.default_rate_type)' },
+        rate: { type: 'number', description: '단가 (생략 시 worker.default_rate)' },
+        note: { type: 'string' },
+      },
+      required: ['worker_id', 'project_id'],
+    },
+  },
+  {
+    name: 'compute_worker_monthly_payment',
+    description: '특정 외부 인력의 특정 월 정산 묶음 계산. engagement 합산. status pending 미리보기 (worker_payments INSERT는 별도 컨펌).',
+    input_schema: {
+      type: 'object' as const,
+      properties: {
+        worker_id: { type: 'string', description: '외부 인력 UUID' },
+        year_month: { type: 'string', description: 'YYYY-MM' },
+      },
+      required: ['worker_id', 'year_month'],
+    },
+  },
+  {
     name: 'analyze_cost_folder',
     description: '계약(sale)의 Dropbox 0행정/원가 폴더 PDF를 자동 분석. 견적서·세금계산서·거래명세서·이체확인증·계약서를 OCR + 통합해서 sale_costs 후보 목록 반환. 미리보기만 (DB 변경 X). 결과 좋으면 사용자가 [📎 원가 폴더 분석] 모달에서 [추가] 클릭하거나 빵빵이에게 import 요청. compute_project_profit에서 cost가 0이거나 부족하면 자동 권장.',
     input_schema: {
