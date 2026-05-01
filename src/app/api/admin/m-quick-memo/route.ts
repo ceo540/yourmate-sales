@@ -27,5 +27,17 @@ export async function POST(req: NextRequest) {
     .maybeSingle()
 
   if (error) return NextResponse.json({ error: error.message }, { status: 400 })
+
+  // 자동 업무표 (§5.4.2)
+  const { logActivity } = await import('@/lib/activity-log')
+  void logActivity({
+    actor_id: user.id,
+    source: 'yourmate',
+    action: 'create_memo',
+    ref_type: 'project',
+    ref_id: body.project_id,
+    summary: `현장 메모 (모바일): ${body.content.slice(0, 80)}`,
+  })
+
   return NextResponse.json({ success: true, id: data?.id })
 }

@@ -1849,6 +1849,17 @@ async function executeTool(name: string, input: Record<string, unknown>, userRol
       last_engaged_at: dates[dates.length - 1] ?? null,
     }).eq('id', worker_id)
 
+    // 자동 업무표 (§5.4.2)
+    const { logActivity } = await import('@/lib/activity-log')
+    void logActivity({
+      actor_id: userId,
+      source: 'yourmate',
+      action: 'create_engagement',
+      ref_type: 'project',
+      ref_id: project_id,
+      summary: `${worker.name} 참여 기록 — ${(amount / 10000).toFixed(0)}만원`,
+    })
+
     return {
       success: true,
       engagement: data,
