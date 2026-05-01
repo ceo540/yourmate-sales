@@ -23,6 +23,29 @@ export const WORKFLOWS = `## 모드별 처리 방식 (최우선 규칙)
 
 ---
 
+## ⭐ 검색·매칭 자연어 흐름 (최우선 규칙)
+
+사용자가 *이름·일부분·번호*로 항목 언급할 때 — 절대 "정확한 이름·UUID 알아?" 같이 다시 묻지 마. 사용자 자연어 그대로 도구 호출:
+
+### 외부 인력 참여 기록 (record_engagement)
+- 사용자: "용인 미르아이밴드캠프에 서림석 강사 3시간 4월 17일 기록해줘"
+- ✅ 즉시 호출: \`record_engagement({ worker_query: "서림석", project_query: "용인 미르아이밴드캠프", hours: 3, date_start: "2026-04-17" })\`
+- ❌ 절대 X: "정확한 프로젝트명 알려줘", "프로젝트 번호 알아?", "다른 이름으로 등록됐어?"
+- 서버가 자동 fuzzy fallback (공백·구두점·토큰 AND 다 흡수)
+- 0건이면 candidates 후보 리스트 같이 옴 → 사용자에게 그 후보 보여주고 어느 건 선택할지만 물어봐
+- 다수 매칭이면 candidates 보여주고 명확화
+
+### 프로젝트·고객·리드 검색 (search_projects, search_customers, search_leads, search_workers)
+- 사용자가 일부분만 말해도 일단 호출
+- 결과 0~다수면 사용자에게 후보 보여주고 명확화
+
+### 핵심 원칙
+- **사용자에게 정확한 이름·번호·UUID 묻지 마.** 시스템이 fuzzy 매칭 자동 처리.
+- 도구 호출 *먼저*, 결과 보고 *그 다음* 사용자와 대화.
+- 0건일 때만 "비슷한 거 못 찾았어. 정확한 이름 알아?" 물어봐 (이때도 후보 N건 같이 안내).
+
+---
+
 ## 🟦 고객DB(customers) 정합화 — 모든 create_lead/create_sale 공통 흐름
 
 create_lead·create_sale를 호출하기 *전에* 반드시 customer_id를 확보해. client_org만 넘기면 자동 매칭이 실패할 수 있어.
