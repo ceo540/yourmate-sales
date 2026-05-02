@@ -19,6 +19,7 @@ const MUTATING_TOOLS = new Set([
   'link_sale_project', 'unlink_sale_project', 'set_revenue_share',
   'add_external_worker', 'record_engagement',
   'create_monthly_payment', 'generate_tax_handoff', 'mark_payment_paid',
+  'add_prospect', 'log_prospect_activity', 'record_decision',
 ])
 import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
@@ -1934,6 +1935,96 @@ async function executeTool(name: string, input: Record<string, unknown>, userRol
       paid_date: input.paid_date as string,
     })
     return r
+  }
+
+  if (name === 'add_prospect') {
+    const supabase = createAdminClient()
+    const { data, error } = await supabase.from('prospects').insert({
+      org_name: input.org_name as string,
+      region: (input.region as string) ?? null,
+      category: (input.category as string) ?? null,
+      contact_name: (input.contact_name as string) ?? null,
+      contact_role: (input.contact_role as string) ?? null,
+      contact_phone: (input.contact_phone as string) ?? null,
+      contact_email: (input.contact_email as string) ?? null,
+      service_target: (input.service_target as string) ?? null,
+      source: (input.source as string) ?? null,
+      notes: (input.notes as string) ?? null,
+      created_by: userId,
+    }).select('id, org_name, status').maybeSingle()
+    if (error) return { error: error.message }
+    return { success: true, prospect: data, note: '영업 후보 등록. log_prospect_activity로 활동 기록.' }
+  }
+
+  if (name === 'log_prospect_activity') {
+    const supabase = createAdminClient()
+    const { fuzzyMatch } = await import('@/lib/fuzzy-search')
+    let prospect_id = input.prospect_id as string | undefined
+    if (!prospect_id && typeof input.prospect_query === 'string' && input.prospect_query) {
+      const q = input.prospect_query.trim()
+      const { data: exact } = await supabase
+        .from('prospects').select('id, org_name')
+        .ilike('org_name', `%${q}%`).eq('archive_status', 'active').limit(5)
+      let prsp = exact ?? []
+      if (prsp.length === 0) {
+        const { data: all } = await supabase
+          .from('prospects').select('id, org_name').eq('archive_status', 'active')
+        const fb = fuzzyMatch(all ?? [], q, ['org_name'])
+        prsp = fb.matched.slice(0, 5)
+      }
+      if (prsp.length === 0) return { error: `prospect 검색 0건 ("${q}"). add_prospect로 신규 등록 필요할 수도.` }
+      if (prsp.length > 1) return { error: '다수 매칭', candidates: prsp }
+      prospect_id = prsp[0].id
+    }
+    if (!prospect_id) return { error: 'prospect_id 또는 prospect_query 필요' }
+
+    const { data, error } = await supabase.from('prospect_activities').insert({
+      prospect_id,
+      activity_type: input.activity_type as string,
+      outcome: (input.outcome as string) ?? null,
+      notes: (input.notes as string) ?? null,
+      done_by: userId,
+      done_at: (input.done_at as string) ?? new Date().toISOString(),
+    }).select('id').maybeSingle()
+    if (error) return { error: error.message }
+
+    // prospect last_contacted_at 갱신
+    await supabase.from('prospects')
+      .update({ last_contacted_at: new Date().toISOString() })
+      .eq('id', prospect_id)
+
+    return { success: true, activity: data }
+  }
+
+  if (name === 'record_decision') {
+    const supabase = createAdminClient()
+    const { fuzzyMatch } = await import('@/lib/fuzzy-search')
+    let project_id = input.project_id as string | undefined
+    if (!project_id && typeof input.project_query === 'string' && input.project_query) {
+      const q = input.project_query.trim()
+      const { data: exact } = await supabase
+        .from('projects').select('id, name')
+        .or(`name.ilike.%${q}%,project_number.ilike.%${q}%`)
+        .neq('status', '취소').limit(5)
+      let prjs = exact ?? []
+      if (prjs.length === 0) {
+        const { data: all } = await supabase.from('projects').select('id, name, project_number').neq('status', '취소')
+        const fb = fuzzyMatch(all ?? [], q, ['name', 'project_number'])
+        prjs = fb.matched.slice(0, 5)
+      }
+      if (prjs.length === 1) project_id = prjs[0].id
+    }
+
+    const { data, error } = await supabase.from('decisions').insert({
+      project_id: project_id ?? null,
+      context: (input.context as string) ?? null,
+      decision: input.decision as string,
+      rationale: (input.rationale as string) ?? null,
+      decided_by: userId,
+      decided_at: (input.decided_at as string) ?? new Date().toISOString(),
+    }).select('id').maybeSingle()
+    if (error) return { error: error.message }
+    return { success: true, decision: data }
   }
 
   if (name === 'analyze_cost_folder') {

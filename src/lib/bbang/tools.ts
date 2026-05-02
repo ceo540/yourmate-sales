@@ -773,6 +773,58 @@ worker_id·project_id 직접 알면 우선 사용. 모르면 worker_query·proje
     },
   },
   {
+    name: 'add_prospect',
+    description: '영업 후보(잠재 고객) 등록 (§5.13). 사용자: "용인지역 학교에 콜드메일 보낸 곳 추가해줘" 같은 명령. 이름·지역·연락처·서비스 타깃·소스(콜드메일·인스타·소개 등) 받음. status 디폴트=cold.',
+    input_schema: {
+      type: 'object' as const,
+      properties: {
+        org_name: { type: 'string' },
+        region: { type: 'string', description: '지역 (서울·경기·평택 등)' },
+        category: { type: 'string', description: '학교 | 교육청 | 기관 | 기업 | 기타' },
+        contact_name: { type: 'string' },
+        contact_role: { type: 'string', description: '담당자 직책' },
+        contact_phone: { type: 'string' },
+        contact_email: { type: 'string' },
+        service_target: { type: 'string', description: '영업 타깃 서비스' },
+        source: { type: 'string', description: '인스타 | 네이버 | 소개 | 콜드메일 | 구전 | 이벤트 | ...' },
+        notes: { type: 'string' },
+      },
+      required: ['org_name'],
+    },
+  },
+  {
+    name: 'log_prospect_activity',
+    description: '영업 활동 기록 (§5.13). 사용자: "X학교에 콜드메일 보냈는데 응답 없어" 같이 활동 결과 기록.',
+    input_schema: {
+      type: 'object' as const,
+      properties: {
+        prospect_id: { type: 'string', description: 'prospect UUID' },
+        prospect_query: { type: 'string', description: '이름으로 검색 (UUID 모를 때)' },
+        activity_type: { type: 'string', description: 'cold_email | cold_call | sms | visit | event | reply' },
+        outcome: { type: 'string', description: 'no_response | declined | interested | meeting_scheduled' },
+        notes: { type: 'string' },
+        done_at: { type: 'string', description: '시점 (ISO, 생략 시 now)' },
+      },
+      required: ['activity_type'],
+    },
+  },
+  {
+    name: 'record_decision',
+    description: '회의·의사결정 기록 (§5.9). 사용자가 "이번 평택 연수 우리 단가 외주 X로 가기로 결정" 같은 명령. 빵빵이가 자연어 추출해서 context·decision·rationale 분리.',
+    input_schema: {
+      type: 'object' as const,
+      properties: {
+        project_id: { type: 'string', description: '프로젝트 UUID (선택)' },
+        project_query: { type: 'string', description: '이름·번호 검색' },
+        context: { type: 'string', description: '어떤 상황·이슈' },
+        decision: { type: 'string', description: '최종 결정 (필수)' },
+        rationale: { type: 'string', description: '근거' },
+        decided_at: { type: 'string', description: '시점 (ISO, 생략 시 now)' },
+      },
+      required: ['decision'],
+    },
+  },
+  {
     name: 'analyze_cost_folder',
     description: '계약(sale)의 Dropbox 0행정/원가 폴더 PDF를 자동 분석. 견적서·세금계산서·거래명세서·이체확인증·계약서를 OCR + 통합해서 sale_costs 후보 목록 반환. 미리보기만 (DB 변경 X). 결과 좋으면 사용자가 [📎 원가 폴더 분석] 모달에서 [추가] 클릭하거나 빵빵이에게 import 요청. compute_project_profit에서 cost가 0이거나 부족하면 자동 권장.',
     input_schema: {

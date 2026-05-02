@@ -396,3 +396,71 @@ export interface WorkerPayment {
   created_at: string
   updated_at: string
 }
+
+// 영업 활동 추적 (yourmate-spec.md §5.13)
+export type ProspectStatus = 'cold' | 'contacted' | 'interested' | 'lead_converted' | 'lost'
+export interface Prospect {
+  id: string
+  org_name: string
+  region: string | null
+  category: string | null
+  contact_name: string | null
+  contact_role: string | null
+  contact_phone: string | null
+  contact_email: string | null
+  service_target: string | null
+  source: string | null
+  status: ProspectStatus
+  last_contacted_at: string | null
+  next_action_at: string | null
+  notes: string | null
+  converted_lead_id: string | null
+  archive_status: ArchiveStatus
+  created_by: string | null
+  created_at: string
+  updated_at: string
+}
+
+export interface ProspectActivity {
+  id: string
+  prospect_id: string
+  activity_type: string
+  outcome: string | null
+  notes: string | null
+  done_by: string | null
+  done_at: string
+  created_at: string
+}
+
+// 사업부 간 내부 의뢰 (§5.6)
+export interface InternalRequest {
+  id: string
+  project_id: string | null
+  from_dept: string | null
+  to_dept: string | null
+  type: string | null
+  content: string | null
+  source: 'auto_detected' | 'manual'
+  source_ref: string | null
+  status: 'auto' | 'confirmed' | 'in_progress' | 'done' | 'rejected'
+  responder_id: string | null
+  notes: string | null
+  archive_status: ArchiveStatus
+  detected_at: string
+  resolved_at: string | null
+}
+
+// 회의·의사결정 (§5.9)
+export interface Decision {
+  id: string
+  project_id: string | null
+  context: string | null
+  options_considered: unknown | null
+  decision: string
+  decided_by: string | null
+  participants: string[] | null
+  rationale: string | null
+  decided_at: string
+  archive_status: ArchiveStatus
+  created_at: string
+}
