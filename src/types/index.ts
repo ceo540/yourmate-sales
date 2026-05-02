@@ -464,3 +464,87 @@ export interface Decision {
   archive_status: ArchiveStatus
   created_at: string
 }
+
+// 회의 (§5.9) — 기존 Meeting 인터페이스(line 117) 와 별개의 운영 모델
+export type MeetingKind = 'weekly' | 'irregular' | 'project' | 'with_customer' | 'with_worker'
+export interface MeetingRecord {
+  id: string
+  title: string
+  type: MeetingKind | string
+  project_id: string | null
+  attendees: string | null
+  date: string
+  location: string | null
+  notes: string | null
+  duration_minutes: number | null
+  participants: string[] | null
+  external_participants: string[] | null
+  agenda: string | null
+  minutes: string | null
+  ai_summary: string | null
+  decision_ids: string[] | null
+  task_ids: string[] | null
+  source: 'manual' | 'plaud' | 'whisper' | 'channeltalk' | null
+  source_ref: string | null
+  archive_status: ArchiveStatus
+  created_by: string | null
+  created_at: string
+  updated_at: string
+}
+
+// 장비 (§5.7)
+export type EquipmentCategory = '음향' | '영상' | '텐트' | '교구' | '조명' | '의상' | '기타'
+export type EquipmentArchiveStatus = 'active' | 'broken' | 'lost' | 'archived'
+export interface EquipmentMaster {
+  id: string
+  name: string
+  category: EquipmentCategory | string | null
+  owning_dept: string
+  total_qty: number
+  unit_price: number | null
+  serial_no: string | null
+  storage_location: string | null
+  notes: string | null
+  archive_status: EquipmentArchiveStatus
+  created_at: string
+  updated_at: string
+}
+
+export type EquipmentRentalStatus = 'reserved' | 'in_use' | 'returned' | 'lost' | 'cancelled'
+export interface EquipmentRental {
+  id: string
+  equipment_id: string
+  qty: number
+  project_id: string | null
+  customer_id: string | null
+  date_start: string
+  date_end: string
+  status: EquipmentRentalStatus
+  rate: number | null
+  responsible_user_id: string | null
+  notes: string | null
+  archive_status: ArchiveStatus
+  created_at: string
+  updated_at: string
+}
+
+// 결과물 아카이브 (§5.8)
+export type DeliverableType = '공연영상' | '교육결과물' | '디자인산출물' | '음원' | '회의록' | 'brief' | '사진' | '기타'
+export interface ProjectDeliverable {
+  id: string
+  project_id: string
+  type: DeliverableType | string
+  title: string | null
+  dropbox_path: string | null
+  format: string | null
+  size_bytes: number | null
+  delivered_at: string | null
+  client_confirmed_at: string | null
+  metadata: unknown | null
+  ai_summary: string | null
+  ai_tags: string[] | null
+  archive_status: ArchiveStatus
+  created_by: string | null
+  created_at: string
+  updated_at: string
+}
