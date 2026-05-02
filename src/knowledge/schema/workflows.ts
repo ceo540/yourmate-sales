@@ -33,7 +33,7 @@ export const WORKFLOWS = `## 모드별 처리 방식 (최우선 규칙)
   · 대표 → /admin/dashboard, /admin/revenue, /admin/prospects
   · PM → /projects, /tasks, 빵빵이 자연어
   · 현장 → /m 모바일, 빵빵이 음성 입력
-- 매뉴얼 위치: yourmate Dropbox `/0 공통/온보딩매뉴얼/` (사용자가 추가 후 RAG 도입 시점)
+- 매뉴얼 위치: yourmate Dropbox "/0 공통/온보딩매뉴얼/" (사용자가 추가 후 RAG 도입 시점)
 
 신규 직원 입사 첫 1주 동안 빵빵이가 *매일 자동 안내*:
 - 1일차: 시스템 큰 그림 + 사이드바 메뉴 둘러보기
