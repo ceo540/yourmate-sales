@@ -1937,6 +1937,48 @@ async function executeTool(name: string, input: Record<string, unknown>, userRol
     return r
   }
 
+  if (name === 'check_schedule_overlap') {
+    const supabase = createAdminClient()
+    const date = input.date as string
+    const worker_id = input.worker_id as string | undefined
+    const scope = (input.scope as string) ?? 'workers'
+
+    const result: Record<string, unknown> = { date, scope }
+
+    if (scope === 'workers' || scope === 'all') {
+      let q = supabase.from('worker_engagements')
+        .select('id, worker_id, project_id, role, date_start, date_end, hours, amount')
+        .eq('archive_status', 'active')
+        .lte('date_start', date)
+        .or(`date_end.gte.${date},date_end.is.null`)
+      if (worker_id) q = q.eq('worker_id', worker_id)
+      const { data: engs } = await q
+
+      // worker name 매핑
+      const workerIds = [...new Set((engs ?? []).map(e => e.worker_id))]
+      const { data: workers } = workerIds.length > 0
+        ? await supabase.from('external_workers').select('id, name').in('id', workerIds)
+        : { data: [] }
+      const wMap = new Map((workers ?? []).map(w => [w.id, w.name]))
+
+      result.worker_engagements = (engs ?? []).map(e => ({
+        worker_name: wMap.get(e.worker_id) ?? e.worker_id.slice(0, 8),
+        role: e.role,
+        date_start: e.date_start,
+        date_end: e.date_end,
+        hours: e.hours,
+      }))
+      result.workers_busy_count = (engs ?? []).length
+    }
+
+    if (scope === 'equipment' || scope === 'all') {
+      // equipment_rentals 테이블 — 다음 라운드 (yourmate-spec.md §5.7)
+      result.equipment_note = '장비 충돌 감지는 다음 라운드 (§5.7 통합 마이그 후)'
+    }
+
+    return { success: true, ...result }
+  }
+
   if (name === 'add_prospect') {
     const supabase = createAdminClient()
     const { data, error } = await supabase.from('prospects').insert({

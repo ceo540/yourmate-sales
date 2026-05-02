@@ -773,6 +773,19 @@ worker_id·project_id 직접 알면 우선 사용. 모르면 worker_query·proje
     },
   },
   {
+    name: 'check_schedule_overlap',
+    description: '특정 날짜에 외부 인력·장비·프로젝트 일정 충돌 감지 (§5.0.2). 사용자: "5월 15일 외주 가용성 확인" 또는 "장비 음향 5월 행사 중복 있나?"',
+    input_schema: {
+      type: 'object' as const,
+      properties: {
+        date: { type: 'string', description: '검사 날짜 YYYY-MM-DD' },
+        worker_id: { type: 'string', description: '특정 외부 인력 (선택)' },
+        scope: { type: 'string', description: 'workers (기본) | equipment | all' },
+      },
+      required: ['date'],
+    },
+  },
+  {
     name: 'add_prospect',
     description: '영업 후보(잠재 고객) 등록 (§5.13). 사용자: "용인지역 학교에 콜드메일 보낸 곳 추가해줘" 같은 명령. 이름·지역·연락처·서비스 타깃·소스(콜드메일·인스타·소개 등) 받음. status 디폴트=cold.',
     input_schema: {
