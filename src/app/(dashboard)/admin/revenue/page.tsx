@@ -36,31 +36,37 @@ export default async function RevenuePage() {
       .gte('due_date', startISO),
   ])
 
-  // 월별 3종 합산
-  type MonthBucket = { ym: string; accounting: number; tax: number; cash: number }
+  // 월별 4종 합산 (회계·세무·현금·유입)
+  // 사용자 추가 요청: 유입 시점 매출도 같이 보고 싶음
+  type MonthBucket = { ym: string; accounting: number; tax: number; cash: number; inflow: number }
   const buckets: Record<string, MonthBucket> = {}
   for (let i = 0; i < 12; i++) {
     const d = new Date(start)
     d.setMonth(start.getMonth() + i)
     const ym = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
-    buckets[ym] = { ym, accounting: 0, tax: 0, cash: 0 }
+    buckets[ym] = { ym, accounting: 0, tax: 0, cash: 0, inflow: 0 }
   }
 
-  // 회계 매출: progress_status='완수' & inflow_date 월별 (대표 추정 — 완수 시점 컬럼 없음)
-  // 세무 매출: payment_date 월
   for (const s of (sales ?? [])) {
     const rev = s.revenue ?? 0
+    // 유입 시점 — inflow_date 모든 active sale (영업 활동 시점)
+    if (s.inflow_date) {
+      const ym = (s.inflow_date as string).slice(0, 7)
+      if (buckets[ym]) buckets[ym].inflow += rev
+    }
+    // 회계 매출 — progress_status='완수' & inflow_date 월
     if (s.progress_status === '완수' && s.inflow_date) {
       const ym = (s.inflow_date as string).slice(0, 7)
       if (buckets[ym]) buckets[ym].accounting += rev
     }
+    // 세무 매출 — payment_date 월
     if (s.payment_date) {
       const ym = (s.payment_date as string).slice(0, 7)
       if (buckets[ym]) buckets[ym].tax += rev
     }
   }
 
-  // 현금 매출: received_date 월
+  // 현금 매출 — received_date 월
   for (const p of (schedules ?? [])) {
     if (p.is_received && p.received_date) {
       const ym = (p.received_date as string).slice(0, 7)
@@ -70,15 +76,15 @@ export default async function RevenuePage() {
 
   const months = Object.values(buckets).sort((a, b) => a.ym.localeCompare(b.ym))
 
-  // 미수금 (회계 - 현금)
   const totalAccounting = months.reduce((s, m) => s + m.accounting, 0)
   const totalTax = months.reduce((s, m) => s + m.tax, 0)
   const totalCash = months.reduce((s, m) => s + m.cash, 0)
+  const totalInflow = months.reduce((s, m) => s + m.inflow, 0)
 
   return (
     <RevenueClient
       months={months}
-      totals={{ accounting: totalAccounting, tax: totalTax, cash: totalCash }}
+      totals={{ accounting: totalAccounting, tax: totalTax, cash: totalCash, inflow: totalInflow }}
     />
   )
 }

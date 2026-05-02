@@ -2,8 +2,8 @@
 
 import { useState } from 'react'
 
-type Month = { ym: string; accounting: number; tax: number; cash: number }
-type ViewMode = 'all' | 'accounting' | 'tax' | 'cash'
+type Month = { ym: string; accounting: number; tax: number; cash: number; inflow: number }
+type ViewMode = 'all' | 'accounting' | 'tax' | 'cash' | 'inflow'
 
 function fmtMan(n: number) {
   return (n / 10000).toFixed(0)
@@ -13,10 +13,12 @@ const COLORS = {
   accounting: '#3b82f6',  // blue
   tax: '#a3a3a3',         // gray
   cash: '#10b981',        // green
+  inflow: '#f59e0b',      // amber
 }
 
 const LABELS: Record<ViewMode, string> = {
-  all: '3종 비교',
+  all: '4종 비교',
+  inflow: '유입 매출',
   accounting: '회계 매출',
   tax: '세무 매출',
   cash: '현금 매출',
@@ -24,12 +26,12 @@ const LABELS: Record<ViewMode, string> = {
 
 export default function RevenueClient({ months, totals }: {
   months: Month[]
-  totals: { accounting: number; tax: number; cash: number }
+  totals: { accounting: number; tax: number; cash: number; inflow: number }
 }) {
   const [view, setView] = useState<ViewMode>('all')
 
   const max = Math.max(
-    ...months.map(m => Math.max(m.accounting, m.tax, m.cash)),
+    ...months.map(m => Math.max(m.accounting, m.tax, m.cash, m.inflow)),
     1
   )
 
@@ -42,22 +44,27 @@ export default function RevenueClient({ months, totals }: {
         </p>
       </header>
 
-      {/* 합계 카드 3종 */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mb-6">
+      {/* 합계 카드 4종 */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
+        <div className="bg-amber-50 border border-amber-200 rounded-xl p-4">
+          <p className="text-xs text-amber-600 mb-1">📥 유입 매출</p>
+          <p className="text-xl md:text-2xl font-bold text-amber-900">{fmtMan(totals.inflow)}만원</p>
+          <p className="text-[11px] text-amber-500 mt-1">계약 유입 시점 (inflow_date)</p>
+        </div>
         <div className="bg-blue-50 border border-blue-200 rounded-xl p-4">
           <p className="text-xs text-blue-600 mb-1">📘 회계 매출</p>
-          <p className="text-2xl font-bold text-blue-900">{fmtMan(totals.accounting)}만원</p>
-          <p className="text-[11px] text-blue-500 mt-1">서비스 인도 시점 (progress_status=완수)</p>
+          <p className="text-xl md:text-2xl font-bold text-blue-900">{fmtMan(totals.accounting)}만원</p>
+          <p className="text-[11px] text-blue-500 mt-1">서비스 인도 시점 (완수)</p>
         </div>
         <div className="bg-gray-50 border border-gray-200 rounded-xl p-4">
           <p className="text-xs text-gray-600 mb-1">🧾 세무 매출</p>
-          <p className="text-2xl font-bold text-gray-900">{fmtMan(totals.tax)}만원</p>
-          <p className="text-[11px] text-gray-500 mt-1">세금계산서 발행 시점 (payment_date)</p>
+          <p className="text-xl md:text-2xl font-bold text-gray-900">{fmtMan(totals.tax)}만원</p>
+          <p className="text-[11px] text-gray-500 mt-1">세금계산서 발행 시점</p>
         </div>
         <div className="bg-green-50 border border-green-200 rounded-xl p-4">
           <p className="text-xs text-green-600 mb-1">💰 현금 매출</p>
-          <p className="text-2xl font-bold text-green-900">{fmtMan(totals.cash)}만원</p>
-          <p className="text-[11px] text-green-500 mt-1">실제 입금 시점 (payment_schedules)</p>
+          <p className="text-xl md:text-2xl font-bold text-green-900">{fmtMan(totals.cash)}만원</p>
+          <p className="text-[11px] text-green-500 mt-1">실제 입금 시점</p>
         </div>
       </div>
 
@@ -71,8 +78,8 @@ export default function RevenueClient({ months, totals }: {
       </div>
 
       {/* 토글 */}
-      <div className="flex gap-1 mb-4">
-        {(['all', 'accounting', 'tax', 'cash'] as ViewMode[]).map(v => (
+      <div className="flex gap-1 mb-4 flex-wrap">
+        {(['all', 'inflow', 'accounting', 'tax', 'cash'] as ViewMode[]).map(v => (
           <button
             key={v}
             onClick={() => setView(v)}
@@ -88,6 +95,9 @@ export default function RevenueClient({ months, totals }: {
             <div key={m.ym} className="grid grid-cols-[60px_1fr_120px] items-center gap-3 text-xs">
               <span className="text-gray-500 font-mono">{m.ym}</span>
               <div className="space-y-0.5">
+                {(view === 'all' || view === 'inflow') && (
+                  <Bar value={m.inflow} max={max} color={COLORS.inflow} label="유입" />
+                )}
                 {(view === 'all' || view === 'accounting') && (
                   <Bar value={m.accounting} max={max} color={COLORS.accounting} label="회계" />
                 )}
@@ -101,11 +111,13 @@ export default function RevenueClient({ months, totals }: {
               <div className="text-right text-gray-700 font-semibold">
                 {view === 'all' && (
                   <div className="text-[11px] space-y-0.5">
+                    <div className="text-amber-600">{fmtMan(m.inflow)}만</div>
                     <div className="text-blue-600">{fmtMan(m.accounting)}만</div>
                     <div className="text-gray-500">{fmtMan(m.tax)}만</div>
                     <div className="text-green-600">{fmtMan(m.cash)}만</div>
                   </div>
                 )}
+                {view === 'inflow' && <span>{fmtMan(m.inflow)}만</span>}
                 {view === 'accounting' && <span>{fmtMan(m.accounting)}만</span>}
                 {view === 'tax' && <span>{fmtMan(m.tax)}만</span>}
                 {view === 'cash' && <span>{fmtMan(m.cash)}만</span>}
