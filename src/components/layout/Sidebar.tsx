@@ -27,6 +27,8 @@ const NAV_BOTTOM: NavItem[] = [
   { href: '/admin/dashboard', label: '메인(신)', icon: '📌', adminOnly: true },
   // /admin/prospects — 사용자 검증: "이 방식 아님, 업무 플로우 정리 후 재설계". 사이드바 숨김. 코드는 보존.
   { href: '/workers',         label: '외부인력', icon: '🎤', adminOnly: true },
+  { href: '/equipment',       label: '장비',     icon: '🎛️', adminOnly: true },
+  { href: '/meetings',        label: '회의',     icon: '🗒️', adminOnly: true },
   { href: '/team/activity',   label: '업무표',   icon: '📋', adminOnly: true },
   { href: '/m',               label: '모바일',   icon: '📱', adminOnly: true },
   { href: '/admin',   label: '관리', icon: '⚙️', pageKey: 'admin_panel', adminOnly: true },
