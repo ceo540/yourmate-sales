@@ -6,8 +6,10 @@
 // 내부에서 "오늘이 진짜 그 달 말일?" 체크 — 28~31 중 마지막 실행만 의미 있음.
 
 import { NextRequest, NextResponse } from 'next/server'
+import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { sendGroupMessage, DEFAULT_GROUP } from '@/lib/channeltalk'
+import { isAdminOrManager } from '@/lib/permissions'
 
 export const maxDuration = 60
 
@@ -19,15 +21,27 @@ function isLastDayOfMonthKst(): boolean {
 }
 
 export async function GET(req: NextRequest) {
-  const auth = req.headers.get('authorization')
-  const expected = `Bearer ${process.env.CRON_SECRET ?? ''}`
-  if (process.env.CRON_SECRET && auth !== expected) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-  }
-
   const url = new URL(req.url)
   const dryRun = url.searchParams.get('dryRun') === '1'
   const force = url.searchParams.get('force') === '1'
+
+  // 인증: cron secret 또는 (dryRun + admin 로그인 세션)
+  const auth = req.headers.get('authorization')
+  const expected = `Bearer ${process.env.CRON_SECRET ?? ''}`
+  const cronAuthOk = process.env.CRON_SECRET ? auth === expected : true
+  let adminAuthOk = false
+  if (!cronAuthOk && dryRun) {
+    const supabase = await createClient()
+    const { data: { user } } = await supabase.auth.getUser()
+    if (user) {
+      const admin = createAdminClient()
+      const { data: profile } = await admin.from('profiles').select('role').eq('id', user.id).single()
+      if (isAdminOrManager(profile?.role)) adminAuthOk = true
+    }
+  }
+  if (!cronAuthOk && !adminAuthOk) {
+    return NextResponse.json({ error: 'Unauthorized', hint: 'dryRun=1 시 admin 로그인 세션이면 우회 가능' }, { status: 401 })
+  }
 
   // 28~31 중 진짜 말일만 알림 (force 시 우회)
   if (!force && !isLastDayOfMonthKst()) {
