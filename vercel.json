@@ -7,6 +7,10 @@
     {
       "path": "/api/cron/daily-activity-summary",
       "schedule": "0 9 * * *"
+    },
+    {
+      "path": "/api/cron/monthly-tax-handoff-reminder",
+      "schedule": "0 14 28-31 * *"
     }
   ]
 }
