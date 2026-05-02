@@ -848,6 +848,130 @@ worker_id·project_id 직접 알면 우선 사용. 모르면 worker_query·proje
       required: ['sale_id'],
     },
   },
+  // ============================================================
+  // 라운드 A — §5.7 장비 / §5.8 결과물·드롭박스 트리 / §5.9 회의
+  // ============================================================
+  {
+    name: 'add_equipment',
+    description: '장비 마스터 등록 (§5.7). 사업부 통합 장비 풀. 사용자가 "음향 장비 SR-D8 한 대 002C에 추가" 같이 명령.',
+    input_schema: {
+      type: 'object' as const,
+      properties: {
+        name: { type: 'string', description: '장비 이름' },
+        category: { type: 'string', description: '음향 | 영상 | 텐트 | 교구 | 조명 | 의상 | 기타' },
+        owning_dept: { type: 'string', description: 'school_store | 002_creative | sound_of_school | artkiwoom | 002_entertainment | yourmate' },
+        total_qty: { type: 'number', description: '수량 (기본 1)' },
+        unit_price: { type: 'number', description: '단가 (원)' },
+        storage_location: { type: 'string', description: '보관 위치' },
+        notes: { type: 'string' },
+      },
+      required: ['name', 'owning_dept'],
+    },
+  },
+  {
+    name: 'search_equipment',
+    description: '장비 검색 — 이름·카테고리·사업부로.',
+    input_schema: {
+      type: 'object' as const,
+      properties: {
+        query: { type: 'string', description: '이름·카테고리 부분일치' },
+        owning_dept: { type: 'string', description: '사업부 필터' },
+      },
+    },
+  },
+  {
+    name: 'add_equipment_rental',
+    description: '장비 대여·예약 등록 (§5.7). 같은 장비 + 기간 충돌이면 응답에 overlap_count 표시.',
+    input_schema: {
+      type: 'object' as const,
+      properties: {
+        equipment_id: { type: 'string' },
+        equipment_query: { type: 'string', description: 'equipment_id 모를 때 이름 검색' },
+        qty: { type: 'number', description: '수량 (기본 1)' },
+        project_id: { type: 'string', description: '프로젝트 UUID (선택)' },
+        project_query: { type: 'string', description: '이름·번호 검색' },
+        date_start: { type: 'string', description: 'YYYY-MM-DD' },
+        date_end: { type: 'string', description: 'YYYY-MM-DD' },
+        rate: { type: 'number', description: '대여료 (외부 대여 시)' },
+        notes: { type: 'string' },
+      },
+      required: ['date_start', 'date_end'],
+    },
+  },
+  {
+    name: 'add_deliverable',
+    description: '프로젝트 결과물 아카이브 (§5.8). 공연영상·교육결과물·디자인산출물·음원·회의록·brief·사진·기타. dropbox_path 같이 받아 등록.',
+    input_schema: {
+      type: 'object' as const,
+      properties: {
+        project_id: { type: 'string' },
+        project_query: { type: 'string', description: '프로젝트 검색 (이름·번호)' },
+        type: { type: 'string', description: '공연영상 | 교육결과물 | 디자인산출물 | 음원 | 회의록 | brief | 사진 | 기타' },
+        title: { type: 'string' },
+        dropbox_path: { type: 'string', description: 'Dropbox URL 또는 경로' },
+        format: { type: 'string', description: 'mp4 | pdf | wav | md ...' },
+        delivered_at: { type: 'string', description: 'ISO timestamp 고객 전달 시점' },
+        ai_summary: { type: 'string', description: '빵빵이 자동 요약' },
+        ai_tags: { type: 'array', items: { type: 'string' } },
+      },
+      required: ['type'],
+    },
+  },
+  {
+    name: 'list_deliverables',
+    description: '프로젝트 결과물 목록 조회.',
+    input_schema: {
+      type: 'object' as const,
+      properties: {
+        project_id: { type: 'string' },
+        project_query: { type: 'string' },
+      },
+    },
+  },
+  {
+    name: 'apply_ai_friendly_folder_tree',
+    description: '프로젝트 드롭박스 폴더에 AI 친화 표준 서브폴더 일괄 생성 (§5.8.2). 00_브리프, 01_기획/{견적,계약,회의록}, 02_실행/{외주,자료,일정}, 03_결과물/{공연영상,사진,디자인산출물,음원}, 04_정산/{입금영수,외주지급,외부인력정산,세금계산서}, 99_아카이브. 이미 있는 건 유지.',
+    input_schema: {
+      type: 'object' as const,
+      properties: {
+        project_id: { type: 'string' },
+        project_query: { type: 'string' },
+      },
+    },
+  },
+  {
+    name: 'create_meeting',
+    description: '회의 등록 (§5.9). 정기·비정기·프로젝트·고객·외부인력 5종.',
+    input_schema: {
+      type: 'object' as const,
+      properties: {
+        title: { type: 'string' },
+        type: { type: 'string', description: 'weekly | irregular | project | with_customer | with_worker' },
+        project_id: { type: 'string' },
+        project_query: { type: 'string' },
+        date: { type: 'string', description: 'ISO timestamp' },
+        duration_minutes: { type: 'number' },
+        location: { type: 'string' },
+        agenda: { type: 'string' },
+        notes: { type: 'string' },
+      },
+      required: ['title', 'date'],
+    },
+  },
+  {
+    name: 'add_meeting_minutes',
+    description: '회의록 본문 추가/수정 (§5.9). 회의 ID 알면 직접, 모르면 title_query로 최근 일치 검색.',
+    input_schema: {
+      type: 'object' as const,
+      properties: {
+        meeting_id: { type: 'string' },
+        title_query: { type: 'string' },
+        minutes: { type: 'string', description: '회의록 본문' },
+        ai_summary: { type: 'string', description: '빵빵이 요약 (선택)' },
+      },
+      required: ['minutes'],
+    },
+  },
   {
     name: 'create_calendar_event',
     description: '구글 캘린더에 일정을 등록합니다. 행사, 배송, 미팅, 마감일 등.',

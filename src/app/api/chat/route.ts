@@ -2069,6 +2069,186 @@ async function executeTool(name: string, input: Record<string, unknown>, userRol
     return { success: true, decision: data }
   }
 
+  // ============================================================
+  // 라운드 A — §5.7 장비 / §5.8 결과물·드롭박스 트리 / §5.9 회의
+  // ============================================================
+  if (name === 'add_equipment') {
+    const admin = createAdminClient()
+    const { data, error } = await admin.from('equipment_master').insert({
+      name: input.name as string,
+      category: (input.category as string) ?? null,
+      owning_dept: input.owning_dept as string,
+      total_qty: (input.total_qty as number) ?? 1,
+      unit_price: (input.unit_price as number) ?? null,
+      storage_location: (input.storage_location as string) ?? null,
+      notes: (input.notes as string) ?? null,
+    }).select('id, name, owning_dept, total_qty').maybeSingle()
+    if (error) return { error: error.message }
+    return { success: true, equipment: data }
+  }
+
+  if (name === 'search_equipment') {
+    const admin = createAdminClient()
+    const q = (input.query as string)?.trim()
+    let query = admin.from('equipment_master').select('id, name, category, owning_dept, total_qty, unit_price, storage_location').eq('archive_status', 'active').limit(30)
+    if (q) query = query.or(`name.ilike.%${q}%,category.ilike.%${q}%`)
+    if (input.owning_dept) query = query.eq('owning_dept', input.owning_dept as string)
+    const { data, error } = await query
+    if (error) return { error: error.message }
+    return { count: data?.length ?? 0, equipment: data }
+  }
+
+  if (name === 'add_equipment_rental') {
+    const admin = createAdminClient()
+    const { fuzzyMatch } = await import('@/lib/fuzzy-search')
+    let equipment_id = input.equipment_id as string | undefined
+    if (!equipment_id && typeof input.equipment_query === 'string' && input.equipment_query) {
+      const q = input.equipment_query.trim()
+      const { data: exact } = await admin.from('equipment_master').select('id, name').ilike('name', `%${q}%`).eq('archive_status', 'active').limit(5)
+      let eqs = exact ?? []
+      if (eqs.length === 0) {
+        const { data: all } = await admin.from('equipment_master').select('id, name').eq('archive_status', 'active')
+        const fb = fuzzyMatch(all ?? [], q, ['name'])
+        eqs = fb.matched.slice(0, 5)
+      }
+      if (eqs.length === 0) return { error: `장비 검색 0건 ("${q}"). add_equipment로 신규 등록 필요할 수도.` }
+      if (eqs.length > 1) return { error: '다수 매칭', candidates: eqs }
+      equipment_id = eqs[0].id
+    }
+    if (!equipment_id) return { error: 'equipment_id 또는 equipment_query 필요' }
+
+    let project_id = input.project_id as string | undefined
+    if (!project_id && typeof input.project_query === 'string' && input.project_query) {
+      const q = input.project_query.trim()
+      const { data: prjs } = await admin.from('projects').select('id, name').or(`name.ilike.%${q}%,project_number.ilike.%${q}%`).neq('status', '취소').limit(5)
+      if ((prjs ?? []).length === 1) project_id = prjs![0].id
+    }
+
+    // overlap 감지
+    const { data: overlaps } = await admin.from('equipment_rentals')
+      .select('id, date_start, date_end, qty, status, project_id')
+      .eq('equipment_id', equipment_id)
+      .eq('archive_status', 'active')
+      .neq('status', 'returned')
+      .neq('status', 'cancelled')
+      .lte('date_start', input.date_end as string)
+      .gte('date_end', input.date_start as string)
+
+    const { data, error } = await admin.from('equipment_rentals').insert({
+      equipment_id,
+      qty: (input.qty as number) ?? 1,
+      project_id: project_id ?? null,
+      date_start: input.date_start as string,
+      date_end: input.date_end as string,
+      rate: (input.rate as number) ?? null,
+      responsible_user_id: userId,
+      notes: (input.notes as string) ?? null,
+    }).select('id').maybeSingle()
+    if (error) return { error: error.message }
+    return { success: true, rental: data, overlap_count: overlaps?.length ?? 0, overlap_warning: (overlaps?.length ?? 0) > 0 ? '같은 장비에 기간 충돌 예약 있음' : null }
+  }
+
+  async function resolveProjectId(admin: ReturnType<typeof createAdminClient>, input: Record<string, unknown>): Promise<{ project_id?: string; error?: string; candidates?: unknown[] }> {
+    const { fuzzyMatch } = await import('@/lib/fuzzy-search')
+    let project_id = input.project_id as string | undefined
+    if (project_id) return { project_id }
+    if (typeof input.project_query !== 'string' || !input.project_query) return {}
+    const q = input.project_query.trim()
+    const { data: exact } = await admin.from('projects').select('id, name, project_number').or(`name.ilike.%${q}%,project_number.ilike.%${q}%`).neq('status', '취소').limit(5)
+    let prjs = exact ?? []
+    if (prjs.length === 0) {
+      const { data: all } = await admin.from('projects').select('id, name, project_number').neq('status', '취소')
+      const fb = fuzzyMatch(all ?? [], q, ['name', 'project_number'])
+      prjs = fb.matched.slice(0, 5)
+    }
+    if (prjs.length === 0) return { error: `프로젝트 검색 0건 ("${q}").` }
+    if (prjs.length > 1) return { error: '다수 매칭', candidates: prjs }
+    return { project_id: prjs[0].id }
+  }
+
+  if (name === 'add_deliverable') {
+    const admin = createAdminClient()
+    const r = await resolveProjectId(admin, input)
+    if (r.error) return { error: r.error, candidates: r.candidates }
+    if (!r.project_id) return { error: 'project_id 또는 project_query 필요' }
+    const { data, error } = await admin.from('project_deliverables').insert({
+      project_id: r.project_id,
+      type: input.type as string,
+      title: (input.title as string) ?? null,
+      dropbox_path: (input.dropbox_path as string) ?? null,
+      format: (input.format as string) ?? null,
+      delivered_at: (input.delivered_at as string) ?? null,
+      ai_summary: (input.ai_summary as string) ?? null,
+      ai_tags: (input.ai_tags as string[]) ?? null,
+      created_by: userId,
+    }).select('id, type, title').maybeSingle()
+    if (error) return { error: error.message }
+    return { success: true, deliverable: data }
+  }
+
+  if (name === 'list_deliverables') {
+    const admin = createAdminClient()
+    const r = await resolveProjectId(admin, input)
+    if (r.error) return { error: r.error, candidates: r.candidates }
+    if (!r.project_id) return { error: 'project_id 또는 project_query 필요' }
+    const { data } = await admin.from('project_deliverables')
+      .select('id, type, title, dropbox_path, format, delivered_at, client_confirmed_at, ai_summary')
+      .eq('project_id', r.project_id).eq('archive_status', 'active')
+      .order('delivered_at', { ascending: false, nullsFirst: false })
+      .limit(50)
+    return { count: data?.length ?? 0, deliverables: data }
+  }
+
+  if (name === 'apply_ai_friendly_folder_tree') {
+    const admin = createAdminClient()
+    const r = await resolveProjectId(admin, input)
+    if (r.error) return { error: r.error, candidates: r.candidates }
+    if (!r.project_id) return { error: 'project_id 또는 project_query 필요' }
+    const { data: project } = await admin.from('projects').select('id, name, dropbox_url').eq('id', r.project_id).maybeSingle()
+    if (!project?.dropbox_url) return { error: '프로젝트에 dropbox_url 없음. 드롭박스 폴더 먼저 생성 필요.' }
+    const { applyAiFriendlyProjectTree } = await import('@/lib/dropbox-tree')
+    const result = await applyAiFriendlyProjectTree(project.dropbox_url)
+    return { success: true, project: project.name, created_count: result.created.length, failed_count: result.failed.length, created: result.created, failed: result.failed }
+  }
+
+  if (name === 'create_meeting') {
+    const admin = createAdminClient()
+    const r = input.project_id || input.project_query ? await resolveProjectId(admin, input) : { project_id: undefined as string | undefined }
+    if ('error' in r && r.error) return { error: r.error, candidates: r.candidates }
+    const { data, error } = await admin.from('meetings').insert({
+      title: input.title as string,
+      type: (input.type as string) ?? 'irregular',
+      project_id: r.project_id ?? null,
+      date: input.date as string,
+      duration_minutes: (input.duration_minutes as number) ?? null,
+      location: (input.location as string) ?? null,
+      agenda: (input.agenda as string) ?? null,
+      notes: (input.notes as string) ?? null,
+      source: 'manual',
+      created_by: userId,
+    }).select('id, title, date').maybeSingle()
+    if (error) return { error: error.message }
+    return { success: true, meeting: data }
+  }
+
+  if (name === 'add_meeting_minutes') {
+    const admin = createAdminClient()
+    let meeting_id = input.meeting_id as string | undefined
+    if (!meeting_id && typeof input.title_query === 'string' && input.title_query) {
+      const q = input.title_query.trim()
+      const { data: meets } = await admin.from('meetings').select('id, title, date').ilike('title', `%${q}%`).eq('archive_status', 'active').order('date', { ascending: false }).limit(5)
+      if ((meets ?? []).length === 0) return { error: `회의 검색 0건 ("${q}").` }
+      if ((meets ?? []).length > 1) return { error: '다수 매칭', candidates: meets }
+      meeting_id = meets![0].id
+    }
+    if (!meeting_id) return { error: 'meeting_id 또는 title_query 필요' }
+    const patch: Record<string, unknown> = { minutes: input.minutes as string }
+    if (input.ai_summary) patch.ai_summary = input.ai_summary
+    const { error } = await admin.from('meetings').update(patch).eq('id', meeting_id)
+    if (error) return { error: error.message }
+    return { success: true, meeting_id }
+  }
+
   if (name === 'analyze_cost_folder') {
     const sale_id = input.sale_id as string
     if (!sale_id) return { error: 'sale_id 필요' }
