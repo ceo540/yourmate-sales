@@ -20,6 +20,9 @@ const MUTATING_TOOLS = new Set([
   'add_external_worker', 'record_engagement',
   'create_monthly_payment', 'generate_tax_handoff', 'mark_payment_paid',
   'add_prospect', 'log_prospect_activity', 'record_decision',
+  'add_equipment', 'add_equipment_rental',
+  'add_deliverable', 'apply_ai_friendly_folder_tree',
+  'create_meeting', 'add_meeting_minutes',
 ])
 import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
