@@ -24,6 +24,7 @@ const NAV_BOTTOM: NavItem[] = [
   { href: '/notice',  label: '공지', icon: '📢', pageKey: 'notice' },
   { href: '/tasks',   label: '업무', icon: '✅', pageKey: 'tasks' },
   // 신규 — 검증 단계, admin만. 위치는 추후 조정.
+  { href: '/admin/dashboard', label: '메인(신)', icon: '📌', adminOnly: true },
   { href: '/workers',         label: '외부인력', icon: '🎤', adminOnly: true },
   { href: '/team/activity',   label: '업무표',   icon: '📋', adminOnly: true },
   { href: '/m',               label: '모바일',   icon: '📱', adminOnly: true },
