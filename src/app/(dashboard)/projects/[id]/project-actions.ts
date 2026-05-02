@@ -41,6 +41,17 @@ export async function createProjectLog(
     sale_id: saleId || null,
   })
   if (error) throw new Error(error.message)
+
+  // 자동 업무표 (§5.4.2)
+  const { logActivity } = await import('@/lib/activity-log')
+  void logActivity({
+    actor_id: user.id,
+    action: 'create_log',
+    ref_type: 'project',
+    ref_id: projectId,
+    summary: `소통 로그 (${logType}${logCategory ? '·' + logCategory : ''}): ${content.slice(0, 80)}`,
+  })
+
   revalidatePath(`/projects/${projectId}`)
 }
 

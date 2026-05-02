@@ -34,6 +34,16 @@ export async function createLeadLog(
     console.error('[createLeadLog] insert error:', error.message, error.code, error.details)
     throw new Error(error.message)
   }
+
+  // 자동 업무표 (§5.4.2)
+  const { logActivity } = await import('@/lib/activity-log')
+  void logActivity({
+    actor_id: user.id,
+    action: 'create_log',
+    ref_type: 'lead',
+    ref_id: leadId,
+    summary: `리드 소통 (${logType}): ${content.slice(0, 80)}`,
+  })
 }
 
 export async function getLeadLogs(leadId: string) {

@@ -36,6 +36,17 @@ export async function createLog(saleId: string, content: string, logType: string
   } else {
     console.log('[createLog] RPC success')
   }
+
+  // 자동 업무표 (§5.4.2)
+  const { logActivity } = await import('@/lib/activity-log')
+  void logActivity({
+    actor_id: user.id,
+    action: 'create_log',
+    ref_type: 'sale',
+    ref_id: saleId,
+    summary: `계약 소통 (${logType}): ${content.slice(0, 80)}`,
+  })
+
   revalidatePath(`/sales/${saleId}`)
   revalidatePath('/departments', 'layout')
 }
@@ -86,6 +97,16 @@ export async function createLeadLog(leadId: string, content: string, logType: st
   })
 
   if (error) throw new Error(error.message)
+
+  // 자동 업무표 (§5.4.2)
+  const { logActivity } = await import('@/lib/activity-log')
+  void logActivity({
+    actor_id: user.id,
+    action: 'create_log',
+    ref_type: 'lead',
+    ref_id: leadId,
+    summary: `리드 소통 (${logType}): ${content.slice(0, 80)}`,
+  })
 }
 
 export async function getLeadLogs(leadId: string) {

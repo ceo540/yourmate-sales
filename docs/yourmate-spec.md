@@ -953,6 +953,14 @@ CREATE TABLE location_logs (
 - Anthropic Sonnet vision으로 영수증 사진 → 금액·가맹점·날짜 자동 추출
 - 직원이 *확인·수정* 후 저장
 - 빵빵이 도구: `extract_receipt(image_url)`
+- **법인카드 vs 개인카드 분리** (사용자 라운드 22 답변 — 필수):
+  - `expenses` 테이블에 `card_type` 컬럼 신규 (`corporate` / `personal` / `cash`)
+  - 입력 시 직원이 명시 (모바일 [📷 영수증] 누를 때 카드 선택)
+  - 기본값 `corporate` (가장 흔함)
+- **세무사 자동 자료 생성** (사용자 추가 요청):
+  - 매월 말 cron — 그 달 expenses → .xlsx 자동 (`/api/admin/expenses-tax-handoff?year_month=`)
+  - 컬럼: 날짜·가맹점·금액·카드 종류·프로젝트 매핑·증빙 (Dropbox 영수증 사진 URL)
+  - 카톡으로 세무사 발송 (Q27 패턴 — 사람 컨펌 후)
 
 **단계 3: 카드 자동 매칭 (3주)**
 - 법인카드 자동 명세 (은행 API or 명세서 업로드)
@@ -1608,6 +1616,36 @@ CREATE TABLE project_deliverables (
 **과거 프로젝트** 빵빵이 도구 `migrate_project_folder(project_id)` 단발 — 사용자 트리거.
 
 > ✅ **사용자 확인 (Q12 답변):** "각 *건별 폴더*에 적용되는 건가?" → **그렇습니다.** 매 프로젝트(=계약 1건 또는 N:M 계약 묶음)마다 위 표준 트리 자동 생성. 신규 프로젝트는 빵빵이가 `create_project_folder` 호출 시 자동 적용.
+
+#### 5.8.3.a 그룹 권한 패턴 — 안전 강화 (사용자 라운드 22 우려)
+
+**사용자 우려:** "민감정보 같은 폴더에 사람을 추가할 때 일일이 해야할까봐 걱정 + 드롭박스 계속 이슈."
+
+**해결 — Dropbox Business 그룹 권한:**
+
+```
+Dropbox 그룹:
+- yourmate-everyone (전 직원, default)
+- yourmate-admin (대표·이사 — 민감정보 접근)
+- yourmate-developer (유지보수 담당자, 미래)
+
+폴더 권한:
+- /1 아트키움/, /2 SOS/, ... (사업부 폴더): yourmate-everyone (편집)
+- /0_민감정보/: yourmate-admin (편집·열람)
+- /0_시스템백업/: yourmate-admin
+```
+
+**장점:**
+- 신규 직원 *그룹에 한 번만* 추가 → 모든 폴더 권한 자동 적용
+- 직원 *그룹 변경*만으로 권한 일괄 변경
+- 폴더별 *반복 설정* X → 사용자 우려 해소
+- Dropbox API: `team_groups/create`, `team_groups/members/add`
+
+**롤아웃:**
+1. 사용자가 Dropbox 관리자에서 그룹 3종 생성
+2. 신규 직원 그룹 추가 (수동, 한 번)
+3. 빵빵이 도구 `add_employee_to_dropbox_group(employee_email, group)` 도입 (자동화)
+4. 폴더 권한은 그룹 단위로 *최초 1회 설정* — 이후 자동
 
 #### 5.8.4 민감정보 폴더 권한 자동 설정 ⭐ (Q12 사용자 질문 답변)
 
