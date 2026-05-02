@@ -13,6 +13,9 @@ export default async function WorkersPage() {
   const admin = createAdminClient()
   const { data: profile } = await admin.from('profiles').select('id, role').eq('id', user.id).single()
   const isAdmin = isAdminOrManager(profile?.role)
+  if (!isAdmin) {
+    return <div className="p-8 text-gray-500">관리자만 접근 가능 (외부 인력 풀은 검증 단계라 admin 한정)</div>
+  }
 
   const [{ data: workersRaw }, { data: engagementsRaw }, { data: paymentsRaw }, { data: projectsRaw }] = await Promise.all([
     admin.from('external_workers').select('*').eq('archive_status', 'active').order('name'),

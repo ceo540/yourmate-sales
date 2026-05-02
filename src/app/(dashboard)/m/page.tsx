@@ -4,6 +4,7 @@
 import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { redirect } from 'next/navigation'
+import { isAdminOrManager } from '@/lib/permissions'
 import MobileQuickClient from './MobileQuickClient'
 
 export default async function MobilePage() {
@@ -12,6 +13,10 @@ export default async function MobilePage() {
   if (!user) redirect('/login')
 
   const admin = createAdminClient()
+  const { data: profile } = await admin.from('profiles').select('id, role').eq('id', user.id).single()
+  if (!isAdminOrManager(profile?.role)) {
+    return <div className="p-8 text-gray-500">관리자만 접근 가능 (모바일은 검증 단계라 admin 한정)</div>
+  }
 
   // 활성 프로젝트 (최근 진행 中 — 자동 추천)
   const { data: activeProjects } = await admin

@@ -17,13 +17,16 @@ const NAV_ITEMS: NavItem[] = [
   { href: '/customers',  label: '고객',    icon: '🗂️', pageKey: 'customers' },
   { href: '/calendar',   label: '캘린더',   icon: '📅' },
   { href: '/finance',    label: '재무',    icon: '📊', pageKey: 'finance', adminOnly: true, activePrefixes: ['/admin/revenue'] },
-  { href: '/team',       label: '팀',      icon: '👥', activePrefixes: ['/hr', '/attendance', '/workers'] },
+  { href: '/team',       label: '팀',      icon: '👥', activePrefixes: ['/hr', '/attendance'] },
 ]
 
 const NAV_BOTTOM: NavItem[] = [
   { href: '/notice',  label: '공지', icon: '📢', pageKey: 'notice' },
   { href: '/tasks',   label: '업무', icon: '✅', pageKey: 'tasks' },
-  { href: '/m',       label: '모바일', icon: '📱' },
+  // 신규 — 검증 단계, admin만. 위치는 추후 조정.
+  { href: '/workers',         label: '외부인력', icon: '🎤', adminOnly: true },
+  { href: '/team/activity',   label: '업무표',   icon: '📋', adminOnly: true },
+  { href: '/m',               label: '모바일',   icon: '📱', adminOnly: true },
   { href: '/admin',   label: '관리', icon: '⚙️', pageKey: 'admin_panel', adminOnly: true },
 ]
 

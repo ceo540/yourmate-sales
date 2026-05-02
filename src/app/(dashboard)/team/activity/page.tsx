@@ -20,6 +20,9 @@ export default async function ActivityPage({
   const admin = createAdminClient()
   const { data: profile } = await admin.from('profiles').select('id, role, name').eq('id', user.id).single()
   const isAdmin = isAdminOrManager(profile?.role)
+  if (!isAdmin) {
+    return <div className="p-8 text-gray-500">관리자만 접근 가능 (자동 업무표는 검증 단계라 admin 한정)</div>
+  }
 
   // 기간 — 기본 최근 7일
   const today = new Date()
