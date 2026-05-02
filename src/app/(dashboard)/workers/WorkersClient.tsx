@@ -2,6 +2,7 @@
 
 import { useState, useTransition, useMemo } from 'react'
 import { useRouter } from 'next/navigation'
+import Link from 'next/link'
 import type { ExternalWorker, WorkerEngagement, WorkerPayment, WorkerPaymentStatus } from '@/types'
 
 const TYPE_OPTIONS: ExternalWorker['type'][] = ['강사', '아티스트', '스태프', '기술', '복합']
@@ -74,6 +75,23 @@ export default function WorkersClient({
       const r = await markPaymentPaidAction({ payment_id: paymentId, paid_date: today })
       if ('error' in r) {
         alert(`실패: ${r.error}`)
+        return
+      }
+      router.refresh()
+    })
+  }
+
+  const handleArchiveEngagement = (engagementId: string, workerName: string, projectName: string) => {
+    if (!confirm(`${workerName} 참여 기록 (${projectName})을 취소할까요?\n(삭제 X — archive_status='cancelled' 보류 폴더 이동, 빵빵이로 복원 가능)`)) return
+    startTransition(async () => {
+      const res = await fetch('/api/admin/worker-engagement-archive', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ engagement_id: engagementId, archive_status: 'cancelled' }),
+      })
+      if (!res.ok) {
+        const err = await res.json().catch(() => null)
+        alert(`실패: ${err?.error ?? res.status}`)
         return
       }
       router.refresh()
@@ -197,11 +215,30 @@ export default function WorkersClient({
                                   {myEngagements.slice(0, 20).map(e => {
                                     const project = projectMap[e.project_id]
                                     return (
-                                      <div key={e.id} className="text-xs flex items-center justify-between bg-white rounded px-2 py-1">
-                                        <span className="truncate flex-1" title={project?.name}>
-                                          {e.date_start ?? '날짜?'} · {project?.name ?? e.project_id.slice(0, 8)}
-                                        </span>
-                                        <span className="text-gray-500 ml-2">{e.role ?? '—'} · {fmtMoney(e.amount)}만</span>
+                                      <div key={e.id} className="text-xs flex items-center bg-white rounded px-2 py-1 gap-2">
+                                        <Link
+                                          href={`/projects/${e.project_id}`}
+                                          onClick={(ev) => ev.stopPropagation()}
+                                          className="flex-1 min-w-0 hover:bg-blue-50 -mx-1 px-1 rounded"
+                                          title="프로젝트로 이동"
+                                        >
+                                          <span className="block truncate text-gray-700 hover:text-blue-700">
+                                            {e.date_start ?? '날짜?'} · {project?.name ?? e.project_id.slice(0, 8)}
+                                          </span>
+                                          <span className="block text-[10px] text-gray-500">
+                                            {e.role ?? '—'} · {fmtMoney(e.amount)}만
+                                            {e.hours && ` · ${e.hours}h`}
+                                          </span>
+                                        </Link>
+                                        <button
+                                          onClick={(ev) => {
+                                            ev.stopPropagation()
+                                            handleArchiveEngagement(e.id, w.name, project?.name ?? '')
+                                          }}
+                                          disabled={pending}
+                                          title="참여 기록 취소 (보류 폴더 이동, 삭제 X)"
+                                          className="text-[11px] text-red-400 hover:text-red-600 hover:bg-red-50 px-1 rounded flex-shrink-0"
+                                        >✕</button>
                                       </div>
                                     )
                                   })}
