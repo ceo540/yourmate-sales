@@ -224,6 +224,7 @@ export default function TasksClient({ tasks: initialTasks, profiles, sales, isAd
               tasks={groupTasks}
               profiles={profiles}
               isAdmin={isAdmin}
+              currentUserId={currentUserId}
               editingId={editingId}
               isPending={isPending}
               onStatusChange={handleStatusChange}
@@ -248,13 +249,30 @@ export default function TasksClient({ tasks: initialTasks, profiles, sales, isAd
                 <th className="text-left text-xs font-semibold text-gray-500 px-4 py-3">중요도</th>
                 <th className="text-left text-xs font-semibold text-gray-500 px-4 py-3">마감일</th>
                 <th className="text-left text-xs font-semibold text-gray-500 px-4 py-3">상태</th>
-                {isAdmin && <th className="w-8" />}
+                <th className="w-20" />
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-50">
               {filtered.map(task => {
                 const dateInfo = formatDate(task.due_date)
                 const rowBg = dateInfo?.overdue ? 'bg-red-50/40' : ''
+                // 인라인 편집 행 (Phase 9.2 + F2)
+                if (editingId === task.id) {
+                  const cols = isAdmin ? 7 : 6
+                  return (
+                    <tr key={task.id}>
+                      <td colSpan={cols} className="p-0">
+                        <EditTaskRow
+                          task={task}
+                          profiles={profiles}
+                          currentUserId={currentUserId}
+                          onSave={(updated) => { setTasks(prev => prev.map(t => t.id === updated.id ? updated : t)); setEditingId(null) }}
+                          onCancel={() => setEditingId(null)}
+                        />
+                      </td>
+                    </tr>
+                  )
+                }
                 return (
                   <tr key={task.id} className={`hover:bg-gray-50 transition-colors ${task.status === '완료' ? 'opacity-50' : ''} ${rowBg}`}>
                     <td className="px-4 py-3">
@@ -296,11 +314,14 @@ export default function TasksClient({ tasks: initialTasks, profiles, sales, isAd
                         {STATUSES.map(s => <option key={s} value={s}>{s}</option>)}
                       </select>
                     </td>
-                    {isAdmin && (
-                      <td className="px-4 py-3">
-                        <button onClick={() => handleDelete(task.id, task.project_id)} className="text-gray-300 hover:text-red-400 text-lg leading-none">×</button>
-                      </td>
-                    )}
+                    <td className="px-4 py-3">
+                      <div className="flex items-center gap-1 justify-end">
+                        <button onClick={() => setEditingId(task.id)} className="text-gray-300 hover:text-blue-400 text-xs px-1.5 py-0.5 rounded hover:bg-blue-50 transition-colors">수정</button>
+                        {isAdmin && (
+                          <button onClick={() => handleDelete(task.id, task.project_id)} className="text-gray-300 hover:text-red-400 text-lg leading-none ml-0.5">×</button>
+                        )}
+                      </div>
+                    </td>
                   </tr>
                 )
               })}
@@ -319,6 +340,7 @@ interface ProjectGroupProps {
   tasks: Task[]
   profiles: Profile[]
   isAdmin: boolean
+  currentUserId: string
   editingId: string | null
   isPending: boolean
   onStatusChange: (taskId: string, saleId: string | null, status: string) => void
@@ -328,7 +350,7 @@ interface ProjectGroupProps {
   onTaskUpdated: (task: Task) => void
 }
 
-function ProjectGroup({ saleId, sale, tasks, profiles, isAdmin, editingId, isPending, onStatusChange, onDelete, onEditStart, onEditDone, onTaskUpdated }: ProjectGroupProps) {
+function ProjectGroup({ saleId, sale, tasks, profiles, isAdmin, currentUserId, editingId, isPending, onStatusChange, onDelete, onEditStart, onEditDone, onTaskUpdated }: ProjectGroupProps) {
   const [collapsed, setCollapsed] = useState(false)
   const doneCount = tasks.filter(t => t.status === '완료').length
   const overdueCount = tasks.filter(t => {
@@ -382,6 +404,7 @@ function ProjectGroup({ saleId, sale, tasks, profiles, isAdmin, editingId, isPen
                 key={task.id}
                 task={task}
                 profiles={profiles}
+                currentUserId={currentUserId}
                 onSave={(updated) => { onTaskUpdated(updated); onEditDone() }}
                 onCancel={onEditDone}
               />
@@ -449,19 +472,21 @@ function TaskRow({ task, isAdmin, isPending, onStatusChange, onDelete, onEdit }:
         <span className="text-xs text-gray-300 flex-shrink-0">마감 없음</span>
       )}
 
-      {isAdmin && (
-        <div className="flex items-center gap-1 flex-shrink-0">
-          <button onClick={onEdit} className="text-gray-300 hover:text-blue-400 text-xs px-1.5 py-0.5 rounded hover:bg-blue-50 transition-colors">수정</button>
+      {/* 수정은 모든 사용자 (member도 본인 담당 task 한정으로 보이므로 안전). 삭제는 admin/manager만. */}
+      <div className="flex items-center gap-1 flex-shrink-0">
+        <button onClick={onEdit} className="text-gray-300 hover:text-blue-400 text-xs px-1.5 py-0.5 rounded hover:bg-blue-50 transition-colors">수정</button>
+        {isAdmin && (
           <button onClick={() => onDelete(task.id, task.project_id)} className="text-gray-300 hover:text-red-400 text-lg leading-none ml-0.5">×</button>
-        </div>
-      )}
+        )}
+      </div>
     </div>
   )
 }
 
 // ─── 인라인 수정 행 ────────────────────────────────────────────────────────────
-function EditTaskRow({ task, profiles, onSave, onCancel }: { task: Task; profiles: Profile[]; onSave: (t: Task) => void; onCancel: () => void }) {
+function EditTaskRow({ task, profiles, currentUserId, onSave, onCancel }: { task: Task; profiles: Profile[]; currentUserId: string; onSave: (t: Task) => void; onCancel: () => void }) {
   const [title, setTitle] = useState(task.title)
+  const [status, setStatus] = useState(task.status)
   const [priority, setPriority] = useState(task.priority)
   const [assigneeId, setAssigneeId] = useState(task.assignee_id ?? '')
   const [dueDate, setDueDate] = useState(task.due_date ?? '')
@@ -470,19 +495,33 @@ function EditTaskRow({ task, profiles, onSave, onCancel }: { task: Task; profile
 
   async function handleSave() {
     if (!title.trim()) return
+    // 완료 코멘트 일관화 (Phase 9.2): 처음 '완료'로 바꿀 때만 prompt
+    let completedNote: string | null = null
+    const becameCompleted = status === '완료' && task.status !== '완료'
+    if (becameCompleted) {
+      const r = askCompletionNote(title.trim())
+      if (r.cancelled) return
+      completedNote = r.note
+    }
     setSaving(true)
     const fd = new FormData()
     fd.set('id', task.id)
     if (task.project_id) fd.set('project_id', task.project_id)
     fd.set('title', title)
+    fd.set('status', status)
     fd.set('priority', priority)
     fd.set('assignee_id', assigneeId)
     fd.set('due_date', dueDate)
     fd.set('description', memo)
+    if (becameCompleted) {
+      fd.set('completed_note', completedNote ?? '')
+      fd.set('completed_by', currentUserId)
+    }
     await updateTask(fd)
     onSave({
       ...task,
       title,
+      status,
       priority,
       assignee_id: assigneeId || null,
       due_date: dueDate || null,
@@ -500,7 +539,10 @@ function EditTaskRow({ task, profiles, onSave, onCancel }: { task: Task; profile
         className="w-full px-3 py-1.5 border border-gray-100 rounded-lg text-sm focus:outline-none focus:border-yellow-400"
         placeholder="업무명"
       />
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+        <select value={status} onChange={e => setStatus(e.target.value)} className="px-2 py-1.5 border border-gray-100 rounded-lg text-xs bg-white focus:outline-none focus:border-yellow-400">
+          {STATUSES.map(s => <option key={s} value={s}>{s}</option>)}
+        </select>
         <select value={assigneeId} onChange={e => setAssigneeId(e.target.value)} className="px-2 py-1.5 border border-gray-100 rounded-lg text-xs bg-white focus:outline-none focus:border-yellow-400">
           <option value="">담당자 없음</option>
           {profiles.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
