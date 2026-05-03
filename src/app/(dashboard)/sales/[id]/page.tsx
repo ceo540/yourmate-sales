@@ -39,7 +39,7 @@ export default async function SalePage({ params, searchParams }: {
 
   const viewMode = 'full' as const
 
-  const [{ data: profiles }, { data: entities }, { data: customers }, { data: rawTasks }, logsResult, { data: costs }, { data: vendors }] = await Promise.all([
+  const [{ data: profiles }, { data: entities }, { data: customers }, { data: rawTasks }, logsResult, { data: costs }, { data: vendors }, { data: paymentSchedules }, { data: connectedProjectRaw }] = await Promise.all([
     admin.from('profiles').select('id, name').order('name'),
     admin.from('business_entities').select('id, name').order('name'),
     admin.from('customers').select('id, name, contact_name, type').order('name'),
@@ -47,6 +47,10 @@ export default async function SalePage({ params, searchParams }: {
     admin.from('project_logs').select('*, profiles:author_id(name)').eq('sale_id', id).order('created_at', { ascending: false }).limit(50),
     admin.from('sale_costs').select('*').eq('sale_id', id).order('created_at'),
     admin.from('vendors').select('id, name, type').order('name'),
+    admin.from('payment_schedules').select('id, amount, is_received, due_date').eq('sale_id', id),
+    sale.project_id
+      ? admin.from('projects').select('id, name, project_number, main_type').eq('id', sale.project_id).maybeSingle()
+      : Promise.resolve({ data: null }),
   ])
 
   const profileMap = createProfileMap(profiles)
@@ -114,6 +118,10 @@ export default async function SalePage({ params, searchParams }: {
           project_overview: sale.project_overview ?? null,
           notion_page_id: (sale as any).notion_page_id ?? null,
           share_token: (sale as any).share_token ?? null,
+          main_type: (sale as any).main_type ?? null,
+          expansion_tags: ((sale as any).expansion_tags as string[] | null) ?? null,
+          cost_confirmed: (sale as any).cost_confirmed ?? null,
+          project_id: (sale as any).project_id ?? null,
         }}
         tasks={tasks}
         logs={logs}
@@ -122,6 +130,8 @@ export default async function SalePage({ params, searchParams }: {
         customers={customers ?? []}
         costs={costs ?? []}
         vendors={vendors ?? []}
+        paymentSchedules={(paymentSchedules ?? []).map((p: any) => ({ id: p.id, amount: Number(p.amount ?? 0), is_received: !!p.is_received, due_date: p.due_date ?? null }))}
+        connectedProject={connectedProjectRaw ? { id: (connectedProjectRaw as any).id, name: (connectedProjectRaw as any).name, project_number: (connectedProjectRaw as any).project_number ?? null, main_type: (connectedProjectRaw as any).main_type ?? null } : null}
         showInternalCosts={showInternalCosts}
         viewMode={viewMode}
         isAdmin={isAdmin}

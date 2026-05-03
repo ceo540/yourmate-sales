@@ -11,6 +11,7 @@ import NotesTab from './components/NotesTab'
 import ContractTab from './components/ContractTab'
 import OverviewTab from './components/OverviewTab'
 import SaleClassificationCard from './SaleClassificationCard'
+import SaleHeroPanel from './SaleHeroPanel'
 import StageHint from '@/components/StageHint'
 import DropboxStatusBadge, { resolveDropboxStatus } from '@/components/DropboxStatus'
 import DropboxRetryButton from '@/components/DropboxRetryButton'
@@ -51,6 +52,23 @@ interface Sale {
   // 운영 분류 (Phase 4)
   main_type?: string | null
   expansion_tags?: string[] | null
+  // 계약 운영실 (Phase 8)
+  cost_confirmed?: boolean | null
+  project_id?: string | null
+}
+
+interface ConnectedProject {
+  id: string
+  name: string
+  project_number: string | null
+  main_type: string | null
+}
+
+interface SimplePayment {
+  id: string
+  amount: number
+  is_received: boolean
+  due_date: string | null
 }
 
 interface Props {
@@ -62,6 +80,8 @@ interface Props {
   customers: Customer[]
   costs: CostItem[]
   vendors: Vendor[]
+  paymentSchedules?: SimplePayment[]
+  connectedProject?: ConnectedProject | null
   showInternalCosts: boolean
   viewMode: 'full' | 'project' | 'contract'
   isAdmin: boolean
@@ -84,7 +104,7 @@ function formatDue(d: string | null) {
   return { label: `D-${diff}`, color: 'text-gray-400' }
 }
 
-export default function SaleHubClient({ sale, tasks: initialTasks, logs, profiles, entities, customers, costs: initialCosts, vendors, showInternalCosts, viewMode, isAdmin, currentUserId }: Props) {
+export default function SaleHubClient({ sale, tasks: initialTasks, logs, profiles, entities, customers, costs: initialCosts, vendors, paymentSchedules = [], connectedProject = null, showInternalCosts, viewMode, isAdmin, currentUserId }: Props) {
   const [tab, setTab] = useState<'overview' | 'tasks' | 'logs' | 'notes' | 'contract' | '원가' | 'claude'>('overview')
   const [shareToken, setShareToken] = useState<string | null>(sale.share_token)
   const [shareLoading, setShareLoading] = useState(false)
@@ -185,19 +205,38 @@ export default function SaleHubClient({ sale, tasks: initialTasks, logs, profile
       {/* ── 개요 탭 ── */}
       {tab === 'overview' && (
         <>
-          {/* Dropbox 상태 + 재시도 (Phase 6·7) */}
-          <div className="bg-white border border-gray-100 rounded-xl px-4 py-2.5 mb-3 flex items-center gap-2 flex-wrap">
-            <span className="text-[11px] font-semibold text-gray-500">📁 자료 폴더</span>
-            <DropboxStatusBadge
-              dropbox_url={sale.dropbox_url}
-              stage="sale"
-              showHint
-            />
-            {resolveDropboxStatus({ dropbox_url: sale.dropbox_url, stage: 'sale' }).kind === 'not_connected' && (
+          {/* 계약 운영실 핵심 현황판 (Phase 8) */}
+          <SaleHeroPanel
+            sale={{
+              id: sale.id,
+              name: sale.name,
+              contract_stage: sale.contract_stage,
+              service_type: sale.service_type,
+              dropbox_url: sale.dropbox_url,
+              revenue: sale.revenue,
+              cost_confirmed: sale.cost_confirmed ?? null,
+              assignee_id: sale.assignee_id,
+              contract_assignee_id: sale.contract_assignee_id,
+              main_type: sale.main_type ?? null,
+              expansion_tags: sale.expansion_tags ?? null,
+              project_id: sale.project_id ?? null,
+            }}
+            costs={localCosts.map(c => ({ amount: (c as any).amount ?? 0, vendor_name: (c as any).vendor_name }))}
+            paymentSchedules={paymentSchedules}
+            connectedProject={connectedProject}
+            assigneeName={profiles.find(p => p.id === sale.assignee_id)?.name ?? null}
+            contractAssigneeName={profiles.find(p => p.id === sale.contract_assignee_id)?.name ?? null}
+            showInternalCosts={showInternalCosts}
+          />
+
+          {/* Dropbox 미연결 시 재시도 안내 (Phase 7) — Hero 가 이미 상태 보여줌, 미연결만 강조 */}
+          {resolveDropboxStatus({ dropbox_url: sale.dropbox_url, stage: 'sale' }).kind === 'not_connected' && (
+            <div className="bg-red-50 border border-red-100 rounded-lg px-3 py-2 mb-3 flex items-center gap-2 flex-wrap">
+              <span className="text-xs text-red-700 font-medium">📁 자료 폴더가 연결되어 있지 않아요.</span>
               <DropboxRetryButton stage="sale" id={sale.id} />
-            )}
-            <span className="ml-auto text-[10px] text-gray-400">프로젝트와 같은 폴더 사용</span>
-          </div>
+            </div>
+          )}
+
           <SaleClassificationCard
             saleId={sale.id}
             saleName={sale.name}
