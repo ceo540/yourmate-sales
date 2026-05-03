@@ -2,7 +2,6 @@ import { createClient } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
 import Sidebar from '@/components/layout/Sidebar'
 import AiChat from '@/components/AiChat'
-import ClientErrorReporter from '@/components/ClientErrorReporter'
 
 export default async function DashboardLayout({
   children,
@@ -23,7 +22,6 @@ export default async function DashboardLayout({
         {children}
       </main>
       <AiChat />
-      <ClientErrorReporter />
     </div>
   )
 }
