@@ -9,7 +9,8 @@ import ProjectClaudeChat from '@/components/ProjectClaudeChat'
 import MarkdownNoteBlock from '@/components/MarkdownNoteBlock'
 import CustomerPicker from '@/components/CustomerPicker'
 import ClassificationFieldsInline from '@/components/ClassificationFieldsInline'
-import DropboxStatusBadge from '@/components/DropboxStatus'
+import DropboxStatusBadge, { resolveDropboxStatus } from '@/components/DropboxStatus'
+import DropboxRetryButton from '@/components/DropboxRetryButton'
 import dynamic from 'next/dynamic'
 
 const BlockNoteEditor = dynamic(() => import('@/components/BlockNoteEditor'), { ssr: false })
@@ -1145,10 +1146,22 @@ export default function LeadsClient({ leads, profiles, persons, customers, curre
                       {(lead.assignee as { name?: string })?.name || '—'}
                     </span>
                   </div>
-                  {/* Row 2: project name */}
-                  <p className="text-sm font-semibold text-gray-900 truncate leading-snug">
-                    {lead.project_name || lead.client_org || '(프로젝트명 없음)'}
-                  </p>
+                  {/* Row 2: project name + dropbox status */}
+                  <div className="flex items-center gap-1.5">
+                    <span
+                      className="text-[11px] leading-none flex-shrink-0"
+                      title={
+                        lead.dropbox_url ? '자료 폴더 연결됨'
+                        : !lead.service_type ? '서비스 선택 전'
+                        : '폴더 생성 확인 필요'
+                      }
+                    >
+                      {lead.dropbox_url ? '✅' : !lead.service_type ? '⏳' : '⚠️'}
+                    </span>
+                    <p className="text-sm font-semibold text-gray-900 truncate leading-snug flex-1 min-w-0">
+                      {lead.project_name || lead.client_org || '(프로젝트명 없음)'}
+                    </p>
+                  </div>
                   {/* Row 3: client org + service badge */}
                   <div className="flex items-center gap-1.5 mt-0.5">
                     <span className="text-[11px] text-gray-400 truncate flex-1">
@@ -1464,7 +1477,7 @@ export default function LeadsClient({ leads, profiles, persons, customers, curre
                   )}
                 </div>
 
-                {/* ── Dropbox 상태 (Phase 6) ── */}
+                {/* ── Dropbox 상태 (Phase 6 + 재시도 Phase 7) ── */}
                 <div className="bg-white rounded-2xl px-4 py-2.5 flex items-center gap-2 flex-wrap" style={{ boxShadow: '0 1px 4px rgba(0,0,0,0.06)' }}>
                   <span className="text-[11px] font-semibold text-gray-500">📁 자료 폴더</span>
                   <DropboxStatusBadge
@@ -1473,6 +1486,12 @@ export default function LeadsClient({ leads, profiles, persons, customers, curre
                     stage="lead"
                     showHint
                   />
+                  {(() => {
+                    const s = resolveDropboxStatus({ dropbox_url: selectedLead.dropbox_url, service_type: selectedLead.service_type, stage: 'lead' })
+                    return s.kind === 'check_needed' ? (
+                      <DropboxRetryButton stage="lead" id={selectedLead.id} className="ml-auto" />
+                    ) : null
+                  })()}
                 </div>
 
                 {/* ── 운영 분류 추정 (Phase 4) ── */}

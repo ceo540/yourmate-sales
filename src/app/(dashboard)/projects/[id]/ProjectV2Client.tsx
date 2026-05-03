@@ -12,7 +12,8 @@ import dynamic from 'next/dynamic'
 const BlockNoteEditor = dynamic(() => import('@/components/BlockNoteEditor'), { ssr: false })
 import ProjectSettingsModal from './ProjectSettingsModal'
 import ClassificationCard from './ClassificationCard'
-import DropboxStatusBadge from '@/components/DropboxStatus'
+import DropboxStatusBadge, { resolveDropboxStatus } from '@/components/DropboxStatus'
+import DropboxRetryButton from '@/components/DropboxRetryButton'
 import CostModal from '../../sales/CostModal'
 import CostPdfImportModal from '../../sales/[id]/CostPdfImportModal'
 import { createClient as createSupabaseClient } from '@/lib/supabase/client'
@@ -441,6 +442,14 @@ export default function ProjectV2Client({
           )}
         </div>
       </div>
+
+      {/* Dropbox 미연결 시 retry 안내 (Phase 7) */}
+      {resolveDropboxStatus({ dropbox_url: project.dropbox_url, stage: 'project' }).kind === 'not_connected' && (
+        <div className="mb-3 bg-red-50 border border-red-100 rounded-lg px-3 py-2 flex items-center gap-2 flex-wrap">
+          <span className="text-xs text-red-700 font-medium">📁 운영 자료 폴더가 연결되어 있지 않아요.</span>
+          <DropboxRetryButton stage="project" id={project.id} />
+        </div>
+      )}
 
       {/* ── 2-column 본문 ── */}
       <div className="grid grid-cols-1 lg:grid-cols-[1fr_400px] gap-5">

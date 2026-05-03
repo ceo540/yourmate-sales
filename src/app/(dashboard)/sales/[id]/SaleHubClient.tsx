@@ -12,7 +12,8 @@ import ContractTab from './components/ContractTab'
 import OverviewTab from './components/OverviewTab'
 import SaleClassificationCard from './SaleClassificationCard'
 import StageHint from '@/components/StageHint'
-import DropboxStatusBadge from '@/components/DropboxStatus'
+import DropboxStatusBadge, { resolveDropboxStatus } from '@/components/DropboxStatus'
+import DropboxRetryButton from '@/components/DropboxRetryButton'
 import CostSheetEditor from '../CostSheetEditor'
 import CostPdfImportModal from './CostPdfImportModal'
 import ProjectClaudeChat from '@/components/ProjectClaudeChat'
@@ -184,7 +185,7 @@ export default function SaleHubClient({ sale, tasks: initialTasks, logs, profile
       {/* ── 개요 탭 ── */}
       {tab === 'overview' && (
         <>
-          {/* Dropbox 상태 (Phase 6) */}
+          {/* Dropbox 상태 + 재시도 (Phase 6·7) */}
           <div className="bg-white border border-gray-100 rounded-xl px-4 py-2.5 mb-3 flex items-center gap-2 flex-wrap">
             <span className="text-[11px] font-semibold text-gray-500">📁 자료 폴더</span>
             <DropboxStatusBadge
@@ -192,6 +193,9 @@ export default function SaleHubClient({ sale, tasks: initialTasks, logs, profile
               stage="sale"
               showHint
             />
+            {resolveDropboxStatus({ dropbox_url: sale.dropbox_url, stage: 'sale' }).kind === 'not_connected' && (
+              <DropboxRetryButton stage="sale" id={sale.id} />
+            )}
             <span className="ml-auto text-[10px] text-gray-400">프로젝트와 같은 폴더 사용</span>
           </div>
           <SaleClassificationCard

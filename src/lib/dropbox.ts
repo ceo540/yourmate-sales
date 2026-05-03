@@ -1,4 +1,4 @@
-import { SERVICE_PATHS } from './services'
+import { SERVICE_PATHS, normalizeServiceType } from './services'
 
 // ROOT_NAMESPACE는 계정 루트 네임스페이스
 // → API 경로는 절대경로 (/방 준영/1. 가업/★ DB/...), 웹 URL에서 /home 제거 후 그대로 사용
@@ -158,13 +158,15 @@ export async function createSaleFolder(params: {
     return null
   }
 
-  const { service_type, name, inflow_date } = params
+  const { name, inflow_date } = params
+  // 정규화 — 'SOS ' 같은 공백 / NFC 차이 흡수
+  const service_type = normalizeServiceType(params.service_type)
   if (!service_type) {
-    console.error('[dropbox.createSaleFolder] service_type 비어 있음 — 폴더 생성 불가.', { name })
+    console.error('[dropbox.createSaleFolder] service_type 비어 있음 — 폴더 생성 불가.', { name, raw: params.service_type })
     return null
   }
   if (!SERVICE_PATHS[service_type]) {
-    console.error(`[dropbox.createSaleFolder] SERVICE_PATHS 미매칭 service_type="${service_type}" — 폴더 경로 알 수 없음. services.ts SERVICE_PATHS 확인 필요.`, { name, allowed: Object.keys(SERVICE_PATHS) })
+    console.error(`[dropbox.createSaleFolder] SERVICE_PATHS 미매칭 service_type="${service_type}" (정규화 후) — 폴더 경로 알 수 없음.`, { raw: params.service_type, name, allowed: Object.keys(SERVICE_PATHS) })
     return null
   }
 

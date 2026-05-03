@@ -201,6 +201,50 @@ export async function updateSaleInline(id: string, data: {
   revalidatePath('/sales')
 }
 
+// Dropbox 폴더 재시도 (Phase 7) — 미연결 sale 에서 다시 시도
+export async function retrySaleDropboxFolder(saleId: string): Promise<{ ok: true; url: string } | { error: string }> {
+  if (!saleId) return { error: '잘못된 요청' }
+  const supabase = await createClient()
+  const { data: sale } = await supabase
+    .from('sales')
+    .select('id, name, service_type, inflow_date, dropbox_url, project_id')
+    .eq('id', saleId)
+    .maybeSingle()
+  if (!sale) return { error: '계약을 찾을 수 없어요' }
+  if (sale.dropbox_url) return { error: '이미 폴더가 연결되어 있어요' }
+  if (!sale.service_type) return { error: '서비스를 먼저 정해야 폴더를 만들 수 있어요' }
+
+  let newUrl: string | null = null
+  try {
+    newUrl = await createSaleFolder({
+      service_type: sale.service_type,
+      name: sale.name,
+      inflow_date: sale.inflow_date,
+    })
+  } catch (e) {
+    console.error('[retrySaleDropboxFolder] throw', e instanceof Error ? e.message : e, { saleId })
+    return { error: '폴더 생성이 바로 되지 않았어요. 잠시 후 다시 시도해주세요.' }
+  }
+  if (!newUrl) {
+    return { error: '폴더 생성이 바로 되지 않았어요. 서비스를 다시 확인하거나 관리자에게 알려주세요.' }
+  }
+
+  await supabase.from('sales').update({ dropbox_url: newUrl, updated_at: new Date().toISOString() }).eq('id', saleId)
+  // sale 에 연결된 project 가 dropbox_url 비어있으면 같이 채워줌
+  if (sale.project_id) {
+    const { data: prj } = await supabase.from('projects').select('dropbox_url').eq('id', sale.project_id).maybeSingle()
+    if (prj && !prj.dropbox_url) {
+      await supabase.from('projects').update({ dropbox_url: newUrl, updated_at: new Date().toISOString() }).eq('id', sale.project_id)
+      revalidatePath(`/projects/${sale.project_id}`)
+      revalidatePath(`/projects/${sale.project_id}/v2`)
+    }
+  }
+  revalidatePath('/sales/report')
+  revalidatePath('/sales')
+  revalidatePath(`/sales/${saleId}`)
+  return { ok: true, url: newUrl }
+}
+
 // 운영 분류만 갱신 (Phase 4) — sale 페이지 카드용
 export async function updateSaleClassification(input: {
   saleId: string

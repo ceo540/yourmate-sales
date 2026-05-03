@@ -31,6 +31,27 @@ export const SERVICE_TO_GROUP: Record<string, string> = {
   '프로젝트':    '433414',
 }
 
+/**
+ * service_type 정규화 — trim + NFC + 내부 공백 1칸 통일.
+ * 폼 select는 안전하지만 빵빵이/외부 입력에서 'SOS ' 같은 미세 차이 방지.
+ * SERVICE_PATHS·SERVICE_TO_DEPT·SERVICE_TO_GROUP lookup 직전에 항상 호출.
+ */
+export function normalizeServiceType(input: string | null | undefined): string | null {
+  if (!input) return null
+  const cleaned = input.normalize('NFC').trim().replace(/\s+/g, ' ')
+  return cleaned.length > 0 ? cleaned : null
+}
+
+/**
+ * SERVICE_PATHS 안전 조회. 정규화 후 매칭. 미매칭이면 null.
+ * (호출자가 console.error 로깅 책임)
+ */
+export function resolveServicePath(serviceType: string | null | undefined): string | null {
+  const normalized = normalizeServiceType(serviceType)
+  if (!normalized) return null
+  return SERVICE_PATHS[normalized] ?? null
+}
+
 // 서비스 → Dropbox 상위 폴더 경로 (★ DB 기준 상대경로)
 export const SERVICE_PATHS: Record<string, string> = {
   'SOS':        '/2 SOS/2 프로젝트',

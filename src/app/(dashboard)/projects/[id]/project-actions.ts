@@ -1682,6 +1682,61 @@ export async function updateCustomerContact(
   revalidatePath(`/projects/${projectId}`)
 }
 
+// Dropbox 폴더 재시도 (Phase 7) — 미연결 project 에서 다시 시도
+// 1순위: 연결된 sale 에 dropbox_url 있으면 거기서 가져와 동기화
+// 2순위: 첫 sale 의 service_type 으로 createSaleFolder 신규
+export async function retryProjectDropboxFolder(projectId: string): Promise<{ ok: true; url: string; source: 'from_sale' | 'new' } | { error: string }> {
+  if (!projectId) return { error: '잘못된 요청' }
+  const admin = createAdminClient()
+  const { data: project } = await admin.from('projects').select('id, name, service_type, dropbox_url').eq('id', projectId).maybeSingle()
+  if (!project) return { error: '프로젝트를 찾을 수 없어요' }
+  if (project.dropbox_url) return { error: '이미 폴더가 연결되어 있어요' }
+
+  // 1순위: 연결된 sale 에서 url 끌어오기
+  const { data: sales } = await admin
+    .from('sales')
+    .select('id, dropbox_url, service_type, name, inflow_date')
+    .eq('project_id', projectId)
+    .order('created_at', { ascending: true })
+
+  const saleWithUrl = (sales ?? []).find(s => s.dropbox_url && s.dropbox_url.trim())
+  if (saleWithUrl) {
+    await admin.from('projects').update({ dropbox_url: saleWithUrl.dropbox_url, updated_at: new Date().toISOString() }).eq('id', projectId)
+    revalidatePath(`/projects/${projectId}`)
+    revalidatePath(`/projects/${projectId}/v2`)
+    return { ok: true, url: saleWithUrl.dropbox_url as string, source: 'from_sale' }
+  }
+
+  // 2순위: 첫 sale 또는 project 자체 service_type 으로 신규 생성
+  const baseSale = sales?.[0]
+  const serviceType = (baseSale?.service_type as string | null) ?? (project.service_type as string | null)
+  if (!serviceType) return { error: '서비스를 먼저 정해야 폴더를 만들 수 있어요' }
+
+  const name = (baseSale?.name as string | null) ?? project.name
+  const inflowDate = (baseSale?.inflow_date as string | null) ?? null
+
+  let newUrl: string | null = null
+  try {
+    const { createSaleFolder } = await import('@/lib/dropbox')
+    newUrl = await createSaleFolder({ service_type: serviceType, name, inflow_date: inflowDate })
+  } catch (e) {
+    console.error('[retryProjectDropboxFolder] throw', e instanceof Error ? e.message : e, { projectId })
+    return { error: '폴더 생성이 바로 되지 않았어요. 잠시 후 다시 시도해주세요.' }
+  }
+  if (!newUrl) {
+    return { error: '폴더 생성이 바로 되지 않았어요. 서비스를 다시 확인하거나 관리자에게 알려주세요.' }
+  }
+
+  await admin.from('projects').update({ dropbox_url: newUrl, updated_at: new Date().toISOString() }).eq('id', projectId)
+  // 첫 sale 도 비어있으면 같이 채움
+  if (baseSale && !baseSale.dropbox_url) {
+    await admin.from('sales').update({ dropbox_url: newUrl, updated_at: new Date().toISOString() }).eq('id', baseSale.id)
+  }
+  revalidatePath(`/projects/${projectId}`)
+  revalidatePath(`/projects/${projectId}/v2`)
+  return { ok: true, url: newUrl, source: 'new' }
+}
+
 // 운영 분류 저장 (yourmate-company-spec-v2 §5~8) — Phase 3
 // localStorage 데모 단계를 DB 저장으로 승격.
 export async function updateProjectClassification(input: {

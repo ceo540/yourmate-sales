@@ -20,7 +20,7 @@ export default async function ProjectsPage() {
     admin.from('projects')
       .select(`
         id, name, service_type, status, project_number, customer_id, pm_id, created_at,
-        main_type, expansion_tags,
+        main_type, expansion_tags, dropbox_url,
         sales(id, revenue, contract_stage, inflow_date),
         customers(id, name)
       `)
@@ -51,6 +51,7 @@ export default async function ProjectsPage() {
       inflow_date: sale?.inflow_date ?? p.created_at?.slice(0, 10) ?? null,
       main_type: p.main_type ?? null,
       expansion_tags: (p.expansion_tags as string[] | null) ?? [],
+      dropbox_url: p.dropbox_url ?? null,
     }
   })
 

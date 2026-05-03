@@ -67,6 +67,8 @@ interface Project {
   // 운영 분류 (Phase 5 가시성)
   main_type: string | null
   expansion_tags: string[]
+  // Dropbox (Phase 7)
+  dropbox_url: string | null
 }
 
 const MAIN_TYPE_BADGE: Record<string, string> = {
@@ -491,6 +493,12 @@ export default function ProjectsClient({ projects, isAdmin, profiles, customers 
                   <td className="px-3 py-2.5">
                     <div className="flex items-center gap-2">
                       <div className="w-0.5 h-6 rounded flex-shrink-0" style={{ background: svcColor }} />
+                      <span
+                        className="text-xs leading-none flex-shrink-0"
+                        title={p.dropbox_url ? '자료 폴더 연결됨' : '운영 자료 미연결'}
+                      >
+                        {p.dropbox_url ? '✅' : '❌'}
+                      </span>
                       <span className="text-sm font-semibold text-gray-900 break-words">{p.name}</span>
                     </div>
                   </td>
