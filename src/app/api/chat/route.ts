@@ -41,6 +41,7 @@ import {
   updateProjectShortSummary,
   generateAndSaveProjectShortSummary,
 } from '@/app/(dashboard)/projects/[id]/project-actions'
+import { containsSensitiveKeyword, SENSITIVE_BLOCK_MESSAGE } from '@/lib/sensitive-data-policy'
 
 export const maxDuration = 60
 
@@ -1231,6 +1232,10 @@ async function executeTool(name: string, input: Record<string, unknown>, userRol
     }
     const admin = createAdminClient()
     const completionNote = ((input.completion_note as string) || '').trim() || null
+    // 민감 정보 차단 (P1-2)
+    if (containsSensitiveKeyword(completionNote)) {
+      return { error: SENSITIVE_BLOCK_MESSAGE }
+    }
     const { error } = await admin
       .from('tasks')
       .update({

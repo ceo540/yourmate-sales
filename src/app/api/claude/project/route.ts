@@ -7,6 +7,7 @@ import { loadCompanyManual, loadCommonManuals, loadServiceManual } from '@/lib/m
 import { listDropboxFolder, readDropboxFile } from '@/lib/dropbox'
 import { quickCreateCustomer } from '@/lib/customer-resolve'
 import { revalidatePath } from 'next/cache'
+import { containsSensitiveKeyword, SENSITIVE_BLOCK_MESSAGE } from '@/lib/sensitive-data-policy'
 
 const client = new Anthropic()
 const WEB_BASE = 'https://www.dropbox.com/home'
@@ -925,15 +926,20 @@ project_id 생략 시 *현재 프로젝트* 자동 사용 (프로젝트 페이�
                   if (block.name === 'complete_task') {
                     send('\n*(할 일 완료 처리...)*\n')
                     const completionNote = ((input.completion_note as string | undefined) || '').trim() || null
-                    const { error } = await admin.from('tasks').update({
-                      status: '완료',
-                      completed_at: new Date().toISOString(),
-                      completed_note: completionNote,
-                      completed_by: user.id,
-                      updated_at: new Date().toISOString(),
-                    }).eq('id', task.id)
-                    result = error ? `실패: ${error.message}` : `"${task.title}" 완료 처리${completionNote ? ' (코멘트 저장됨)' : ''}.`
-                    if (!error) revalidate()
+                    // 민감 정보 차단 (P1-2)
+                    if (containsSensitiveKeyword(completionNote)) {
+                      result = SENSITIVE_BLOCK_MESSAGE
+                    } else {
+                      const { error } = await admin.from('tasks').update({
+                        status: '완료',
+                        completed_at: new Date().toISOString(),
+                        completed_note: completionNote,
+                        completed_by: user.id,
+                        updated_at: new Date().toISOString(),
+                      }).eq('id', task.id)
+                      result = error ? `실패: ${error.message}` : `"${task.title}" 완료 처리${completionNote ? ' (코멘트 저장됨)' : ''}.`
+                      if (!error) revalidate()
+                    }
                   } else if (block.name === 'delete_task') {
                     send('\n*(할 일 삭제...)*\n')
                     const { error } = await admin.from('tasks').delete().eq('id', task.id)
