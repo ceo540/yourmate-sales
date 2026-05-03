@@ -105,6 +105,8 @@ export async function updateCustomer(id: string, data: {
 }
 
 export async function deleteCustomer(id: string): Promise<{ error?: string }> {
+  const { requireAdminOrManager } = await import('@/lib/auth-guard')
+  try { await requireAdminOrManager() } catch (e) { return { error: e instanceof Error ? e.message : 'Forbidden' } }
   const supabase = createAdminClient()
   // FK 제약 해제: 소속 관계 먼저 삭제, 매출건은 customer_id null 처리
   await supabase.from('person_org_relations').delete().eq('customer_id', id)
@@ -152,6 +154,8 @@ export async function updatePerson(id: string, data: {
 }
 
 export async function deletePerson(id: string): Promise<{ error?: string }> {
+  const { requireAdminOrManager } = await import('@/lib/auth-guard')
+  try { await requireAdminOrManager() } catch (e) { return { error: e instanceof Error ? e.message : 'Forbidden' } }
   const supabase = createAdminClient()
   await supabase.from('person_org_relations').delete().eq('person_id', id)
   const { error } = await supabase.from('persons').delete().eq('id', id)
@@ -195,6 +199,8 @@ export async function endRelation(id: string, endedAt: string) {
 }
 
 export async function deleteRelation(id: string): Promise<{ error?: string }> {
+  const { requireAdminOrManager } = await import('@/lib/auth-guard')
+  try { await requireAdminOrManager() } catch (e) { return { error: e instanceof Error ? e.message : 'Forbidden' } }
   const supabase = createAdminClient()
   const { error } = await supabase.from('person_org_relations').delete().eq('id', id)
   if (error) return { error: error.message }

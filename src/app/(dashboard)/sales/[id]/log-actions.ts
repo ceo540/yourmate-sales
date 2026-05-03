@@ -1,14 +1,14 @@
 'use server'
 
-import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { revalidatePath } from 'next/cache'
 import { createProfileNameMap } from '@/lib/utils'
+import { requireUser, requireLogOwnerOrAdmin } from '@/lib/auth-guard'
+import { assertNotSensitive } from '@/lib/sensitive-data-policy'
 
 export async function createLog(saleId: string, content: string, logType: string, contactedAt?: string) {
-  const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
-  if (!user) throw new Error('Unauthorized')
+  const u = await requireUser()
+  assertNotSensitive({ content }, u.role)
 
   const admin = createAdminClient()
   const { error: rpcError } = await admin.rpc('insert_project_log', {
@@ -16,7 +16,7 @@ export async function createLog(saleId: string, content: string, logType: string
     p_lead_id: null,
     p_content: content,
     p_log_type: logType,
-    p_author_id: user.id,
+    p_author_id: u.id,
     p_contacted_at: contactedAt || new Date().toISOString(),
   })
 
@@ -26,7 +26,7 @@ export async function createLog(saleId: string, content: string, logType: string
       sale_id: saleId,
       content,
       log_type: logType,
-      author_id: user.id,
+      author_id: u.id,
     })
     if (fallbackError) {
       console.error('[createLog] fallback error:', fallbackError.message)
@@ -40,7 +40,7 @@ export async function createLog(saleId: string, content: string, logType: string
   // 자동 업무표 (§5.4.2)
   const { logActivity } = await import('@/lib/activity-log')
   void logActivity({
-    actor_id: user.id,
+    actor_id: u.id,
     action: 'create_log',
     ref_type: 'sale',
     ref_id: saleId,
@@ -52,6 +52,8 @@ export async function createLog(saleId: string, content: string, logType: string
 }
 
 export async function deleteLog(logId: string, saleId: string) {
+  // 작성자 또는 admin/manager만 (P1-3)
+  await requireLogOwnerOrAdmin(logId)
   const admin = createAdminClient()
   await admin.from('project_logs').delete().eq('id', logId)
   revalidatePath(`/sales/${saleId}`)
@@ -59,6 +61,7 @@ export async function deleteLog(logId: string, saleId: string) {
 }
 
 export async function getSaleLogs(saleId: string) {
+  await requireUser()
   const admin = createAdminClient()
   const { data, error } = await admin
     .from('project_logs')
@@ -83,16 +86,15 @@ export async function getSaleLogs(saleId: string) {
 }
 
 export async function createLeadLog(leadId: string, content: string, logType: string, contactedAt?: string) {
-  const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
-  if (!user) throw new Error('Unauthorized')
+  const u = await requireUser()
+  assertNotSensitive({ content }, u.role)
 
   const admin = createAdminClient()
   const { error } = await admin.from('project_logs').insert({
     lead_id: leadId,
     content,
     log_type: logType,
-    author_id: user.id,
+    author_id: u.id,
     contacted_at: contactedAt || new Date().toISOString(),
   })
 
@@ -101,7 +103,7 @@ export async function createLeadLog(leadId: string, content: string, logType: st
   // 자동 업무표 (§5.4.2)
   const { logActivity } = await import('@/lib/activity-log')
   void logActivity({
-    actor_id: user.id,
+    actor_id: u.id,
     action: 'create_log',
     ref_type: 'lead',
     ref_id: leadId,
@@ -110,6 +112,7 @@ export async function createLeadLog(leadId: string, content: string, logType: st
 }
 
 export async function getLeadLogs(leadId: string) {
+  await requireUser()
   const admin = createAdminClient()
   const { data } = await admin
     .from('project_logs')
@@ -120,6 +123,8 @@ export async function getLeadLogs(leadId: string) {
 }
 
 export async function deleteLeadLog(logId: string) {
+  // 작성자 또는 admin/manager만 (P1-3)
+  await requireLogOwnerOrAdmin(logId)
   const admin = createAdminClient()
   await admin.from('project_logs').delete().eq('id', logId)
 }

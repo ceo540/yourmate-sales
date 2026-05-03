@@ -100,6 +100,8 @@ export async function updateRentalStatus(id: string, status: string) {
 }
 
 export async function deleteRental(id: string) {
+  const { requireAdminOrManager } = await import('@/lib/auth-guard')
+  await requireAdminOrManager()  // 위험 액션 (P1-3)
   const supabase = await createClient()
   const { error } = await supabase.from('rentals').delete().eq('id', id)
   if (error) return { error: error.message }
@@ -221,6 +223,8 @@ export async function updateRentalDelivery(id: string, rentalId: string, data: R
 }
 
 export async function deleteRentalDelivery(id: string, rentalId: string) {
+  const { requireAdminOrManager } = await import('@/lib/auth-guard')
+  await requireAdminOrManager()  // 위험 액션 (P1-3)
   const supabase = await createClient()
   await supabase.from('rental_deliveries').delete().eq('id', id)
   revalidatePath(`/rentals/${rentalId}`)

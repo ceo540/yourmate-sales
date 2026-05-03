@@ -222,6 +222,8 @@ export interface ListQuotesFilter {
 }
 
 export async function listQuotes(filter: ListQuotesFilter = {}) {
+  const { requireUser } = await import('@/lib/auth-guard')
+  await requireUser()
   const admin = createAdminClient()
   let query = admin.from('quotes').select('*').order('created_at', { ascending: false })
   if (filter.sale_id) query = query.eq('sale_id', filter.sale_id)

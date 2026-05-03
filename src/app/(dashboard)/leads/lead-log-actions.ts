@@ -1,8 +1,9 @@
 'use server'
 
-import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { createProfileNameMap } from '@/lib/utils'
+import { requireUser, requireLogOwnerOrAdmin } from '@/lib/auth-guard'
+import { assertNotSensitive } from '@/lib/sensitive-data-policy'
 
 export async function createLeadLog(
   leadId: string,
@@ -13,9 +14,8 @@ export async function createLeadLog(
   participants?: string[],
   outcome?: string,
 ) {
-  const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
-  if (!user) throw new Error('Unauthorized')
+  const u = await requireUser()
+  assertNotSensitive({ content, location: location ?? null, outcome: outcome ?? null }, u.role)
 
   const admin = createAdminClient()
   const { error } = await admin.from('project_logs').insert({
@@ -23,7 +23,7 @@ export async function createLeadLog(
     lead_id: leadId,
     content,
     log_type: logType,
-    author_id: user.id,
+    author_id: u.id,
     contacted_at: contactedAt || new Date().toISOString(),
     location: location || null,
     participants: participants?.length ? participants : null,
@@ -38,7 +38,7 @@ export async function createLeadLog(
   // 자동 업무표 (§5.4.2)
   const { logActivity } = await import('@/lib/activity-log')
   void logActivity({
-    actor_id: user.id,
+    actor_id: u.id,
     action: 'create_log',
     ref_type: 'lead',
     ref_id: leadId,
@@ -47,6 +47,7 @@ export async function createLeadLog(
 }
 
 export async function getLeadLogs(leadId: string) {
+  await requireUser()
   const admin = createAdminClient()
   const { data, error } = await admin
     .from('project_logs')
@@ -69,6 +70,8 @@ export async function getLeadLogs(leadId: string) {
 }
 
 export async function deleteLeadLog(logId: string) {
+  // 작성자 또는 admin/manager만 (P1-3)
+  await requireLogOwnerOrAdmin(logId)
   const admin = createAdminClient()
   await admin.from('project_logs').delete().eq('id', logId)
 }
