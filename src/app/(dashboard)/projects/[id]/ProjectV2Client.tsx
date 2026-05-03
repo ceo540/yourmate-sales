@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useTransition, useEffect } from 'react'
-import { useRouter } from 'next/navigation'
+import { useRouter, useSearchParams, usePathname } from 'next/navigation'
 import Link from 'next/link'
 import ProjectClaudeChat from '@/components/ProjectClaudeChat'
 import MarkdownText from '@/components/MarkdownText'
@@ -272,6 +272,9 @@ function KpiPill({ icon, label, value, tone }: { icon: string; label: string; va
   )
 }
 
+type ProjectTab = 'core' | 'contract' | 'staff'
+const VALID_TABS: ProjectTab[] = ['core', 'contract', 'staff']
+
 export default function ProjectV2Client({
   project, pmName, customer, contactPerson, finance,
   contracts, tasks, logs, rentals, leadIds, profiles, currentUserId,
@@ -280,6 +283,31 @@ export default function ProjectV2Client({
   const [showSettings, setShowSettings] = useState(false)
   const [editingStatus, setEditingStatus] = useState(false)
   const [pendingStatus, startStatusTransition] = useTransition()
+
+  // (Phase 9.5) 탭 구조 + URL query 동기화
+  const _router = useRouter()
+  const _searchParams = useSearchParams()
+  const _pathname = usePathname()
+  const initialTabRaw = _searchParams.get('tab')
+  const initialTab: ProjectTab = (VALID_TABS as string[]).includes(initialTabRaw ?? '')
+    ? (initialTabRaw as ProjectTab) : 'core'
+  const [tab, setTab] = useState<ProjectTab>(initialTab)
+  // tab 변경 → URL query update (history push, 새로고침·뒤로가기 보존)
+  function handleTabChange(next: ProjectTab) {
+    setTab(next)
+    const sp = new URLSearchParams(_searchParams.toString())
+    if (next === 'core') sp.delete('tab')
+    else sp.set('tab', next)
+    const qs = sp.toString()
+    _router.replace(qs ? `${_pathname}?${qs}` : _pathname, { scroll: false })
+  }
+  // 외부에서 ?tab=... 변경 시 state sync (뒤로가기 등)
+  useEffect(() => {
+    const t = _searchParams.get('tab')
+    const valid: ProjectTab = (VALID_TABS as string[]).includes(t ?? '') ? (t as ProjectTab) : 'core'
+    if (valid !== tab) setTab(valid)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [_searchParams])
 
   const handleChangeStatus = (newStatus: string) => {
     if (newStatus === project.status) {
@@ -462,60 +490,103 @@ export default function ProjectV2Client({
         </div>
       )}
 
-      {/* ── 2-column 본문 ── */}
-      <div className="grid grid-cols-1 lg:grid-cols-[1fr_400px] gap-5">
-        {/* 좌: 메인 */}
+      {/* ── 탭 헤더 (Phase 9.5) — sticky, URL 동기화 */}
+      <div className="sticky top-0 z-10 -mx-4 px-4 py-2 bg-gradient-to-b from-gray-50 via-gray-50 to-transparent mb-3">
+        <div className="flex items-center gap-2 border-b border-gray-200 pb-2 flex-wrap">
+          {([
+            { key: 'core',     label: '개요+실행', sub: '핵심' },
+            { key: 'contract', label: '계약·정산', sub: `${contracts.length}건` },
+            { key: 'staff',    label: '인력',      sub: `${(workerEngagements ?? []).length}건` },
+          ] as { key: ProjectTab; label: string; sub: string }[]).map(t => (
+            <button
+              key={t.key}
+              type="button"
+              onClick={() => handleTabChange(t.key)}
+              className={`text-sm px-4 py-2 rounded-full border transition-colors ${
+                tab === t.key
+                  ? 'bg-blue-50 border-blue-300 text-blue-700 font-bold'
+                  : 'bg-white border-gray-200 text-gray-600 hover:bg-gray-50'
+              }`}
+            >
+              {t.label} <span className="text-xs text-gray-500 ml-1">({t.sub})</span>
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* ── 2-column 본문 (우측 460px — Phase 9.5 시안 매칭) ── */}
+      <div className="grid grid-cols-1 lg:grid-cols-[1fr_460px] gap-5">
+        {/* 좌: 탭별 메인 */}
         <div className="space-y-4">
-          {/* 1. 자동 개요 + 협의해야할 내용 (빵빵이) — 항상 최상단 */}
-          <TwoBoxesBlock project={project} />
+          {/* === 개요+실행 탭 === */}
+          {tab === 'core' && (
+            <>
+              {/* 1. 자동 개요 + 협의해야할 내용 (빵빵이) */}
+              <TwoBoxesBlock project={project} />
 
-          {/* 1.5. 운영 분류 (yourmate-company-spec-v2 §3.4·§5~8) — Phase 3 DB 저장 */}
-          <ClassificationCard
-            projectId={project.id}
-            serviceType={project.service_type}
-            projectName={project.name}
-            initial={{
-              main_type: project.main_type,
-              expansion_tags: project.expansion_tags,
-              capability_tags: project.capability_tags,
-              classification_note: project.classification_note,
-              classification_confidence: project.classification_confidence,
-            }}
-          />
+              {/* 1.5. 운영 분류 (Phase 3) */}
+              <ClassificationCard
+                projectId={project.id}
+                serviceType={project.service_type}
+                projectName={project.name}
+                initial={{
+                  main_type: project.main_type,
+                  expansion_tags: project.expansion_tags,
+                  capability_tags: project.capability_tags,
+                  classification_note: project.classification_note,
+                  classification_confidence: project.classification_confidence,
+                }}
+              />
 
-          {/* 2. 메모 (multiple 카드) */}
-          <MemosBlock projectId={project.id} memos={memos} legacyMemo={project.memo} />
-          <NotesBlock project={project} />
+              {/* 2. 메모 + 유의사항 */}
+              <MemosBlock projectId={project.id} memos={memos} legacyMemo={project.memo} />
+              <NotesBlock project={project} />
 
-          {/* 3. 할일 (tasks) */}
-          <TasksSection tasks={tasks} contracts={contracts} projectId={project.id} profiles={profiles} serviceType={project.service_type} currentUserId={currentUserId} />
+              {/* 3. 할일 */}
+              <TasksSection tasks={tasks} contracts={contracts} projectId={project.id} profiles={profiles} serviceType={project.service_type} currentUserId={currentUserId} />
 
-          {/* 외부 인력 (engagement) — yourmate-spec.md §5.5 */}
-          <WorkerEngagementsBlock projectId={project.id} engagements={workerEngagements ?? []} />
+              {/* 5. 일정 */}
+              <ScheduleSection tasks={tasks} projectId={project.id} linkedEvents={project.linked_calendar_events ?? []} />
 
-          {/* 5. 일정 (due_date 임박 순) */}
-          <ScheduleSection tasks={tasks} projectId={project.id} linkedEvents={project.linked_calendar_events ?? []} />
+              {/* 6. 소통 Timeline */}
+              <CommunicationTimeline logs={logs} contracts={contracts} projectId={project.id} />
 
-          {/* 6. 소통 Timeline (종류 변경) */}
-          <CommunicationTimeline logs={logs} contracts={contracts} projectId={project.id} />
+              {/* 9. 자세한 개요 (PM 정독용) */}
+              <OverviewSummaryBox project={project} />
+            </>
+          )}
 
-          {/* 7. 연관 서비스 */}
-          <RelatedServicesV2
-            serviceType={project.service_type}
-            rentals={rentals}
-            contracts={contracts}
-          />
+          {/* === 계약·정산 탭 === */}
+          {tab === 'contract' && (
+            <>
+              {/* 7. 연관 서비스 */}
+              <RelatedServicesV2
+                serviceType={project.service_type}
+                rentals={rentals}
+                contracts={contracts}
+              />
 
-          {/* 8. 계약 관리 (분리) */}
-          <ContractsSection contracts={contracts} projectId={project.id} entities={entities}
-            defaultCustomerId={customer?.id ?? null} defaultCustomerName={customer?.name ?? null}
-            customersAll={customersAll} />
+              {/* 8. 계약 관리 (견적PDF/직접입력/결제일정 포함) */}
+              <ContractsSection contracts={contracts} projectId={project.id} entities={entities}
+                defaultCustomerId={customer?.id ?? null} defaultCustomerName={customer?.name ?? null}
+                customersAll={customersAll} />
+            </>
+          )}
 
-          {/* 9. 자세한 개요 (PM 정독용 — 접힘 default) */}
-          <OverviewSummaryBox project={project} />
+          {/* === 인력 탭 === */}
+          {tab === 'staff' && (
+            <>
+              <WorkerEngagementsBlock projectId={project.id} engagements={workerEngagements ?? []} />
+              {/* 인력 정산/이력은 권한 분리 안내 카드만 (단가 등 민감 필드는 WorkerEngagementsBlock 내부 정책 그대로) */}
+              <div className="bg-white border border-gray-100 rounded-xl p-4">
+                <p className="text-sm font-semibold text-gray-700 mb-1">🧾 인력 정산·이력</p>
+                <p className="text-xs text-gray-500">참여 시간·역할·기간 기록은 위 [외부 인력 참여] 카드에. 단가·정산 필드는 admin/manager에만 노출(권한 정책).</p>
+              </div>
+            </>
+          )}
         </div>
 
-        {/* 우: 사이드 */}
+        {/* 우: 사이드 (탭 무관, sticky) */}
         <aside className="space-y-3 lg:sticky lg:top-4 self-start">
           {/* 🤖 빵빵이 — V1.3 */}
           <BbangiCard project={project} contracts={contracts} tasks={tasks} logs={logs} currentUserId={currentUserId} leadIds={leadIds} />
@@ -1407,6 +1478,8 @@ function ShortSummaryBox({ project }: { project: Project }) {
   const [input, setInput] = useState(project.short_summary ?? '')
   const [generating, setGenerating] = useState(false)
   const [genError, setGenError] = useState<string | null>(null)
+  // (Phase 9.5) 정리 프리셋 — 1차 UI state. 후속 라운드에 LLM 프롬프트와 연결.
+  const [preset, setPreset] = useState<'short' | 'standard' | 'deep'>('standard')
 
   function save() {
     startTransition(async () => {
@@ -1443,6 +1516,29 @@ function ShortSummaryBox({ project }: { project: Project }) {
             </button>
           )}
         </div>
+      </div>
+      {/* 정리 프리셋 — 1차 UI (Phase 9.5). 다음 자동 생성 시 LLM 프롬프트에 강도 반영 예정 */}
+      <div className="flex items-center gap-1 mb-2 flex-wrap">
+        <span className="text-[9px] text-yellow-700/60 mr-1">정리 강도:</span>
+        {([
+          { key: 'short',    label: '짧게',  hint: '3줄 핵심' },
+          { key: 'standard', label: '표준',  hint: '현황·다음·리스크' },
+          { key: 'deep',     label: '깊게',  hint: '근거·담당·기한' },
+        ] as { key: 'short' | 'standard' | 'deep'; label: string; hint: string }[]).map(p => (
+          <button
+            key={p.key}
+            type="button"
+            onClick={() => setPreset(p.key)}
+            title={p.hint}
+            className={`text-[10px] px-2 py-0.5 rounded-full border transition-colors ${
+              preset === p.key
+                ? 'bg-yellow-100 border-yellow-300 text-yellow-900 font-bold'
+                : 'bg-white border-yellow-100 text-yellow-700/70 hover:bg-yellow-50'
+            }`}
+          >
+            {p.label}
+          </button>
+        ))}
       </div>
       {editing ? (
         <div className="space-y-1.5">
@@ -1498,6 +1594,8 @@ function PendingDiscussionBox({ project }: { project: Project }) {
   const [input, setInput] = useState('')
   const [generating, setGenerating] = useState(false)
   const [genError, setGenError] = useState<string | null>(null)
+  // (Phase 9.5) 정리 프리셋 — 1차 UI state
+  const [preset, setPreset] = useState<'short' | 'action' | 'detailed'>('action')
 
   const currentValue = project[TAB_META[tab].col] ?? ''
   const hasAny = !!(project.pending_discussion_client || project.pending_discussion_internal || project.pending_discussion_vendor)
@@ -1552,7 +1650,7 @@ function PendingDiscussionBox({ project }: { project: Project }) {
       {open && (
         <div className="border-t border-gray-50">
           {/* 통합 분석 버튼 (3분류 동시 분석) */}
-          <div className="px-4 py-2.5 border-b border-gray-50 flex items-center justify-between gap-2 bg-yellow-50/40">
+          <div className="px-4 py-2.5 border-b border-gray-50 flex items-center justify-between gap-2 bg-yellow-50/40 flex-wrap">
             <p className="text-[11px] text-gray-500">한 번에 3분류 모두 분석</p>
             <button
               onClick={generateAll}
@@ -1562,6 +1660,30 @@ function PendingDiscussionBox({ project }: { project: Project }) {
             >
               {generating ? '🤖 분석 중...' : hasAny ? '🤖 빵빵이로 다시 분석' : '🤖 빵빵이로 분석'}
             </button>
+          </div>
+
+          {/* 정리 프리셋 — 1차 UI (Phase 9.5). 다음 자동 생성 시 LLM 프롬프트와 연결 예정 */}
+          <div className="px-4 py-2 border-b border-gray-50 flex items-center gap-1 flex-wrap bg-white">
+            <span className="text-[10px] text-gray-500 mr-1">정리 강도:</span>
+            {([
+              { key: 'short',    label: '짧게 요약' },
+              { key: 'action',   label: '액션 중심' },
+              { key: 'detailed', label: '근거 포함 상세' },
+            ] as { key: 'short' | 'action' | 'detailed'; label: string }[]).map(p => (
+              <button
+                key={p.key}
+                type="button"
+                onClick={() => setPreset(p.key)}
+                className={`text-[10px] px-2 py-0.5 rounded-full border transition-colors ${
+                  preset === p.key
+                    ? 'bg-blue-50 border-blue-300 text-blue-700 font-bold'
+                    : 'bg-white border-gray-200 text-gray-600 hover:bg-gray-50'
+                }`}
+              >
+                {p.label}
+              </button>
+            ))}
+            <span className="text-[9px] text-gray-400 ml-auto">정리 품질 확인용 프리셋</span>
           </div>
 
           {/* 탭 헤더 */}
