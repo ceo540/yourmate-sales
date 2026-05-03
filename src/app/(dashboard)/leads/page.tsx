@@ -4,6 +4,7 @@ import { redirect } from 'next/navigation'
 import { createProfileMap } from '@/lib/utils'
 import { isAdminOrManager } from '@/lib/permissions'
 import LeadsClient from './LeadsClient'
+import StageHint from '@/components/StageHint'
 
 
 export default async function LeadsPage({ searchParams }: { searchParams: any }) {
@@ -73,11 +74,14 @@ export default async function LeadsPage({ searchParams }: { searchParams: any })
 
   return (
     <div className="max-w-7xl mx-auto">
-      <div className="flex items-center justify-between mb-6">
-        <div>
-          <h1 className="text-2xl font-bold text-gray-900">리드 관리</h1>
-          <p className="text-gray-500 text-sm mt-1">잠재 고객 문의 및 영업 파이프라인</p>
+      <div className="mb-4">
+        <div className="flex items-center justify-between mb-3">
+          <div>
+            <h1 className="text-2xl font-bold text-gray-900">리드 관리</h1>
+            <p className="text-gray-500 text-sm mt-1">잠재 고객 문의 및 영업 파이프라인</p>
+          </div>
         </div>
+        <StageHint stage="lead" />
       </div>
       <LeadsClient
         leads={leads}

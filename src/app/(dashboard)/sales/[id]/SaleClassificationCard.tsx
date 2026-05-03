@@ -69,18 +69,26 @@ export default function SaleClassificationCard({
 
   if (!editing) {
     return (
-      <section className="bg-white border-2 border-amber-100 rounded-xl overflow-hidden mb-3">
-        <header className="px-4 py-2.5 border-b border-amber-100 bg-amber-50/30 flex items-center justify-between">
-          <p className="text-sm font-bold text-amber-900">🧭 운영 분류 <span className="text-[10px] text-amber-700 font-normal">(이 계약의 운영 구조)</span></p>
+      <section className="bg-white border-2 border-violet-100 rounded-xl overflow-hidden mb-3">
+        <header className="px-4 py-2.5 border-b border-violet-100 bg-violet-50/30 flex items-center justify-between">
+          <p className="text-sm font-bold text-violet-900">🧭 운영 분류 <span className="text-[10px] text-violet-700 font-normal">(이 계약의 운영 구조)</span></p>
           <div className="flex items-center gap-2">
             {serviceType && (
               <span className="text-[10px] text-gray-400">서비스: <span className="text-gray-600">{serviceType}</span></span>
             )}
-            <button onClick={enterEdit} className="text-xs px-2.5 py-1 rounded border border-amber-300 bg-white hover:bg-amber-50 text-amber-800">
+            <button onClick={enterEdit} className="text-xs px-2.5 py-1 rounded border border-violet-300 bg-white hover:bg-violet-50 text-violet-800">
               {isEmpty ? '+ 분류 입력' : '수정'}
             </button>
           </div>
         </header>
+        {/* 단계 stepper — 현재 = sale 1차 정리 */}
+        <div className="px-4 py-1.5 bg-white border-b border-violet-50 flex items-center justify-center gap-1 text-[10px]">
+          <span className="text-gray-400">📥 lead 추정</span>
+          <span className="text-gray-300">→</span>
+          <span className="px-1.5 py-0.5 rounded-full bg-violet-100 text-violet-900 font-bold border border-violet-200">📜 sale 정리</span>
+          <span className="text-gray-300">→</span>
+          <span className="text-gray-400">◈ project 확정</span>
+        </div>
         {isEmpty ? (
           <div className="px-4 py-4 text-sm">
             <p className="text-gray-600">아직 운영 분류 미설정.</p>
@@ -115,10 +123,17 @@ export default function SaleClassificationCard({
   }
 
   return (
-    <section className="bg-white border-2 border-amber-100 rounded-xl overflow-hidden mb-3">
-      <header className="px-4 py-2.5 border-b border-amber-100 bg-amber-50/30 flex items-center justify-between">
-        <p className="text-sm font-bold text-amber-900">🧭 운영 분류 편집</p>
+    <section className="bg-white border-2 border-violet-100 rounded-xl overflow-hidden mb-3">
+      <header className="px-4 py-2.5 border-b border-violet-100 bg-violet-50/30 flex items-center justify-between">
+        <p className="text-sm font-bold text-violet-900">🧭 운영 분류 편집</p>
       </header>
+      <div className="px-4 py-1.5 bg-white border-b border-violet-50 flex items-center justify-center gap-1 text-[10px]">
+        <span className="text-gray-400">📥 lead 추정</span>
+        <span className="text-gray-300">→</span>
+        <span className="px-1.5 py-0.5 rounded-full bg-violet-100 text-violet-900 font-bold border border-violet-200">📜 sale 정리</span>
+        <span className="text-gray-300">→</span>
+        <span className="text-gray-400">◈ project 확정</span>
+      </div>
       <div className="px-4 py-3 space-y-3">
         <ClassificationFieldsInline
           mode="final"

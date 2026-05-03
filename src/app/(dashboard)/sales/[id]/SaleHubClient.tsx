@@ -11,6 +11,7 @@ import NotesTab from './components/NotesTab'
 import ContractTab from './components/ContractTab'
 import OverviewTab from './components/OverviewTab'
 import SaleClassificationCard from './SaleClassificationCard'
+import StageHint from '@/components/StageHint'
 import CostSheetEditor from '../CostSheetEditor'
 import CostPdfImportModal from './CostPdfImportModal'
 import ProjectClaudeChat from '@/components/ProjectClaudeChat'
@@ -168,6 +169,7 @@ export default function SaleHubClient({ sale, tasks: initialTasks, logs, profile
 
   return (
     <div>
+      <StageHint stage="sale" className="mb-3" />
       {/* 탭 바 */}
       <div className="flex gap-0 border-b border-gray-200 mb-4 overflow-x-auto">
         {TABS.map(t => (

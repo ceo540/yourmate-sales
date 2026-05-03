@@ -164,6 +164,15 @@ export default function ClassificationCard({
           </div>
         </header>
 
+        {/* 단계 stepper — 현재 = project 최종 확정 */}
+        <div className="px-4 py-1.5 bg-white border-b border-amber-50 flex items-center justify-center gap-1 text-[10px]">
+          <span className="text-gray-400">📥 lead 추정</span>
+          <span className="text-gray-300">→</span>
+          <span className="text-gray-400">📜 sale 정리</span>
+          <span className="text-gray-300">→</span>
+          <span className="px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-900 font-bold border border-amber-200">◈ project 최종 확정</span>
+        </div>
+
         {hasLegacyDemo && (
           <div className="px-4 py-2 bg-amber-50 border-b border-amber-100 flex items-center gap-2 text-xs">
             <span className="text-amber-700">이 브라우저에 옛 데모 값이 있어요.</span>
@@ -236,6 +245,15 @@ export default function ClassificationCard({
           ✨ AI 추천
         </button>
       </header>
+
+      {/* 단계 stepper */}
+      <div className="px-4 py-1.5 bg-white border-b border-amber-50 flex items-center justify-center gap-1 text-[10px]">
+        <span className="text-gray-400">📥 lead 추정</span>
+        <span className="text-gray-300">→</span>
+        <span className="text-gray-400">📜 sale 정리</span>
+        <span className="text-gray-300">→</span>
+        <span className="px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-900 font-bold border border-amber-200">◈ project 최종 확정</span>
+      </div>
 
       <div className="px-4 py-3 space-y-4">
         {/* 메인유형 */}

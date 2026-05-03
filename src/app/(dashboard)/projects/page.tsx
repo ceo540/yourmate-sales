@@ -4,6 +4,7 @@ import { redirect } from 'next/navigation'
 import { createProfileNameMap } from '@/lib/utils'
 import { isAdminOrManager } from '@/lib/permissions'
 import ProjectsClient from './ProjectsClient'
+import StageHint from '@/components/StageHint'
 
 export default async function ProjectsPage() {
   const supabase = await createClient()
@@ -55,11 +56,16 @@ export default async function ProjectsPage() {
 
   return (
     <div className="max-w-[1400px]">
-      <div className="mb-6">
-        <h1 className="text-2xl font-bold text-gray-900">프로젝트</h1>
-        <p className="text-gray-500 text-sm mt-1">
-          총 {projects.length}건 · 진행중 {projects.filter(p => p.status === '진행중').length}건
-        </p>
+      <div className="mb-4">
+        <div className="flex items-end justify-between gap-4 mb-3">
+          <div>
+            <h1 className="text-2xl font-bold text-gray-900">프로젝트</h1>
+            <p className="text-gray-500 text-sm mt-1">
+              총 {projects.length}건 · 진행중 {projects.filter(p => p.status === '진행중').length}건
+            </p>
+          </div>
+        </div>
+        <StageHint stage="project" />
       </div>
       <ProjectsClient
         projects={projects}
