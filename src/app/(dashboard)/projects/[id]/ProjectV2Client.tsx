@@ -11,6 +11,7 @@ import dynamic from 'next/dynamic'
 
 const BlockNoteEditor = dynamic(() => import('@/components/BlockNoteEditor'), { ssr: false })
 import ProjectSettingsModal from './ProjectSettingsModal'
+import ClassificationCard from './ClassificationCard'
 import CostModal from '../../sales/CostModal'
 import CostPdfImportModal from '../../sales/[id]/CostPdfImportModal'
 import { createClient as createSupabaseClient } from '@/lib/supabase/client'
@@ -417,6 +418,13 @@ export default function ProjectV2Client({
         <div className="space-y-4">
           {/* 1. 자동 개요 + 협의해야할 내용 (빵빵이) — 항상 최상단 */}
           <TwoBoxesBlock project={project} />
+
+          {/* 1.5. 운영 분류 (yourmate-company-spec-v2 §3.4·§5~8) — 데모 단계, localStorage */}
+          <ClassificationCard
+            projectId={project.id}
+            serviceType={project.service_type}
+            projectName={project.name}
+          />
 
           {/* 2. 메모 (multiple 카드) */}
           <MemosBlock projectId={project.id} memos={memos} legacyMemo={project.memo} />
