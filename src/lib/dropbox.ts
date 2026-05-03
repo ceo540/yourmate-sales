@@ -12,7 +12,14 @@ export async function getDropboxToken(): Promise<string | null> {
   const appKey = process.env.DROPBOX_APP_KEY
   const appSecret = process.env.DROPBOX_APP_SECRET
 
-  if (!refreshToken || !appKey || !appSecret) return null
+  if (!refreshToken || !appKey || !appSecret) {
+    console.error('[dropbox] env 누락 — DROPBOX_REFRESH_TOKEN/APP_KEY/APP_SECRET 중 일부 없음', {
+      has_refresh: !!refreshToken,
+      has_key: !!appKey,
+      has_secret: !!appSecret,
+    })
+    return null
+  }
 
   const res = await fetch('https://api.dropboxapi.com/oauth2/token', {
     method: 'POST',
@@ -25,7 +32,11 @@ export async function getDropboxToken(): Promise<string | null> {
     }),
   })
   const data = await res.json()
-  return data.access_token ?? null
+  if (!data.access_token) {
+    console.error('[dropbox] 토큰 발급 실패', JSON.stringify(data).slice(0, 300))
+    return null
+  }
+  return data.access_token
 }
 
 // 부모 webUrl 안에 서브폴더 자동 생성 (다단계 가능). 이미 있으면 conflict OK 처리.
@@ -142,10 +153,20 @@ export async function createSaleFolder(params: {
   inflow_date: string | null
 }): Promise<string | null> {
   const token = await getDropboxToken()
-  if (!token) return null
+  if (!token) {
+    console.error('[dropbox.createSaleFolder] 토큰 없음 — 폴더 생성 불가. env 확인 필요.', { name: params.name, service_type: params.service_type })
+    return null
+  }
 
   const { service_type, name, inflow_date } = params
-  if (!service_type || !SERVICE_PATHS[service_type]) return null
+  if (!service_type) {
+    console.error('[dropbox.createSaleFolder] service_type 비어 있음 — 폴더 생성 불가.', { name })
+    return null
+  }
+  if (!SERVICE_PATHS[service_type]) {
+    console.error(`[dropbox.createSaleFolder] SERVICE_PATHS 미매칭 service_type="${service_type}" — 폴더 경로 알 수 없음. services.ts SERVICE_PATHS 확인 필요.`, { name, allowed: Object.keys(SERVICE_PATHS) })
+    return null
+  }
 
   const parentPath = SERVICE_PATHS[service_type]
 

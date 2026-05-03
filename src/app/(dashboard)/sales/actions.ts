@@ -55,10 +55,17 @@ export async function createSale(formData: FormData) {
   // 수동 입력이 없을 때만 자동 생성
   let finalDropboxUrl: string | null = manualDropboxUrl
   if (sale && !manualDropboxUrl) {
-    const dropboxUrl = await createSaleFolder({ service_type, name, inflow_date })
+    let dropboxUrl: string | null = null
+    try {
+      dropboxUrl = await createSaleFolder({ service_type, name, inflow_date })
+    } catch (e) {
+      console.error('[createSale] createSaleFolder throw', e instanceof Error ? e.message : e)
+    }
     if (dropboxUrl) {
       await supabase.from('sales').update({ dropbox_url: dropboxUrl }).eq('id', sale.id)
       finalDropboxUrl = dropboxUrl
+    } else {
+      console.error('[createSale] 드롭박스 폴더 생성 실패 — sale 만 만들어졌고 폴더 없음', { saleId: sale.id, service_type, name })
     }
   }
 

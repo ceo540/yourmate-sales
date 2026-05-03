@@ -114,17 +114,22 @@ export async function createLead(formData: FormData) {
   // service_type 매칭되면 Dropbox 폴더 + brief.md 자동 생성
   const service_type = formData.get('service_type') as string | null
   if (service_type && insertedLead?.id) {
-    // 1. 드롭박스 폴더 자동 생성 (실패해도 계속 — 사용자가 나중에 수동 생성 가능)
+    // 1. 드롭박스 폴더 자동 생성 — 실패하면 운영 로그에 명시 (사용자가 나중에 수동 [폴더 생성]으로 재시도 가능)
     try {
-      await createLeadFolder(insertedLead.id)
-    } catch {
-      // 무시
+      const folderResult = await createLeadFolder(insertedLead.id)
+      if (folderResult.error) {
+        console.error('[createLead] 드롭박스 폴더 자동 생성 실패', { leadId: insertedLead.id, error: folderResult.error })
+      } else if (!folderResult.url) {
+        console.error('[createLead] 드롭박스 폴더 생성 결과 url 비어있음 (silent fail)', { leadId: insertedLead.id })
+      }
+    } catch (e) {
+      console.error('[createLead] createLeadFolder throw', e instanceof Error ? e.message : e)
     }
     // 2. brief.md (폴더가 만들어졌을 때만 내부 함수가 알아서 생성)
     try {
       await createOrUpdateLeadBrief(insertedLead.id)
-    } catch {
-      // 무시
+    } catch (e) {
+      console.error('[createLead] brief 자동 생성 실패', e instanceof Error ? e.message : e)
     }
   }
 
@@ -286,13 +291,22 @@ export async function convertLeadToSale(leadId: string) {
     const folderDisplayName = `${projectNumber} ${displayName || '(이름없음)'}`
     if (existingUrl) {
       const renamed = await renameDropboxFolderFull(existingUrl, folderDisplayName)
+      if ('error' in renamed) {
+        console.error('[convertLeadToSale] 드롭박스 폴더 rename 실패 — 기존 URL 유지', { existingUrl, leadId, error: renamed.error })
+      }
       finalDropboxUrl = 'newUrl' in renamed ? renamed.newUrl : existingUrl
     } else {
       const newUrl = await createSaleFolder({
         service_type: serviceType,
         name: folderDisplayName,
         inflow_date: lead.inflow_date,
-      }).catch(() => null)
+      }).catch(e => {
+        console.error('[convertLeadToSale] createSaleFolder throw', e instanceof Error ? e.message : e)
+        return null
+      })
+      if (!newUrl) {
+        console.error('[convertLeadToSale] 드롭박스 폴더 생성 실패 — sale 만 만들어졌고 폴더 없음', { saleId: sale!.id, serviceType, displayName })
+      }
       finalDropboxUrl = newUrl
     }
     if (finalDropboxUrl) {
@@ -406,13 +420,20 @@ export async function addSaleToLead(leadId: string, data: {
 
   // Dropbox 폴더 자동 생성
   if (sale && serviceType) {
-    const dropboxUrl = await createSaleFolder({
-      service_type: serviceType,
-      name: lead.client_org || data.name,
-      inflow_date: lead.inflow_date,
-    })
+    let dropboxUrl: string | null = null
+    try {
+      dropboxUrl = await createSaleFolder({
+        service_type: serviceType,
+        name: lead.client_org || data.name,
+        inflow_date: lead.inflow_date,
+      })
+    } catch (e) {
+      console.error('[addSaleToLead] createSaleFolder throw', e instanceof Error ? e.message : e)
+    }
     if (dropboxUrl) {
       await supabase.from('sales').update({ dropbox_url: dropboxUrl }).eq('id', sale.id)
+    } else {
+      console.error('[addSaleToLead] 드롭박스 폴더 생성 실패 — sale 만 생성됨', { saleId: sale.id, serviceType, leadId, name: data.name })
     }
   }
 
