@@ -990,13 +990,13 @@ export default function LeadsClient({ leads, profiles, persons, customers, curre
   return (
     <div>
 
-      {/* ── 계약 전환 모달 ── */}
+      {/* ── 프로젝트 전환 모달 ── */}
       {showConvertModal && selectedLead && (
         <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
           <div className="bg-white rounded-2xl p-7 w-full max-w-[460px] shadow-2xl">
             {!convertDone ? (
               <>
-                <h2 className="text-lg font-black text-gray-900 mb-1">계약 전환</h2>
+                <h2 className="text-lg font-black text-gray-900 mb-1">프로젝트 전환</h2>
                 <p className="text-sm text-gray-400 mb-5">리드를 프로젝트로 전환합니다. 고유번호가 자동 부여됩니다.</p>
                 {/* 고유번호 프리뷰 */}
                 <div className="rounded-xl p-4 mb-5 border" style={{ background: '#FFFDE7', borderColor: '#FFCE00' }}>
@@ -1034,7 +1034,7 @@ export default function LeadsClient({ leads, profiles, persons, customers, curre
             ) : (
               <div className="text-center py-2">
                 <div className="text-5xl mb-4">✅</div>
-                <h2 className="text-xl font-black text-gray-900 mb-2">계약 전환 완료!</h2>
+                <h2 className="text-xl font-black text-gray-900 mb-2">프로젝트 전환 완료!</h2>
                 <p className="text-3xl font-black text-gray-900 mb-3">{convertResult?.project_number}</p>
                 <p className="text-sm text-gray-500 mb-6">
                   드롭박스 폴더명이 고유번호로 업데이트되었습니다.<br />
@@ -1301,7 +1301,7 @@ export default function LeadsClient({ leads, profiles, persons, customers, curre
                         </div>
 
                         {selectedLead.converted_sale_id && (
-                          <span className="text-xs px-2 py-0.5 bg-green-100 text-green-700 rounded-full font-medium">매출건 전환완료</span>
+                          <span className="text-xs px-2 py-0.5 bg-green-100 text-green-700 rounded-full font-medium">프로젝트 전환완료</span>
                         )}
 
                         {/* 팝오버 닫기 오버레이 */}
@@ -1342,7 +1342,7 @@ export default function LeadsClient({ leads, profiles, persons, customers, curre
                       </p>
                     </div>
 
-                    {/* 우상단: 드롭박스 + 계약전환 */}
+                    {/* 우상단: 드롭박스 + 프로젝트 전환 */}
                     <div className="flex flex-col gap-2 flex-shrink-0 items-end">
                       {selectedLead.dropbox_url ? (
                         <div className="flex items-center gap-1">
@@ -1375,7 +1375,7 @@ export default function LeadsClient({ leads, profiles, persons, customers, curre
                         disabled={convertingId === selectedLead.id}
                         className="text-sm font-semibold px-4 py-1.5 rounded-xl transition-colors disabled:opacity-50"
                         style={{ backgroundColor: '#FFCE00', color: '#121212' }}>
-                        {convertingId === selectedLead.id ? '전환 중...' : '계약 전환 →'}
+                        {convertingId === selectedLead.id ? '전환 중...' : '프로젝트 전환 →'}
                       </button>
                     </div>
                   </div>
@@ -1461,6 +1461,28 @@ export default function LeadsClient({ leads, profiles, persons, customers, curre
                       )}
                     </div>
                   )}
+                </div>
+
+                {/* ── 운영 분류 추정 (Phase 4) ── */}
+                <div className="bg-amber-50/40 border border-amber-100 rounded-2xl px-4 py-2.5">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="text-xs font-semibold text-amber-800">🧭 운영 분류 추정</span>
+                    {selectedLead.guessed_main_type ? (
+                      <span className="text-[11px] px-2 py-0.5 rounded-full bg-white border border-amber-200 text-amber-800 font-medium">
+                        {selectedLead.guessed_main_type}
+                      </span>
+                    ) : (
+                      <span className="text-[11px] text-gray-400">메인유형 미설정</span>
+                    )}
+                    {selectedLead.guessed_expansion_tags && selectedLead.guessed_expansion_tags.length > 0 && (
+                      <div className="flex flex-wrap gap-1 ml-1">
+                        {selectedLead.guessed_expansion_tags.map(t => (
+                          <span key={t} className="text-[11px] px-1.5 py-0.5 rounded-full bg-white border border-gray-200 text-gray-700">{t}</span>
+                        ))}
+                      </div>
+                    )}
+                    <span className="text-[10px] text-gray-400 ml-auto">편집은 [편집] 버튼에서</span>
+                  </div>
                 </div>
 
                 {/* ── 기본 정보 2열 카드 (default 접힘) ── */}
