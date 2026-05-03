@@ -4,6 +4,7 @@ import { useState, useTransition, useEffect } from 'react'
 import { updateTask } from '../tasks/actions'
 import TiptapEditor from './TiptapEditor'
 import { TASK_STATUS_STYLE as STATUS_STYLE, PRIORITY_BADGE as PRIORITY_STYLE } from '@/lib/constants'
+import { askCompletionNote } from '@/lib/task-completion-prompt'
 
 interface ChecklistItem { id: string; text: string; done: boolean }
 interface Profile { id: string; name: string }
@@ -23,6 +24,7 @@ interface Task {
 interface Props {
   task: Task
   profiles: Profile[]
+  currentUserId: string
   onClose: () => void
   onSaved?: () => void
 }
@@ -30,7 +32,7 @@ interface Props {
 const STATUSES = ['할 일', '진행중', '검토중', '완료', '보류']
 const PRIORITIES = ['낮음', '보통', '높음', '긴급']
 
-export default function TaskDetailPanel({ task, profiles, onClose, onSaved }: Props) {
+export default function TaskDetailPanel({ task, profiles, currentUserId, onClose, onSaved }: Props) {
   const [title, setTitle] = useState(task.title)
   const [status, setStatus] = useState(task.status)
   const [priority, setPriority] = useState(task.priority ?? '보통')
@@ -64,6 +66,14 @@ export default function TaskDetailPanel({ task, profiles, onClose, onSaved }: Pr
   }
 
   function handleSave() {
+    // 완료 코멘트 (Phase 9.2 일관화): '완료'로 *처음* 변경되는 순간만 prompt
+    let completedNote: string | null = null
+    const becameCompleted = status === '완료' && task.status !== '완료'
+    if (becameCompleted) {
+      const r = askCompletionNote(title)
+      if (r.cancelled) return
+      completedNote = r.note
+    }
     const fd = new FormData()
     fd.set('id', task.id)
     fd.set('title', title)
@@ -74,6 +84,10 @@ export default function TaskDetailPanel({ task, profiles, onClose, onSaved }: Pr
     fd.set('description', description)
     fd.set('checklist', JSON.stringify(checklist))
     if (task.project_id) fd.set('project_id', task.project_id)
+    if (becameCompleted) {
+      fd.set('completed_note', completedNote ?? '')
+      fd.set('completed_by', currentUserId)
+    }
 
     startTransition(async () => {
       await updateTask(fd)

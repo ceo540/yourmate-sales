@@ -46,6 +46,20 @@ export default async function DashboardPage() {
   const today = now.toISOString().slice(0, 10)
   const monthStart = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-01`
   const sevenDays = new Date(Date.now() + 7 * 86400000).toISOString().slice(0, 10)
+  const threeDaysAgoStr = new Date(Date.now() - 3 * 86400000).toISOString().slice(0, 10)
+
+  // (Flow UX) 이번 주 / 다음 주 범위 — 월~일 기준
+  const thisMonday = new Date(now)
+  const dayOfWeek = thisMonday.getDay()  // 0=일, 1=월, ..., 6=토
+  const daysToMonday = dayOfWeek === 0 ? -6 : 1 - dayOfWeek
+  thisMonday.setDate(thisMonday.getDate() + daysToMonday); thisMonday.setHours(0, 0, 0, 0)
+  const thisSunday = new Date(thisMonday); thisSunday.setDate(thisSunday.getDate() + 6)
+  const nextMonday = new Date(thisMonday); nextMonday.setDate(nextMonday.getDate() + 7)
+  const nextSunday = new Date(nextMonday); nextSunday.setDate(nextSunday.getDate() + 6)
+  const thisWeekStart = thisMonday.toISOString().slice(0, 10)
+  const thisWeekEnd   = thisSunday.toISOString().slice(0, 10)
+  const nextWeekStart = nextMonday.toISOString().slice(0, 10)
+  const nextWeekEnd   = nextSunday.toISOString().slice(0, 10)
 
   let taskQ = admin.from('tasks')
     .select('id, title, status, priority, due_date, project_id, assignee_id')
@@ -91,6 +105,40 @@ export default async function DashboardPage() {
     .gte('inflow_date', monthStart)
     .not('contract_stage', 'eq', '취소')
 
+  // (Flow UX) task 미완료 경고 카운트 — role 정책 적용
+  let todayDueQ    = admin.from('tasks').select('id', { count: 'exact', head: true }).not('status', 'in', '(완료,보류)').eq('due_date', today)
+  let overdueQ     = admin.from('tasks').select('id', { count: 'exact', head: true }).not('status', 'in', '(완료,보류)').lt('due_date', today)
+  let myActiveQ    = admin.from('tasks').select('id', { count: 'exact', head: true }).not('status', 'in', '(완료,보류)').eq('assignee_id', user.id)
+  let noAssigneeQ  = admin.from('tasks').select('id', { count: 'exact', head: true }).not('status', 'in', '(완료,보류)').is('assignee_id', null)
+  let noDueQ       = admin.from('tasks').select('id', { count: 'exact', head: true }).not('status', 'in', '(완료,보류)').is('due_date', null)
+  let overdue3Q    = admin.from('tasks').select('id', { count: 'exact', head: true }).not('status', 'in', '(완료,보류)').lt('due_date', threeDaysAgoStr)
+  if (!isAdmin) {
+    // member: 본인 담당만. noAssignee 는 의미 없음 (본인 담당만 보는데 NULL이면 본인 아님 — admin만 의미)
+    todayDueQ = todayDueQ.eq('assignee_id', user.id)
+    overdueQ  = overdueQ.eq('assignee_id', user.id)
+    noDueQ    = noDueQ.eq('assignee_id', user.id)
+    overdue3Q = overdue3Q.eq('assignee_id', user.id)
+  }
+
+  // (Flow UX) 주간 리마인드 — 이번 주/다음 주 미완료
+  let thisWeekQ = admin.from('tasks')
+    .select('id, title, due_date, priority, status, project_id, assignee_id')
+    .not('status', 'in', '(완료,보류)')
+    .gte('due_date', thisWeekStart).lte('due_date', thisWeekEnd)
+    .order('due_date', { ascending: true })
+    .limit(8)
+  let nextWeekQ = admin.from('tasks')
+    .select('id, title, due_date, priority, status, project_id, assignee_id')
+    .not('status', 'in', '(완료,보류)')
+    .gte('due_date', nextWeekStart).lte('due_date', nextWeekEnd)
+    .order('priority', { ascending: true })
+    .order('due_date', { ascending: true })
+    .limit(3)
+  if (!isAdmin) {
+    thisWeekQ = thisWeekQ.eq('assignee_id', user.id)
+    nextWeekQ = nextWeekQ.eq('assignee_id', user.id)
+  }
+
   // ──────────── 운영 관제판 카운트 (Phase 9) ────────────
   // 모두 head:true count — 가벼운 카운트 쿼리만, 데이터 안 가져옴
   const cnt = (q: { count?: number | null }) => q.count ?? 0
@@ -117,6 +165,15 @@ export default async function DashboardPage() {
     projectDropboxMiss,
     leadDropboxMiss,
     paymentScheduleSaleIds,
+    // (Flow UX) task 카운트
+    todayDueRes,
+    overdueRes,
+    myActiveRes,
+    noAssigneeRes,
+    noDueRes,
+    overdue3Res,
+    thisWeekTasksRes,
+    nextWeekTasksRes,
   ] = await Promise.all([
     taskQ,
     remindQ,
@@ -142,7 +199,25 @@ export default async function DashboardPage() {
     admin.from('projects').select('id', { count: 'exact', head: true }).eq('status', '진행중').is('dropbox_url', null),
     admin.from('leads').select('id', { count: 'exact', head: true }).not('status', 'in', '(완료,취소)').is('dropbox_url', null).not('service_type', 'is', null),
     admin.from('payment_schedules').select('sale_id'),  // 결제 일정 등록된 sale_id distinct 계산용
+    // (Flow UX) task 카운트 + 주간 리스트
+    todayDueQ,
+    overdueQ,
+    myActiveQ,
+    noAssigneeQ,
+    noDueQ,
+    overdue3Q,
+    thisWeekQ,
+    nextWeekQ,
   ])
+
+  const todayDueCount   = cnt(todayDueRes)
+  const overdueCount    = cnt(overdueRes)
+  const myActiveCount   = cnt(myActiveRes)
+  const noAssigneeCount = cnt(noAssigneeRes)
+  const noDueCount      = cnt(noDueRes)
+  const overdue3Count   = cnt(overdue3Res)
+  const thisWeekTasks = thisWeekTasksRes.data ?? []
+  const nextWeekTasks = nextWeekTasksRes.data ?? []
 
   // 결제 일정 미설정 sale = active sale 수 - distinct sale_id 수
   const scheduledSaleIdSet = new Set((paymentScheduleSaleIds.data ?? []).map((p: any) => p.sale_id).filter(Boolean))
@@ -232,6 +307,48 @@ export default async function DashboardPage() {
         </h1>
         <p className="text-gray-400 text-sm mt-1">{dateLabel}</p>
       </div>
+
+      {/* (Flow UX) ⚡ 오늘 해야 할 일 — 4 카운트 + 최근 5개 */}
+      <Link href="/tasks" className="block bg-white border-2 border-yellow-200 rounded-xl p-4 mb-4 hover:border-yellow-400 transition-colors" style={{ boxShadow: '0 2px 8px rgba(252,196,0,0.08)' }}>
+        <div className="flex items-center gap-2 mb-3">
+          <span className="text-base">⚡</span>
+          <span className="text-sm font-bold text-gray-900">오늘 해야 할 일</span>
+          <span className="ml-auto text-[10px] text-gray-400">전체 보기 →</span>
+        </div>
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-3">
+          <div className="bg-red-50/40 border border-red-100 rounded-lg p-2.5">
+            <p className="text-[10px] text-red-700 mb-0.5">⚠ 지연</p>
+            <p className="text-2xl font-black text-red-700">{overdueCount}<span className="text-xs font-normal text-red-500 ml-0.5">건</span></p>
+          </div>
+          <div className="bg-orange-50/40 border border-orange-100 rounded-lg p-2.5">
+            <p className="text-[10px] text-orange-700 mb-0.5">📅 오늘 마감</p>
+            <p className="text-2xl font-black text-orange-700">{todayDueCount}<span className="text-xs font-normal text-orange-500 ml-0.5">건</span></p>
+          </div>
+          <div className="bg-blue-50/40 border border-blue-100 rounded-lg p-2.5">
+            <p className="text-[10px] text-blue-700 mb-0.5">👤 내 담당 (전체 미완료)</p>
+            <p className="text-2xl font-black text-blue-700">{myActiveCount}<span className="text-xs font-normal text-blue-500 ml-0.5">건</span></p>
+          </div>
+          <div className="bg-gray-50 border border-gray-200 rounded-lg p-2.5">
+            <p className="text-[10px] text-gray-600 mb-0.5">🗓 이번 주 미완료</p>
+            <p className="text-2xl font-black text-gray-800">{thisWeekTasks.length}<span className="text-xs font-normal text-gray-500 ml-0.5">건</span></p>
+          </div>
+        </div>
+        {(tasks ?? []).length > 0 && (
+          <div className="space-y-0.5 border-t border-gray-100 pt-2">
+            {(tasks ?? []).slice(0, 5).map(t => {
+              const diff = t.due_date ? dday(t.due_date) : null
+              const badge = diff !== null ? ddayLabel(diff) : null
+              return (
+                <div key={t.id} className="flex items-center gap-2 py-1 text-xs">
+                  {badge && <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-bold flex-shrink-0 ${badge.cls}`}>{badge.text}</span>}
+                  <span className="flex-1 truncate text-gray-700">{t.title}</span>
+                  <span className="text-[10px] text-gray-400 flex-shrink-0">{t.status}</span>
+                </div>
+              )
+            })}
+          </div>
+        )}
+      </Link>
 
       {/* 요약 카드 4개 */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
@@ -365,6 +482,91 @@ export default async function DashboardPage() {
           </div>
         )
       })()}
+
+      {/* (Flow UX) ⚠️ 업무 미완료 경고 — 담당자/기한/3일+ 지연 */}
+      {(() => {
+        const taskWarnTotal = (isAdmin ? noAssigneeCount : 0) + noDueCount + overdue3Count
+        if (taskWarnTotal === 0) return null
+        return (
+          <div className="bg-amber-50/40 border-2 border-amber-100 rounded-xl p-4 mb-4">
+            <div className="flex items-center gap-2 mb-3">
+              <span className="text-base">⚠️</span>
+              <span className="text-xs font-bold text-amber-900">업무 미완료 경고 — 정리 필요한 task</span>
+              <span className="ml-auto text-[10px] text-amber-700">총 {taskWarnTotal}건</span>
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-xs">
+              {isAdmin && (
+                <Link href="/tasks?alert=missing_assignee" className="bg-white border border-amber-100 rounded-lg px-3 py-2 hover:bg-amber-50 hover:border-amber-200 transition-colors block">
+                  <p className="text-[10px] text-gray-500 mb-0.5">👤 담당자 없음</p>
+                  <p className="text-base font-bold text-amber-700">{noAssigneeCount}건 <span className="text-[10px] font-normal text-amber-500 ml-0.5">바로 처리 ↗</span></p>
+                  <p className="text-[10px] text-gray-400 mt-0.5">미완료 task 중</p>
+                </Link>
+              )}
+              <Link href="/tasks?alert=missing_due" className="bg-white border border-amber-100 rounded-lg px-3 py-2 hover:bg-amber-50 hover:border-amber-200 transition-colors block">
+                <p className="text-[10px] text-gray-500 mb-0.5">📅 기한 없음</p>
+                <p className="text-base font-bold text-amber-700">{noDueCount}건 <span className="text-[10px] font-normal text-amber-500 ml-0.5">바로 처리 ↗</span></p>
+                <p className="text-[10px] text-gray-400 mt-0.5">{isAdmin ? '미완료 task 중' : '내 미완료 task 중'}</p>
+              </Link>
+              <Link href="/tasks?alert=overdue_3plus" className="bg-white border border-amber-100 rounded-lg px-3 py-2 hover:bg-amber-50 hover:border-amber-200 transition-colors block">
+                <p className="text-[10px] text-gray-500 mb-0.5">🔥 3일 이상 지연</p>
+                <p className="text-base font-bold text-red-700">{overdue3Count}건 <span className="text-[10px] font-normal text-red-500 ml-0.5">바로 처리 ↗</span></p>
+                <p className="text-[10px] text-gray-400 mt-0.5">{isAdmin ? '미완료 task 중' : '내 미완료 task 중'}</p>
+              </Link>
+            </div>
+          </div>
+        )
+      })()}
+
+      {/* (Flow UX) 📅 주간 리마인드 — 이번 주 + 다음 주 */}
+      {(thisWeekTasks.length > 0 || nextWeekTasks.length > 0) && (
+        <div className="bg-white border border-gray-100 rounded-xl p-4 mb-4" style={SHADOW}>
+          <div className="flex items-center gap-2 mb-3">
+            <span className="text-base">📅</span>
+            <span className="text-sm font-bold text-gray-900">주간 리마인드</span>
+            <span className="ml-auto text-[10px] text-gray-400">{isAdmin ? '전체' : '내 담당'}</span>
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {/* 이번 주 미완료 Top 8 */}
+            <div>
+              <p className="text-[11px] font-bold text-gray-700 mb-2">🗓 이번 주 미완료 ({thisWeekTasks.length}건)</p>
+              {thisWeekTasks.length === 0 ? (
+                <p className="text-xs text-gray-400 py-2">없음</p>
+              ) : (
+                <ul className="space-y-1">
+                  {thisWeekTasks.map(t => {
+                    const diff = t.due_date ? dday(t.due_date) : null
+                    const badge = diff !== null ? ddayLabel(diff) : null
+                    return (
+                      <li key={t.id} className="flex items-center gap-2 text-xs py-1">
+                        {badge && <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-bold flex-shrink-0 ${badge.cls}`}>{badge.text}</span>}
+                        <span className="flex-1 truncate text-gray-700">{t.title}</span>
+                        {t.priority === '긴급' && <span className="text-[10px] text-red-500 font-bold flex-shrink-0">긴급</span>}
+                      </li>
+                    )
+                  })}
+                </ul>
+              )}
+            </div>
+            {/* 다음 주 우선순위 Top 3 */}
+            <div>
+              <p className="text-[11px] font-bold text-gray-700 mb-2">📌 다음 주 우선순위 Top {nextWeekTasks.length}</p>
+              {nextWeekTasks.length === 0 ? (
+                <p className="text-xs text-gray-400 py-2">없음</p>
+              ) : (
+                <ul className="space-y-1">
+                  {nextWeekTasks.map(t => (
+                    <li key={t.id} className="flex items-center gap-2 text-xs py-1">
+                      <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-blue-100 text-blue-700 flex-shrink-0">{t.priority || '보통'}</span>
+                      <span className="flex-1 truncate text-gray-700">{t.title}</span>
+                      <span className="text-[10px] text-gray-400 flex-shrink-0">{t.due_date?.slice(5)}</span>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* 🤖 빵빵이에게 쏟아내기 (빠른 메모/명령) */}
       <div className="mb-4">

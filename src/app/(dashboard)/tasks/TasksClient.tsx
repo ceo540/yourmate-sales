@@ -29,6 +29,7 @@ interface Props {
   sales: Sale[]
   isAdmin: boolean
   currentUserId: string
+  alert?: 'missing_assignee' | 'missing_due' | 'overdue_3plus' | null
 }
 
 function formatDate(d: string | null) {
@@ -43,8 +44,9 @@ function formatDate(d: string | null) {
   return { str, color: 'text-gray-400', badge: `D-${diff}`, overdue: false }
 }
 
-export default function TasksClient({ tasks: initialTasks, profiles, sales, isAdmin, currentUserId }: Props) {
+export default function TasksClient({ tasks: initialTasks, profiles, sales, isAdmin, currentUserId, alert = null }: Props) {
   const [tasks, setTasks] = useState(initialTasks)
+  // alert 진입 시 active 필터 자동 (Flow UX)
   const [filterStatus, setFilterStatus] = useState<string>('active')
   const [viewMode, setViewMode] = useState<'project' | 'list'>('project')
   const [myTasksOnly, setMyTasksOnly] = useState(false)
@@ -58,6 +60,18 @@ export default function TasksClient({ tasks: initialTasks, profiles, sales, isAd
   if (filterAssignee) filtered = filtered.filter(t => t.assignee_id === filterAssignee)
   if (filterStatus === 'active') filtered = filtered.filter(t => t.status !== '완료' && t.status !== '보류')
   else if (filterStatus !== 'all') filtered = filtered.filter(t => t.status === filterStatus)
+  // alert 자동 필터 (Flow UX 1차)
+  if (alert) {
+    filtered = filtered.filter(t => t.status !== '완료' && t.status !== '보류')
+    if (alert === 'missing_assignee') {
+      filtered = filtered.filter(t => !t.assignee_id)
+    } else if (alert === 'missing_due') {
+      filtered = filtered.filter(t => !t.due_date)
+    } else if (alert === 'overdue_3plus') {
+      const cutoff = new Date(Date.now() - 3 * 86400000).toISOString().slice(0, 10)
+      filtered = filtered.filter(t => t.due_date && t.due_date < cutoff)
+    }
+  }
 
   const counts: Record<string, number> = {
     active: tasks.filter(t => t.status !== '완료' && t.status !== '보류').length,

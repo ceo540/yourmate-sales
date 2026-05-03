@@ -6,6 +6,7 @@ import { createLog, deleteLog, getSaleLogs } from './log-actions'
 import { createTask, updateTaskStatus, deleteTask } from '../tasks/actions'
 import { generateShareToken, revokeShareToken } from './share-action'
 import { LOG_TYPE_COLORS } from '@/lib/constants'
+import { askCompletionNote } from '@/lib/task-completion-prompt'
 import TaskDetailPanel from './TaskDetailPanel'
 import NotesTab from './components/NotesTab'
 import ContractTab from './components/ContractTab'
@@ -513,6 +514,7 @@ export default function SaleHubClient({ sale, tasks: initialTasks, logs, profile
         <TaskDetailPanel
           task={selectedTask}
           profiles={profiles}
+          currentUserId={currentUserId}
           onClose={() => setSelectedTask(null)}
           onSaved={() => setSelectedTask(null)}
         />
@@ -536,7 +538,21 @@ function TaskRow({ t, idx, total, showForm, sale, isAdmin, currentUserId, startT
   return (
     <div className={`flex items-center gap-3 px-4 py-3 hover:bg-gray-50 group ${!isLast ? 'border-b border-gray-50' : ''}`}>
       <button
-        onClick={() => startTransition(() => updateTaskStatus(t.id, t.status === '완료' ? '할 일' : '완료', sale.id))}
+        onClick={() => {
+          const becameCompleted = t.status !== '완료'
+          let completedNote: string | null = null
+          if (becameCompleted) {
+            const r = askCompletionNote(t.title)
+            if (r.cancelled) return
+            completedNote = r.note
+          }
+          startTransition(() => updateTaskStatus(
+            t.id,
+            becameCompleted ? '완료' : '할 일',
+            sale.id,
+            becameCompleted ? { completedNote, completedBy: currentUserId } : undefined,
+          ))
+        }}
         className={`w-4 h-4 rounded-full flex-shrink-0 border-2 transition-all ${
           t.status === '완료' ? 'bg-green-400 border-green-400' : 'border-gray-300 hover:border-green-400'
         }`}

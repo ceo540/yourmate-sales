@@ -13,6 +13,7 @@ const BlockNoteEditor = dynamic(() => import('@/components/BlockNoteEditor'), { 
 import ProjectSettingsModal from './ProjectSettingsModal'
 import ClassificationCard from './ClassificationCard'
 import DropboxStatusBadge, { resolveDropboxStatus } from '@/components/DropboxStatus'
+import QuickLogInput from '@/components/QuickLogInput'
 import DropboxRetryButton from '@/components/DropboxRetryButton'
 import CostModal from '../../sales/CostModal'
 import CostPdfImportModal from '../../sales/[id]/CostPdfImportModal'
@@ -3676,10 +3677,12 @@ function CommunicationTimeline({ logs, contracts, projectId }: { logs: Log[]; co
             <button onClick={() => setAdding(s => !s)}
               className="text-xs px-2 py-0.5 rounded font-medium hover:opacity-80"
               style={{ backgroundColor: '#FFCE00', color: '#121212' }}>
-              {adding ? '닫기' : '+ 추가'}
+              {adding ? '닫기' : '+ 상세 추가'}
             </button>
           </div>
         </div>
+        {/* Flow UX 1차: 한 줄 퀵 입력 (상세는 [+ 상세 추가]로) */}
+        {!adding && <QuickLogInput mode="project" projectId={projectId} />}
 
         {/* 인라인 소통 추가 */}
         {adding && (
