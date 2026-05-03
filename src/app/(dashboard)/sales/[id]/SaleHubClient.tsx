@@ -178,14 +178,22 @@ export default function SaleHubClient({ sale, tasks: initialTasks, logs, profile
     })
   }
 
+  // 탭 순서 = 계약 담당자 시야 (Phase 8.5)
+  // 1. 개요 (Hero 가 핵심)
+  // 2. 계약 진행 (단계·담당·문서)
+  // 3. 원가·정산
+  // 4. 계약 메모
+  // 5. 활동 기록 (소통)
+  // 6. 빵빵이
+  // 7. 실행 업무 (실행은 프로젝트에서 — sale 에서는 뒤로)
   const ALL_TABS = [
     { key: 'overview' as const, label: '개요',       modes: ['full', 'project', 'contract'] },
-    { key: 'tasks'    as const, label: `업무 ${pendingTasks.length > 0 ? `(${pendingTasks.length}건 진행중)` : `(${tasks.length})`}`, modes: ['full', 'project'] },
-    { key: 'logs'     as const, label: `소통 내역 (${localLogs.length})`, modes: ['full', 'project', 'contract'] },
-    { key: 'notes'    as const, label: '자유 노트',  modes: ['full', 'project'] },
-    { key: 'contract' as const, label: '계약 정보',  modes: ['full', 'contract'] },
-    { key: '원가'      as const, label: `원가 (${localCosts.length})`, modes: ['full', 'contract'] },
-    { key: 'claude'   as const, label: 'Claude',                     modes: ['full', 'project', 'contract'] },
+    { key: 'contract' as const, label: '계약 진행',  modes: ['full', 'contract'] },
+    { key: '원가'      as const, label: `원가·정산 (${localCosts.length})`, modes: ['full', 'contract'] },
+    { key: 'notes'    as const, label: '계약 메모',  modes: ['full', 'project'] },
+    { key: 'logs'     as const, label: `활동 기록 (${localLogs.length})`, modes: ['full', 'project', 'contract'] },
+    { key: 'claude'   as const, label: '빵빵이',    modes: ['full', 'project', 'contract'] },
+    { key: 'tasks'    as const, label: `실행 업무 ${pendingTasks.length > 0 ? `(${pendingTasks.length}건 진행중)` : `(${tasks.length})`}`, modes: ['full', 'project'] },
   ]
   const TABS = ALL_TABS.filter(t => t.modes.includes(viewMode))
 
@@ -280,9 +288,29 @@ export default function SaleHubClient({ sale, tasks: initialTasks, logs, profile
         </>
       )}
 
-      {/* ── 업무 탭 ── */}
+      {/* ── 실행 업무 탭 — 본질적으로 프로젝트에서 관리 (Phase 8.5) ── */}
       {tab === 'tasks' && (
-        <div className="space-y-1">
+        <div className="space-y-3">
+          {/* 안내 배너 — 실행 업무는 프로젝트가 주, sale 은 보조 */}
+          <div className="bg-blue-50 border border-blue-100 rounded-lg px-4 py-3 flex items-start gap-3">
+            <span className="text-base leading-none mt-0.5">💡</span>
+            <div className="flex-1 text-xs text-blue-900">
+              <p className="font-semibold mb-0.5">실행 업무는 연결된 프로젝트에서 관리해요</p>
+              <p className="text-blue-700">
+                계약 운영실(sale)은 <strong>계약 진행·정산·문서</strong>에 집중하고,
+                실제 업무 실행과 일정은 <strong>프로젝트(실행 운영실)</strong>에서 다룹니다.
+              </p>
+            </div>
+            {connectedProject && (
+              <a
+                href={`/projects/${connectedProject.id}`}
+                className="text-xs px-2.5 py-1.5 rounded-lg border border-blue-200 bg-white hover:bg-blue-50 text-blue-700 font-medium flex-shrink-0"
+              >
+                프로젝트로 이동 ↗
+              </a>
+            )}
+          </div>
+
           {pendingTasks.length === 0 && !showTaskForm ? (
             <div className="text-center py-12 bg-white border border-dashed border-gray-100 rounded-xl">
               <p className="text-2xl mb-3">📋</p>
