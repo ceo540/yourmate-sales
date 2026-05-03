@@ -66,3 +66,34 @@ export async function requireTaskOwnership(taskId: string): Promise<GuardedUser>
   }
   return u
 }
+
+/**
+ * project_logs 작성자 또는 admin/manager 검증.
+ * 일반 사용자가 다른 사람이 적은 소통 기록을 삭제하는 것을 막는다.
+ */
+export async function requireLogOwnerOrAdmin(logId: string): Promise<GuardedUser> {
+  const u = await requireUser()
+  if (u.isAdmin) return u
+  const admin = createAdminClient()
+  const { data } = await admin.from('project_logs').select('author_id').eq('id', logId).maybeSingle()
+  if (!data) throw new Error('Forbidden — 해당 소통 기록을 찾을 수 없습니다.')
+  if (data.author_id && data.author_id !== u.id) {
+    throw new Error('Forbidden — 본인이 작성한 소통 기록만 삭제할 수 있습니다.')
+  }
+  return u
+}
+
+/**
+ * project_memos 작성자 또는 admin/manager 검증.
+ */
+export async function requireMemoOwnerOrAdmin(memoId: string): Promise<GuardedUser> {
+  const u = await requireUser()
+  if (u.isAdmin) return u
+  const admin = createAdminClient()
+  const { data } = await admin.from('project_memos').select('author_id').eq('id', memoId).maybeSingle()
+  if (!data) throw new Error('Forbidden — 해당 메모를 찾을 수 없습니다.')
+  if (data.author_id && data.author_id !== u.id) {
+    throw new Error('Forbidden — 본인이 작성한 메모만 수정·삭제할 수 있습니다.')
+  }
+  return u
+}
