@@ -307,16 +307,20 @@ export default function ProjectV2Client({
     ? Math.round((tasks.filter(t => t.status === '완료').length / tasks.length) * 100)
     : null
   const lastLog = logs[0]
-  const today = new Date()
-  today.setHours(0, 0, 0, 0)
-  const upcomingTasks = tasks
+  // (Hydration safe) SSR(UTC) vs CSR(KST) 시간 차로 인한 mismatch 방지 — useEffect 후 클라이언트 시간으로 채움
+  const [todayMs, setTodayMs] = useState<number | null>(null)
+  useEffect(() => {
+    const t = new Date(); t.setHours(0, 0, 0, 0)
+    setTodayMs(t.getTime())
+  }, [])
+  const upcomingTasks = todayMs == null ? [] : tasks
     .filter(t => t.due_date && t.status !== '완료' && t.status !== '보류')
     .map(t => ({ task: t, due: new Date(t.due_date!) }))
-    .filter(x => x.due >= today)
+    .filter(x => x.due.getTime() >= todayMs)
     .sort((a, b) => a.due.getTime() - b.due.getTime())
   const nextMilestone = upcomingTasks[0]
-  const nextMilestoneDays = nextMilestone
-    ? Math.ceil((nextMilestone.due.getTime() - today.getTime()) / (1000 * 60 * 60 * 24))
+  const nextMilestoneDays = nextMilestone && todayMs != null
+    ? Math.ceil((nextMilestone.due.getTime() - todayMs) / (1000 * 60 * 60 * 24))
     : null
 
   return (
@@ -2313,8 +2317,12 @@ function ScheduleSection({ projectId, linkedEvents }: {
   // 사용자 명시 (2026-04-29): 일정은 캘린더(linked_calendar_events)에 적힌 것만 표시.
   // 할일 due_date는 [✅ 할일] 섹션에 정렬·필터로 통합 → 여기엔 X.
   const router = useRouter()
-  const today = new Date()
-  today.setHours(0, 0, 0, 0)
+  // (Hydration safe) SSR/CSR 시간 차 mismatch 방지
+  const [todayMs, setTodayMs] = useState<number | null>(null)
+  useEffect(() => {
+    const t = new Date(); t.setHours(0, 0, 0, 0)
+    setTodayMs(t.getTime())
+  }, [])
 
   const [showSearch, setShowSearch] = useState(false)
   const [query, setQuery] = useState('')
@@ -2408,14 +2416,15 @@ function ScheduleSection({ projectId, linkedEvents }: {
           {sortedLinked.map(ev => {
             const due = new Date(ev.date)
             due.setHours(0, 0, 0, 0)
-            const diffDays = Math.ceil((due.getTime() - today.getTime()) / (1000 * 60 * 60 * 24))
-            const overdue = diffDays < 0
+            // todayMs null일 동안(hydrate 직전) 모든 시간 라벨은 중립(미정) — 그 후 useEffect 채움
+            const diffDays = todayMs == null ? null : Math.ceil((due.getTime() - todayMs) / (1000 * 60 * 60 * 24))
+            const overdue = diffDays != null && diffDays < 0
             const today0 = diffDays === 0
-            const soon = diffDays > 0 && diffDays <= 3
+            const soon = diffDays != null && diffDays > 0 && diffDays <= 3
             return (
               <li key={ev.id} className="flex items-center gap-2 text-xs group">
                 <span className={`px-2 py-0.5 rounded-full font-semibold flex-shrink-0 ${overdue ? 'bg-gray-100 text-gray-400' : today0 ? 'bg-red-100 text-red-700' : soon ? 'bg-orange-100 text-orange-700' : 'bg-blue-100 text-blue-700'}`}>
-                  {overdue ? `D+${-diffDays}` : today0 ? 'D-day' : `D-${diffDays}`}
+                  {diffDays == null ? '—' : overdue ? `D+${-diffDays}` : today0 ? 'D-day' : `D-${diffDays}`}
                 </span>
                 <span className="w-1.5 h-1.5 rounded-full flex-shrink-0" style={{ background: ev.color }} />
                 <span className="text-gray-700 flex-1 truncate">{ev.title}</span>
@@ -2648,7 +2657,14 @@ function ContractRow({ contract: c, projectId, entities }: { contract: Contract;
   const totalReceived = c.payment_schedules.filter(p => p.is_received).reduce((s, p) => s + p.amount, 0)
   const totalScheduled = c.payment_schedules.reduce((s, p) => s + p.amount, 0)
   const remainder = (c.revenue ?? 0) - totalScheduled
-  const overdue = c.payment_schedules.find(p => !p.is_received && p.due_date && p.due_date < new Date().toISOString().slice(0, 10))
+  // (Hydration safe) 자정 경계에서 SSR(UTC)/CSR(KST) 다른 슬라이스 → null 시작 후 useEffect로 채움
+  const [todayIsoSlice, setTodayIsoSlice] = useState<string | null>(null)
+  useEffect(() => {
+    setTodayIsoSlice(new Date().toISOString().slice(0, 10))
+  }, [])
+  const overdue = todayIsoSlice == null
+    ? false
+    : !!c.payment_schedules.find(p => !p.is_received && p.due_date && p.due_date < todayIsoSlice)
 
   return (
     <li className="border-b border-gray-50 last:border-0">
