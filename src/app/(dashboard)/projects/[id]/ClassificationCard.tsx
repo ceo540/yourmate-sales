@@ -1,18 +1,20 @@
 'use client'
 
-// 운영 분류 카드 — yourmate-company-spec-v2 §3.4·§5~8
-// service_type(영업용) 위에 main_type + expansion_tags + capability_tags(운영 구조) 추가.
+// 운영 분류 카드 — yourmate-company-spec-v2 §3.4·§5~8 / yourmate-system-functional-spec-v1 §5.3
+// service_type(영업용) 위에 main_type + expansion_tags + capability_tags(운영 구조).
 //
-// ⚠️ 데모: localStorage 만 사용. DB 마이그(projects ALTER) 후 server action 으로 교체.
+// Phase 3: localStorage 데모 → DB 저장 (projects 테이블 컬럼).
+// 초기값은 server fetch (page.tsx → ProjectV2Client → 카드 props).
+// 저장 = updateProjectClassification server action → router.refresh.
 
-import { useEffect, useState, useTransition } from 'react'
+import { useState, useTransition } from 'react'
+import { useRouter } from 'next/navigation'
 import {
   MAIN_TYPES,
   EXPANSION_TAG_GROUPS,
   CAPABILITY_TAG_GROUPS,
   EMPTY_CLASSIFICATION,
   loadClassification,
-  saveClassification,
   clearClassification,
   suggestMainTypeFromText,
   type ProjectClassification,
@@ -20,6 +22,7 @@ import {
   type ExpansionTag,
   type CapabilityTag,
 } from '@/lib/project-classification'
+import { updateProjectClassification } from './project-actions'
 
 const MAIN_TYPE_COLOR: Record<MainType, string> = {
   '학교공연형':   'bg-purple-50 text-purple-700 border-purple-200',
@@ -29,50 +32,105 @@ const MAIN_TYPE_COLOR: Record<MainType, string> = {
   '콘텐츠제작형': 'bg-pink-50 text-pink-700 border-pink-200',
 }
 
+export interface ClassificationInitial {
+  main_type: string | null
+  expansion_tags: string[] | null
+  capability_tags: string[] | null
+  classification_note: string | null
+  classification_confidence: number | null
+}
+
+function toClassification(initial: ClassificationInitial | null | undefined): ProjectClassification {
+  if (!initial) return EMPTY_CLASSIFICATION
+  return {
+    main_type: (initial.main_type as MainType | null) ?? null,
+    expansion_tags: (initial.expansion_tags as ExpansionTag[] | null) ?? [],
+    capability_tags: (initial.capability_tags as CapabilityTag[] | null) ?? [],
+    classification_note: initial.classification_note ?? null,
+    classification_confidence: initial.classification_confidence ?? null,
+  }
+}
+
 export default function ClassificationCard({
   projectId,
   serviceType,
   projectName,
+  initial,
 }: {
   projectId: string
   serviceType: string | null
   projectName: string | null
+  initial: ClassificationInitial | null | undefined
 }) {
-  const [classification, setClassification] = useState<ProjectClassification>(EMPTY_CLASSIFICATION)
+  const router = useRouter()
+  const current = toClassification(initial)
   const [editing, setEditing] = useState(false)
-  const [draft, setDraft] = useState<ProjectClassification>(EMPTY_CLASSIFICATION)
-  const [, startTransition] = useTransition()
-  const [hydrated, setHydrated] = useState(false)
+  const [draft, setDraft] = useState<ProjectClassification>(current)
+  const [pending, startTransition] = useTransition()
+  const [errorMsg, setErrorMsg] = useState<string | null>(null)
 
-  // localStorage 로드 (브라우저 only)
-  useEffect(() => {
-    const loaded = loadClassification(projectId)
-    if (loaded) setClassification(loaded)
-    setHydrated(true)
-  }, [projectId])
+  // 옛 데모(localStorage) 데이터가 있고 DB 가 비어 있으면 1회 import 제안
+  const hasLegacyDemo = typeof window !== 'undefined' && !!loadClassification(projectId) && !current.main_type && current.expansion_tags.length === 0 && current.capability_tags.length === 0
 
   const enterEdit = () => {
-    setDraft({ ...classification })
+    setDraft(current)
+    setErrorMsg(null)
     setEditing(true)
   }
   const cancelEdit = () => {
     setDraft(EMPTY_CLASSIFICATION)
+    setErrorMsg(null)
     setEditing(false)
   }
   const handleSave = () => {
-    startTransition(() => {
-      saveClassification(projectId, draft)
-      setClassification(draft)
+    startTransition(async () => {
+      setErrorMsg(null)
+      const r = await updateProjectClassification({
+        projectId,
+        main_type: draft.main_type,
+        expansion_tags: draft.expansion_tags,
+        capability_tags: draft.capability_tags,
+        classification_note: draft.classification_note,
+        classification_confidence: draft.classification_confidence,
+      })
+      if ('error' in r) {
+        setErrorMsg(r.error)
+        return
+      }
       setEditing(false)
+      router.refresh()
     })
   }
   const handleReset = () => {
-    if (!confirm('이 프로젝트의 운영 분류를 초기화할까요? (데모 데이터 삭제)')) return
-    startTransition(() => {
-      clearClassification(projectId)
-      setClassification(EMPTY_CLASSIFICATION)
+    if (!confirm('이 프로젝트의 운영 분류를 초기화할까요?')) return
+    startTransition(async () => {
+      const r = await updateProjectClassification({
+        projectId,
+        main_type: null,
+        expansion_tags: [],
+        capability_tags: [],
+        classification_note: null,
+        classification_confidence: null,
+      })
+      if ('error' in r) {
+        setErrorMsg(r.error)
+        return
+      }
       setEditing(false)
+      router.refresh()
     })
+  }
+  const importFromDemo = () => {
+    const legacy = loadClassification(projectId)
+    if (!legacy) return
+    if (!confirm('이전 브라우저 데모 값을 가져와 편집창에 채울까요?\n(저장 버튼 누르면 DB 에 저장됩니다.)')) return
+    setDraft(legacy)
+    setEditing(true)
+  }
+  const dismissDemo = () => {
+    if (!confirm('이전 브라우저 데모 값을 삭제할까요? (DB 영향 없음)')) return
+    clearClassification(projectId)
+    router.refresh()
   }
   const applySuggestion = () => {
     const guess = suggestMainTypeFromText(`${projectName ?? ''} ${serviceType ?? ''}`)
@@ -83,17 +141,14 @@ export default function ClassificationCard({
     setDraft(d => ({ ...d, main_type: guess }))
   }
 
-  const isEmpty = !classification.main_type && classification.expansion_tags.length === 0 && classification.capability_tags.length === 0
+  const isEmpty = !current.main_type && current.expansion_tags.length === 0 && current.capability_tags.length === 0
 
   // ──────────── 보기 모드 ────────────
   if (!editing) {
     return (
       <section className="bg-white border border-gray-100 rounded-xl overflow-hidden">
         <header className="px-4 py-2.5 border-b border-gray-100 flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <p className="text-xs font-semibold text-gray-700">🧭 운영 분류</p>
-            <span className="text-[10px] text-amber-700 bg-amber-50 px-1.5 py-0.5 rounded">데모</span>
-          </div>
+          <p className="text-xs font-semibold text-gray-700">🧭 운영 분류</p>
           <div className="flex items-center gap-2">
             {serviceType && (
               <span className="text-[10px] text-gray-400">
@@ -109,9 +164,15 @@ export default function ClassificationCard({
           </div>
         </header>
 
-        {!hydrated ? (
-          <div className="px-4 py-4 text-xs text-gray-400">불러오는 중…</div>
-        ) : isEmpty ? (
+        {hasLegacyDemo && (
+          <div className="px-4 py-2 bg-amber-50 border-b border-amber-100 flex items-center gap-2 text-xs">
+            <span className="text-amber-700">이 브라우저에 옛 데모 값이 있어요.</span>
+            <button onClick={importFromDemo} className="text-amber-800 underline hover:text-amber-900">불러와서 저장</button>
+            <button onClick={dismissDemo} className="ml-auto text-amber-600 hover:text-amber-800">무시·삭제</button>
+          </div>
+        )}
+
+        {isEmpty ? (
           <div className="px-4 py-4">
             <p className="text-sm text-gray-500">아직 운영 분류 미설정.</p>
             <p className="text-xs text-gray-400 mt-1">
@@ -120,56 +181,39 @@ export default function ClassificationCard({
           </div>
         ) : (
           <div className="px-4 py-3 space-y-3 text-sm">
-            {/* 메인유형 */}
-            {classification.main_type && (
+            {current.main_type && (
               <div>
                 <p className="text-[11px] text-gray-500 mb-1">메인유형</p>
-                <span className={`inline-block px-2.5 py-0.5 rounded-full font-medium border text-xs ${MAIN_TYPE_COLOR[classification.main_type]}`}>
-                  {classification.main_type}
+                <span className={`inline-block px-2.5 py-0.5 rounded-full font-medium border text-xs ${MAIN_TYPE_COLOR[current.main_type]}`}>
+                  {current.main_type}
                 </span>
               </div>
             )}
-
-            {/* 확장태그 */}
-            {classification.expansion_tags.length > 0 && (
+            {current.expansion_tags.length > 0 && (
               <div>
-                <p className="text-[11px] text-gray-500 mb-1">확장태그 ({classification.expansion_tags.length})</p>
+                <p className="text-[11px] text-gray-500 mb-1">확장태그 ({current.expansion_tags.length})</p>
                 <div className="flex flex-wrap gap-1">
-                  {classification.expansion_tags.map(t => (
-                    <span key={t} className="text-[11px] px-2 py-0.5 rounded-full bg-gray-100 text-gray-700 border border-gray-200">
-                      {t}
-                    </span>
+                  {current.expansion_tags.map(t => (
+                    <span key={t} className="text-[11px] px-2 py-0.5 rounded-full bg-gray-100 text-gray-700 border border-gray-200">{t}</span>
                   ))}
                 </div>
               </div>
             )}
-
-            {/* 역량태그 */}
-            {classification.capability_tags.length > 0 && (
+            {current.capability_tags.length > 0 && (
               <div>
-                <p className="text-[11px] text-gray-500 mb-1">역량태그 ({classification.capability_tags.length})</p>
+                <p className="text-[11px] text-gray-500 mb-1">역량태그 ({current.capability_tags.length})</p>
                 <div className="flex flex-wrap gap-1">
-                  {classification.capability_tags.map(t => (
-                    <span key={t} className="text-[11px] px-2 py-0.5 rounded-full bg-indigo-50 text-indigo-700 border border-indigo-100">
-                      {t}
-                    </span>
+                  {current.capability_tags.map(t => (
+                    <span key={t} className="text-[11px] px-2 py-0.5 rounded-full bg-indigo-50 text-indigo-700 border border-indigo-100">{t}</span>
                   ))}
                 </div>
               </div>
             )}
-
-            {/* 분류 메모 */}
-            {classification.classification_note && (
+            {current.classification_note && (
               <div>
                 <p className="text-[11px] text-gray-500 mb-1">분류 근거</p>
-                <p className="text-xs text-gray-700 whitespace-pre-wrap">{classification.classification_note}</p>
+                <p className="text-xs text-gray-700 whitespace-pre-wrap">{current.classification_note}</p>
               </div>
-            )}
-
-            {classification.updated_at && (
-              <p className="text-[10px] text-gray-400 pt-1 border-t border-gray-50">
-                데모 저장: {new Date(classification.updated_at).toLocaleString('ko-KR')} (브라우저 localStorage)
-              </p>
             )}
           </div>
         )}
@@ -181,14 +225,12 @@ export default function ClassificationCard({
   return (
     <section className="bg-white border border-gray-100 rounded-xl overflow-hidden">
       <header className="px-4 py-2.5 border-b border-gray-100 flex items-center justify-between">
-        <div className="flex items-center gap-2">
-          <p className="text-xs font-semibold text-gray-700">🧭 운영 분류 편집</p>
-          <span className="text-[10px] text-amber-700 bg-amber-50 px-1.5 py-0.5 rounded">데모</span>
-        </div>
+        <p className="text-xs font-semibold text-gray-700">🧭 운영 분류 편집</p>
         <button
           type="button"
           onClick={applySuggestion}
-          className="text-xs px-2 py-1 rounded border border-blue-200 bg-blue-50 hover:bg-blue-100 text-blue-700"
+          disabled={pending}
+          className="text-xs px-2 py-1 rounded border border-blue-200 bg-blue-50 hover:bg-blue-100 text-blue-700 disabled:opacity-50"
           title="프로젝트명·서비스명 기반 main_type 추천"
         >
           ✨ AI 추천
@@ -196,7 +238,7 @@ export default function ClassificationCard({
       </header>
 
       <div className="px-4 py-3 space-y-4">
-        {/* 메인유형 — segmented control */}
+        {/* 메인유형 */}
         <div>
           <p className="text-xs font-medium text-gray-700 mb-1.5">
             메인유형 <span className="text-red-500">*</span>
@@ -210,7 +252,8 @@ export default function ClassificationCard({
                   key={m.key}
                   type="button"
                   onClick={() => setDraft(d => ({ ...d, main_type: active ? null : m.key }))}
-                  className={`text-xs px-2.5 py-1 rounded-full border transition-colors ${
+                  disabled={pending}
+                  className={`text-xs px-2.5 py-1 rounded-full border transition-colors disabled:opacity-50 ${
                     active
                       ? `${MAIN_TYPE_COLOR[m.key]} font-medium`
                       : 'bg-white border-gray-200 text-gray-600 hover:bg-gray-50'
@@ -229,7 +272,7 @@ export default function ClassificationCard({
           )}
         </div>
 
-        {/* 확장태그 — 그룹별 체크박스 */}
+        {/* 확장태그 */}
         <div>
           <p className="text-xs font-medium text-gray-700 mb-1.5">
             확장태그
@@ -248,13 +291,14 @@ export default function ClassificationCard({
                       <button
                         key={tag}
                         type="button"
+                        disabled={pending}
                         onClick={() => setDraft(d => ({
                           ...d,
                           expansion_tags: active
                             ? d.expansion_tags.filter(x => x !== tag)
                             : [...d.expansion_tags, tag] as ExpansionTag[],
                         }))}
-                        className={`text-[11px] px-2 py-0.5 rounded-full border transition-colors ${
+                        className={`text-[11px] px-2 py-0.5 rounded-full border transition-colors disabled:opacity-50 ${
                           active
                             ? 'bg-gray-700 text-white border-gray-700'
                             : 'bg-white border-gray-200 text-gray-600 hover:bg-gray-50'
@@ -270,7 +314,7 @@ export default function ClassificationCard({
           </div>
         </div>
 
-        {/* 역량태그 — 그룹별 체크박스 */}
+        {/* 역량태그 */}
         <div>
           <p className="text-xs font-medium text-gray-700 mb-1.5">
             역량태그
@@ -289,13 +333,14 @@ export default function ClassificationCard({
                       <button
                         key={tag}
                         type="button"
+                        disabled={pending}
                         onClick={() => setDraft(d => ({
                           ...d,
                           capability_tags: active
                             ? d.capability_tags.filter(x => x !== tag)
                             : [...d.capability_tags, tag] as CapabilityTag[],
                         }))}
-                        className={`text-[11px] px-2 py-0.5 rounded-full border transition-colors ${
+                        className={`text-[11px] px-2 py-0.5 rounded-full border transition-colors disabled:opacity-50 ${
                           active
                             ? 'bg-indigo-600 text-white border-indigo-600'
                             : 'bg-white border-gray-200 text-gray-600 hover:bg-gray-50'
@@ -320,32 +365,42 @@ export default function ClassificationCard({
           <textarea
             value={draft.classification_note ?? ''}
             onChange={e => setDraft(d => ({ ...d, classification_note: e.target.value || null }))}
+            disabled={pending}
             rows={2}
-            className="w-full text-sm border border-gray-200 rounded px-2 py-1.5 focus:outline-none focus:border-gray-400"
+            className="w-full text-sm border border-gray-200 rounded px-2 py-1.5 focus:outline-none focus:border-gray-400 disabled:bg-gray-50"
             placeholder="예: 교육 운영이 본질이며, 발표회 운영과 영상 제작이 부가 범위로 포함됨"
           />
         </div>
+
+        {errorMsg && (
+          <div className="text-xs text-red-600 bg-red-50 border border-red-100 rounded px-2 py-1.5">
+            저장 실패: {errorMsg}
+          </div>
+        )}
 
         {/* 액션 */}
         <div className="flex items-center gap-2 pt-2 border-t border-gray-100">
           <button
             type="button"
             onClick={handleSave}
-            className="text-sm px-3 py-1.5 rounded bg-gray-900 text-white hover:bg-gray-800"
+            disabled={pending}
+            className="text-sm px-3 py-1.5 rounded bg-gray-900 text-white hover:bg-gray-800 disabled:opacity-50"
           >
-            저장 (데모)
+            {pending ? '저장 중…' : '저장'}
           </button>
           <button
             type="button"
             onClick={cancelEdit}
-            className="text-sm px-3 py-1.5 rounded border border-gray-200 text-gray-700 hover:bg-gray-50"
+            disabled={pending}
+            className="text-sm px-3 py-1.5 rounded border border-gray-200 text-gray-700 hover:bg-gray-50 disabled:opacity-50"
           >
             취소
           </button>
           <button
             type="button"
             onClick={handleReset}
-            className="ml-auto text-xs text-gray-400 hover:text-red-600"
+            disabled={pending}
+            className="ml-auto text-xs text-gray-400 hover:text-red-600 disabled:opacity-50"
           >
             초기화
           </button>

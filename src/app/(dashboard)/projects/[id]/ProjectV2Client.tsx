@@ -88,6 +88,14 @@ interface Project {
   contact_person_id: string | null
   pm_id: string | null
   linked_calendar_events: LinkedCalEvent[] | null
+  // 운영 분류 (yourmate-company-spec-v2 §5~8) — Phase 3
+  main_type: string | null
+  expansion_tags: string[] | null
+  capability_tags: string[] | null
+  classification_confidence: number | null
+  classification_note: string | null
+  biz_completed_at: string | null
+  finance_completed_at: string | null
 }
 interface Customer {
   id: string; name: string; type: string | null
@@ -419,11 +427,18 @@ export default function ProjectV2Client({
           {/* 1. 자동 개요 + 협의해야할 내용 (빵빵이) — 항상 최상단 */}
           <TwoBoxesBlock project={project} />
 
-          {/* 1.5. 운영 분류 (yourmate-company-spec-v2 §3.4·§5~8) — 데모 단계, localStorage */}
+          {/* 1.5. 운영 분류 (yourmate-company-spec-v2 §3.4·§5~8) — Phase 3 DB 저장 */}
           <ClassificationCard
             projectId={project.id}
             serviceType={project.service_type}
             projectName={project.name}
+            initial={{
+              main_type: project.main_type,
+              expansion_tags: project.expansion_tags,
+              capability_tags: project.capability_tags,
+              classification_note: project.classification_note,
+              classification_confidence: project.classification_confidence,
+            }}
           />
 
           {/* 2. 메모 (multiple 카드) */}

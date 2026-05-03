@@ -69,6 +69,14 @@ export interface Project {
   description?: string
   goal?: string
   budget?: number
+  // 운영 분류 (yourmate-company-spec-v2 §5~8) — Phase 3
+  main_type?: string | null
+  expansion_tags?: string[] | null
+  capability_tags?: string[] | null
+  classification_confidence?: number | null
+  classification_note?: string | null
+  biz_completed_at?: string | null
+  finance_completed_at?: string | null
   created_at: string
   updated_at: string
 }

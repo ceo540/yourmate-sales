@@ -219,6 +219,14 @@ export default async function ProjectPage({ params }: { params: Promise<{ id: st
         contact_person_id: project.contact_person_id ?? null,
         pm_id: pmId,
         linked_calendar_events: project.linked_calendar_events ?? null,
+        // 운영 분류 (yourmate-company-spec-v2 §5~8) — Phase 3
+        main_type: project.main_type ?? null,
+        expansion_tags: project.expansion_tags ?? null,
+        capability_tags: project.capability_tags ?? null,
+        classification_confidence: project.classification_confidence ?? null,
+        classification_note: project.classification_note ?? null,
+        biz_completed_at: project.biz_completed_at ?? null,
+        finance_completed_at: project.finance_completed_at ?? null,
       }}
       customerPersons={customerPersons}
       pmName={pmName}

@@ -1681,3 +1681,34 @@ export async function updateCustomerContact(
   }).eq('id', customerId)
   revalidatePath(`/projects/${projectId}`)
 }
+
+// 운영 분류 저장 (yourmate-company-spec-v2 §5~8) — Phase 3
+// localStorage 데모 단계를 DB 저장으로 승격.
+export async function updateProjectClassification(input: {
+  projectId: string
+  main_type: string | null
+  expansion_tags: string[]
+  capability_tags: string[]
+  classification_note: string | null
+  classification_confidence?: number | null
+}): Promise<{ ok: true } | { error: string }> {
+  if (!input.projectId) return { error: 'projectId 필수' }
+
+  const admin = createAdminClient()
+  const note = input.classification_note?.trim() || null
+  const { error } = await admin
+    .from('projects')
+    .update({
+      main_type: input.main_type || null,
+      expansion_tags: input.expansion_tags ?? [],
+      capability_tags: input.capability_tags ?? [],
+      classification_note: note,
+      classification_confidence: input.classification_confidence ?? null,
+    })
+    .eq('id', input.projectId)
+  if (error) return { error: error.message }
+
+  revalidatePath(`/projects/${input.projectId}`)
+  revalidatePath(`/projects/${input.projectId}/v2`)
+  return { ok: true }
+}
