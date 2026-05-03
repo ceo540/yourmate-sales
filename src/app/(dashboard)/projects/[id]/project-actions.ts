@@ -735,8 +735,14 @@ export async function removeProjectMember(projectId: string, profileId: string) 
 }
 
 export async function updateProjectStatus(projectId: string, status: string): Promise<{ cancelMsg?: string }> {
-  // status 변경(특히 '취소' 시 dropbox 폴더 이동까지 트리거) — admin/manager만 (P1-3)
-  await requireAdminOrManager()
+  // status 변경 정책 (P1-3 hotfix):
+  // - 일상 변경(기획중·진행중·완료·보류): 모든 인증 사용자 (멤버 자기 프로젝트 운영 일상)
+  // - '취소': admin/manager만 (dropbox 폴더 999999.취소 이동 + linked sales 일괄 이동 트리거 — 위험 액션)
+  if (status === '취소') {
+    await requireAdminOrManager()
+  } else {
+    await requireUser()
+  }
   const admin = createAdminClient()
   const { error } = await admin
     .from('projects')
