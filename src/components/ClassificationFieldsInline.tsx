@@ -43,7 +43,7 @@ export default function ClassificationFieldsInline({
   compact?: boolean
 }) {
   const mainLabel = mode === 'guessed' ? '메인유형 추정' : '메인유형'
-  const expLabel  = mode === 'guessed' ? '확장태그 추정' : '확장태그'
+  const expLabel  = mode === 'guessed' ? '추가 범위 추정' : '추가 범위'
   const noteHint  = mode === 'guessed' ? '아직 애매해도 OK — sale 단계에서 정리합니다.' : 'sale 단계에서 1차 확정.'
 
   const applySuggestion = () => {
@@ -53,7 +53,7 @@ export default function ClassificationFieldsInline({
     }
     const guess = suggestMainTypeFromText(suggestionText)
     if (!guess) {
-      alert('main_type 후보를 못 찾았어요.')
+      alert('어떤 메인유형인지 못 알아냈어요. 직접 선택해주세요.')
       return
     }
     onChange({ ...value, main_type: guess })

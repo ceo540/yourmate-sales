@@ -135,7 +135,7 @@ export default function ClassificationCard({
   const applySuggestion = () => {
     const guess = suggestMainTypeFromText(`${projectName ?? ''} ${serviceType ?? ''}`)
     if (!guess) {
-      alert('서비스명·프로젝트명에서 추천할 main_type 을 찾지 못했어요.')
+      alert('서비스명·프로젝트명에서 어떤 메인유형인지 못 알아냈어요. 직접 선택해주세요.')
       return
     }
     setDraft(d => ({ ...d, main_type: guess }))
@@ -148,7 +148,7 @@ export default function ClassificationCard({
     return (
       <section className="bg-white border-2 border-amber-100 rounded-xl overflow-hidden">
         <header className="px-4 py-2.5 border-b border-amber-100 bg-amber-50/30 flex items-center justify-between">
-          <p className="text-sm font-bold text-amber-900">🧭 운영 분류 <span className="text-[10px] text-amber-700 font-normal">(메인유형 + 확장태그 + 역량태그)</span></p>
+          <p className="text-sm font-bold text-amber-900">🧭 운영 분류 <span className="text-[10px] text-amber-700 font-normal">(메인유형 · 추가 범위 · 필요 역량)</span></p>
           <div className="flex items-center gap-2">
             {serviceType && (
               <span className="text-[10px] text-gray-400">
@@ -185,7 +185,8 @@ export default function ClassificationCard({
           <div className="px-4 py-4">
             <p className="text-sm text-gray-500">아직 운영 분류 미설정.</p>
             <p className="text-xs text-gray-400 mt-1">
-              service_type 은 영업용 이름이고, 실제 운영 구조는 main_type + expansion_tags + capability_tags 로 표현해요.
+              <strong>서비스</strong>는 고객·영업용 이름이고,
+              실제 운영 구조는 <strong>메인유형 · 추가 범위 · 필요 역량</strong> 세 가지로 잡아둡니다.
             </p>
           </div>
         ) : (
@@ -200,7 +201,7 @@ export default function ClassificationCard({
             )}
             {current.expansion_tags.length > 0 && (
               <div>
-                <p className="text-[11px] text-gray-500 mb-1">확장태그 ({current.expansion_tags.length})</p>
+                <p className="text-[11px] text-gray-500 mb-1">추가 범위 ({current.expansion_tags.length})</p>
                 <div className="flex flex-wrap gap-1">
                   {current.expansion_tags.map(t => (
                     <span key={t} className="text-[11px] px-2 py-0.5 rounded-full bg-gray-100 text-gray-700 border border-gray-200">{t}</span>
@@ -210,7 +211,7 @@ export default function ClassificationCard({
             )}
             {current.capability_tags.length > 0 && (
               <div>
-                <p className="text-[11px] text-gray-500 mb-1">역량태그 ({current.capability_tags.length})</p>
+                <p className="text-[11px] text-gray-500 mb-1">필요 역량 ({current.capability_tags.length})</p>
                 <div className="flex flex-wrap gap-1">
                   {current.capability_tags.map(t => (
                     <span key={t} className="text-[11px] px-2 py-0.5 rounded-full bg-indigo-50 text-indigo-700 border border-indigo-100">{t}</span>
@@ -290,12 +291,12 @@ export default function ClassificationCard({
           )}
         </div>
 
-        {/* 확장태그 */}
+        {/* 추가 범위 (확장태그) */}
         <div>
           <p className="text-xs font-medium text-gray-700 mb-1.5">
-            확장태그
+            추가 범위
             <span className="text-[10px] text-gray-400 font-normal ml-1">
-              ({draft.expansion_tags.length}개 선택)
+              — 고객이 맡긴 일의 범위 ({draft.expansion_tags.length}개 선택)
             </span>
           </p>
           <div className="space-y-2">
@@ -332,12 +333,12 @@ export default function ClassificationCard({
           </div>
         </div>
 
-        {/* 역량태그 */}
+        {/* 필요 역량 (역량태그) */}
         <div>
           <p className="text-xs font-medium text-gray-700 mb-1.5">
-            역량태그
+            필요 역량
             <span className="text-[10px] text-gray-400 font-normal ml-1">
-              ({draft.capability_tags.length}개 선택)
+              — 우리가 투입해야 할 능력 ({draft.capability_tags.length}개 선택)
             </span>
           </p>
           <div className="space-y-2">

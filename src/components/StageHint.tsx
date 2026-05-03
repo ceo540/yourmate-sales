@@ -31,7 +31,7 @@ const STAGE_CONTENT: Record<Stage, {
   sale: {
     icon: '📜',
     title: '계약과 운영 구조를 정리하는 단계',
-    body: '운영 분류 1차 확정 (메인유형·확장태그) — 어떤 운영 구조로 이어질지 정리',
+    body: '운영 분류 1차 확정 (메인유형 + 추가 범위) — 어떤 운영 구조로 이어질지 정리',
     next: '다음: 프로젝트로 승계됩니다',
     bg: 'bg-violet-50',
     border: 'border-violet-200',
@@ -41,7 +41,7 @@ const STAGE_CONTENT: Record<Stage, {
   project: {
     icon: '◈',
     title: '실제 실행과 운영 구조 최종 확정',
-    body: '메인유형·확장태그 + 실행 역량 (capability_tags) 까지 — 누가 어떤 능력으로 일할지',
+    body: '메인유형 + 추가 범위 + 필요 역량까지 — 누가 어떤 능력으로 일할지',
     next: '여기서 모든 실행이 일어나고 결과물·정산이 마무리됩니다',
     bg: 'bg-amber-50',
     border: 'border-amber-200',
