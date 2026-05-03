@@ -341,26 +341,26 @@ export default async function DashboardPage() {
               <span className="ml-auto text-[10px] text-red-700">총 {totalAlerts}건</span>
             </div>
             <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-xs">
-              <div className="bg-white border border-red-100 rounded-lg px-3 py-2">
+              <Link href="/projects?alert=no_dropbox" className="bg-white border border-red-100 rounded-lg px-3 py-2 hover:bg-red-50 hover:border-red-200 transition-colors block">
                 <p className="text-[10px] text-gray-500 mb-0.5">📁 자료 폴더 미연결</p>
-                <p className="text-base font-bold text-red-700">{totalDbxMiss}건</p>
-                <p className="text-[10px] text-gray-400 mt-0.5">lead {cnt(leadDropboxMiss)} · sale {cnt(saleDropboxMiss)} · project {cnt(projectDropboxMiss)}</p>
-              </div>
-              <div className="bg-white border border-red-100 rounded-lg px-3 py-2">
+                <p className="text-base font-bold text-red-700">{cnt(projectDropboxMiss)}건 <span className="text-[10px] font-normal text-red-400 ml-0.5">바로 보기 ↗</span></p>
+                <p className="text-[10px] text-gray-400 mt-0.5">프로젝트 미연결 (전체 {totalDbxMiss}건)</p>
+              </Link>
+              <Link href="/projects?alert=no_main_type" className="bg-white border border-red-100 rounded-lg px-3 py-2 hover:bg-red-50 hover:border-red-200 transition-colors block">
                 <p className="text-[10px] text-gray-500 mb-0.5">🧭 운영 분류 미설정</p>
-                <p className="text-base font-bold text-amber-700">{totalClassMiss}건</p>
-                <p className="text-[10px] text-gray-400 mt-0.5">sale {cnt(saleNoMainType)} · project {cnt(projectNoMainType)}</p>
-              </div>
-              <div className="bg-white border border-red-100 rounded-lg px-3 py-2">
+                <p className="text-base font-bold text-amber-700">{cnt(projectNoMainType)}건 <span className="text-[10px] font-normal text-amber-500 ml-0.5">바로 보기 ↗</span></p>
+                <p className="text-[10px] text-gray-400 mt-0.5">프로젝트 (전체 {totalClassMiss}건)</p>
+              </Link>
+              <Link href="/sales/report?alert=no_contract_assignee" className="bg-white border border-red-100 rounded-lg px-3 py-2 hover:bg-red-50 hover:border-red-200 transition-colors block">
                 <p className="text-[10px] text-gray-500 mb-0.5">📜 계약 담당 미지정</p>
-                <p className="text-base font-bold text-violet-700">{cnt(saleNoAssignee)}건</p>
+                <p className="text-base font-bold text-violet-700">{cnt(saleNoAssignee)}건 <span className="text-[10px] font-normal text-violet-500 ml-0.5">바로 보기 ↗</span></p>
                 <p className="text-[10px] text-gray-400 mt-0.5">활성 sale 중</p>
-              </div>
-              <div className="bg-white border border-red-100 rounded-lg px-3 py-2">
+              </Link>
+              <Link href="/sales/report?alert=no_payment_schedule" className="bg-white border border-red-100 rounded-lg px-3 py-2 hover:bg-red-50 hover:border-red-200 transition-colors block">
                 <p className="text-[10px] text-gray-500 mb-0.5">💵 결제 일정 미설정</p>
-                <p className="text-base font-bold text-violet-700">{saleNoScheduleCount}건</p>
+                <p className="text-base font-bold text-violet-700">{saleNoScheduleCount}건 <span className="text-[10px] font-normal text-violet-500 ml-0.5">바로 보기 ↗</span></p>
                 <p className="text-[10px] text-gray-400 mt-0.5">활성 sale 중</p>
-              </div>
+              </Link>
             </div>
           </div>
         )

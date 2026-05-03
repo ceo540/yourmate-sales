@@ -64,6 +64,7 @@ interface Props {
   profiles: Profile[]
   customers: Customer[]
   isAdmin: boolean
+  initialFilterAllYears?: boolean   // alert 진입 시 연도 필터 풀고 시작 (Phase 9.1)
 }
 
 function formatDate(d: string | null) {
@@ -132,9 +133,9 @@ function matchesFilter(sale: Sale, year: number | null, period: string) {
   return (d.getMonth() + 1) === Number(period)
 }
 
-export default function SalesReportClient({ sales: initialSales, vendors, entities, profiles, customers, isAdmin }: Props) {
+export default function SalesReportClient({ sales: initialSales, vendors, entities, profiles, customers, isAdmin, initialFilterAllYears = false }: Props) {
   const [sales, setSales] = useState(initialSales)
-  const [filterYear, setFilterYear] = useState<number | null>(CURRENT_YEAR)
+  const [filterYear, setFilterYear] = useState<number | null>(initialFilterAllYears ? null : CURRENT_YEAR)
   const [filterPeriod, setFilterPeriod] = useState('all')
   const [filterDept, setFilterDept] = useState('all')
   const [filterEntity, setFilterEntity] = useState('all')

@@ -6,7 +6,9 @@ import { isAdminOrManager } from '@/lib/permissions'
 import ProjectsClient from './ProjectsClient'
 import StageHint from '@/components/StageHint'
 
-export default async function ProjectsPage() {
+export default async function ProjectsPage({ searchParams }: { searchParams: Promise<{ alert?: string }> }) {
+  const sp = await searchParams
+  const alertParam = (sp?.alert ?? null) as 'no_dropbox' | 'no_main_type' | null
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) redirect('/login')
@@ -73,6 +75,7 @@ export default async function ProjectsPage() {
         isAdmin={isAdmin}
         profiles={(profiles ?? []).map(p => ({ id: p.id, name: p.name ?? '' }))}
         customers={(customers ?? []).map(c => ({ id: c.id, name: c.name }))}
+        alert={alertParam === 'no_dropbox' || alertParam === 'no_main_type' ? alertParam : null}
       />
     </div>
   )

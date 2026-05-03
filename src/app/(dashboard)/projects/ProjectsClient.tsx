@@ -85,18 +85,22 @@ interface SimpleOption { id: string; name: string }
 type SortKey = 'project_number' | 'name' | 'customer_name' | 'service_type' | 'main_type' | 'status' | 'contract_stage' | 'pm_name' | 'revenue' | 'inflow_date'
 type SortDir = 'asc' | 'desc'
 
-export default function ProjectsClient({ projects, isAdmin, profiles, customers }: {
+export default function ProjectsClient({ projects, isAdmin, profiles, customers, alert = null }: {
   projects: Project[]
   isAdmin: boolean
   profiles: SimpleOption[]
   customers: SimpleOption[]
+  alert?: 'no_dropbox' | 'no_main_type' | null
 }) {
   const router = useRouter()
   const [search, setSearch] = useState('')
-  const [statusFilter, setStatusFilter] = useState('전체')
+  const [statusFilter, setStatusFilter] = useState(alert ? '진행중' : '전체')
   const [svcFilter, setSvcFilter] = useState('전체')
   const [pmFilter, setPmFilter] = useState('전체')   // 담당자 필터
-  const [mainTypeFilter, setMainTypeFilter] = useState('전체')  // 운영 분류 (Phase 5)
+  const [mainTypeFilter, setMainTypeFilter] = useState(alert === 'no_main_type' ? '미설정' : '전체')  // 운영 분류 (Phase 5)
+  // alert 진입 시 자료 폴더 미연결 필터 (Phase 9.1)
+  const [dropboxFilter, setDropboxFilter] = useState<'all' | 'missing' | 'connected'>(alert === 'no_dropbox' ? 'missing' : 'all')
+  const [alertDismissed, setAlertDismissed] = useState(false)
   const [sortKey, setSortKey] = useState<SortKey>('project_number')
   const [sortDir, setSortDir] = useState<SortDir>('desc')
 
@@ -161,6 +165,8 @@ export default function ProjectsClient({ projects, isAdmin, profiles, customers 
       if (mainTypeFilter === '미설정') { if (p.main_type) return false }
       else if (p.main_type !== mainTypeFilter) return false
     }
+    if (dropboxFilter === 'missing' && p.dropbox_url) return false
+    if (dropboxFilter === 'connected' && !p.dropbox_url) return false
     if (pmFilter !== '전체') {
       if (pmFilter === '미지정') { if (p.pm_name) return false }
       else if (p.pm_name !== pmFilter) return false
@@ -183,8 +189,37 @@ export default function ProjectsClient({ projects, isAdmin, profiles, customers 
   // 담당자 필터 옵션 (실제 데이터 기준 + 미지정)
   const pmOptions = ['전체', '미지정', ...Array.from(new Set(projects.map(p => p.pm_name).filter(Boolean) as string[]))]
 
+  // alert 진입 안내 배너 (Phase 9.1)
+  const alertConfig = alert ? {
+    no_dropbox: { icon: '📁', title: '자료 폴더 미연결 — 진행중 프로젝트', hint: '대시보드 [🚨 누락·경고]에서 진입했습니다. 폴더 연결되면 목록에서 자동 제외됩니다.' },
+    no_main_type: { icon: '🧭', title: '운영 분류 미설정 — 진행중 프로젝트', hint: '메인유형(학교공연형·교육운영형 등)을 정해 운영 구조를 정리해주세요.' },
+  }[alert] : null
+
   return (
     <div>
+      {/* alert 진입 안내 배너 — Phase 9.1 */}
+      {alertConfig && !alertDismissed && (
+        <div className="mb-4 bg-red-50 border border-red-200 rounded-lg px-4 py-2.5 flex items-center gap-3">
+          <span className="text-base">{alertConfig.icon}</span>
+          <div className="flex-1 min-w-0">
+            <p className="text-xs font-semibold text-red-900">{alertConfig.title} — {filtered.length}건</p>
+            <p className="text-[11px] text-red-700 mt-0.5">{alertConfig.hint}</p>
+          </div>
+          <button
+            type="button"
+            onClick={() => {
+              setAlertDismissed(true)
+              setMainTypeFilter('전체')
+              setDropboxFilter('all')
+              setStatusFilter('전체')
+            }}
+            className="text-xs px-2.5 py-1 rounded border border-red-300 bg-white hover:bg-red-50 text-red-700 font-medium flex-shrink-0"
+          >
+            모두 보기
+          </button>
+        </div>
+      )}
+
       {/* 새 프로젝트 추가 버튼 + 폼 */}
       <div className="mb-4">
         <button onClick={() => setCreateOpen(true)}
