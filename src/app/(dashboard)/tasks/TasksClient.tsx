@@ -316,7 +316,7 @@ export default function TasksClient({ tasks: initialTasks, profiles, sales, isAd
                     </td>
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-1 justify-end">
-                        <button onClick={() => setEditingId(task.id)} className="text-gray-300 hover:text-blue-400 text-xs px-1.5 py-0.5 rounded hover:bg-blue-50 transition-colors">수정</button>
+                        <button onClick={() => setEditingId(task.id)} className="text-blue-600 hover:text-blue-800 text-xs px-2 py-1 rounded border border-blue-200 bg-blue-50 hover:bg-blue-100 font-medium transition-colors">수정</button>
                         {isAdmin && (
                           <button onClick={() => handleDelete(task.id, task.project_id)} className="text-gray-300 hover:text-red-400 text-lg leading-none ml-0.5">×</button>
                         )}
@@ -474,7 +474,7 @@ function TaskRow({ task, isAdmin, isPending, onStatusChange, onDelete, onEdit }:
 
       {/* 수정은 모든 사용자 (member도 본인 담당 task 한정으로 보이므로 안전). 삭제는 admin/manager만. */}
       <div className="flex items-center gap-1 flex-shrink-0">
-        <button onClick={onEdit} className="text-gray-300 hover:text-blue-400 text-xs px-1.5 py-0.5 rounded hover:bg-blue-50 transition-colors">수정</button>
+        <button onClick={onEdit} className="text-blue-600 hover:text-blue-800 text-xs px-2 py-1 rounded border border-blue-200 bg-blue-50 hover:bg-blue-100 font-medium transition-colors">수정</button>
         {isAdmin && (
           <button onClick={() => onDelete(task.id, task.project_id)} className="text-gray-300 hover:text-red-400 text-lg leading-none ml-0.5">×</button>
         )}
