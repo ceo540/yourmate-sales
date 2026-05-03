@@ -348,8 +348,24 @@ export default function ProjectV2Client({
             </button>
           )}
           {project.service_type && (
-            <span className="text-xs text-gray-500 border border-gray-200 px-2 py-0.5 rounded-full">
+            <span className="text-xs text-gray-500 border border-gray-200 px-2 py-0.5 rounded-full" title="서비스 (영업용)">
               {project.service_type}
+            </span>
+          )}
+          {/* 운영 분류 메인유형 배지 (Phase 5 가시성) */}
+          {project.main_type && (
+            <span
+              className={`text-xs px-2.5 py-0.5 rounded-full font-semibold border ${
+                project.main_type === '학교공연형'   ? 'bg-purple-50 text-purple-700 border-purple-200' :
+                project.main_type === '교육운영형'   ? 'bg-emerald-50 text-emerald-700 border-emerald-200' :
+                project.main_type === '복합행사형'   ? 'bg-amber-50 text-amber-700 border-amber-200' :
+                project.main_type === '렌탈·납품형'  ? 'bg-blue-50 text-blue-700 border-blue-200' :
+                project.main_type === '콘텐츠제작형' ? 'bg-pink-50 text-pink-700 border-pink-200' :
+                'bg-gray-100 text-gray-700 border-gray-200'
+              }`}
+              title="운영 분류 메인유형"
+            >
+              🧭 {project.main_type}
             </span>
           )}
           <ProjectMemberChips

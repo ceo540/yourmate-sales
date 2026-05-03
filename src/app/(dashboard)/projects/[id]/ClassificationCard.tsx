@@ -146,9 +146,9 @@ export default function ClassificationCard({
   // ──────────── 보기 모드 ────────────
   if (!editing) {
     return (
-      <section className="bg-white border border-gray-100 rounded-xl overflow-hidden">
-        <header className="px-4 py-2.5 border-b border-gray-100 flex items-center justify-between">
-          <p className="text-xs font-semibold text-gray-700">🧭 운영 분류</p>
+      <section className="bg-white border-2 border-amber-100 rounded-xl overflow-hidden">
+        <header className="px-4 py-2.5 border-b border-amber-100 bg-amber-50/30 flex items-center justify-between">
+          <p className="text-sm font-bold text-amber-900">🧭 운영 분류 <span className="text-[10px] text-amber-700 font-normal">(메인유형 + 확장태그 + 역량태그)</span></p>
           <div className="flex items-center gap-2">
             {serviceType && (
               <span className="text-[10px] text-gray-400">
@@ -184,7 +184,7 @@ export default function ClassificationCard({
             {current.main_type && (
               <div>
                 <p className="text-[11px] text-gray-500 mb-1">메인유형</p>
-                <span className={`inline-block px-2.5 py-0.5 rounded-full font-medium border text-xs ${MAIN_TYPE_COLOR[current.main_type]}`}>
+                <span className={`inline-block px-3 py-1 rounded-full font-bold border text-sm ${MAIN_TYPE_COLOR[current.main_type]}`}>
                   {current.main_type}
                 </span>
               </div>
@@ -223,9 +223,9 @@ export default function ClassificationCard({
 
   // ──────────── 편집 모드 ────────────
   return (
-    <section className="bg-white border border-gray-100 rounded-xl overflow-hidden">
-      <header className="px-4 py-2.5 border-b border-gray-100 flex items-center justify-between">
-        <p className="text-xs font-semibold text-gray-700">🧭 운영 분류 편집</p>
+    <section className="bg-white border-2 border-amber-100 rounded-xl overflow-hidden">
+      <header className="px-4 py-2.5 border-b border-amber-100 bg-amber-50/30 flex items-center justify-between">
+        <p className="text-sm font-bold text-amber-900">🧭 운영 분류 편집</p>
         <button
           type="button"
           onClick={applySuggestion}

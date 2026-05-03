@@ -64,11 +64,23 @@ interface Project {
   revenue: number | null
   contract_stage: string | null
   inflow_date: string | null
+  // 운영 분류 (Phase 5 가시성)
+  main_type: string | null
+  expansion_tags: string[]
 }
+
+const MAIN_TYPE_BADGE: Record<string, string> = {
+  '학교공연형':   'bg-purple-50 text-purple-700 border-purple-200',
+  '교육운영형':   'bg-emerald-50 text-emerald-700 border-emerald-200',
+  '복합행사형':   'bg-amber-50 text-amber-700 border-amber-200',
+  '렌탈·납품형':  'bg-blue-50 text-blue-700 border-blue-200',
+  '콘텐츠제작형': 'bg-pink-50 text-pink-700 border-pink-200',
+}
+const MAIN_TYPES_FILTER = ['전체', '학교공연형', '교육운영형', '복합행사형', '렌탈·납품형', '콘텐츠제작형']
 
 interface SimpleOption { id: string; name: string }
 
-type SortKey = 'project_number' | 'name' | 'customer_name' | 'service_type' | 'status' | 'contract_stage' | 'pm_name' | 'revenue' | 'inflow_date'
+type SortKey = 'project_number' | 'name' | 'customer_name' | 'service_type' | 'main_type' | 'status' | 'contract_stage' | 'pm_name' | 'revenue' | 'inflow_date'
 type SortDir = 'asc' | 'desc'
 
 export default function ProjectsClient({ projects, isAdmin, profiles, customers }: {
@@ -82,6 +94,7 @@ export default function ProjectsClient({ projects, isAdmin, profiles, customers 
   const [statusFilter, setStatusFilter] = useState('전체')
   const [svcFilter, setSvcFilter] = useState('전체')
   const [pmFilter, setPmFilter] = useState('전체')   // 담당자 필터
+  const [mainTypeFilter, setMainTypeFilter] = useState('전체')  // 운영 분류 (Phase 5)
   const [sortKey, setSortKey] = useState<SortKey>('project_number')
   const [sortDir, setSortDir] = useState<SortDir>('desc')
 
@@ -142,6 +155,10 @@ export default function ProjectsClient({ projects, isAdmin, profiles, customers 
   const filtered = projects.filter(p => {
     if (statusFilter !== '전체' && p.status !== statusFilter) return false
     if (svcFilter !== '전체' && p.service_type !== svcFilter) return false
+    if (mainTypeFilter !== '전체') {
+      if (mainTypeFilter === '미설정') { if (p.main_type) return false }
+      else if (p.main_type !== mainTypeFilter) return false
+    }
     if (pmFilter !== '전체') {
       if (pmFilter === '미지정') { if (p.pm_name) return false }
       else if (p.pm_name !== pmFilter) return false
@@ -153,6 +170,8 @@ export default function ProjectsClient({ projects, isAdmin, profiles, customers 
         (p.project_number ?? '').toLowerCase().includes(q) ||
         (p.customer_name ?? '').toLowerCase().includes(q) ||
         (p.service_type ?? '').toLowerCase().includes(q) ||
+        (p.main_type ?? '').toLowerCase().includes(q) ||
+        (p.expansion_tags ?? []).some(t => t.toLowerCase().includes(q)) ||
         (p.pm_name ?? '').toLowerCase().includes(q)
       )
     }
@@ -378,7 +397,29 @@ export default function ProjectsClient({ projects, isAdmin, profiles, customers 
         {assignMsg && <span className="text-xs text-green-600 font-medium">{assignMsg}</span>}
         {!isAdmin && <span className="ml-auto text-xs text-gray-400">{filtered.length}건</span>}
       </div>
-      {/* 서비스 필터 */}
+      {/* 운영 분류 (메인유형) 필터 — Phase 5 가시성 */}
+      <div className="flex gap-1.5 mb-2 flex-wrap items-center">
+        <span className="text-[10px] text-gray-500 mr-1 font-semibold">🧭 운영 분류</span>
+        {[...MAIN_TYPES_FILTER, '미설정'].map(t => {
+          const active = mainTypeFilter === t
+          const cnt = t === '전체'
+            ? projects.length
+            : t === '미설정'
+              ? projects.filter(p => !p.main_type).length
+              : projects.filter(p => p.main_type === t).length
+          const colorCls = active ? (MAIN_TYPE_BADGE[t] ?? 'bg-gray-900 text-white border-gray-900') : 'bg-white text-gray-500 border-gray-200'
+          return (
+            <button key={t} onClick={() => setMainTypeFilter(t)}
+              className={`px-2.5 py-1 rounded-full text-xs border transition-all font-medium ${active ? colorCls : 'hover:bg-gray-50'}`}
+              style={!active ? undefined : (MAIN_TYPE_BADGE[t] ? undefined : { backgroundColor: '#121212', color: '#FFCE00', borderColor: '#121212' })}
+            >
+              {t} <span className="opacity-60 font-normal">({cnt})</span>
+            </button>
+          )
+        })}
+      </div>
+
+      {/* 서비스 필터 (영업용 — 보조 시야) */}
       <div className="flex gap-1.5 mb-2 flex-wrap items-center">
         <span className="text-[10px] text-gray-400 mr-1">서비스</span>
         {svcTypes.map(s => {
@@ -423,6 +464,7 @@ export default function ProjectsClient({ projects, isAdmin, profiles, customers 
               <SortableTh label="프로젝트명" keyName="name"           sortKey={sortKey} sortDir={sortDir} onClick={toggleSort} />
               <SortableTh label="고객"      keyName="customer_name"  sortKey={sortKey} sortDir={sortDir} onClick={toggleSort} />
               <SortableTh label="서비스"    keyName="service_type"   sortKey={sortKey} sortDir={sortDir} onClick={toggleSort} />
+              <SortableTh label="운영 분류" keyName="main_type"      sortKey={sortKey} sortDir={sortDir} onClick={toggleSort} />
               <SortableTh label="상태"      keyName="status"         sortKey={sortKey} sortDir={sortDir} onClick={toggleSort} />
               <SortableTh label="단계"      keyName="contract_stage" sortKey={sortKey} sortDir={sortDir} onClick={toggleSort} />
               <SortableTh label="담당자"    keyName="pm_name"        sortKey={sortKey} sortDir={sortDir} onClick={toggleSort} />
@@ -432,7 +474,7 @@ export default function ProjectsClient({ projects, isAdmin, profiles, customers 
           </thead>
           <tbody>
             {filtered.length === 0 ? (
-              <tr><td colSpan={9} className="px-4 py-12 text-center text-sm text-gray-400">
+              <tr><td colSpan={10} className="px-4 py-12 text-center text-sm text-gray-400">
                 {search ? '검색 결과가 없어.' : '프로젝트가 없어.'}
               </td></tr>
             ) : filtered.map(p => {
@@ -461,6 +503,20 @@ export default function ProjectsClient({ projects, isAdmin, profiles, customers 
                         style={{ color: svcColor, borderColor: svcColor + '40', background: svcColor + '12' }}>
                         {p.service_type}
                       </span>
+                    ) : <span className="text-gray-300">—</span>}
+                  </td>
+                  <td className="px-3 py-2.5 whitespace-nowrap">
+                    {p.main_type ? (
+                      <div className="flex items-center gap-1 flex-wrap">
+                        <span className={`text-xs px-2 py-0.5 rounded-full border font-medium ${MAIN_TYPE_BADGE[p.main_type] ?? 'bg-gray-100 text-gray-700 border-gray-200'}`}>
+                          {p.main_type}
+                        </span>
+                        {p.expansion_tags && p.expansion_tags.length > 0 && (
+                          <span className="text-[10px] text-gray-400" title={p.expansion_tags.join(', ')}>
+                            +{p.expansion_tags.length}
+                          </span>
+                        )}
+                      </div>
                     ) : <span className="text-gray-300">—</span>}
                   </td>
                   <td className="px-3 py-2.5 whitespace-nowrap">
