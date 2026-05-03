@@ -91,6 +91,10 @@ export default async function DashboardPage() {
     .gte('inflow_date', monthStart)
     .not('contract_stage', 'eq', '취소')
 
+  // ──────────── 운영 관제판 카운트 (Phase 9) ────────────
+  // 모두 head:true count — 가벼운 카운트 쿼리만, 데이터 안 가져옴
+  const cnt = (q: { count?: number | null }) => q.count ?? 0
+
   const [
     { data: tasks },
     { data: reminders },
@@ -100,6 +104,19 @@ export default async function DashboardPage() {
     { data: concerts },
     { data: actionLeads },
     { data: actionProjects },
+    // 단계별 카운트
+    leadActive,
+    leadNew,         // 신규 (유입)
+    leadAwaiting,    // 응답 대기 (회신대기·견적발송·조율중)
+    saleActive,
+    saleNoMainType,
+    saleNoAssignee,
+    saleDropboxMiss,
+    projectActive,
+    projectNoMainType,
+    projectDropboxMiss,
+    leadDropboxMiss,
+    paymentScheduleSaleIds,
   ] = await Promise.all([
     taskQ,
     remindQ,
@@ -112,7 +129,24 @@ export default async function DashboardPage() {
       .gte('year', now.getFullYear()).limit(5),
     actionLeadsQ,
     actionProjectsQ,
+    // 단계별 카운트 (head:true)
+    admin.from('leads').select('id', { count: 'exact', head: true }).not('status', 'in', '(완료,취소)'),
+    admin.from('leads').select('id', { count: 'exact', head: true }).eq('status', '유입'),
+    admin.from('leads').select('id', { count: 'exact', head: true }).in('status', ['회신대기', '견적발송', '조율중']),
+    admin.from('sales').select('id', { count: 'exact', head: true }).not('contract_stage', 'eq', '취소'),
+    admin.from('sales').select('id', { count: 'exact', head: true }).not('contract_stage', 'eq', '취소').is('main_type', null),
+    admin.from('sales').select('id', { count: 'exact', head: true }).not('contract_stage', 'eq', '취소').is('contract_assignee_id', null),
+    admin.from('sales').select('id', { count: 'exact', head: true }).not('contract_stage', 'eq', '취소').is('dropbox_url', null),
+    admin.from('projects').select('id', { count: 'exact', head: true }).eq('status', '진행중'),
+    admin.from('projects').select('id', { count: 'exact', head: true }).eq('status', '진행중').is('main_type', null),
+    admin.from('projects').select('id', { count: 'exact', head: true }).eq('status', '진행중').is('dropbox_url', null),
+    admin.from('leads').select('id', { count: 'exact', head: true }).not('status', 'in', '(완료,취소)').is('dropbox_url', null).not('service_type', 'is', null),
+    admin.from('payment_schedules').select('sale_id'),  // 결제 일정 등록된 sale_id distinct 계산용
   ])
+
+  // 결제 일정 미설정 sale = active sale 수 - distinct sale_id 수
+  const scheduledSaleIdSet = new Set((paymentScheduleSaleIds.data ?? []).map((p: any) => p.sale_id).filter(Boolean))
+  const saleNoScheduleCount = Math.max(0, cnt(saleActive) - scheduledSaleIdSet.size)
 
   // summary_cache의 "다음:" 라인만 추출
   type Action = { id: string; type: 'lead' | 'project'; name: string; subtitle: string; action: string; href: string; service_type: string | null }
@@ -214,6 +248,123 @@ export default async function DashboardPage() {
           </div>
         ))}
       </div>
+
+      {/* ──────────── 단계별 운영 카드 (Phase 9) ──────────── */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
+        {/* 📥 lead (sky) */}
+        <Link href="/leads" className="bg-sky-50/40 border-2 border-sky-100 rounded-xl p-4 hover:border-sky-200 transition-colors">
+          <div className="flex items-center justify-between mb-2">
+            <div className="flex items-center gap-2">
+              <span className="text-base">📥</span>
+              <span className="text-xs font-bold text-sky-900">리드 — 문의 단계</span>
+            </div>
+            <span className="text-[10px] text-sky-700">활성 {cnt(leadActive)}건</span>
+          </div>
+          <div className="space-y-1 text-xs">
+            <div className="flex items-center justify-between text-sky-800">
+              <span>· 신규 (유입)</span>
+              <span className="font-bold">{cnt(leadNew)}건</span>
+            </div>
+            <div className="flex items-center justify-between text-sky-800">
+              <span>· 응답·정리 대기</span>
+              <span className="font-bold">{cnt(leadAwaiting)}건</span>
+            </div>
+            <div className="flex items-center justify-between text-sky-700/80">
+              <span>· 7일 내 리마인드</span>
+              <span className="font-bold">{(reminders ?? []).length}건</span>
+            </div>
+          </div>
+        </Link>
+
+        {/* 📜 sale (violet) */}
+        <Link href="/sales/report" className="bg-violet-50/40 border-2 border-violet-100 rounded-xl p-4 hover:border-violet-200 transition-colors">
+          <div className="flex items-center justify-between mb-2">
+            <div className="flex items-center gap-2">
+              <span className="text-base">📜</span>
+              <span className="text-xs font-bold text-violet-900">계약 운영실</span>
+            </div>
+            <span className="text-[10px] text-violet-700">활성 {cnt(saleActive)}건</span>
+          </div>
+          <div className="space-y-1 text-xs">
+            <div className="flex items-center justify-between text-violet-800">
+              <span>· 운영 분류 미설정</span>
+              <span className="font-bold">{cnt(saleNoMainType)}건</span>
+            </div>
+            <div className="flex items-center justify-between text-violet-800">
+              <span>· 계약 담당 미지정</span>
+              <span className="font-bold">{cnt(saleNoAssignee)}건</span>
+            </div>
+            <div className="flex items-center justify-between text-violet-700/80">
+              <span>· 결제 일정 미설정</span>
+              <span className="font-bold">{saleNoScheduleCount}건</span>
+            </div>
+          </div>
+        </Link>
+
+        {/* ◈ project (amber) */}
+        <Link href="/projects" className="bg-amber-50/40 border-2 border-amber-100 rounded-xl p-4 hover:border-amber-200 transition-colors">
+          <div className="flex items-center justify-between mb-2">
+            <div className="flex items-center gap-2">
+              <span className="text-base">◈</span>
+              <span className="text-xs font-bold text-amber-900">프로젝트 — 실행 운영실</span>
+            </div>
+            <span className="text-[10px] text-amber-700">활성 {cnt(projectActive)}건</span>
+          </div>
+          <div className="space-y-1 text-xs">
+            <div className="flex items-center justify-between text-amber-800">
+              <span>· 운영 분류 미설정</span>
+              <span className="font-bold">{cnt(projectNoMainType)}건</span>
+            </div>
+            <div className="flex items-center justify-between text-amber-800">
+              <span>· 자료 폴더 미연결</span>
+              <span className="font-bold">{cnt(projectDropboxMiss)}건</span>
+            </div>
+            <div className="flex items-center justify-between text-amber-700/80">
+              <span>· 진행중 (전체)</span>
+              <span className="font-bold">{cnt(projectActive)}건</span>
+            </div>
+          </div>
+        </Link>
+      </div>
+
+      {/* ──────────── 🚨 누락·경고 / 운영 알림 (Phase 9) ──────────── */}
+      {(() => {
+        const totalDbxMiss = cnt(leadDropboxMiss) + cnt(saleDropboxMiss) + cnt(projectDropboxMiss)
+        const totalClassMiss = cnt(saleNoMainType) + cnt(projectNoMainType)
+        const totalAlerts = totalDbxMiss + totalClassMiss + cnt(saleNoAssignee) + saleNoScheduleCount
+        if (totalAlerts === 0) return null
+        return (
+          <div className="bg-red-50/40 border-2 border-red-100 rounded-xl p-4 mb-4">
+            <div className="flex items-center gap-2 mb-3">
+              <span className="text-base">🚨</span>
+              <span className="text-xs font-bold text-red-900">놓치면 안 되는 누락 — 지금 정리하면 운영 사고 방지</span>
+              <span className="ml-auto text-[10px] text-red-700">총 {totalAlerts}건</span>
+            </div>
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-xs">
+              <div className="bg-white border border-red-100 rounded-lg px-3 py-2">
+                <p className="text-[10px] text-gray-500 mb-0.5">📁 자료 폴더 미연결</p>
+                <p className="text-base font-bold text-red-700">{totalDbxMiss}건</p>
+                <p className="text-[10px] text-gray-400 mt-0.5">lead {cnt(leadDropboxMiss)} · sale {cnt(saleDropboxMiss)} · project {cnt(projectDropboxMiss)}</p>
+              </div>
+              <div className="bg-white border border-red-100 rounded-lg px-3 py-2">
+                <p className="text-[10px] text-gray-500 mb-0.5">🧭 운영 분류 미설정</p>
+                <p className="text-base font-bold text-amber-700">{totalClassMiss}건</p>
+                <p className="text-[10px] text-gray-400 mt-0.5">sale {cnt(saleNoMainType)} · project {cnt(projectNoMainType)}</p>
+              </div>
+              <div className="bg-white border border-red-100 rounded-lg px-3 py-2">
+                <p className="text-[10px] text-gray-500 mb-0.5">📜 계약 담당 미지정</p>
+                <p className="text-base font-bold text-violet-700">{cnt(saleNoAssignee)}건</p>
+                <p className="text-[10px] text-gray-400 mt-0.5">활성 sale 중</p>
+              </div>
+              <div className="bg-white border border-red-100 rounded-lg px-3 py-2">
+                <p className="text-[10px] text-gray-500 mb-0.5">💵 결제 일정 미설정</p>
+                <p className="text-base font-bold text-violet-700">{saleNoScheduleCount}건</p>
+                <p className="text-[10px] text-gray-400 mt-0.5">활성 sale 중</p>
+              </div>
+            </div>
+          </div>
+        )
+      })()}
 
       {/* 🤖 빵빵이에게 쏟아내기 (빠른 메모/명령) */}
       <div className="mb-4">
