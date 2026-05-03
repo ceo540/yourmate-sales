@@ -1478,8 +1478,20 @@ function ShortSummaryBox({ project }: { project: Project }) {
   const [input, setInput] = useState(project.short_summary ?? '')
   const [generating, setGenerating] = useState(false)
   const [genError, setGenError] = useState<string | null>(null)
-  // (Phase 9.5) 정리 프리셋 — 1차 UI state. 후속 라운드에 LLM 프롬프트와 연결.
-  const [preset, setPreset] = useState<'short' | 'standard' | 'deep'>('standard')
+  // (Phase 9.5) 정리 프리셋 — localStorage 영속. 새로고침·탭 전환 후 유지.
+  // SSR/CSR mismatch 방지 위해 초기엔 default + useEffect로 lazy load
+  const PRESET_KEY = `proj-overview-preset:${project.id}`
+  const [preset, setPresetState] = useState<'short' | 'standard' | 'deep'>('standard')
+  useEffect(() => {
+    try {
+      const v = localStorage.getItem(PRESET_KEY)
+      if (v === 'short' || v === 'standard' || v === 'deep') setPresetState(v)
+    } catch { /* private mode 등 */ }
+  }, [PRESET_KEY])
+  function setPreset(p: 'short' | 'standard' | 'deep') {
+    setPresetState(p)
+    try { localStorage.setItem(PRESET_KEY, p) } catch { /* swallow */ }
+  }
 
   function save() {
     startTransition(async () => {
@@ -1492,7 +1504,9 @@ function ShortSummaryBox({ project }: { project: Project }) {
   async function generate() {
     setGenerating(true); setGenError(null)
     try {
-      const res = await generateAndSaveProjectShortSummary(project.id)
+      // (Phase 9.5) preset 전달 — 1차 payload only. LLM 프롬프트 반영은 P3
+      console.log('[short_summary.generate]', { project_id: project.id, preset })
+      const res = await generateAndSaveProjectShortSummary(project.id, preset)
       if ('error' in res) setGenError(res.error)
       else { setInput(res.summary); router.refresh() }
     } catch (e: any) {
@@ -1517,28 +1531,33 @@ function ShortSummaryBox({ project }: { project: Project }) {
           )}
         </div>
       </div>
-      {/* 정리 프리셋 — 1차 UI (Phase 9.5). 다음 자동 생성 시 LLM 프롬프트에 강도 반영 예정 */}
-      <div className="flex items-center gap-1 mb-2 flex-wrap">
-        <span className="text-[9px] text-yellow-700/60 mr-1">정리 강도:</span>
+      {/* 정리 프리셋 — 단일 선택 라디오 (Phase 9.5). localStorage 영속 + generate 호출 시 전달 */}
+      <div role="radiogroup" aria-label="정리 강도" className="flex items-center gap-1.5 mb-2 flex-wrap">
+        <span className="text-[10px] text-yellow-800/70 mr-1 font-medium">정리 강도</span>
         {([
           { key: 'short',    label: '짧게',  hint: '3줄 핵심' },
           { key: 'standard', label: '표준',  hint: '현황·다음·리스크' },
           { key: 'deep',     label: '깊게',  hint: '근거·담당·기한' },
-        ] as { key: 'short' | 'standard' | 'deep'; label: string; hint: string }[]).map(p => (
-          <button
-            key={p.key}
-            type="button"
-            onClick={() => setPreset(p.key)}
-            title={p.hint}
-            className={`text-[10px] px-2 py-0.5 rounded-full border transition-colors ${
-              preset === p.key
-                ? 'bg-yellow-100 border-yellow-300 text-yellow-900 font-bold'
-                : 'bg-white border-yellow-100 text-yellow-700/70 hover:bg-yellow-50'
-            }`}
-          >
-            {p.label}
-          </button>
-        ))}
+        ] as { key: 'short' | 'standard' | 'deep'; label: string; hint: string }[]).map(p => {
+          const active = preset === p.key
+          return (
+            <button
+              key={p.key}
+              type="button"
+              role="radio"
+              aria-checked={active}
+              onClick={() => setPreset(p.key)}
+              title={p.hint}
+              className={`text-xs px-2.5 py-1 rounded-md border-2 font-medium transition-colors ${
+                active
+                  ? 'bg-yellow-300 border-yellow-500 text-yellow-900 shadow-sm'
+                  : 'bg-white border-yellow-200 text-yellow-700 hover:bg-yellow-50'
+              }`}
+            >
+              {active && <span className="mr-0.5">✓</span>}{p.label}
+            </button>
+          )
+        })}
       </div>
       {editing ? (
         <div className="space-y-1.5">
@@ -1594,8 +1613,19 @@ function PendingDiscussionBox({ project }: { project: Project }) {
   const [input, setInput] = useState('')
   const [generating, setGenerating] = useState(false)
   const [genError, setGenError] = useState<string | null>(null)
-  // (Phase 9.5) 정리 프리셋 — 1차 UI state
-  const [preset, setPreset] = useState<'short' | 'action' | 'detailed'>('action')
+  // (Phase 9.5) 정리 프리셋 — 한눈에와 옵션 통일(short/standard/deep) + localStorage 영속
+  const PRESET_KEY = `proj-discussion-preset:${project.id}`
+  const [preset, setPresetState] = useState<'short' | 'standard' | 'deep'>('standard')
+  useEffect(() => {
+    try {
+      const v = localStorage.getItem(PRESET_KEY)
+      if (v === 'short' || v === 'standard' || v === 'deep') setPresetState(v)
+    } catch { /* private mode */ }
+  }, [PRESET_KEY])
+  function setPreset(p: 'short' | 'standard' | 'deep') {
+    setPresetState(p)
+    try { localStorage.setItem(PRESET_KEY, p) } catch { /* swallow */ }
+  }
 
   const currentValue = project[TAB_META[tab].col] ?? ''
   const hasAny = !!(project.pending_discussion_client || project.pending_discussion_internal || project.pending_discussion_vendor)
@@ -1619,8 +1649,10 @@ function PendingDiscussionBox({ project }: { project: Project }) {
     setGenerating(true)
     setGenError(null)
     try {
+      // (Phase 9.5) preset 전달 — 1차 payload only. LLM 프롬프트 반영은 P3
+      console.log('[pending_discussion.generate]', { project_id: project.id, preset })
       const targets: DiscussionTab[] = ['client', 'internal', 'vendor']
-      const results = await Promise.all(targets.map(t => generateAndSavePendingDiscussion(project.id, t)))
+      const results = await Promise.all(targets.map(t => generateAndSavePendingDiscussion(project.id, t, preset)))
       const errors = results.flatMap(r => 'error' in r ? [r.error] : [])
       if (errors.length) setGenError(errors.join(' / '))
       router.refresh()
@@ -1662,28 +1694,34 @@ function PendingDiscussionBox({ project }: { project: Project }) {
             </button>
           </div>
 
-          {/* 정리 프리셋 — 1차 UI (Phase 9.5). 다음 자동 생성 시 LLM 프롬프트와 연결 예정 */}
-          <div className="px-4 py-2 border-b border-gray-50 flex items-center gap-1 flex-wrap bg-white">
-            <span className="text-[10px] text-gray-500 mr-1">정리 강도:</span>
+          {/* 정리 프리셋 — 단일 선택 라디오 (Phase 9.5). 한눈에와 옵션 통일 + localStorage 영속 */}
+          <div role="radiogroup" aria-label="정리 강도" className="px-4 py-2 border-b border-gray-50 flex items-center gap-1.5 flex-wrap bg-white">
+            <span className="text-[10px] text-gray-600 mr-1 font-medium">정리 강도</span>
             {([
-              { key: 'short',    label: '짧게 요약' },
-              { key: 'action',   label: '액션 중심' },
-              { key: 'detailed', label: '근거 포함 상세' },
-            ] as { key: 'short' | 'action' | 'detailed'; label: string }[]).map(p => (
-              <button
-                key={p.key}
-                type="button"
-                onClick={() => setPreset(p.key)}
-                className={`text-[10px] px-2 py-0.5 rounded-full border transition-colors ${
-                  preset === p.key
-                    ? 'bg-blue-50 border-blue-300 text-blue-700 font-bold'
-                    : 'bg-white border-gray-200 text-gray-600 hover:bg-gray-50'
-                }`}
-              >
-                {p.label}
-              </button>
-            ))}
-            <span className="text-[9px] text-gray-400 ml-auto">정리 품질 확인용 프리셋</span>
+              { key: 'short',    label: '짧게',  hint: '핵심만' },
+              { key: 'standard', label: '표준',  hint: '4섹션 정리' },
+              { key: 'deep',     label: '깊게',  hint: '근거·담당·기한' },
+            ] as { key: 'short' | 'standard' | 'deep'; label: string; hint: string }[]).map(p => {
+              const active = preset === p.key
+              return (
+                <button
+                  key={p.key}
+                  type="button"
+                  role="radio"
+                  aria-checked={active}
+                  onClick={() => setPreset(p.key)}
+                  title={p.hint}
+                  className={`text-xs px-2.5 py-1 rounded-md border-2 font-medium transition-colors ${
+                    active
+                      ? 'bg-blue-100 border-blue-500 text-blue-800 shadow-sm'
+                      : 'bg-white border-gray-200 text-gray-600 hover:bg-gray-50'
+                  }`}
+                >
+                  {active && <span className="mr-0.5">✓</span>}{p.label}
+                </button>
+              )
+            })}
+            <span className="text-[9px] text-gray-400 ml-auto">재생성 시 강도 반영 예정 (1차 payload OK)</span>
           </div>
 
           {/* 탭 헤더 */}

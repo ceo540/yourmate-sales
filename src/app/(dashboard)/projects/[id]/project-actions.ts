@@ -240,8 +240,14 @@ export async function updateProjectShortSummary(projectId: string, value: string
 }
 
 // 짧은 요약 자동 생성 — 리드 AI 요약 패턴(한줄·현황·반응·다음)
+// preset: 'short' | 'standard' | 'deep' (Phase 9.5)
+//   - 1차: payload만 받음 (호출자→서버 전달 OK)
+//   - TODO P3: LLM 프롬프트에 강도 가이드 반영 (짧게=3줄 / 표준=현황·다음·리스크 / 깊게=근거·담당·기한)
+export type SummaryPreset = 'short' | 'standard' | 'deep'
+
 export async function generateAndSaveProjectShortSummary(
   projectId: string,
+  _preset?: SummaryPreset,  // TODO: 프롬프트에 반영 (P3)
 ): Promise<{ summary: string } | { error: string }> {
   const admin = createAdminClient()
   const supabase = await createClient()
@@ -586,9 +592,13 @@ JSON만 반환. 마크다운 코드블록 없이.`
 
 // V2 빵빵이 협의·미결 사항 자동 분석 — projects.pending_discussion 자동 채움
 // 최근 소통·미완 업무 분석해서 "지금 협의해야 할 사항" 추출
+// preset: 'short' | 'standard' | 'deep' (Phase 9.5)
+//   - 1차: payload만 받음
+//   - TODO P3: LLM 프롬프트에 강도 가이드 반영 (짧게=핵심만 / 표준=4섹션 / 깊게=근거 포함 상세)
 export async function generateAndSavePendingDiscussion(
   projectId: string,
   target: DiscussionTarget = 'client',
+  _preset?: SummaryPreset,  // TODO: 프롬프트에 반영 (P3)
 ): Promise<{ summary: string } | { error: string }> {
   const admin = createAdminClient()
   const supabase = await createClient()
