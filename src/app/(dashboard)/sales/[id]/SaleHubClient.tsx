@@ -10,6 +10,7 @@ import TaskDetailPanel from './TaskDetailPanel'
 import NotesTab from './components/NotesTab'
 import ContractTab from './components/ContractTab'
 import OverviewTab from './components/OverviewTab'
+import SaleClassificationCard from './SaleClassificationCard'
 import CostSheetEditor from '../CostSheetEditor'
 import CostPdfImportModal from './CostPdfImportModal'
 import ProjectClaudeChat from '@/components/ProjectClaudeChat'
@@ -44,6 +45,9 @@ interface Sale {
   notes: string | null; project_overview: string | null
   notion_page_id: string | null
   share_token: string | null
+  // 운영 분류 (Phase 4)
+  main_type?: string | null
+  expansion_tags?: string[] | null
 }
 
 interface Props {
@@ -177,6 +181,13 @@ export default function SaleHubClient({ sale, tasks: initialTasks, logs, profile
       {/* ── 개요 탭 ── */}
       {tab === 'overview' && (
         <>
+          <SaleClassificationCard
+            saleId={sale.id}
+            saleName={sale.name}
+            serviceType={sale.service_type}
+            initialMainType={sale.main_type ?? null}
+            initialExpansionTags={sale.expansion_tags ?? null}
+          />
           <div className="flex justify-end mb-3 gap-2">
             {shareToken ? (
               <>

@@ -51,6 +51,19 @@ export async function createLead(formData: FormData) {
   }
   const lead_id = await generateLeadId()
 
+  // 운영 분류 추정/힌트 (Phase 4) — JSON 문자열로 전송됨
+  const guessedMain = (formData.get('guessed_main_type') as string) || null
+  let guessedExpansion: string[] = []
+  try {
+    const raw = formData.get('guessed_expansion_tags') as string | null
+    if (raw) {
+      const parsed = JSON.parse(raw)
+      if (Array.isArray(parsed)) guessedExpansion = parsed.filter(x => typeof x === 'string')
+    }
+  } catch {
+    // 무시
+  }
+
   const { data: insertedLead } = await supabase.from('leads').insert({
     lead_id,
     person_id: (formData.get('person_id') as string) || null,
@@ -73,6 +86,8 @@ export async function createLead(formData: FormData) {
     contact_1: (formData.get('contact_1') as string) || null,
     contact_2: (formData.get('contact_2') as string) || null,
     contact_3: (formData.get('contact_3') as string) || null,
+    guessed_main_type: guessedMain,
+    guessed_expansion_tags: guessedExpansion,
   }).select('id').single()
 
   // 최초 유입 내용 → 소통내역 자동 등록
@@ -132,6 +147,8 @@ export async function updateLead(id: string, data: Partial<{
   contact_1: string | null
   contact_2: string | null
   contact_3: string | null
+  guessed_main_type: string | null
+  guessed_expansion_tags: string[]
 }>) {
   const supabase = await createClient()
   await supabase.from('leads').update({ ...data, updated_at: new Date().toISOString() }).eq('id', id)
@@ -231,6 +248,10 @@ export async function convertLeadToSale(leadId: string) {
   const projectNumber = await generateProjectNumber()
   const saleFullName = displayName ? `${projectNumber} ${displayName}` : projectNumber
 
+  // 운영 분류 승계 — leads.guessed_* → sales.* (Phase 4)
+  const inheritedMainType = (lead.guessed_main_type as string | null) ?? null
+  const inheritedExpansion = (lead.guessed_expansion_tags as string[] | null) ?? []
+
   const { data: sale, error } = await supabase.from('sales').insert({
     name: saleFullName,
     client_org: lead.client_org,
@@ -245,6 +266,8 @@ export async function convertLeadToSale(leadId: string) {
     inflow_date: lead.inflow_date || new Date().toISOString().slice(0, 10),
     lead_id: leadId,
     project_number: projectNumber,
+    main_type: inheritedMainType,
+    expansion_tags: inheritedExpansion,
   }).select('id').single()
 
   if (error) return { error: error.message }
@@ -284,7 +307,7 @@ export async function convertLeadToSale(leadId: string) {
     }
   }
 
-  // project 자동 생성
+  // project 자동 생성 — sales.main_type/expansion_tags 또는 lead.guessed_* 승계
   const { data: project } = await adminDb.from('projects').insert({
     name: saleFullName,
     service_type: serviceType,
@@ -294,6 +317,8 @@ export async function convertLeadToSale(leadId: string) {
     status: '진행중',
     _source_sale_id: sale!.id,
     project_number: projectNumber,
+    main_type: inheritedMainType,
+    expansion_tags: inheritedExpansion,
   }).select('id').single()
 
   if (project) {
@@ -351,6 +376,10 @@ export async function addSaleToLead(leadId: string, data: {
   const serviceType = data.service_type || (lead.service_type as string | null)
   const department = (serviceType && SERVICE_TO_DEPT[serviceType]) || null
 
+  // 운영 분류 승계 — leads.guessed_* → sales.* (Phase 4)
+  const inheritedMainType = (lead.guessed_main_type as string | null) ?? null
+  const inheritedExpansion = (lead.guessed_expansion_tags as string[] | null) ?? []
+
   const { data: sale, error } = await supabase.from('sales').insert({
     name: data.name,
     client_org: lead.client_org,
@@ -362,6 +391,8 @@ export async function addSaleToLead(leadId: string, data: {
     memo: data.memo,
     inflow_date: lead.inflow_date || new Date().toISOString().slice(0, 10),
     lead_id: leadId,
+    main_type: inheritedMainType,
+    expansion_tags: inheritedExpansion,
   }).select('id').single()
 
   if (error) return { error: error.message }

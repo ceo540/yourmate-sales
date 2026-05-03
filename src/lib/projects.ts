@@ -13,6 +13,10 @@ interface EnsureProjectInput {
   pm_id: string | null
   project_number: string | null
   dropbox_url: string | null
+  // 운영 분류 승계 (Phase 4) — sale.main_type/expansion_tags → project.main_type/expansion_tags
+  // 새 project 생성 시에만 적용. 기존 project 가 있으면 손대지 않음.
+  main_type?: string | null
+  expansion_tags?: string[] | null
 }
 
 /**
@@ -43,6 +47,8 @@ export async function ensureProjectForSale(input: EnsureProjectInput): Promise<s
     _source_sale_id: input.saleId,
     project_number: input.project_number,
     dropbox_url: input.dropbox_url,
+    main_type: input.main_type ?? null,
+    expansion_tags: input.expansion_tags ?? [],
   }).select('id').single()
 
   if (error || !project) return null

@@ -246,6 +246,9 @@ export interface Lead {
   linked_calendar_events: { id: string; calendarKey: string; title: string; date: string; color: string }[] | null
   summary_cache?: string | null
   summary_updated_at?: string | null
+  // 운영 분류 추정/힌트 (yourmate-company-spec-v2 §5~8) — Phase 4
+  guessed_main_type?: string | null
+  guessed_expansion_tags?: string[] | null
   created_at: string
   updated_at: string
   relatedSales?: RelatedSale[]

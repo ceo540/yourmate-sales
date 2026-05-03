@@ -6,6 +6,20 @@ import { SERVICE_TO_DEPT, ProgressStatus } from '@/types'
 import { createSaleFolder } from '@/lib/dropbox'
 import { ensureProjectForSale, generateProjectNumber } from '@/lib/projects'
 
+// 운영 분류 (Phase 4) — FormData expansion_tags 는 JSON 문자열로 전송
+function readClassificationFromForm(formData: FormData) {
+  const main_type = (formData.get('main_type') as string) || null
+  let expansion_tags: string[] = []
+  try {
+    const raw = formData.get('expansion_tags') as string | null
+    if (raw) {
+      const parsed = JSON.parse(raw)
+      if (Array.isArray(parsed)) expansion_tags = parsed.filter(x => typeof x === 'string')
+    }
+  } catch { /* 무시 */ }
+  return { main_type, expansion_tags }
+}
+
 export async function createSale(formData: FormData) {
   const supabase = await createClient()
   const service_type = (formData.get('service_type') as string) || null
@@ -16,6 +30,7 @@ export async function createSale(formData: FormData) {
   const assignee_id = (formData.get('assignee_id') as string) || null
   const customer_id = (formData.get('customer_id') as string) || null
   const project_number = await generateProjectNumber()
+  const { main_type, expansion_tags } = readClassificationFromForm(formData)
 
   const { data: sale } = await supabase.from('sales').insert({
     name,
@@ -33,6 +48,8 @@ export async function createSale(formData: FormData) {
     payment_date: (formData.get('payment_date') as string) || null,
     dropbox_url: manualDropboxUrl,
     project_number,
+    main_type,
+    expansion_tags,
   }).select('id').single()
 
   // 수동 입력이 없을 때만 자동 생성
@@ -45,7 +62,7 @@ export async function createSale(formData: FormData) {
     }
   }
 
-  // 프로젝트 자동 생성 (orphan sales 방지)
+  // 프로젝트 자동 생성 (orphan sales 방지) — sale.main_type/expansion_tags 승계
   if (sale) {
     await ensureProjectForSale({
       saleId: sale.id,
@@ -56,6 +73,8 @@ export async function createSale(formData: FormData) {
       pm_id: assignee_id,
       project_number,
       dropbox_url: finalDropboxUrl,
+      main_type,
+      expansion_tags,
     })
   }
 
@@ -68,6 +87,7 @@ export async function updateSale(formData: FormData) {
   const from = (formData.get('from') as string) || '/sales/report'
   const service_type = (formData.get('service_type') as string) || null
   const department = (service_type && SERVICE_TO_DEPT[service_type]) || (formData.get('department') as string) || null
+  const { main_type, expansion_tags } = readClassificationFromForm(formData)
   await supabase.from('sales').update({
     name: formData.get('name') as string,
     department,
@@ -83,6 +103,8 @@ export async function updateSale(formData: FormData) {
     inflow_date: (formData.get('inflow_date') as string) || null,
     payment_date: (formData.get('payment_date') as string) || null,
     dropbox_url: (formData.get('dropbox_url') as string) || null,
+    main_type,
+    expansion_tags,
     updated_at: new Date().toISOString(),
   }).eq('id', id)
   redirect(from)
@@ -160,6 +182,9 @@ export async function updateSaleInline(id: string, data: {
   inflow_date: string | null
   payment_date: string | null
   dropbox_url: string | null
+  // 운영 분류 (Phase 4) — 옵셔널, 미전달 시 기존 값 유지
+  main_type?: string | null
+  expansion_tags?: string[] | null
 }) {
   const supabase = await createClient()
   const department = (data.service_type && SERVICE_TO_DEPT[data.service_type]) || data.department
@@ -167,4 +192,27 @@ export async function updateSaleInline(id: string, data: {
   if (error) throw new Error(error.message)
   revalidatePath('/sales/report')
   revalidatePath('/sales')
+}
+
+// 운영 분류만 갱신 (Phase 4) — sale 페이지 카드용
+export async function updateSaleClassification(input: {
+  saleId: string
+  main_type: string | null
+  expansion_tags: string[]
+}): Promise<{ ok: true } | { error: string }> {
+  if (!input.saleId) return { error: 'saleId 필수' }
+  const supabase = await createClient()
+  const { error } = await supabase
+    .from('sales')
+    .update({
+      main_type: input.main_type || null,
+      expansion_tags: input.expansion_tags ?? [],
+      updated_at: new Date().toISOString(),
+    })
+    .eq('id', input.saleId)
+  if (error) return { error: error.message }
+  revalidatePath('/sales/report')
+  revalidatePath('/sales')
+  revalidatePath(`/sales/${input.saleId}`)
+  return { ok: true }
 }

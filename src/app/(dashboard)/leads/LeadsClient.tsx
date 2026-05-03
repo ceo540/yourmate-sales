@@ -8,6 +8,7 @@ import { createLeadLog, getLeadLogs, deleteLeadLog } from './lead-log-actions'
 import ProjectClaudeChat from '@/components/ProjectClaudeChat'
 import MarkdownNoteBlock from '@/components/MarkdownNoteBlock'
 import CustomerPicker from '@/components/CustomerPicker'
+import ClassificationFieldsInline from '@/components/ClassificationFieldsInline'
 import dynamic from 'next/dynamic'
 
 const BlockNoteEditor = dynamic(() => import('@/components/BlockNoteEditor'), { ssr: false })
@@ -293,6 +294,29 @@ function LeadForm({ form, setForm, onSubmit, onCancel, isPending, isAdmin, profi
         <textarea className={INPUT_CLS} rows={2} value={form.initial_content} onChange={e => setForm(f => ({ ...f, initial_content: e.target.value }))} /></div>
       <div><label className={LABEL_CLS}>메모 / 요약</label>
         <textarea className={INPUT_CLS} rows={2} value={form.notes} onChange={e => setForm(f => ({ ...f, notes: e.target.value }))} /></div>
+
+      {/* 운영 분류 추정/힌트 (Phase 4) — sale 전환 시 자동 승계 */}
+      <div className="border border-amber-100 bg-amber-50/40 rounded-lg px-3 py-3">
+        <div className="flex items-center gap-2 mb-2">
+          <span className="text-xs font-semibold text-amber-800">🧭 운영 분류 추정</span>
+          <span className="text-[10px] text-gray-500">sale 전환 시 자동 승계됩니다.</span>
+        </div>
+        <ClassificationFieldsInline
+          mode="guessed"
+          value={{
+            main_type: form.guessed_main_type || null,
+            expansion_tags: form.guessed_expansion_tags,
+          }}
+          onChange={next => setForm(f => ({
+            ...f,
+            guessed_main_type: next.main_type ?? '',
+            guessed_expansion_tags: next.expansion_tags,
+          }))}
+          suggestionText={`${form.service_type} ${form.project_name} ${form.initial_content} ${form.notes}`}
+          disabled={isPending}
+          compact
+        />
+      </div>
       <div className="flex justify-end gap-2 pt-2">
         <button type="button" onClick={onCancel}
           className="px-4 py-2 text-sm text-gray-600 border border-gray-200 rounded-lg hover:bg-gray-50">취소</button>
@@ -314,6 +338,9 @@ type FormState = {
   office_phone: string; email: string; initial_content: string
   assignee_id: string; status: LeadStatus; channel: string
   inflow_source: string; notes: string
+  // 운영 분류 추정/힌트 (yourmate-company-spec-v2 §5~7) — Phase 4
+  guessed_main_type: string
+  guessed_expansion_tags: string[]
 }
 
 const SERVICE_TYPES = [
@@ -449,6 +476,7 @@ const EMPTY_FORM: FormState = {
   remind_date: '', service_type: '', project_name: '', contact_name: '', client_org: '',
   phone: '', office_phone: '', email: '', initial_content: '',
   assignee_id: '', status: '유입', channel: '', inflow_source: '', notes: '',
+  guessed_main_type: '', guessed_expansion_tags: [],
 }
 
 // ── Main Component ────────────────────────────────────────────────
@@ -698,6 +726,8 @@ export default function LeadsClient({ leads, profiles, persons, customers, curre
       initial_content: lead.initial_content || '', assignee_id: lead.assignee_id || '',
       status: (lead.status || '유입') as LeadStatus, channel: lead.channel || '',
       inflow_source: lead.inflow_source || '', notes: lead.notes || '',
+      guessed_main_type: lead.guessed_main_type || '',
+      guessed_expansion_tags: lead.guessed_expansion_tags ?? [],
     })
     setShowEditModal(true)
   }
@@ -712,7 +742,14 @@ export default function LeadsClient({ leads, profiles, persons, customers, curre
     const formSnapshot = { ...form }
     setShowCreateModal(false); setForm({ ...EMPTY_FORM })
     const fd = new FormData()
-    Object.entries(formSnapshot).forEach(([k, v]) => { if (v) fd.set(k, v as string) })
+    Object.entries(formSnapshot).forEach(([k, v]) => {
+      if (k === 'guessed_expansion_tags') return                              // 배열은 별도 처리
+      if (v && typeof v === 'string') fd.set(k, v)
+    })
+    // 운영 분류 추정/힌트 (Phase 4) — 서버 액션은 JSON 문자열로 받음
+    if (formSnapshot.guessed_expansion_tags?.length > 0) {
+      fd.set('guessed_expansion_tags', JSON.stringify(formSnapshot.guessed_expansion_tags))
+    }
     startTransition(async () => {
       const res = await createLead(fd) as { error?: string } | undefined
       if (res?.error) {
@@ -744,6 +781,8 @@ export default function LeadsClient({ leads, profiles, persons, customers, curre
         assignee_id: form.assignee_id || null, status: form.status,
         channel: form.channel || null, inflow_source: form.inflow_source || null,
         notes: form.notes || null,
+        guessed_main_type: form.guessed_main_type || null,
+        guessed_expansion_tags: form.guessed_expansion_tags ?? [],
       }) as { error?: string } | undefined
       if (res?.error) { alert('저장 실패: ' + res.error); return }
       setTab('main')
