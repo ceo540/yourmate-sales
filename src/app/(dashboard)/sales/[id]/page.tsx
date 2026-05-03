@@ -47,7 +47,7 @@ export default async function SalePage({ params, searchParams }: {
     admin.from('project_logs').select('*, profiles:author_id(name)').eq('sale_id', id).order('created_at', { ascending: false }).limit(50),
     admin.from('sale_costs').select('*').eq('sale_id', id).order('created_at'),
     admin.from('vendors').select('id, name, type').order('name'),
-    admin.from('payment_schedules').select('id, amount, is_received, due_date').eq('sale_id', id),
+    admin.from('payment_schedules').select('id, label, amount, is_received, due_date, received_date, note, sort_order').eq('sale_id', id).order('sort_order', { ascending: true }),
     sale.project_id
       ? admin.from('projects').select('id, name, project_number, main_type').eq('id', sale.project_id).maybeSingle()
       : Promise.resolve({ data: null }),
@@ -130,7 +130,15 @@ export default async function SalePage({ params, searchParams }: {
         customers={customers ?? []}
         costs={costs ?? []}
         vendors={vendors ?? []}
-        paymentSchedules={(paymentSchedules ?? []).map((p: any) => ({ id: p.id, amount: Number(p.amount ?? 0), is_received: !!p.is_received, due_date: p.due_date ?? null }))}
+        paymentSchedules={(paymentSchedules ?? []).map((p: any) => ({
+          id: p.id,
+          label: p.label ?? null,
+          amount: Number(p.amount ?? 0),
+          is_received: !!p.is_received,
+          due_date: p.due_date ?? null,
+          received_date: p.received_date ?? null,
+          note: p.note ?? null,
+        }))}
         connectedProject={connectedProjectRaw ? { id: (connectedProjectRaw as any).id, name: (connectedProjectRaw as any).name, project_number: (connectedProjectRaw as any).project_number ?? null, main_type: (connectedProjectRaw as any).main_type ?? null } : null}
         showInternalCosts={showInternalCosts}
         viewMode={viewMode}

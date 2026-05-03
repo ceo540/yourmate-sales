@@ -66,9 +66,12 @@ interface ConnectedProject {
 
 interface SimplePayment {
   id: string
+  label?: string | null
   amount: number
   is_received: boolean
   due_date: string | null
+  received_date?: string | null
+  note?: string | null
 }
 
 interface Props {
@@ -455,7 +458,16 @@ export default function SaleHubClient({ sale, tasks: initialTasks, logs, profile
 
       {/* ── 계약 정보 탭 ── */}
       {tab === 'contract' && (
-        <ContractTab sale={sale} profiles={profiles} entities={entities} customers={customers} />
+        <ContractTab
+          sale={sale}
+          profiles={profiles}
+          entities={entities}
+          customers={customers}
+          paymentSchedules={paymentSchedules}
+          totalCost={localCosts.reduce((s, c) => s + ((c as any).amount ?? 0), 0)}
+          mainType={sale.main_type ?? null}
+          connectedProject={connectedProject}
+        />
       )}
 
       {/* ── 원가 탭 ── */}
