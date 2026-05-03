@@ -9,6 +9,7 @@ import ProjectClaudeChat from '@/components/ProjectClaudeChat'
 import MarkdownNoteBlock from '@/components/MarkdownNoteBlock'
 import CustomerPicker from '@/components/CustomerPicker'
 import ClassificationFieldsInline from '@/components/ClassificationFieldsInline'
+import DropboxStatusBadge from '@/components/DropboxStatus'
 import dynamic from 'next/dynamic'
 
 const BlockNoteEditor = dynamic(() => import('@/components/BlockNoteEditor'), { ssr: false })
@@ -1461,6 +1462,17 @@ export default function LeadsClient({ leads, profiles, persons, customers, curre
                       )}
                     </div>
                   )}
+                </div>
+
+                {/* ── Dropbox 상태 (Phase 6) ── */}
+                <div className="bg-white rounded-2xl px-4 py-2.5 flex items-center gap-2 flex-wrap" style={{ boxShadow: '0 1px 4px rgba(0,0,0,0.06)' }}>
+                  <span className="text-[11px] font-semibold text-gray-500">📁 자료 폴더</span>
+                  <DropboxStatusBadge
+                    dropbox_url={selectedLead.dropbox_url}
+                    service_type={selectedLead.service_type}
+                    stage="lead"
+                    showHint
+                  />
                 </div>
 
                 {/* ── 운영 분류 추정 (Phase 4) ── */}

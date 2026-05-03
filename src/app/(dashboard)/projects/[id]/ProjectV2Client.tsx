@@ -12,6 +12,7 @@ import dynamic from 'next/dynamic'
 const BlockNoteEditor = dynamic(() => import('@/components/BlockNoteEditor'), { ssr: false })
 import ProjectSettingsModal from './ProjectSettingsModal'
 import ClassificationCard from './ClassificationCard'
+import DropboxStatusBadge from '@/components/DropboxStatus'
 import CostModal from '../../sales/CostModal'
 import CostPdfImportModal from '../../sales/[id]/CostPdfImportModal'
 import { createClient as createSupabaseClient } from '@/lib/supabase/client'
@@ -368,6 +369,11 @@ export default function ProjectV2Client({
               🧭 {project.main_type}
             </span>
           )}
+          {/* Dropbox 상태 (Phase 6) */}
+          <DropboxStatusBadge
+            dropbox_url={project.dropbox_url}
+            stage="project"
+          />
           <ProjectMemberChips
             projectId={project.id}
             members={members}
