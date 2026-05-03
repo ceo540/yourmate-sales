@@ -445,19 +445,26 @@ export default function SalesReportClient({ sales: initialSales, vendors, entiti
                 return (
                   <React.Fragment key={sale.id}>
                     <tr
-                      onClick={() => setExpandedSaleId(isExpanded ? null : sale.id)}
-                      className={`group cursor-pointer transition-colors ${isHighlighted ? 'bg-yellow-50 hover:bg-yellow-100' : 'hover:bg-gray-50'}`}
+                      className={`group transition-colors ${isHighlighted ? 'bg-yellow-50 hover:bg-yellow-100' : 'hover:bg-gray-50'}`}
                     >
                       {/* sticky: 체크박스 */}
                       <td
                         className={`sticky left-0 z-10 w-[48px] px-4 py-3.5 transition-colors ${isHighlighted ? 'bg-yellow-50 group-hover:bg-yellow-100' : 'bg-white group-hover:bg-gray-50'}`}
-                        onClick={e => e.stopPropagation()}
                       >
                         <input type="checkbox" checked={selectedIds.has(sale.id)} onChange={() => toggleOne(sale.id)} className="w-3.5 h-3.5 accent-yellow-400 cursor-pointer" />
                       </td>
-                      {/* sticky: 건명 + 원가 완료 표시 */}
+                      {/* sticky: [+] 토글 + 건명(sale 상세) + 원가 표시 + 자료 폴더 분리 */}
                       <td className={`sticky left-[48px] z-10 px-4 py-3.5 max-w-[200px] transition-colors after:absolute after:right-0 after:top-0 after:bottom-0 after:w-px after:bg-gray-100 ${isHighlighted ? 'bg-yellow-50 group-hover:bg-yellow-100' : 'bg-white group-hover:bg-gray-50'}`}>
                         <div className="flex items-center gap-1.5">
+                          <button
+                            type="button"
+                            onClick={() => setExpandedSaleId(isExpanded ? null : sale.id)}
+                            className="w-5 h-5 flex items-center justify-center rounded text-gray-400 hover:bg-gray-200 hover:text-gray-700 flex-shrink-0 text-base leading-none"
+                            title={isExpanded ? '접기' : '펼쳐서 빠른 편집'}
+                            aria-label={isExpanded ? '접기' : '펼쳐서 빠른 편집'}
+                          >
+                            {isExpanded ? '−' : '+'}
+                          </button>
                           {costConfirmed ? (
                             <span className="flex items-center gap-0.5 text-xs px-1.5 py-0.5 rounded-full bg-green-100 text-green-700 flex-shrink-0 font-medium">
                               <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -468,15 +475,24 @@ export default function SalesReportClient({ sales: initialSales, vendors, entiti
                           ) : hasCosts ? (
                             <span className="w-1.5 h-1.5 rounded-full bg-gray-300 flex-shrink-0" title="원가 입력됨 (미확인)" />
                           ) : null}
-                          {sale.dropbox_url ? (
-                            <a href={sale.dropbox_url} target="_blank" rel="noopener noreferrer"
-                              onClick={e => e.stopPropagation()}
-                              className="text-sm font-medium text-blue-600 hover:underline flex items-center gap-1 truncate min-w-0" title={sale.name}>
-                              <span className="truncate">{sale.name}</span>
-                              <span className="text-xs flex-shrink-0">↗</span>
+                          <Link
+                            href={`/sales/${sale.id}`}
+                            className="text-sm font-medium text-gray-900 hover:text-blue-600 hover:underline truncate min-w-0 flex-1"
+                            title={`${sale.name} — 계약 운영실 열기`}
+                          >
+                            {sale.name}
+                          </Link>
+                          {sale.dropbox_url && (
+                            <a
+                              href={sale.dropbox_url}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="text-sm flex-shrink-0 hover:opacity-70"
+                              title="자료 폴더 (Dropbox 새 탭)"
+                              aria-label="자료 폴더 새 탭으로 열기"
+                            >
+                              📁
                             </a>
-                          ) : (
-                            <span className="text-sm font-medium text-gray-900 truncate" title={sale.name}>{sale.name}</span>
                           )}
                         </div>
                       </td>
