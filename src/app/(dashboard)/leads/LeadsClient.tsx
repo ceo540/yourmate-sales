@@ -299,7 +299,7 @@ function LeadForm({ form, setForm, onSubmit, onCancel, isPending, isAdmin, profi
       <div className="border border-amber-100 bg-amber-50/40 rounded-lg px-3 py-3">
         <div className="flex items-center gap-2 mb-2">
           <span className="text-xs font-semibold text-amber-800">🧭 운영 분류 추정</span>
-          <span className="text-[10px] text-gray-500">sale 전환 시 자동 승계됩니다.</span>
+          <span className="text-[10px] text-gray-500">프로젝트 전환 시 자동 승계됩니다.</span>
         </div>
         <ClassificationFieldsInline
           mode="guessed"
@@ -1481,7 +1481,13 @@ export default function LeadsClient({ leads, profiles, persons, customers, curre
                         ))}
                       </div>
                     )}
-                    <span className="text-[10px] text-gray-400 ml-auto">편집은 [편집] 버튼에서</span>
+                    <button
+                      type="button"
+                      onClick={() => openEditTab(selectedLead)}
+                      className="ml-auto text-[10px] px-2 py-0.5 rounded border border-amber-300 bg-white text-amber-800 hover:bg-amber-100"
+                    >
+                      수정하기
+                    </button>
                   </div>
                 </div>
 

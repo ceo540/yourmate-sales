@@ -111,13 +111,20 @@ export async function createLead(formData: FormData) {
   const email = formData.get('email') as string | null
   await syncLeadToCustomerDB({ client_org, contact_name, phone, email })
 
-  // service_type이 있으면 Dropbox 폴더 + brief.md 자동 생성
+  // service_type 매칭되면 Dropbox 폴더 + brief.md 자동 생성
   const service_type = formData.get('service_type') as string | null
   if (service_type && insertedLead?.id) {
+    // 1. 드롭박스 폴더 자동 생성 (실패해도 계속 — 사용자가 나중에 수동 생성 가능)
+    try {
+      await createLeadFolder(insertedLead.id)
+    } catch {
+      // 무시
+    }
+    // 2. brief.md (폴더가 만들어졌을 때만 내부 함수가 알아서 생성)
     try {
       await createOrUpdateLeadBrief(insertedLead.id)
     } catch {
-      // brief 생성 실패는 무시 — 리드 등록 자체에 영향 없음
+      // 무시
     }
   }
 
