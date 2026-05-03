@@ -2533,6 +2533,18 @@ export async function POST(req: NextRequest) {
           toolTrace.push({ name: tu.name, input, result, ok })
           if (MUTATING_TOOLS.has(tu.name) && ok) {
             mutated = true
+            // P2-4 audit: 빵빵이 write 도구 호출 후 기록 (read 도구는 기록 안 함 — 노이즈)
+            const { recordAudit } = await import('@/lib/audit')
+            void recordAudit({
+              actor_id: user.id,
+              actor_role: userRole,
+              action: 'BBANG_TOOL_INVOKED',
+              entity_type: projectId ? 'project' : 'sale',
+              entity_id: projectId ?? null,
+              after: { tool: tu.name },
+              source: 'bbang_chat',
+              summary: `빵빵이 도구 호출 — ${tu.name}`,
+            })
           }
           return {
             type: 'tool_result' as const,

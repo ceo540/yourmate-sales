@@ -4,9 +4,9 @@ import { revalidatePath } from 'next/cache'
 import { SERVICE_TASK_TEMPLATES } from '@/lib/task-templates'
 import { requireUser, requireAdminOrManager, requireTaskOwnership } from '@/lib/auth-guard'
 import { assertNotSensitive } from '@/lib/sensitive-data-policy'
+import { recordAudit } from '@/lib/audit'
 
 // saleId → sale.project_id 자동 lookup 후 모든 관련 경로 revalidate.
-// 이렇게 안 하면 V2 프로젝트 허브가 stale (Phase 9.2 최신화 fix).
 async function revalidateForSale(saleId: string | null) {
   revalidatePath('/tasks')
   if (!saleId) return
@@ -26,11 +26,10 @@ export async function createTask(formData: FormData) {
   const project_id = (formData.get('project_id') as string) || (formData.get('sale_id') as string) || null
   const title = formData.get('title') as string
   const description = (formData.get('description') as string) || null
-  // 민감 정보 차단 (P1-2)
-  assertNotSensitive({ title, description }, user.role)
+  await assertNotSensitive({ title, description }, user.role, user.id)
 
   const supabase = createAdminClient()
-  await supabase.from('tasks').insert({
+  const { data: created } = await supabase.from('tasks').insert({
     project_id,
     title,
     status:      (formData.get('status') as string) || '할 일',
@@ -38,7 +37,18 @@ export async function createTask(formData: FormData) {
     assignee_id: (formData.get('assignee_id') as string) || null,
     due_date:    (formData.get('due_date') as string) || null,
     description,
+  }).select('id').single()
+
+  void recordAudit({
+    actor_id: user.id,
+    actor_role: user.role,
+    action: 'TASK_CREATED',
+    entity_type: 'task',
+    entity_id: created?.id ?? null,
+    after: { title, project_id, priority: (formData.get('priority') as string) || '보통' },
+    summary: `업무 생성 — ${title}`,
   })
+
   await revalidateForSale(project_id)
 }
 
@@ -48,42 +58,71 @@ export async function updateTaskStatus(
   saleId: string | null,
   options?: { completedNote?: string | null; completedBy?: string | null },
 ) {
-  // ownership 검증 (admin 또는 본인 담당). completedBy 인자는 *무시* — 서버 user.id 강제 (P1-1)
   const user = await requireTaskOwnership(id)
 
   const supabase = createAdminClient()
+  // 이전 status snapshot (정확한 audit action 분기용)
+  const { data: prev } = await supabase.from('tasks').select('status, title').eq('id', id).maybeSingle()
+  const prevStatus = prev?.status ?? null
+  const title = prev?.title ?? '(unknown)'
+
   const update: Record<string, unknown> = {
     status,
     updated_at: new Date().toISOString(),
   }
   if (status === '완료') {
     update.completed_at   = new Date().toISOString()
-    // completion_note 만 클라 입력 허용. 단 민감 키워드 차단
     const note = options?.completedNote ?? null
-    assertNotSensitive({ completed_note: note }, user.role)
+    await assertNotSensitive({ completed_note: note }, user.role, user.id)
     update.completed_note = note
-    update.completed_by   = user.id  // 서버 강제 (클라 옵션 무시)
+    update.completed_by   = user.id
   } else {
-    // 완료에서 다른 상태로 되돌리면 완료 정보 클리어
     update.completed_at   = null
     update.completed_note = null
     update.completed_by   = null
   }
   await supabase.from('tasks').update(update).eq('id', id)
+
+  // audit 분기 (P2-4)
+  let auditAction: 'TASK_COMPLETED' | 'TASK_REOPENED' | 'TASK_STATUS_CHANGED' = 'TASK_STATUS_CHANGED'
+  if (status === '완료' && prevStatus !== '완료') auditAction = 'TASK_COMPLETED'
+  else if (prevStatus === '완료' && status !== '완료') auditAction = 'TASK_REOPENED'
+  void recordAudit({
+    actor_id: user.id,
+    actor_role: user.role,
+    action: auditAction,
+    entity_type: 'task',
+    entity_id: id,
+    before: { status: prevStatus },
+    after: { status },
+    summary: `업무 '${title}' ${prevStatus ?? '?'} → ${status}`,
+  })
+
   await revalidateForSale(saleId)
 }
 
 export async function deleteTask(id: string, saleId: string | null) {
-  // 위험 액션 — admin/manager 만
-  await requireAdminOrManager()
+  const user = await requireAdminOrManager()
   const supabase = createAdminClient()
+  // before snapshot
+  const { data: prev } = await supabase.from('tasks').select('title, status').eq('id', id).maybeSingle()
   await supabase.from('tasks').delete().eq('id', id)
+
+  void recordAudit({
+    actor_id: user.id,
+    actor_role: user.role,
+    action: 'TASK_DELETED',
+    entity_type: 'task',
+    entity_id: id,
+    before: prev ? { title: prev.title, status: prev.status } : null,
+    summary: `업무 삭제 — ${prev?.title ?? id}`,
+  })
+
   await revalidateForSale(saleId)
 }
 
 export async function applyTaskTemplate(saleId: string, serviceType: string, _createdBy: string) {
-  // 일괄 템플릿 적용 — admin/manager 만
-  await requireAdminOrManager()
+  const user = await requireAdminOrManager()
   const templates = SERVICE_TASK_TEMPLATES[serviceType]
   if (!templates || templates.length === 0) return
 
@@ -96,33 +135,49 @@ export async function applyTaskTemplate(saleId: string, serviceType: string, _cr
     description: t.description ?? null,
   }))
   await supabase.from('tasks').insert(rows)
+
+  void recordAudit({
+    actor_id: user.id,
+    actor_role: user.role,
+    action: 'TASK_CREATED',
+    entity_type: 'task',
+    entity_id: null,
+    after: { count: rows.length, service_type: serviceType, sale_id: saleId },
+    summary: `${serviceType} 표준 업무 ${rows.length}건 일괄 생성`,
+  })
+
   await revalidateForSale(saleId)
 }
 
 export async function updateTask(formData: FormData) {
   const id = formData.get('id') as string
-  // ownership 검증 (admin 또는 본인 담당)
   const user = await requireTaskOwnership(id)
 
   const saleId = (formData.get('sale_id') as string) || (formData.get('project_id') as string) || null
   const checklistRaw = formData.get('checklist') as string | null
   const checklist = checklistRaw ? JSON.parse(checklistRaw) : undefined
   const newStatus = (formData.get('status') as string) || '할 일'
-  // completed_by 클라 입력은 무시 (P1-1). completed_note 만 받음
   const completedNoteRaw = formData.get('completed_note') as string | null
   const title = formData.get('title') as string
   const description = (formData.get('description') as string) || null
+  const newAssigneeId = (formData.get('assignee_id') as string) || null
+  const newPriority = (formData.get('priority') as string) || '보통'
+  const newDueDate = (formData.get('due_date') as string) || null
 
-  // 민감 정보 차단 (P1-2)
-  assertNotSensitive({ title, description, completed_note: completedNoteRaw }, user.role)
+  await assertNotSensitive({ title, description, completed_note: completedNoteRaw }, user.role, user.id)
 
   const supabase = createAdminClient()
+  // before snapshot for audit
+  const { data: prev } = await supabase.from('tasks')
+    .select('title, status, assignee_id, priority, due_date')
+    .eq('id', id).maybeSingle()
+
   const update: Record<string, unknown> = {
     title,
     status:      newStatus,
-    priority:    (formData.get('priority') as string) || '보통',
-    assignee_id: (formData.get('assignee_id') as string) || null,
-    due_date:    (formData.get('due_date') as string) || null,
+    priority:    newPriority,
+    assignee_id: newAssigneeId,
+    due_date:    newDueDate,
     description,
     updated_at:  new Date().toISOString(),
   }
@@ -131,7 +186,7 @@ export async function updateTask(formData: FormData) {
   if (newStatus === '완료') {
     update.completed_at   = new Date().toISOString()
     update.completed_note = completedNoteRaw?.trim() || null
-    update.completed_by   = user.id  // 서버 강제 (클라 입력 무시)
+    update.completed_by   = user.id
   } else {
     update.completed_at   = null
     update.completed_note = null
@@ -139,5 +194,28 @@ export async function updateTask(formData: FormData) {
   }
 
   await supabase.from('tasks').update(update).eq('id', id)
+
+  // audit 분기 — 가장 의미 있는 액션 1개만 기록 (DRY)
+  const prevStatus = prev?.status ?? null
+  const prevAssignee = prev?.assignee_id ?? null
+  let auditAction:
+    | 'TASK_COMPLETED' | 'TASK_REOPENED' | 'TASK_STATUS_CHANGED'
+    | 'TASK_REASSIGNED' | 'TASK_UPDATED' = 'TASK_UPDATED'
+  if (newStatus === '완료' && prevStatus !== '완료') auditAction = 'TASK_COMPLETED'
+  else if (prevStatus === '완료' && newStatus !== '완료') auditAction = 'TASK_REOPENED'
+  else if (prevStatus !== newStatus) auditAction = 'TASK_STATUS_CHANGED'
+  else if (prevAssignee !== newAssigneeId) auditAction = 'TASK_REASSIGNED'
+
+  void recordAudit({
+    actor_id: user.id,
+    actor_role: user.role,
+    action: auditAction,
+    entity_type: 'task',
+    entity_id: id,
+    before: { status: prevStatus, assignee_id: prevAssignee, priority: prev?.priority ?? null, due_date: prev?.due_date ?? null },
+    after: { status: newStatus, assignee_id: newAssigneeId, priority: newPriority, due_date: newDueDate },
+    summary: `업무 '${title}' ${auditAction === 'TASK_REASSIGNED' ? '담당자 변경' : auditAction === 'TASK_STATUS_CHANGED' ? `${prevStatus}→${newStatus}` : auditAction === 'TASK_COMPLETED' ? '완료 처리' : auditAction === 'TASK_REOPENED' ? '재오픈' : '수정'}`,
+  })
+
   await revalidateForSale(saleId)
 }

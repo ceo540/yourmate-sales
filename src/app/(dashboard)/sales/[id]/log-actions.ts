@@ -5,10 +5,11 @@ import { revalidatePath } from 'next/cache'
 import { createProfileNameMap } from '@/lib/utils'
 import { requireUser, requireLogOwnerOrAdmin } from '@/lib/auth-guard'
 import { assertNotSensitive } from '@/lib/sensitive-data-policy'
+import { recordAudit } from '@/lib/audit'
 
 export async function createLog(saleId: string, content: string, logType: string, contactedAt?: string) {
   const u = await requireUser()
-  assertNotSensitive({ content }, u.role)
+  await assertNotSensitive({ content }, u.role, u.id)
 
   const admin = createAdminClient()
   const { error: rpcError } = await admin.rpc('insert_project_log', {
@@ -47,15 +48,33 @@ export async function createLog(saleId: string, content: string, logType: string
     summary: `계약 소통 (${logType}): ${content.slice(0, 80)}`,
   })
 
+  void recordAudit({
+    actor_id: u.id,
+    actor_role: u.role,
+    action: 'LOG_CREATED',
+    entity_type: 'log',
+    entity_id: null,
+    after: { sale_id: saleId, log_type: logType, content_preview: content.slice(0, 80) },
+    summary: `계약 소통 (${logType}) — ${content.slice(0, 80)}`,
+  })
+
   revalidatePath(`/sales/${saleId}`)
   revalidatePath('/departments', 'layout')
 }
 
 export async function deleteLog(logId: string, saleId: string) {
-  // 작성자 또는 admin/manager만 (P1-3)
-  await requireLogOwnerOrAdmin(logId)
+  const u = await requireLogOwnerOrAdmin(logId)
   const admin = createAdminClient()
   await admin.from('project_logs').delete().eq('id', logId)
+  void recordAudit({
+    actor_id: u.id,
+    actor_role: u.role,
+    action: 'LOG_DELETED',
+    entity_type: 'log',
+    entity_id: logId,
+    after: { sale_id: saleId },
+    summary: `소통 기록 삭제 — sale ${saleId}`,
+  })
   revalidatePath(`/sales/${saleId}`)
   revalidatePath('/departments', 'layout')
 }
@@ -87,7 +106,7 @@ export async function getSaleLogs(saleId: string) {
 
 export async function createLeadLog(leadId: string, content: string, logType: string, contactedAt?: string) {
   const u = await requireUser()
-  assertNotSensitive({ content }, u.role)
+  await assertNotSensitive({ content }, u.role, u.id)
 
   const admin = createAdminClient()
   const { error } = await admin.from('project_logs').insert({
@@ -109,6 +128,15 @@ export async function createLeadLog(leadId: string, content: string, logType: st
     ref_id: leadId,
     summary: `리드 소통 (${logType}): ${content.slice(0, 80)}`,
   })
+  void recordAudit({
+    actor_id: u.id,
+    actor_role: u.role,
+    action: 'LOG_CREATED',
+    entity_type: 'log',
+    entity_id: null,
+    after: { lead_id: leadId, log_type: logType, content_preview: content.slice(0, 80) },
+    summary: `리드 소통 (${logType}) — ${content.slice(0, 80)}`,
+  })
 }
 
 export async function getLeadLogs(leadId: string) {
@@ -123,8 +151,15 @@ export async function getLeadLogs(leadId: string) {
 }
 
 export async function deleteLeadLog(logId: string) {
-  // 작성자 또는 admin/manager만 (P1-3)
-  await requireLogOwnerOrAdmin(logId)
+  const u = await requireLogOwnerOrAdmin(logId)
   const admin = createAdminClient()
   await admin.from('project_logs').delete().eq('id', logId)
+  void recordAudit({
+    actor_id: u.id,
+    actor_role: u.role,
+    action: 'LOG_DELETED',
+    entity_type: 'log',
+    entity_id: logId,
+    summary: `리드 소통 기록 삭제`,
+  })
 }

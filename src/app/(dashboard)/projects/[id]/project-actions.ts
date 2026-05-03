@@ -18,6 +18,7 @@ import {
   requireMemoOwnerOrAdmin,
 } from '@/lib/auth-guard'
 import { assertNotSensitive } from '@/lib/sensitive-data-policy'
+import { recordAudit } from '@/lib/audit'
 
 export async function createProjectLog(
   projectId: string,
@@ -30,9 +31,8 @@ export async function createProjectLog(
   outcome?: string,
   saleId?: string | null,
 ) {
-  const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
-  if (!user) throw new Error('Unauthorized')
+  const u = await requireUser()
+  await assertNotSensitive({ content, location: location ?? null, outcome: outcome ?? null }, u.role, u.id)
 
   const admin = createAdminClient()
   const { error } = await admin.from('project_logs').insert({
@@ -40,7 +40,7 @@ export async function createProjectLog(
     content,
     log_type: logType,
     log_category: logCategory,
-    author_id: user.id,
+    author_id: u.id,
     contacted_at: contactedAt || new Date().toISOString(),
     location: location || null,
     participants: participants?.length ? participants : null,
@@ -52,21 +52,33 @@ export async function createProjectLog(
   // 자동 업무표 (§5.4.2)
   const { logActivity } = await import('@/lib/activity-log')
   void logActivity({
-    actor_id: user.id,
+    actor_id: u.id,
     action: 'create_log',
     ref_type: 'project',
     ref_id: projectId,
     summary: `소통 로그 (${logType}${logCategory ? '·' + logCategory : ''}): ${content.slice(0, 80)}`,
   })
 
+  void recordAudit({
+    actor_id: u.id, actor_role: u.role,
+    action: 'LOG_CREATED', entity_type: 'log', entity_id: null,
+    after: { project_id: projectId, log_type: logType, log_category: logCategory, content_preview: content.slice(0, 80) },
+    summary: `프로젝트 소통 (${logType}) — ${content.slice(0, 80)}`,
+  })
+
   revalidatePath(`/projects/${projectId}`)
 }
 
 export async function deleteProjectLog(logId: string, projectId: string) {
-  // 작성자 본인 또는 admin/manager만 삭제 가능 (P1-3)
-  await requireLogOwnerOrAdmin(logId)
+  const u = await requireLogOwnerOrAdmin(logId)
   const admin = createAdminClient()
   await admin.from('project_logs').delete().eq('id', logId)
+  void recordAudit({
+    actor_id: u.id, actor_role: u.role,
+    action: 'LOG_DELETED', entity_type: 'log', entity_id: logId,
+    after: { project_id: projectId },
+    summary: `프로젝트 소통 삭제`,
+  })
   revalidatePath(`/projects/${projectId}`)
 }
 
@@ -95,13 +107,19 @@ export async function getProjectLogs(projectId: string) {
 
 export async function updateProjectMemo(projectId: string, memo: string) {
   const u = await requireUser()
-  assertNotSensitive({ memo }, u.role)
+  await assertNotSensitive({ memo }, u.role, u.id)
   const admin = createAdminClient()
   const { error } = await admin
     .from('projects')
     .update({ memo, updated_at: new Date().toISOString() })
     .eq('id', projectId)
   if (error) throw new Error(error.message)
+  void recordAudit({
+    actor_id: u.id, actor_role: u.role,
+    action: 'PROJECT_OVERVIEW_UPDATED', entity_type: 'project', entity_id: projectId,
+    after: { memo_length: memo?.length ?? 0 },
+    summary: `프로젝트 메모(notes) 수정 — ${memo?.length ?? 0}자`,
+  })
   revalidatePath(`/projects/${projectId}`)
 }
 
@@ -112,7 +130,7 @@ export async function createProjectMemo(
 ): Promise<{ id: string } | { error: string }> {
   let u
   try { u = await requireUser() } catch { return { error: 'Unauthorized' } }
-  try { assertNotSensitive({ title: data.title, content: data.content }, u.role) }
+  try { await assertNotSensitive({ title: data.title, content: data.content }, u.role, u.id) }
   catch (e) { return { error: e instanceof Error ? e.message : '민감 정보 차단' } }
 
   const admin = createAdminClient()
@@ -127,6 +145,12 @@ export async function createProjectMemo(
     .select('id')
     .single()
   if (error) return { error: error.message }
+  void recordAudit({
+    actor_id: u.id, actor_role: u.role,
+    action: 'PROJECT_MEMO_CREATED', entity_type: 'memo', entity_id: row.id,
+    after: { project_id: projectId, title: data.title || null, content_length: data.content?.length ?? 0 },
+    summary: `프로젝트 메모 생성 — ${data.title || '(제목없음)'}`,
+  })
   revalidatePath(`/projects/${projectId}`)
   return { id: row.id }
 }
@@ -140,7 +164,7 @@ export async function updateProjectMemoCard(
   let u
   try { u = await requireMemoOwnerOrAdmin(memoId) }
   catch (e) { return { error: e instanceof Error ? e.message : 'Forbidden' } }
-  try { assertNotSensitive({ title: data.title ?? null, content: data.content ?? null }, u.role) }
+  try { await assertNotSensitive({ title: data.title ?? null, content: data.content ?? null }, u.role, u.id) }
   catch (e) { return { error: e instanceof Error ? e.message : '민감 정보 차단' } }
 
   const admin = createAdminClient()
@@ -149,18 +173,30 @@ export async function updateProjectMemoCard(
   if (data.content !== undefined) updates.content = data.content || null
   const { error } = await admin.from('project_memos').update(updates).eq('id', memoId)
   if (error) return { error: error.message }
+  void recordAudit({
+    actor_id: u.id, actor_role: u.role,
+    action: 'PROJECT_MEMO_UPDATED', entity_type: 'memo', entity_id: memoId,
+    after: { project_id: projectId, title: data.title ?? null, content_length: data.content?.length ?? 0 },
+    summary: `메모 수정 — ${data.title || memoId.slice(0,8)}`,
+  })
   revalidatePath(`/projects/${projectId}`)
   return {}
 }
 
 export async function deleteProjectMemo(memoId: string, projectId: string): Promise<{ error?: string }> {
-  // 작성자 본인 또는 admin/manager만 (P1-3)
-  try { await requireMemoOwnerOrAdmin(memoId) }
+  let u
+  try { u = await requireMemoOwnerOrAdmin(memoId) }
   catch (e) { return { error: e instanceof Error ? e.message : 'Forbidden' } }
 
   const admin = createAdminClient()
   const { error } = await admin.from('project_memos').delete().eq('id', memoId)
   if (error) return { error: error.message }
+  void recordAudit({
+    actor_id: u.id, actor_role: u.role,
+    action: 'PROJECT_MEMO_DELETED', entity_type: 'memo', entity_id: memoId,
+    after: { project_id: projectId },
+    summary: `메모 삭제`,
+  })
   revalidatePath(`/projects/${projectId}`)
   return {}
 }
@@ -168,26 +204,38 @@ export async function deleteProjectMemo(memoId: string, projectId: string): Prom
 // V2 3박스용 필드 업데이트
 export async function updateProjectOverviewSummary(projectId: string, value: string) {
   const u = await requireUser()
-  assertNotSensitive({ overview_summary: value }, u.role)
+  await assertNotSensitive({ overview_summary: value }, u.role, u.id)
   const admin = createAdminClient()
   const { error } = await admin
     .from('projects')
     .update({ overview_summary: value || null, updated_at: new Date().toISOString() })
     .eq('id', projectId)
   if (error) throw new Error(error.message)
+  void recordAudit({
+    actor_id: u.id, actor_role: u.role,
+    action: 'PROJECT_OVERVIEW_UPDATED', entity_type: 'project', entity_id: projectId,
+    after: { field: 'overview_summary', length: value?.length ?? 0 },
+    summary: `프로젝트 개요(자세한) 수정 — ${value?.length ?? 0}자`,
+  })
   revalidatePath(`/projects/${projectId}`)
 }
 
 // 짧은 요약 (한눈에 박스. 항상 보임) — 별도 컬럼 short_summary
 export async function updateProjectShortSummary(projectId: string, value: string) {
   const u = await requireUser()
-  assertNotSensitive({ short_summary: value }, u.role)
+  await assertNotSensitive({ short_summary: value }, u.role, u.id)
   const admin = createAdminClient()
   const { error } = await admin
     .from('projects')
     .update({ short_summary: value || null, updated_at: new Date().toISOString() })
     .eq('id', projectId)
   if (error) throw new Error(error.message)
+  void recordAudit({
+    actor_id: u.id, actor_role: u.role,
+    action: 'PROJECT_OVERVIEW_UPDATED', entity_type: 'project', entity_id: projectId,
+    after: { field: 'short_summary', length: value?.length ?? 0 },
+    summary: `프로젝트 개요(한눈에) 수정 — ${value?.length ?? 0}자`,
+  })
   revalidatePath(`/projects/${projectId}`)
 }
 
@@ -281,13 +329,19 @@ ${ctx}
 
 export async function updateProjectWorkDescription(projectId: string, value: string) {
   const u = await requireUser()
-  assertNotSensitive({ work_description: value }, u.role)
+  await assertNotSensitive({ work_description: value }, u.role, u.id)
   const admin = createAdminClient()
   const { error } = await admin
     .from('projects')
     .update({ work_description: value || null, updated_at: new Date().toISOString() })
     .eq('id', projectId)
   if (error) throw new Error(error.message)
+  void recordAudit({
+    actor_id: u.id, actor_role: u.role,
+    action: 'PROJECT_OVERVIEW_UPDATED', entity_type: 'project', entity_id: projectId,
+    after: { field: 'work_description', length: value?.length ?? 0 },
+    summary: `프로젝트 업무 범위 수정 — ${value?.length ?? 0}자`,
+  })
   revalidatePath(`/projects/${projectId}`)
 }
 
@@ -297,7 +351,7 @@ export async function updateProjectPendingDiscussion(
   value: string,
 ) {
   const u = await requireUser()
-  assertNotSensitive({ pending_discussion: value }, u.role)
+  await assertNotSensitive({ pending_discussion: value }, u.role, u.id)
   const admin = createAdminClient()
   const col = DISCUSSION_COLUMN[target]
   if (!col) throw new Error(`잘못된 target: ${target}`)
@@ -306,6 +360,12 @@ export async function updateProjectPendingDiscussion(
     .update({ [col]: value || null, updated_at: new Date().toISOString() })
     .eq('id', projectId)
   if (error) throw new Error(error.message)
+  void recordAudit({
+    actor_id: u.id, actor_role: u.role,
+    action: 'PROJECT_PENDING_DISCUSSION_UPDATED', entity_type: 'project', entity_id: projectId,
+    after: { target, length: value?.length ?? 0 },
+    summary: `협의사항 [${target}] 수정 — ${value?.length ?? 0}자`,
+  })
   revalidatePath(`/projects/${projectId}`)
 }
 
@@ -695,24 +755,28 @@ ${paymentLines.join('\n') || '(없음)'}
 }
 
 export async function addProjectMember(projectId: string, profileId: string, role: string) {
-  // PM·멤버 권한 변경 — admin/manager만 (P1-3)
-  await requireAdminOrManager()
+  const u = await requireAdminOrManager()
   const admin = createAdminClient()
   const { error } = await admin
     .from('project_members')
     .insert({ project_id: projectId, profile_id: profileId, role })
   if (error) throw new Error(error.message)
-  // PM이면 projects.pm_id도 동기화 — /projects 목록은 projects.pm_id로 조회되므로
   if (role === 'PM') {
     await admin.from('projects').update({ pm_id: profileId, updated_at: new Date().toISOString() }).eq('id', projectId)
     revalidatePath('/projects')
   }
+  void recordAudit({
+    actor_id: u.id, actor_role: u.role,
+    action: role === 'PM' ? 'PROJECT_PM_CHANGED' : 'PROJECT_MEMBER_ADDED',
+    entity_type: 'project', entity_id: projectId,
+    after: { profile_id: profileId, role },
+    summary: `${role === 'PM' ? 'PM' : '멤버'} 추가 — ${profileId.slice(0,8)}`,
+  })
   revalidatePath(`/projects/${projectId}`)
 }
 
 export async function removeProjectMember(projectId: string, profileId: string) {
-  // PM·멤버 권한 변경 — admin/manager만 (P1-3)
-  await requireAdminOrManager()
+  const u = await requireAdminOrManager()
   const admin = createAdminClient()
   // 기존 PM 여부 확인 (제거 후 projects.pm_id 동기화 판단용)
   const { data: existing } = await admin
@@ -731,24 +795,37 @@ export async function removeProjectMember(projectId: string, profileId: string) 
     await admin.from('projects').update({ pm_id: null, updated_at: new Date().toISOString() }).eq('id', projectId)
     revalidatePath('/projects')
   }
+  void recordAudit({
+    actor_id: u.id, actor_role: u.role,
+    action: existing?.role === 'PM' ? 'PROJECT_PM_CHANGED' : 'PROJECT_MEMBER_REMOVED',
+    entity_type: 'project', entity_id: projectId,
+    after: { profile_id: profileId, removed_role: existing?.role ?? null },
+    summary: `${existing?.role === 'PM' ? 'PM 해제' : '멤버 제거'} — ${profileId.slice(0,8)}`,
+  })
   revalidatePath(`/projects/${projectId}`)
 }
 
 export async function updateProjectStatus(projectId: string, status: string): Promise<{ cancelMsg?: string }> {
   // status 변경 정책 (P1-3 hotfix):
-  // - 일상 변경(기획중·진행중·완료·보류): 모든 인증 사용자 (멤버 자기 프로젝트 운영 일상)
-  // - '취소': admin/manager만 (dropbox 폴더 999999.취소 이동 + linked sales 일괄 이동 트리거 — 위험 액션)
-  if (status === '취소') {
-    await requireAdminOrManager()
-  } else {
-    await requireUser()
-  }
+  // - 일상 변경(기획중·진행중·완료·보류): 모든 인증 사용자
+  // - '취소': admin/manager만 (dropbox 폴더 999999.취소 이동 등 위험 액션)
+  const u = status === '취소' ? await requireAdminOrManager() : await requireUser()
   const admin = createAdminClient()
+  // before snapshot
+  const { data: prev } = await admin.from('projects').select('status, name').eq('id', projectId).maybeSingle()
   const { error } = await admin
     .from('projects')
     .update({ status, updated_at: new Date().toISOString() })
     .eq('id', projectId)
   if (error) throw new Error(error.message)
+  void recordAudit({
+    actor_id: u.id, actor_role: u.role,
+    action: status === '취소' ? 'PROJECT_CANCELED' : 'PROJECT_STATUS_CHANGED',
+    entity_type: 'project', entity_id: projectId,
+    before: { status: prev?.status ?? null },
+    after: { status },
+    summary: `프로젝트 '${prev?.name ?? projectId.slice(0,8)}' ${prev?.status ?? '?'}→${status}`,
+  })
 
   // 취소 상태로 변경 시 드롭박스 폴더를 999999.취소 폴더로 이동
   if (status === '취소') {
@@ -792,10 +869,16 @@ export async function updateProjectStatus(projectId: string, status: string): Pr
 }
 
 export async function linkProjectCustomer(projectId: string, customerId: string) {
-  await requireUser()
+  const u = await requireUser()
   const admin = createAdminClient()
   // customer 변경 시 contact_person_id도 리셋 (옛 customer의 person이 잘못 연결되는 것 방지)
   await admin.from('projects').update({ customer_id: customerId || null, contact_person_id: null }).eq('id', projectId)
+  void recordAudit({
+    actor_id: u.id, actor_role: u.role,
+    action: 'PROJECT_CUSTOMER_LINKED', entity_type: 'project', entity_id: projectId,
+    after: { customer_id: customerId || null },
+    summary: customerId ? `고객사 연결 — ${customerId.slice(0,8)}` : '고객사 연결 해제',
+  })
   revalidatePath(`/projects/${projectId}`)
 }
 
@@ -822,11 +905,11 @@ export async function createPersonAndLinkToProject(params: {
   let u
   try { u = await requireUser() } catch { return { ok: false, error: 'Unauthorized' } }
   try {
-    assertNotSensitive({
+    await assertNotSensitive({
       name: params.name,
       dept: params.dept ?? null,
       title: params.title ?? null,
-    }, u.role)
+    }, u.role, u.id)
   } catch (e) { return { ok: false, error: e instanceof Error ? e.message : '민감 정보 차단' } }
 
   const admin = createAdminClient()
@@ -880,7 +963,7 @@ export async function createAndLinkCustomer(
 ): Promise<{ error?: string; id?: string }> {
   let u
   try { u = await requireUser() } catch { return { error: 'Unauthorized' } }
-  try { assertNotSensitive({ name: data.name, contact_name: data.contact_name }, u.role) }
+  try { await assertNotSensitive({ name: data.name, contact_name: data.contact_name }, u.role, u.id) }
   catch (e) { return { error: e instanceof Error ? e.message : '민감 정보 차단' } }
 
   const admin = createAdminClient()
