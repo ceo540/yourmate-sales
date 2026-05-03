@@ -96,6 +96,10 @@ export interface Task {
   start_date?: string
   due_date?: string
   description?: string
+  // 완료 코멘트 (Phase 9.2 — 2026-05-03)
+  completed_note?: string | null
+  completed_at?: string | null
+  completed_by?: string | null
   created_at: string
   updated_at: string
 }

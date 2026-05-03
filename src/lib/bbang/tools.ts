@@ -395,18 +395,19 @@ export const TOOLS: Anthropic.Tool[] = [
   },
   {
     name: 'complete_task',
-    description: '현재 프로젝트의 할 일을 완료 상태로 변경합니다. 제목 일부로 검색해서 찾음. 여러 건 매칭 시 task_id로 재호출 필요.',
+    description: '현재 프로젝트의 할 일을 완료 상태로 변경합니다. 제목 일부로 검색해서 찾음. 여러 건 매칭 시 task_id로 재호출 필요. 사용자가 "어떻게 마쳤다/어떤 결과로 끝났다" 이야기하면 그 내용을 completion_note 에 함께 전달.',
     input_schema: {
       type: 'object' as const,
       properties: {
         task_id: { type: 'string', description: '할 일 ID (UUID). title 검색 결과가 여러 개일 때 명시.' },
         title: { type: 'string', description: '제목 검색어 (task_id 없을 때 필수)' },
+        completion_note: { type: 'string', description: '완료 코멘트. 사용자가 어떻게 끝냈는지 말한 내용 그대로. 짧아도 OK, 비워도 OK.' },
       },
     },
   },
   {
     name: 'update_task',
-    description: '현재 프로젝트의 기존 할 일을 수정합니다. 담당자/마감일/우선순위/상태/제목/설명 모두 변경 가능. 사용자가 "X 할일 마감 바꿔/담당자 바꿔/제목 바꿔" 등이라고 하면 즉시 호출. task_id 또는 title 부분 매칭으로 식별.',
+    description: '현재 프로젝트의 기존 할 일을 수정합니다. 담당자/마감일/우선순위/상태/제목/설명 모두 변경 가능. 사용자가 "X 할일 마감 바꿔/담당자 바꿔/제목 바꿔" 등이라고 하면 즉시 호출. task_id 또는 title 부분 매칭으로 식별. status를 "완료"로 바꿀 때는 completion_note 도 같이 받아 넣어.',
     input_schema: {
       type: 'object' as const,
       properties: {
@@ -418,6 +419,7 @@ export const TOOLS: Anthropic.Tool[] = [
         status: { type: 'string', description: '할 일 | 진행중 | 완료 | 보류' },
         assignee_name: { type: 'string', description: '담당자 이름. "나"=본인, ""=미지정.' },
         description: { type: 'string', description: '상세 설명' },
+        completion_note: { type: 'string', description: 'status="완료"일 때만 의미 있음. 사용자가 어떻게 마쳤는지 말한 내용.' },
       },
     },
   },

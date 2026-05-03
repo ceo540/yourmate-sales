@@ -3,6 +3,7 @@ import { useState, useTransition } from 'react'
 import { createTask, updateTaskStatus, deleteTask, updateTask } from '../sales/tasks/actions'
 import { createProfileMap } from '@/lib/utils'
 import { TASK_STATUS_STYLE as STATUS_STYLE, PRIORITY_DOT, PRIORITY_TEXT as PRIORITY_STYLE } from '@/lib/constants'
+import { askCompletionNote } from '@/lib/task-completion-prompt'
 
 const STATUSES = ['할 일', '진행중', '검토중', '완료', '보류'] as const
 const PRIORITIES = ['낮음', '보통', '높음'] as const
@@ -66,8 +67,16 @@ export default function TasksClient({ tasks: initialTasks, profiles, sales, isAd
   }
 
   function handleStatusChange(taskId: string, saleId: string | null, status: string) {
+    let completedNote: string | null = null
+    // (Phase 9.2) 완료로 *처음* 변경되는 순간만 prompt
+    const target = tasks.find(t => t.id === taskId)
+    if (status === '완료' && target?.status !== '완료') {
+      const r = askCompletionNote(target?.title ?? '업무')
+      if (r.cancelled) return
+      completedNote = r.note
+    }
     setTasks(prev => prev.map(t => t.id === taskId ? { ...t, status } : t))
-    startTransition(() => updateTaskStatus(taskId, status, saleId))
+    startTransition(() => updateTaskStatus(taskId, status, saleId, { completedNote, completedBy: currentUserId }))
   }
 
   function handleDelete(taskId: string, saleId: string | null) {

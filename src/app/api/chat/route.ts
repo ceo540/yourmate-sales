@@ -1230,13 +1230,26 @@ async function executeTool(name: string, input: Record<string, unknown>, userRol
       }
     }
     const admin = createAdminClient()
+    const completionNote = ((input.completion_note as string) || '').trim() || null
     const { error } = await admin
       .from('tasks')
-      .update({ status: '완료', updated_at: new Date().toISOString() })
+      .update({
+        status: '완료',
+        completed_at: new Date().toISOString(),
+        completed_note: completionNote,
+        completed_by: userId,
+        updated_at: new Date().toISOString(),
+      })
       .eq('id', found.task.id)
     if (error) return { error: error.message }
     revalidateProjectPages()
-    return { success: true, id: found.task.id, title: found.task.title, message: `"${found.task.title}" 완료 처리했어.` }
+    return {
+      success: true,
+      id: found.task.id,
+      title: found.task.title,
+      completion_note: completionNote,
+      message: `"${found.task.title}" 완료 처리했어${completionNote ? ` (코멘트 저장됨)` : ''}.`,
+    }
   }
 
   if (name === 'update_task') {
@@ -1265,6 +1278,17 @@ async function executeTool(name: string, input: Record<string, unknown>, userRol
       updates.assignee_id = await resolveAssigneeId(input.assignee_name as string)
     }
     if (input.description !== undefined) updates.description = (input.description as string) || null
+
+    // 완료로 변경되는 경우만 완료 메타 채우고, 다른 상태로 되돌리면 클리어 (Phase 9.2)
+    if (input.status === '완료') {
+      updates.completed_at = new Date().toISOString()
+      updates.completed_note = ((input.completion_note as string) || '').trim() || null
+      updates.completed_by = userId
+    } else if (input.status && input.status !== '완료') {
+      updates.completed_at = null
+      updates.completed_note = null
+      updates.completed_by = null
+    }
 
     if (Object.keys(updates).length === 1) return { error: '변경할 내용이 없어.' }
 

@@ -503,80 +503,156 @@ export async function generateAndSavePendingDiscussion(
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return { error: 'Unauthorized' }
 
+  // (Phase 9.2) 입력 데이터 확장 — 협의사항 품질 강화
   const [{ data: project }, { data: contracts }] = await Promise.all([
-    admin.from('projects').select('id, name, status, memo, notes').eq('id', projectId).single(),
-    admin.from('sales').select('id, contract_stage').eq('project_id', projectId),
+    admin.from('projects')
+      .select('id, name, status, memo, notes, overview_summary, short_summary, work_description, customer_id, project_number, service_type')
+      .eq('id', projectId).single(),
+    admin.from('sales')
+      .select('id, name, contract_stage, revenue, payment_schedules(label, amount, due_date, is_received)')
+      .eq('project_id', projectId),
   ])
   if (!project) return { error: '프로젝트를 찾을 수 없습니다' }
 
-  const contractIds = (contracts ?? []).map(c => c.id)
-  const [{ data: tasks }, { data: logs }] = await Promise.all([
+  const contractIds = (contracts ?? []).map((c: { id: string }) => c.id)
+  const [{ data: tasks }, { data: logs }, { data: customer }, { data: profiles }] = await Promise.all([
     contractIds.length > 0
-      ? admin.from('tasks').select('title, status, priority, due_date, description').in('project_id', contractIds).limit(40)
-      : Promise.resolve({ data: [] }),
+      ? admin.from('tasks')
+          .select('id, title, status, priority, due_date, description, assignee_id, created_at')
+          .in('project_id', contractIds)
+          .limit(60)
+      : Promise.resolve({ data: [] as Array<{ id: string; title: string; status: string; priority: string | null; due_date: string | null; description: string | null; assignee_id: string | null; created_at: string }> }),
     admin.from('project_logs')
-      .select('content, log_type, contacted_at, outcome')
+      .select('id, content, log_type, log_category, contacted_at, outcome, participants, location')
       .eq('project_id', projectId)
       .order('contacted_at', { ascending: false })
       .limit(20),
+    project.customer_id
+      ? admin.from('customers').select('name, contact_name, contact_phone, contact_email, type').eq('id', project.customer_id).maybeSingle()
+      : Promise.resolve({ data: null }),
+    admin.from('profiles').select('id, name'),
   ])
 
-  const pendingTasks = (tasks ?? []).filter((t: any) => t.status !== '완료' && t.status !== '보류')
-  const taskSummary = pendingTasks.map((t: any) =>
-    `- [${t.status}${t.priority ? ` · ${t.priority}` : ''}] ${t.title}${t.due_date ? ` (${t.due_date.slice(5)})` : ''}${t.description ? `\n    상세: ${t.description}` : ''}`
-  ).join('\n')
-  const logSummary = (logs ?? []).slice(0, 15).map((l: any) =>
-    `- [${l.log_type}] ${(l.contacted_at ?? '').slice(0, 10)}: ${l.content ?? ''}${l.outcome ? `\n    → 결과: ${l.outcome}` : ''}`
-  ).join('\n')
+  const profileMap = Object.fromEntries((profiles ?? []).map((p: { id: string; name: string | null }) => [p.id, p.name ?? '?']))
 
-  const prompt = `너는 프로젝트 매니저 어시스턴트야. 아래 데이터를 보고 *${DISCUSSION_LABEL[target]}* 관련 항목만 디테일하게 정리해.
+  // 마감 임박 = 7일 이내 (오늘 포함)
+  const today = new Date(); today.setHours(0, 0, 0, 0)
+  const dueSoonCutoff = new Date(today.getTime() + 7 * 86400000)
+
+  const pendingTasks = (tasks ?? []).filter((t) => t.status !== '완료' && t.status !== '보류')
+  const overdueTasks = pendingTasks.filter(t => t.due_date && new Date(t.due_date) < today)
+  const dueSoonTasks = pendingTasks.filter(t => t.due_date && new Date(t.due_date) >= today && new Date(t.due_date) <= dueSoonCutoff)
+
+  const taskSummary = pendingTasks.map((t) => {
+    const assigneeName = t.assignee_id ? (profileMap[t.assignee_id] ?? '미배정') : '미배정'
+    return `- [${t.status}${t.priority ? ` · ${t.priority}` : ''}] ${t.title} / 담당: ${assigneeName}${t.due_date ? ` / 마감: ${t.due_date}` : ''}${t.description ? `\n    상세: ${t.description}` : ''}`
+  }).join('\n')
+
+  const logSummary = (logs ?? []).map((l) => {
+    const parts = [
+      `[${l.log_type}${l.log_category ? `·${l.log_category}` : ''}]`,
+      (l.contacted_at ?? '').slice(0, 10),
+      `: ${l.content ?? ''}`,
+    ].join(' ')
+    const meta: string[] = []
+    if (l.participants) meta.push(`참석: ${Array.isArray(l.participants) ? l.participants.join(', ') : l.participants}`)
+    if (l.location) meta.push(`장소: ${l.location}`)
+    if (l.outcome) meta.push(`결과: ${l.outcome}`)
+    return `- ${parts}${meta.length > 0 ? `\n    (${meta.join(' / ')})` : ''}`
+  }).join('\n')
+
+  // 결제 일정 (목록형) — 결제 협의 컨텍스트
+  const paymentLines: string[] = []
+  for (const c of contracts ?? []) {
+    const schedules = ((c as { payment_schedules?: Array<{ label: string | null; amount: number | null; due_date: string | null; is_received: boolean | null }> }).payment_schedules ?? [])
+    for (const p of schedules) {
+      paymentLines.push(`  - ${c.name}: ${p.label ?? '-'} ${(p.amount ?? 0).toLocaleString()}원 / 마감 ${p.due_date ?? '-'} / ${p.is_received ? '입금완료' : '미입금'}`)
+    }
+  }
+
+  const customerLine = customer
+    ? `\n[고객 정보]\n- 기관명: ${customer.name}\n- 담당자: ${customer.contact_name ?? '(미입력)'}${customer.contact_phone ? ` / ${customer.contact_phone}` : ''}${customer.contact_email ? ` / ${customer.contact_email}` : ''}\n- 유형: ${customer.type ?? '미지정'}\n`
+    : ''
+
+  const projectBody = [
+    project.short_summary ? `[한 눈에 요약]\n${project.short_summary}` : '',
+    project.overview_summary ? `[프로젝트 개요]\n${project.overview_summary}` : '',
+    project.work_description ? `[업무 범위·계약 내용]\n${project.work_description}` : '',
+    project.memo ? `[메모]\n${project.memo}` : '',
+    project.notes ? `[유의사항]\n${project.notes}` : '',
+  ].filter(Boolean).join('\n\n')
+
+  const todayIso = today.toISOString().slice(0, 10)
+
+  const prompt = `너는 시니어 프로젝트 매니저 어시스턴트야. 아래 *실제 데이터*를 보고 *${DISCUSSION_LABEL[target]}* 관련 협의 항목을 빠짐없이 정리해.
 
 ${DISCUSSION_PROMPT_FOCUS[target]}
 
-[프로젝트]
-- 이름: ${project.name}
+# 🔴 절대 규칙 (위반 시 출력 무효)
+1. **데이터에 없는 내용 추측·창작 금지**. 정보가 없으면 "(데이터 없음)"이라고 명시.
+2. **각 항목마다 명시 필수**: 누구(담당자명/기관 담당자명) · 무엇 · 언제까지(가능하면 날짜).
+3. **모호한 표현 금지**: "조만간" / "추후" / "필요 시" / "검토" — 이런 표현 보이면 구체화하거나 "협의 필요" 섹션으로 옮길 것.
+4. *${DISCUSSION_LABEL[target]}* 범위 외(${target === 'client' ? '내부·외주사' : target === 'internal' ? '클라이언트·외주사' : '클라이언트·내부'}) 항목은 *완전 생략*.
+5. 마크다운, 코드블록 없이. 섹션 헤더는 굵게(**...**).
+
+# 분류 기준 (반드시 이 정의대로)
+- **🔥 빠르게 해결**: 오늘(${todayIso}) ~ 내일까지 처리 가능, 의존성 없음
+- **❓ 협의·결정 필요**: 우리가 답을 줄 수 없음. 클라이언트/내부/외주사 답변·결정 대기 중이거나 받아야 함
+- **📌 답변 대기**: 우리가 이미 요청·발송한 상태로 상대 답변 기다리는 중 (logs.outcome 또는 발송 사실 있어야 함)
+- **⚠️ 마감 임박·지연**: 마감일 ${todayIso} 기준 *과거*(지연) 또는 7일 이내 미완료
+
+# 자동 추출 신호 (놓치지 마)
+- pending_task.due_date < 오늘 → 반드시 ⚠️
+- pending_task.due_date 7일 이내 → ⚠️ 또는 🔥
+- log.outcome에 "보냄/전달함/요청함" 같은 표현 → 📌 후보
+- log.outcome에 "협의 필요/결정 필요/확인 부탁" → ❓ 필수
+- task.assignee_id IS NULL → ❓ "담당 미배정"
+
+# 입력 데이터
+
+[프로젝트 기본]
+- 이름: ${project.name}${project.project_number ? ` (${project.project_number})` : ''}
+- 서비스: ${project.service_type ?? '(미지정)'}
 - 상태: ${project.status}
-${project.memo ? `- 메모: ${project.memo}` : ''}
-${project.notes ? `- 유의사항: ${project.notes}` : ''}
-- 계약 단계: ${(contracts ?? []).map((c: any) => c.contract_stage ?? '계약').join(', ') || '없음'}
+- 계약 단계 모음: ${(contracts ?? []).map((c) => `${c.name}=${c.contract_stage ?? '계약'}`).join(' / ') || '없음'}
+${customerLine}
 
-[진행중·검토중 업무]
-${taskSummary || '없음'}
+${projectBody || '[프로젝트 본문] (데이터 없음)'}
 
-[최근 소통·결과]
-${logSummary || '없음'}
+[진행중·검토중 업무 ${pendingTasks.length}건${overdueTasks.length > 0 ? ` · 지연 ${overdueTasks.length}` : ''}${dueSoonTasks.length > 0 ? ` · 7일내 ${dueSoonTasks.length}` : ''}]
+${taskSummary || '(없음)'}
 
-작성 가이드:
-- 짧게 줄이지 말고 데이터에 있는 사실은 다 살려서 정리.
-- 각 항목마다 무엇이 필요한지, 왜 중요한지, 누구의 답변/결정이 필요한지 명시.
-- 표가 효과적이면 markdown 표 사용.
-- 위에 명시한 *${DISCUSSION_LABEL[target]}* 범위에서만. 다른 범주(${target === 'client' ? '내부·외주사' : target === 'internal' ? '클라이언트·외주사' : '클라이언트·내부'})에 해당하면 *생략*.
+[최근 소통·결과 ${(logs ?? []).length}건]
+${logSummary || '(없음)'}
 
-출력 (markdown, 코드블록 없이):
+[결제 일정]
+${paymentLines.join('\n') || '(없음)'}
 
-**🔥 빠르게 해결 (오늘/내일 처리)**
-- 항목별로 상세히
+# 출력 형식 (마크다운, 코드블록 X)
+
+**🔥 빠르게 해결**
+- 각 항목 1~2줄: 무엇을 / 누가(담당자명) / 언제까지
 
 **❓ 협의·결정 필요**
-- 누구와 무엇을 협의/결정할지
+- 각 항목: 누구(클라이언트 담당자명/내부 직원명/외주사명)와 무엇을 / 왜 결정 필요한지 / 언제까지 결정해야 하는지
 
 **📌 답변 대기**
-- 우리가 보낸 후 답변 기다리는 것
+- 각 항목: 누구에게 / 무엇을 / 언제 보냈는지 / 언제까지 답변 받아야 하는지
 
-**⚠️ 마감 임박 미결**
-- 데드라인 가까운데 안 끝난 것
+**⚠️ 마감 임박·지연**
+- 각 항목: 무엇이 / 마감일 / 담당자 / 지연 일수 또는 D-N
 
-해당 카테고리에 항목 없으면 그 섹션 빼. 본 분류(${DISCUSSION_LABEL[target]}) 항목이 아예 없으면 "해당 없음"이라고만 출력.`
+각 섹션에 해당 항목이 0건이면 그 섹션 통째로 빼. 본 분류(${DISCUSSION_LABEL[target]}) 항목이 아예 없으면 "해당 없음" 한 줄만 출력.`
 
   const client = new Anthropic()
   const message = await client.messages.create({
     model: 'claude-sonnet-4-6',
-    max_tokens: 1500,
+    max_tokens: 2000,
     messages: [{ role: 'user', content: prompt }],
   })
   logApiUsage({ model: 'claude-sonnet-4-6', endpoint: 'project-pending', userId: user.id, inputTokens: message.usage.input_tokens, outputTokens: message.usage.output_tokens }).catch(() => {})
 
-  const summary = ((message.content[0] as any)?.text ?? '').trim()
+  const summary = ((message.content[0] as { type: string; text?: string })?.text ?? '').trim()
   if (!summary) return { error: '협의사항 분석 실패' }
 
   const targetCol = DISCUSSION_COLUMN[target]

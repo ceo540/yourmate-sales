@@ -17,6 +17,7 @@ import DropboxRetryButton from '@/components/DropboxRetryButton'
 import CostModal from '../../sales/CostModal'
 import CostPdfImportModal from '../../sales/[id]/CostPdfImportModal'
 import { createClient as createSupabaseClient } from '@/lib/supabase/client'
+import { askCompletionNote } from '@/lib/task-completion-prompt'
 import {
   updateProjectMemo,
   updateProjectNotes,
@@ -171,6 +172,11 @@ interface Task {
   description?: string | null
   bbang_suggested?: boolean
   created_at?: string | null
+  // 완료 코멘트 (Phase 9.2)
+  completed_at?: string | null
+  completed_by?: string | null
+  completed_by_name?: string | null
+  completed_note?: string | null
 }
 interface Log {
   id: string; content: string; log_type: string; log_category: string | null
@@ -477,7 +483,7 @@ export default function ProjectV2Client({
           <NotesBlock project={project} />
 
           {/* 3. 할일 (tasks) */}
-          <TasksSection tasks={tasks} contracts={contracts} projectId={project.id} profiles={profiles} serviceType={project.service_type} />
+          <TasksSection tasks={tasks} contracts={contracts} projectId={project.id} profiles={profiles} serviceType={project.service_type} currentUserId={currentUserId} />
 
           {/* 외부 인력 (engagement) — yourmate-spec.md §5.5 */}
           <WorkerEngagementsBlock projectId={project.id} engagements={workerEngagements ?? []} />
@@ -1853,8 +1859,9 @@ type TaskSortKey = 'due_date' | 'priority' | 'status' | 'created'
 const TASK_PRIORITY_ORDER: Record<string, number> = { 긴급: 0, 높음: 1, 보통: 2, 낮음: 3 }
 const TASK_STATUS_ORDER: Record<string, number> = { 진행중: 0, 검토중: 1, '할 일': 2, 보류: 3, 완료: 4 }
 
-function TasksSection({ tasks, contracts, projectId, profiles, serviceType }: {
+function TasksSection({ tasks, contracts, projectId, profiles, serviceType, currentUserId }: {
   tasks: Task[]; contracts: Contract[]; projectId: string; profiles: ProfileOpt[]; serviceType: string | null
+  currentUserId: string
 }) {
   const router = useRouter()
   const [, startTransition] = useTransition()
@@ -2045,7 +2052,7 @@ function TasksSection({ tasks, contracts, projectId, profiles, serviceType }: {
       ) : (
         <ul className="divide-y divide-gray-50">
           {visibleTasks.slice(0, 30).map(t => (
-            <TaskRow key={t.id} task={t} profiles={profiles} projectId={projectId} serviceType={serviceType} />
+            <TaskRow key={t.id} task={t} profiles={profiles} projectId={projectId} serviceType={serviceType} currentUserId={currentUserId} />
           ))}
         </ul>
       )}
@@ -2072,8 +2079,9 @@ const CALENDAR_LABELS: Record<string, string> = {
   artqium: '아트키움',
 }
 
-function TaskRow({ task, profiles, projectId, serviceType }: {
+function TaskRow({ task, profiles, projectId, serviceType, currentUserId }: {
   task: Task; profiles: ProfileOpt[]; projectId: string; serviceType: string | null
+  currentUserId: string
 }) {
   const router = useRouter()
   const [, startTransition] = useTransition()
@@ -2100,6 +2108,14 @@ function TaskRow({ task, profiles, projectId, serviceType }: {
 
   function save() {
     if (!form.title.trim()) return
+    // 완료 코멘트 (Phase 9.2): '완료'로 변경되는 *순간*만 prompt
+    let completedNote: string | null = null
+    const becameCompleted = form.status === '완료' && task.status !== '완료'
+    if (becameCompleted) {
+      const r = askCompletionNote(form.title.trim())
+      if (r.cancelled) return
+      completedNote = r.note
+    }
     setSaving(true)
     const fd = new FormData()
     fd.set('id', task.id)
@@ -2110,6 +2126,10 @@ function TaskRow({ task, profiles, projectId, serviceType }: {
     fd.set('due_date', form.due_date)
     fd.set('description', form.description)
     if (task.project_id) fd.set('sale_id', task.project_id) // task.project_id는 sale.id
+    if (becameCompleted) {
+      fd.set('completed_note', completedNote ?? '')
+      fd.set('completed_by', currentUserId)
+    }
     startTransition(async () => {
       try {
         await updateTask(fd)
@@ -2185,6 +2205,19 @@ function TaskRow({ task, profiles, projectId, serviceType }: {
       {/* 상세 편집 */}
       {expanded && (
         <div className="px-5 py-3 bg-gray-50 border-t border-gray-100 space-y-2">
+          {/* 완료 이력 (Phase 9.2) */}
+          {task.status === '완료' && (task.completed_at || task.completed_note || task.completed_by_name) && (
+            <div className="bg-emerald-50 border border-emerald-200 rounded-lg px-3 py-2 text-xs text-emerald-900">
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className="font-bold">✓ 완료</span>
+                {task.completed_at && <span className="opacity-80">{task.completed_at.slice(0, 16).replace('T', ' ')}</span>}
+                {task.completed_by_name && <span className="opacity-80">· {task.completed_by_name}</span>}
+              </div>
+              {task.completed_note && (
+                <p className="mt-1 whitespace-pre-wrap text-emerald-800 leading-snug">{task.completed_note}</p>
+              )}
+            </div>
+          )}
           <input value={form.title} onChange={e => setForm(f => ({ ...f, title: e.target.value }))}
             placeholder="제목" className="w-full text-sm font-medium border border-gray-200 rounded-lg px-3 py-2 bg-white focus:outline-none focus:border-yellow-400" />
           <textarea value={form.description} onChange={e => setForm(f => ({ ...f, description: e.target.value }))}

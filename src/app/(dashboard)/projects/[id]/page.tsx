@@ -60,7 +60,7 @@ export default async function ProjectPage({ params }: { params: Promise<{ id: st
   const contractIds = (contractsRaw ?? []).map(c => c.id)
   const [{ data: tasksRaw }, { data: costsRaw }, { data: rentalsRaw }] = await Promise.all([
     contractIds.length > 0
-      ? admin.from('tasks').select('id, title, status, priority, due_date, project_id, assignee_id, description, bbang_suggested, created_at').in('project_id', contractIds).order('created_at')
+      ? admin.from('tasks').select('id, title, status, priority, due_date, project_id, assignee_id, description, bbang_suggested, created_at, completed_at, completed_by, completed_note').in('project_id', contractIds).order('created_at')
       : Promise.resolve({ data: [] }),
     contractIds.length > 0
       ? admin.from('sale_costs').select('*').in('sale_id', contractIds).order('created_at')
@@ -272,6 +272,10 @@ export default async function ProjectPage({ params }: { params: Promise<{ id: st
         assignee_name: t.assignee_id ? (profileNameMap[t.assignee_id] ?? null) : null,
         description: t.description ?? null,
         bbang_suggested: !!t.bbang_suggested,
+        completed_at: t.completed_at ?? null,
+        completed_by: t.completed_by ?? null,
+        completed_by_name: t.completed_by ? (profileNameMap[t.completed_by] ?? null) : null,
+        completed_note: t.completed_note ?? null,
       }))}
       profiles={(profilesRaw ?? []).map(p => ({ id: p.id, name: p.name ?? '' }))}
       logs={logs}
