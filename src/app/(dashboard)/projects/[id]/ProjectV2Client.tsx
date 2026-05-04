@@ -5,6 +5,7 @@ import { useRouter, useSearchParams, usePathname } from 'next/navigation'
 import Link from 'next/link'
 import ProjectClaudeChat from '@/components/ProjectClaudeChat'
 import MarkdownText from '@/components/MarkdownText'
+import RelativeTimeBadge from '@/components/RelativeTimeBadge'
 import MarkdownNoteBlock from '@/components/MarkdownNoteBlock'
 import CustomerPicker from '@/components/CustomerPicker'
 import dynamic from 'next/dynamic'
@@ -1471,6 +1472,36 @@ function MemoCard({ memo, projectId }: { memo: Memo; projectId: string }) {
 
 /* ── 2. 2박스: 개요(빵빵이) / 협의해야할 내용 (빵빵이) ─── */
 /* 한눈에 박스 — 짧은 요약 (항상 펼침. 상단 자리) */
+/**
+ * action preset 결과 품질 검증 (Phase 9.6 / C).
+ * [담당자] · [마감] · [다음행동(동사 시작)] 3요소가 본문에 들어갔는지 휴리스틱.
+ * - 누락 시 console.warn — 운영 콘솔에서 모델 출력 품질 모니터.
+ * - 본 흐름 영향 0 (저장은 그대로 진행).
+ */
+function validateActionTriple(summary: string, label: string): void {
+  if (typeof window === 'undefined') return
+  // [...] 형태 토큰 — 항목당 최소 3개 권장. 매우 적으면 누락 의심.
+  const bracketTokens = summary.match(/\[[^\[\]]+\]/g) ?? []
+  // "(데이터 없음)" 표기는 OK 사례
+  const hasNoneMarker = /\(데이터 없음\)/.test(summary)
+  // 모호어 검사
+  const VAGUE = ['조만간', '추후', '필요\\s*시', '검토 ?$', '예정']
+  const vagueHits = VAGUE.filter(v => new RegExp(v).test(summary))
+
+  const issues: string[] = []
+  if (bracketTokens.length < 3) {
+    issues.push(`brackets(${bracketTokens.length})<3 — [담당자]·[마감]·[다음행동] 누락 의심`)
+  }
+  if (vagueHits.length > 0) {
+    issues.push(`모호어 발견: ${vagueHits.join(', ')}`)
+  }
+  if (issues.length > 0) {
+    console.warn(`[preset-quality:action:${label}]`, issues.join(' / '), `\n--- 출력 ---\n${summary.slice(0, 500)}${summary.length > 500 ? '…' : ''}`)
+  } else if (!hasNoneMarker && bracketTokens.length >= 3) {
+    console.log(`[preset-quality:action:${label}] OK — brackets ${bracketTokens.length}개`)
+  }
+}
+
 function ShortSummaryBox({ project }: { project: Project }) {
   const router = useRouter()
   const [, startTransition] = useTransition()
@@ -1479,11 +1510,10 @@ function ShortSummaryBox({ project }: { project: Project }) {
   const [generating, setGenerating] = useState(false)
   const [genError, setGenError] = useState<string | null>(null)
   // (Phase 9.5 / P3) 정리 프리셋 — 4 옵션 + 'action' default + localStorage 영속
-  // SSR/CSR mismatch 방지 위해 default + useEffect lazy load (F3 hydration 패턴)
   type Preset = 'short' | 'standard' | 'action' | 'deep'
   const VALID_PRESETS: Preset[] = ['short', 'standard', 'action', 'deep']
   const PRESET_KEY = `proj-overview-preset:${project.id}`
-  const [preset, setPresetState] = useState<Preset>('action')  // default = action
+  const [preset, setPresetState] = useState<Preset>('action')
   useEffect(() => {
     try {
       const v = localStorage.getItem(PRESET_KEY)
@@ -1496,6 +1526,14 @@ function ShortSummaryBox({ project }: { project: Project }) {
     try { localStorage.setItem(PRESET_KEY, p) } catch { /* swallow */ }
   }
 
+  // (Phase 9.6) 마지막 정리 시각 — generate 성공 시만 갱신
+  const GEN_AT_KEY = `proj-short-summary-generated-at:${project.id}`
+  const [generatedAt, setGeneratedAt] = useState<string | null>(null)
+  useEffect(() => {
+    try { setGeneratedAt(localStorage.getItem(GEN_AT_KEY)) } catch { /* swallow */ }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [GEN_AT_KEY])
+
   function save() {
     startTransition(async () => {
       await updateProjectShortSummary(project.id, input)
@@ -1507,11 +1545,20 @@ function ShortSummaryBox({ project }: { project: Project }) {
   async function generate() {
     setGenerating(true); setGenError(null)
     try {
-      // (Phase 9.5) preset 전달 — 1차 payload only. LLM 프롬프트 반영은 P3
       console.log('[short_summary.generate]', { project_id: project.id, preset })
       const res = await generateAndSaveProjectShortSummary(project.id, preset)
-      if ('error' in res) setGenError(res.error)
-      else { setInput(res.summary); router.refresh() }
+      if ('error' in res) {
+        setGenError(res.error)
+      } else {
+        setInput(res.summary)
+        // (Phase 9.6) 성공 시만 시각 갱신
+        const now = new Date().toISOString()
+        try { localStorage.setItem(GEN_AT_KEY, now) } catch { /* swallow */ }
+        setGeneratedAt(now)
+        // (Phase 9.6 — C 품질 검증) action preset 결과에서 3요소 누락 시 console.warn
+        if (preset === 'action') validateActionTriple(res.summary, '한눈에')
+        router.refresh()
+      }
     } catch (e: any) {
       setGenError(e?.message ?? '실패')
     } finally {
@@ -1523,10 +1570,11 @@ function ShortSummaryBox({ project }: { project: Project }) {
     <div className="bg-yellow-50 border border-yellow-200 rounded-xl px-4 py-3">
       <div className="flex items-center justify-between mb-1.5">
         <p className="text-xs font-semibold text-yellow-800">⚡ 한눈에</p>
-        <div className="flex gap-2">
+        <div className="flex gap-2 items-center">
           <button onClick={generate} disabled={generating} className="text-[10px] text-yellow-700 hover:text-yellow-900 disabled:opacity-40">
             {generating ? '🤖 생성 중...' : '🤖 자동 생성'}
           </button>
+          <RelativeTimeBadge iso={generatedAt} prefix="·" className="text-[10px] text-yellow-700/70" />
           {!editing && (
             <button onClick={() => { setInput(project.short_summary ?? ''); setEditing(true) }} className="text-[10px] text-gray-500 hover:text-gray-700">
               직접 수정
@@ -1621,7 +1669,7 @@ function PendingDiscussionBox({ project }: { project: Project }) {
   type Preset = 'short' | 'standard' | 'action' | 'deep'
   const VALID_PRESETS: Preset[] = ['short', 'standard', 'action', 'deep']
   const PRESET_KEY = `proj-discussion-preset:${project.id}`
-  const [preset, setPresetState] = useState<Preset>('action')  // default = action (협의 박스 원래 default)
+  const [preset, setPresetState] = useState<Preset>('action')
   useEffect(() => {
     try {
       const v = localStorage.getItem(PRESET_KEY)
@@ -1633,6 +1681,22 @@ function PendingDiscussionBox({ project }: { project: Project }) {
     setPresetState(p)
     try { localStorage.setItem(PRESET_KEY, p) } catch { /* swallow */ }
   }
+
+  // (Phase 9.6) 마지막 분석 시각 — target별 (client/internal/vendor)
+  const [generatedAtMap, setGeneratedAtMap] = useState<Record<DiscussionTab, string | null>>({
+    client: null, internal: null, vendor: null,
+  })
+  function genAtKey(t: DiscussionTab) { return `proj-pending-discussion-generated-at:${project.id}:${t}` }
+  useEffect(() => {
+    try {
+      setGeneratedAtMap({
+        client:   localStorage.getItem(genAtKey('client')),
+        internal: localStorage.getItem(genAtKey('internal')),
+        vendor:   localStorage.getItem(genAtKey('vendor')),
+      })
+    } catch { /* swallow */ }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [project.id])
 
   const currentValue = project[TAB_META[tab].col] ?? ''
   const hasAny = !!(project.pending_discussion_client || project.pending_discussion_internal || project.pending_discussion_vendor)
@@ -1656,10 +1720,22 @@ function PendingDiscussionBox({ project }: { project: Project }) {
     setGenerating(true)
     setGenError(null)
     try {
-      // (Phase 9.5) preset 전달 — 1차 payload only. LLM 프롬프트 반영은 P3
       console.log('[pending_discussion.generate]', { project_id: project.id, preset })
       const targets: DiscussionTab[] = ['client', 'internal', 'vendor']
       const results = await Promise.all(targets.map(t => generateAndSavePendingDiscussion(project.id, t, preset)))
+      // (Phase 9.6) 성공한 target만 시각 갱신
+      const now = new Date().toISOString()
+      const newMap = { ...generatedAtMap }
+      results.forEach((r, i) => {
+        const t = targets[i]
+        if (!('error' in r)) {
+          try { localStorage.setItem(genAtKey(t), now) } catch { /* swallow */ }
+          newMap[t] = now
+          // (Phase 9.6 — C 품질 검증)
+          if (preset === 'action') validateActionTriple((r as { summary: string }).summary, `협의:${t}`)
+        }
+      })
+      setGeneratedAtMap(newMap)
       const errors = results.flatMap(r => 'error' in r ? [r.error] : [])
       if (errors.length) setGenError(errors.join(' / '))
       router.refresh()
@@ -1691,14 +1767,23 @@ function PendingDiscussionBox({ project }: { project: Project }) {
           {/* 통합 분석 버튼 (3분류 동시 분석) */}
           <div className="px-4 py-2.5 border-b border-gray-50 flex items-center justify-between gap-2 bg-yellow-50/40 flex-wrap">
             <p className="text-[11px] text-gray-500">한 번에 3분류 모두 분석</p>
-            <button
-              onClick={generateAll}
-              disabled={generating}
-              className="px-3 py-1.5 text-xs font-semibold rounded-lg hover:opacity-80 disabled:opacity-40"
-              style={{ backgroundColor: '#FFCE00', color: '#121212' }}
-            >
-              {generating ? '🤖 분석 중...' : hasAny ? '🤖 빵빵이로 다시 분석' : '🤖 빵빵이로 분석'}
-            </button>
+            <div className="flex items-center gap-2">
+              {/* (Phase 9.6) 현재 active tab 의 마지막 분석 시각 */}
+              <RelativeTimeBadge
+                iso={generatedAtMap[tab]}
+                prefix={`${TAB_META[tab].label}:`}
+                className="text-[10px] text-gray-500"
+                emptyLabel=""
+              />
+              <button
+                onClick={generateAll}
+                disabled={generating}
+                className="px-3 py-1.5 text-xs font-semibold rounded-lg hover:opacity-80 disabled:opacity-40"
+                style={{ backgroundColor: '#FFCE00', color: '#121212' }}
+              >
+                {generating ? '🤖 분석 중...' : hasAny ? '🤖 빵빵이로 다시 분석' : '🤖 빵빵이로 분석'}
+              </button>
+            </div>
           </div>
 
           {/* 정리 프리셋 — 단일 선택 라디오 (Phase 9.5 / P3). 4 옵션 + LLM 프롬프트 분기 */}
@@ -4072,6 +4157,96 @@ function DropboxFilesCard({ dropboxUrl, projectId }: { dropboxUrl: string; proje
   const [briefViewLoading, setBriefViewLoading] = useState(false)
   const [briefCopied, setBriefCopied] = useState(false)
 
+  // (Phase 9.6 / B) 폴더 스캔 — 변경분 vs 전체. 쿨다운 30분.
+  const SCAN_KEY = `proj-dropbox-scan:${projectId}`           // { paths: string[], at: ISO }
+  const FULL_SCAN_AT_KEY = `proj-dropbox-full-scan-at:${projectId}`
+  const FULL_SCAN_COOLDOWN_MS = 30 * 60 * 1000
+  const [scanState, setScanState] = useState<{
+    lastScanAt: string | null
+    lastFullScanAt: string | null
+    addedCount: number | null
+    removedCount: number | null
+    keptCount: number | null
+    totalCount: number | null
+    scanning: boolean
+    confirmFull: boolean
+    msg: string | null
+  }>({
+    lastScanAt: null, lastFullScanAt: null,
+    addedCount: null, removedCount: null, keptCount: null, totalCount: null,
+    scanning: false, confirmFull: false, msg: null,
+  })
+  useEffect(() => {
+    try {
+      const snapRaw = localStorage.getItem(SCAN_KEY)
+      const fullAt = localStorage.getItem(FULL_SCAN_AT_KEY)
+      if (snapRaw) {
+        const snap = JSON.parse(snapRaw) as { paths: string[]; at: string }
+        setScanState(s => ({ ...s, lastScanAt: snap.at, totalCount: snap.paths.length, lastFullScanAt: fullAt }))
+      } else if (fullAt) {
+        setScanState(s => ({ ...s, lastFullScanAt: fullAt }))
+      }
+    } catch { /* swallow */ }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [projectId])
+
+  async function runScan(mode: 'incremental' | 'full') {
+    setScanState(s => ({ ...s, scanning: true, msg: null, confirmFull: false }))
+    try {
+      const result = await listProjectDropboxFiles(dropboxUrl)
+      const currPaths = result.map(r => r.path).sort()
+      let added: string[] = []
+      let removed: string[] = []
+      let kept = currPaths.length
+      try {
+        const snapRaw = localStorage.getItem(SCAN_KEY)
+        if (snapRaw) {
+          const prev = (JSON.parse(snapRaw) as { paths: string[] }).paths
+          const prevSet = new Set(prev)
+          const currSet = new Set(currPaths)
+          added = currPaths.filter(p => !prevSet.has(p))
+          removed = prev.filter(p => !currSet.has(p))
+          kept = currPaths.filter(p => prevSet.has(p)).length
+        }
+      } catch { /* swallow */ }
+      const now = new Date().toISOString()
+      try {
+        localStorage.setItem(SCAN_KEY, JSON.stringify({ paths: currPaths, at: now }))
+        if (mode === 'full') localStorage.setItem(FULL_SCAN_AT_KEY, now)
+      } catch { /* swallow */ }
+      console.log(`[dropbox.scan:${mode}]`, { project_id: projectId, total: currPaths.length, added: added.length, removed: removed.length })
+      setFiles(result)
+      setScanState(s => ({
+        ...s,
+        lastScanAt: now,
+        lastFullScanAt: mode === 'full' ? now : s.lastFullScanAt,
+        addedCount: added.length,
+        removedCount: removed.length,
+        keptCount: kept,
+        totalCount: currPaths.length,
+        scanning: false,
+        msg: added.length === 0 && removed.length === 0
+          ? '변경 없음 — 재생성 생략 권장'
+          : `변경분 ${added.length + removed.length}개 (신규 ${added.length} / 삭제 ${removed.length})`,
+      }))
+    } catch (e) {
+      setScanState(s => ({ ...s, scanning: false, msg: `❌ ${e instanceof Error ? e.message : '스캔 실패'}` }))
+    }
+  }
+
+  function handleFullScanClick() {
+    // 쿨다운 체크
+    if (scanState.lastFullScanAt) {
+      const diff = Date.now() - new Date(scanState.lastFullScanAt).getTime()
+      if (diff < FULL_SCAN_COOLDOWN_MS) {
+        const minLeft = Math.ceil((FULL_SCAN_COOLDOWN_MS - diff) / 60_000)
+        setScanState(s => ({ ...s, msg: `⚠️ 전체스캔 쿨다운 — ${minLeft}분 후 재실행 권장. 변경분 스캔 사용 권장.` }))
+        return
+      }
+    }
+    setScanState(s => ({ ...s, confirmFull: true, msg: null }))
+  }
+
   async function load() {
     setLoading(true)
     const result = await listProjectDropboxFiles(dropboxUrl)
@@ -4155,6 +4330,74 @@ function DropboxFilesCard({ dropboxUrl, projectId }: { dropboxUrl: string; proje
       )}
       {!collapsed && (
         <>
+          {/* (Phase 9.6 / B) 폴더 스캔 — 변경분 vs 전체 + 쿨다운 + 결과 */}
+          <div className="border-t border-gray-100 pt-2 mt-2">
+            <div className="flex items-center gap-2 flex-wrap">
+              <button
+                type="button"
+                onClick={() => runScan('incremental')}
+                disabled={scanState.scanning}
+                className="text-[11px] px-2 py-1 rounded border border-blue-200 bg-blue-50 text-blue-700 hover:bg-blue-100 disabled:opacity-50 font-medium"
+                title="이전 스캔 이후 추가/삭제된 파일만 비교 (저비용·권장)"
+              >
+                {scanState.scanning ? '스캔 중...' : '📂 변경분 스캔'}
+              </button>
+              <button
+                type="button"
+                onClick={handleFullScanClick}
+                disabled={scanState.scanning}
+                className="text-[11px] px-2 py-1 rounded border border-gray-200 bg-white text-gray-600 hover:bg-gray-50 disabled:opacity-50"
+                title="모든 파일을 다시 분석 (토큰 비용 큼 — 30분 쿨다운)"
+              >
+                🔍 전체스캔
+              </button>
+              <RelativeTimeBadge iso={scanState.lastScanAt} prefix="· 마지막 스캔" className="text-[10px] text-gray-500 ml-auto" />
+            </div>
+            {scanState.msg && (
+              <p className={`mt-1 text-[11px] ${scanState.msg.startsWith('❌') ? 'text-red-600' : scanState.msg.startsWith('⚠') ? 'text-amber-700' : 'text-gray-600'}`}>
+                {scanState.msg}
+              </p>
+            )}
+            {scanState.totalCount !== null && (
+              <div className="mt-1 flex items-center gap-2 flex-wrap text-[10px] text-gray-500">
+                <span>총 {scanState.totalCount}개</span>
+                {scanState.addedCount !== null && scanState.addedCount > 0 && <span className="text-emerald-600">+{scanState.addedCount} 신규</span>}
+                {scanState.removedCount !== null && scanState.removedCount > 0 && <span className="text-red-600">-{scanState.removedCount} 삭제</span>}
+                {scanState.addedCount === 0 && scanState.removedCount === 0 && (
+                  <span className="text-emerald-600 bg-emerald-50 px-1.5 py-0.5 rounded">변경 없음 → 재생성 생략 권장</span>
+                )}
+              </div>
+            )}
+          </div>
+
+          {/* 전체스캔 확인 모달 (inline) */}
+          {scanState.confirmFull && (
+            <div className="border border-amber-200 bg-amber-50 rounded-lg p-2.5 text-[11px] space-y-1.5">
+              <p className="font-bold text-amber-900">⚠️ 전체스캔을 정말 실행할까?</p>
+              <ul className="text-amber-800 space-y-0.5 pl-3 list-disc">
+                <li>예상 처리 파일 수: 폴더 안 모든 파일 (현재 {files?.length ?? '미상'}개 추정)</li>
+                <li>토큰 비용: 변경분 스캔 대비 *수~수십 배*</li>
+                <li className="font-medium">권장: 먼저 [📂 변경분 스캔] 사용</li>
+              </ul>
+              <div className="flex gap-2 pt-1">
+                <button
+                  type="button"
+                  onClick={() => runScan('full')}
+                  className="text-[11px] px-2 py-1 rounded bg-amber-700 text-white font-medium hover:bg-amber-800"
+                >
+                  전체스캔 실행
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setScanState(s => ({ ...s, confirmFull: false }))}
+                  className="text-[11px] px-2 py-1 rounded bg-white border border-gray-200 text-gray-700 hover:bg-gray-50"
+                >
+                  취소
+                </button>
+              </div>
+            </div>
+          )}
+
           {files === null ? (
             <button onClick={load} disabled={loading}
               className="text-xs text-gray-500 hover:text-gray-800 underline disabled:opacity-50">
