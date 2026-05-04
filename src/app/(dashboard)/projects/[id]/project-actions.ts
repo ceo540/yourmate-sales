@@ -240,14 +240,33 @@ export async function updateProjectShortSummary(projectId: string, value: string
 }
 
 // 짧은 요약 자동 생성 — 리드 AI 요약 패턴(한줄·현황·반응·다음)
-// preset: 'short' | 'standard' | 'deep' (Phase 9.5)
-//   - 1차: payload만 받음 (호출자→서버 전달 OK)
-//   - TODO P3: LLM 프롬프트에 강도 가이드 반영 (짧게=3줄 / 표준=현황·다음·리스크 / 깊게=근거·담당·기한)
-export type SummaryPreset = 'short' | 'standard' | 'deep'
+// preset: 'short' | 'standard' | 'action' | 'deep' (Phase 9.5 / P3)
+//   - short:    핵심 압축 (한줄+현황만)
+//   - standard: 4섹션 표준 (한줄·현황·반응·다음)
+//   - action:   액션 중심 (한줄+다음을 강조, 명령형) — default
+//   - deep:     근거 포함 상세 (4섹션+출처 표시)
+export type SummaryPreset = 'short' | 'standard' | 'action' | 'deep'
+
+const SHORT_SUMMARY_PRESET_GUIDE: Record<SummaryPreset, string> = {
+  short: `[정리 강도: 짧게]
+- **한줄**과 **현황**만 작성. 반응·다음 섹션 *생략*.
+- 현황은 1문장으로 압축.`,
+  standard: `[정리 강도: 표준]
+- 4섹션 모두 작성 (한줄·현황·반응·다음).
+- 각 섹션 1~2문장.`,
+  action: `[정리 강도: 액션 중심]
+- 4섹션 작성하되, **다음** 섹션을 *가장 구체적으로* 작성 (명령형, 누가·언제·무엇).
+- 한줄·현황은 짧게, 다음은 상세히.
+- 반응이 데이터에 없으면 그 줄 통째로 생략.`,
+  deep: `[정리 강도: 깊게]
+- 4섹션 모두 + 각 섹션 끝에 \`(근거: log·task·계약 출처)\` 표시.
+- 예: "다음: 5/15 명찰 발주 (근거: 5/2 김주임 통화)".
+- 추측 금지 — 데이터에 없는 출처는 표시 X.`,
+}
 
 export async function generateAndSaveProjectShortSummary(
   projectId: string,
-  _preset?: SummaryPreset,  // TODO: 프롬프트에 반영 (P3)
+  preset: SummaryPreset = 'action',
 ): Promise<{ summary: string } | { error: string }> {
   const admin = createAdminClient()
   const supabase = await createClient()
@@ -283,6 +302,8 @@ ${project.overview_summary ? `[자세한 개요]\n${project.overview_summary}\n`
 ${(recentLogs ?? []).map((l: any) => `- [${l.log_type}] ${(l.contacted_at ?? '').slice(0, 10)}: ${l.content ?? ''}${l.outcome ? ` → ${l.outcome}` : ''}`).join('\n') || '없음'}`
 
   const prompt = `너는 프로젝트 매니저 어시스턴트야. 아래 데이터를 보고 *프로젝트 한눈에 요약*을 정확히 아래 형식으로 작성해.
+
+${SHORT_SUMMARY_PRESET_GUIDE[preset]}
 
 형식 (정확히 지킬 것 — markdown):
 
@@ -592,13 +613,33 @@ JSON만 반환. 마크다운 코드블록 없이.`
 
 // V2 빵빵이 협의·미결 사항 자동 분석 — projects.pending_discussion 자동 채움
 // 최근 소통·미완 업무 분석해서 "지금 협의해야 할 사항" 추출
-// preset: 'short' | 'standard' | 'deep' (Phase 9.5)
-//   - 1차: payload만 받음
-//   - TODO P3: LLM 프롬프트에 강도 가이드 반영 (짧게=핵심만 / 표준=4섹션 / 깊게=근거 포함 상세)
+// preset (Phase 9.5 / P3):
+//   - short:    항목당 1줄, 핵심만 (4섹션 통합 가능)
+//   - standard: 4섹션 정확 (누구·무엇·언제 명시)
+//   - action:   🔥 즉시 액션 우선, 명령형 — default
+//   - deep:     4섹션 + 각 항목 끝에 출처 근거 표시
+const PENDING_DISCUSSION_PRESET_GUIDE: Record<SummaryPreset, string> = {
+  short: `[정리 강도: 짧게]
+- 각 항목을 *1줄*로 압축. 핵심만.
+- 섹션이 0건이면 통째로 생략. 1건뿐이면 다른 섹션과 합쳐도 됨.
+- 출력 길이 *최소*.`,
+  standard: `[정리 강도: 표준]
+- 4섹션 정확히 (🔥/❓/📌/⚠️).
+- 각 항목에 *누구·무엇·언제* 명시.`,
+  action: `[정리 강도: 액션 중심]
+- **🔥 빠르게 해결** 섹션을 *가장 먼저, 가장 구체적으로*. 명령형 ("X에게 Y 요청 — 마감 Z").
+- ❓·📌·⚠️ 섹션은 핵심만 짧게.
+- 데이터에 명시된 *다음 행동*만. 추측·일반론 금지.`,
+  deep: `[정리 강도: 깊게]
+- 4섹션 모두 + 각 항목 끝에 \`(근거: log YYYY-MM-DD / task ID / payment label 등)\` 출처 표시.
+- 예: "📌 명찰 시안 컨펌 (근거: 4/29 김주임 통화 — outcome: 컨펌 요청)".
+- 추측 금지. 데이터에 없는 출처는 표시 X.`,
+}
+
 export async function generateAndSavePendingDiscussion(
   projectId: string,
   target: DiscussionTarget = 'client',
-  _preset?: SummaryPreset,  // TODO: 프롬프트에 반영 (P3)
+  preset: SummaryPreset = 'action',
 ): Promise<{ summary: string } | { error: string }> {
   const admin = createAdminClient()
   const supabase = await createClient()
@@ -689,6 +730,8 @@ export async function generateAndSavePendingDiscussion(
   const prompt = `너는 시니어 프로젝트 매니저 어시스턴트야. 아래 *실제 데이터*를 보고 *${DISCUSSION_LABEL[target]}* 관련 협의 항목을 빠짐없이 정리해.
 
 ${DISCUSSION_PROMPT_FOCUS[target]}
+
+${PENDING_DISCUSSION_PRESET_GUIDE[preset]}
 
 # 🔴 절대 규칙 (위반 시 출력 무효)
 1. **데이터에 없는 내용 추측·창작 금지**. 정보가 없으면 "(데이터 없음)"이라고 명시.

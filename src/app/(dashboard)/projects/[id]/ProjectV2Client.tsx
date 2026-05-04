@@ -1478,17 +1478,20 @@ function ShortSummaryBox({ project }: { project: Project }) {
   const [input, setInput] = useState(project.short_summary ?? '')
   const [generating, setGenerating] = useState(false)
   const [genError, setGenError] = useState<string | null>(null)
-  // (Phase 9.5) 정리 프리셋 — localStorage 영속. 새로고침·탭 전환 후 유지.
-  // SSR/CSR mismatch 방지 위해 초기엔 default + useEffect로 lazy load
+  // (Phase 9.5 / P3) 정리 프리셋 — 4 옵션 + 'action' default + localStorage 영속
+  // SSR/CSR mismatch 방지 위해 default + useEffect lazy load (F3 hydration 패턴)
+  type Preset = 'short' | 'standard' | 'action' | 'deep'
+  const VALID_PRESETS: Preset[] = ['short', 'standard', 'action', 'deep']
   const PRESET_KEY = `proj-overview-preset:${project.id}`
-  const [preset, setPresetState] = useState<'short' | 'standard' | 'deep'>('standard')
+  const [preset, setPresetState] = useState<Preset>('action')  // default = action
   useEffect(() => {
     try {
       const v = localStorage.getItem(PRESET_KEY)
-      if (v === 'short' || v === 'standard' || v === 'deep') setPresetState(v)
+      if ((VALID_PRESETS as string[]).includes(v ?? '')) setPresetState(v as Preset)
     } catch { /* private mode 등 */ }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [PRESET_KEY])
-  function setPreset(p: 'short' | 'standard' | 'deep') {
+  function setPreset(p: Preset) {
     setPresetState(p)
     try { localStorage.setItem(PRESET_KEY, p) } catch { /* swallow */ }
   }
@@ -1531,14 +1534,15 @@ function ShortSummaryBox({ project }: { project: Project }) {
           )}
         </div>
       </div>
-      {/* 정리 프리셋 — 단일 선택 라디오 (Phase 9.5). localStorage 영속 + generate 호출 시 전달 */}
+      {/* 정리 프리셋 — 단일 선택 라디오 (Phase 9.5 / P3). 4 옵션 + 'action' default + localStorage 영속 + LLM 프롬프트 분기 */}
       <div role="radiogroup" aria-label="정리 강도" className="flex items-center gap-1.5 mb-2 flex-wrap">
         <span className="text-[10px] text-yellow-800/70 mr-1 font-medium">정리 강도</span>
         {([
-          { key: 'short',    label: '짧게',  hint: '3줄 핵심' },
-          { key: 'standard', label: '표준',  hint: '현황·다음·리스크' },
-          { key: 'deep',     label: '깊게',  hint: '근거·담당·기한' },
-        ] as { key: 'short' | 'standard' | 'deep'; label: string; hint: string }[]).map(p => {
+          { key: 'short',    label: '짧게',     hint: '한줄+현황만 압축' },
+          { key: 'standard', label: '표준',     hint: '4섹션 (한줄·현황·반응·다음)' },
+          { key: 'action',   label: '액션 중심', hint: '다음(액션)을 가장 구체적으로' },
+          { key: 'deep',     label: '깊게',     hint: '4섹션+근거(소통·계약·업무 출처)' },
+        ] as { key: Preset; label: string; hint: string }[]).map(p => {
           const active = preset === p.key
           return (
             <button
@@ -1613,16 +1617,19 @@ function PendingDiscussionBox({ project }: { project: Project }) {
   const [input, setInput] = useState('')
   const [generating, setGenerating] = useState(false)
   const [genError, setGenError] = useState<string | null>(null)
-  // (Phase 9.5) 정리 프리셋 — 한눈에와 옵션 통일(short/standard/deep) + localStorage 영속
+  // (Phase 9.5 / P3) 정리 프리셋 — 4 옵션 + 'action' default + localStorage 영속
+  type Preset = 'short' | 'standard' | 'action' | 'deep'
+  const VALID_PRESETS: Preset[] = ['short', 'standard', 'action', 'deep']
   const PRESET_KEY = `proj-discussion-preset:${project.id}`
-  const [preset, setPresetState] = useState<'short' | 'standard' | 'deep'>('standard')
+  const [preset, setPresetState] = useState<Preset>('action')  // default = action (협의 박스 원래 default)
   useEffect(() => {
     try {
       const v = localStorage.getItem(PRESET_KEY)
-      if (v === 'short' || v === 'standard' || v === 'deep') setPresetState(v)
+      if ((VALID_PRESETS as string[]).includes(v ?? '')) setPresetState(v as Preset)
     } catch { /* private mode */ }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [PRESET_KEY])
-  function setPreset(p: 'short' | 'standard' | 'deep') {
+  function setPreset(p: Preset) {
     setPresetState(p)
     try { localStorage.setItem(PRESET_KEY, p) } catch { /* swallow */ }
   }
@@ -1694,14 +1701,15 @@ function PendingDiscussionBox({ project }: { project: Project }) {
             </button>
           </div>
 
-          {/* 정리 프리셋 — 단일 선택 라디오 (Phase 9.5). 한눈에와 옵션 통일 + localStorage 영속 */}
+          {/* 정리 프리셋 — 단일 선택 라디오 (Phase 9.5 / P3). 4 옵션 + LLM 프롬프트 분기 */}
           <div role="radiogroup" aria-label="정리 강도" className="px-4 py-2 border-b border-gray-50 flex items-center gap-1.5 flex-wrap bg-white">
             <span className="text-[10px] text-gray-600 mr-1 font-medium">정리 강도</span>
             {([
-              { key: 'short',    label: '짧게',  hint: '핵심만' },
-              { key: 'standard', label: '표준',  hint: '4섹션 정리' },
-              { key: 'deep',     label: '깊게',  hint: '근거·담당·기한' },
-            ] as { key: 'short' | 'standard' | 'deep'; label: string; hint: string }[]).map(p => {
+              { key: 'short',    label: '짧게',     hint: '항목당 1줄 핵심만' },
+              { key: 'standard', label: '표준',     hint: '4섹션 (누구·무엇·언제)' },
+              { key: 'action',   label: '액션 중심', hint: '🔥 즉시 액션 우선 (명령형)' },
+              { key: 'deep',     label: '깊게',     hint: '4섹션+출처 근거 표시' },
+            ] as { key: Preset; label: string; hint: string }[]).map(p => {
               const active = preset === p.key
               return (
                 <button
@@ -1721,7 +1729,7 @@ function PendingDiscussionBox({ project }: { project: Project }) {
                 </button>
               )
             })}
-            <span className="text-[9px] text-gray-400 ml-auto">재생성 시 강도 반영 예정 (1차 payload OK)</span>
+            <span className="text-[9px] text-gray-400 ml-auto">재생성 시 LLM 프롬프트에 강도 반영</span>
           </div>
 
           {/* 탭 헤더 */}
